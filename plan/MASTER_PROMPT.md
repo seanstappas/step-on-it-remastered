@@ -10,15 +10,16 @@ Execute the project initialization using this parallel sequence:
    - `/workspace/bridge/src/`
    - `/workspace/godot_project/`
 
-2. Phase 1 - Extraction & Lore Discovery: 
+2. Phase 1 - Extraction, Discovery & Lore: 
    - Deploy `Agent_Lore_Researcher` to create and seed `shared_symbols.json` with the canonical naming conventions.
-   - Deploy `Agent_Asset_Extractor` to extract the binary, PICT, and sound/MIDI assets.
-   - Once extraction is complete, deploy `Agent_Discovery_Mapper` to run Ghidra headlessly against the binary, extracting the call graph and appending memory addresses to `shared_symbols.json`.
+   - Deploy `Agent_Asset_Extractor` to extract assets from the `__MACOSX/._*` resource forks (the plain data forks are empty): `PICT`->PNG, `snd `->WAV, the QuickTime music movies, and the `BORD` level resources from `SOI Boards`.
+   - Once extraction is complete, deploy `Agent_Discovery_Mapper` to load the **PowerPC PEF** (`Step On It!™` data fork, magic `Joy!peff`) into Ghidra headlessly (native PEF loader), apply Mac Toolbox types, and export decompiled C + named CFM imports + the call graph into `shared_symbols.json`.
 
-3. Phase 2 - Parallel Rust Decompilation: Once `shared_symbols.json` is fully populated, spawn three concurrent subagents to begin decompilation into #![no_std] Rust simultaneously. Instruct them to read and update `shared_symbols.json` to prevent naming collisions:
-   - `Agent_Decompiler_Physics`
-   - `Agent_Decompiler_Grid`
-   - `Agent_Decompiler_Bestiary`
+3. Phase 2 - Rust Decompilation (behavior-verified): Once `shared_symbols.json` is populated, run the decompiler subagents. Note: VS Code subagents run synchronously and return one report each — sequence them (or fan out read-only work), do not assume true background parallelism. Each writes its OWN symbol file to avoid write races; the Manager merges them:
+   - `Agent_Decompiler_Physics` (-> `symbols.physics.json`)
+   - `Agent_Decompiler_Grid` (-> `symbols.grid.json`)
+   - `Agent_Decompiler_Bestiary` (-> `symbols.enemies.json`)
+   Each porter MUST verify every function against the emulator oracle (capture inputs/outputs, diff) and preserve the Toolbox `Random()` LCG exactly. Develop the core as a `std` crate for testing, gate to `#![no_std]` for release.
 
 4. Phase 3 - Peripheral Pipelines: While the decompilation agents are running, concurrently spawn:
    - `Agent_Graphics_Remaster` to upscale the sprites and generate the grayscale shader base.
