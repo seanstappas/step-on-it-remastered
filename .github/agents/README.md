@@ -14,6 +14,7 @@ workflow set, as native VS Code custom agents.
 |---|---|---|
 | A half-formed idea | `eg-brainstorm` | A concepts brief; pick a direction |
 | A direction, no requirements | `eg-prd` | A PRD: scope, requirements, metrics, open questions |
+| An existing design doc/plan/PRD to vet | `eg-design-review` | A gated review report (no building) |
 | A clear feature to build | `eg-new-feature` | Design doc (gated) → implemented + reviewed code |
 | A bug or #issue | `eg-fix-bug` | A failing-test-driven fix, reviewed |
 | A diff already in hand | `eg-precommit-review` | A reviewer-cleared diff |
@@ -28,7 +29,7 @@ Each upstream stage can hand off to the next. Implementation stages stop short o
 
 ## Files
 
-**Orchestrators (Elephant):** `eg-brainstorm`, `eg-prd`, `eg-new-feature`, `eg-fix-bug`, `eg-precommit-review`.
+**Orchestrators (Elephant):** `eg-brainstorm`, `eg-prd`, `eg-design-review`, `eg-new-feature`, `eg-fix-bug`, `eg-precommit-review`.
 
 **Goldfish (subagents, `user-invocable: false`):**
 - Idea lenses: `eg-goldfish-technical`, `eg-goldfish-business`, `eg-goldfish-ux`, `eg-goldfish-contrarian`, `eg-goldfish-market`
