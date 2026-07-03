@@ -1,6 +1,6 @@
 ---
 name: eg-goldfish-readiness
-description: "Zero-context implementation-readiness goldfish (article Step 7). Use during eg-new-feature every round to check whether a first-pass implementer could ship the feature from the doc alone with zero questions."
+description: "Zero-context implementation-readiness goldfish (article Step 7). Use during eg-design/eg-spec review every round to check whether a first-pass implementer could ship the feature from the doc alone with zero questions."
 tools: [read, search]
 user-invocable: false
 disable-model-invocation: false

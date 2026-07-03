@@ -1,0 +1,338 @@
+[
+ {
+  "id": 28670,
+  "name": "Psiou",
+  "bytes": 9927,
+  "wav": "wav/28670_Psiou.wav"
+ },
+ {
+  "id": 1769,
+  "name": "Cow bell",
+  "bytes": 2202,
+  "wav": "wav/1769_Cow_bell.wav"
+ },
+ {
+  "id": 4704,
+  "name": "Gabing",
+  "bytes": 6074,
+  "wav": "wav/4704_Gabing.wav"
+ },
+ {
+  "id": 13478,
+  "name": "Metal II",
+  "bytes": 6807,
+  "wav": "wav/13478_Metal_II.wav"
+ },
+ {
+  "id": 15960,
+  "name": "Metal",
+  "bytes": 3586,
+  "wav": "wav/15960_Metal.wav"
+ },
+ {
+  "id": 32129,
+  "name": "Honk",
+  "bytes": 5591,
+  "wav": "wav/32129_Honk.wav"
+ },
+ {
+  "id": 32331,
+  "name": "MeepMeep",
+  "bytes": 6122,
+  "wav": "wav/32331_MeepMeep.wav"
+ },
+ {
+  "id": 16969,
+  "name": "Lore",
+  "bytes": 26410,
+  "wav": "wav/16969_Lore.wav"
+ },
+ {
+  "id": 18221,
+  "name": "Moof",
+  "bytes": 13674,
+  "wav": "wav/18221_Moof.wav"
+ },
+ {
+  "id": 18366,
+  "name": "Bell",
+  "bytes": 16143,
+  "wav": "wav/18366_Bell.wav"
+ },
+ {
+  "id": 10637,
+  "name": "Brass fanfare 1",
+  "bytes": 12934,
+  "wav": "wav/10637_Brass_fanfare_1.wav"
+ },
+ {
+  "id": 2280,
+  "name": "Ahh",
+  "bytes": 15658,
+  "wav": "wav/2280_Ahh.wav"
+ },
+ {
+  "id": 2937,
+  "name": "Chirp",
+  "bytes": 2726,
+  "wav": "wav/2937_Chirp.wav"
+ },
+ {
+  "id": 19339,
+  "name": "transport",
+  "bytes": 35680,
+  "wav": "wav/19339_transport.wav"
+ },
+ {
+  "id": 17661,
+  "name": "Announce",
+  "bytes": 14002,
+  "wav": "wav/17661_Announce.wav"
+ },
+ {
+  "id": 11228,
+  "name": "DumDaDumDum",
+  "bytes": 21180,
+  "wav": "wav/11228_DumDaDumDum.wav"
+ },
+ {
+  "id": 15128,
+  "name": "Eastern",
+  "bytes": 11562,
+  "wav": "wav/15128_Eastern.wav"
+ },
+ {
+  "id": 3922,
+  "name": "Fam",
+  "bytes": 4698,
+  "wav": "wav/3922_Fam.wav"
+ },
+ {
+  "id": 7840,
+  "name": "Fim",
+  "bytes": 3130,
+  "wav": "wav/7840_Fim.wav"
+ },
+ {
+  "id": 12863,
+  "name": "Flens",
+  "bytes": 6219,
+  "wav": "wav/12863_Flens.wav"
+ },
+ {
+  "id": 20478,
+  "name": "Razz SysBark",
+  "bytes": 3726,
+  "wav": "wav/20478_Razz_SysBark.wav"
+ },
+ {
+  "id": 16473,
+  "name": "Rings",
+  "bytes": 8305,
+  "wav": "wav/16473_Rings.wav"
+ },
+ {
+  "id": 24336,
+  "name": "Slide Whistle",
+  "bytes": 6186,
+  "wav": "wav/24336_Slide_Whistle.wav"
+ },
+ {
+  "id": 29940,
+  "name": "Smack",
+  "bytes": 3338,
+  "wav": "wav/29940_Smack.wav"
+ },
+ {
+  "id": 7119,
+  "name": "SpaceBalls",
+  "bytes": 11690,
+  "wav": "wav/7119_SpaceBalls.wav"
+ },
+ {
+  "id": 2689,
+  "name": "Strings",
+  "bytes": 20202,
+  "wav": "wav/2689_Strings.wav"
+ },
+ {
+  "id": 4397,
+  "name": "Whip",
+  "bytes": 2378,
+  "wav": "wav/4397_Whip.wav"
+ },
+ {
+  "id": 8345,
+  "name": "Whoah",
+  "bytes": 4043,
+  "wav": "wav/8345_Whoah.wav"
+ },
+ {
+  "id": 31429,
+  "name": "oh la la",
+  "bytes": 15850,
+  "wav": "wav/31429_oh_la_la.wav"
+ },
+ {
+  "id": 2224,
+  "name": "hammer half speed",
+  "bytes": 7018,
+  "wav": "wav/2224_hammer_half_speed.wav"
+ },
+ {
+  "id": 25564,
+  "name": "knock",
+  "bytes": 7891,
+  "wav": "wav/25564_knock.wav"
+ },
+ {
+  "id": 404,
+  "name": "Baby Seagull",
+  "bytes": 6530,
+  "wav": "wav/404_Baby_Seagull.wav"
+ },
+ {
+  "id": 1628,
+  "name": "bike horn 11khz",
+  "bytes": 3690,
+  "wav": "wav/1628_bike_horn_11khz.wav"
+ },
+ {
+  "id": 30612,
+  "name": "metal crash 11khz",
+  "bytes": 13206,
+  "wav": "wav/30612_metal_crash_11khz.wav"
+ },
+ {
+  "id": 400,
+  "name": "Train Whistle",
+  "bytes": 3462,
+  "wav": "wav/400_Train_Whistle.wav"
+ },
+ {
+  "id": 5548,
+  "name": "bugle1 11khz",
+  "bytes": 13631,
+  "wav": "wav/5548_bugle1_11khz.wav"
+ },
+ {
+  "id": 1000,
+  "name": "chime1 11khz",
+  "bytes": 10470,
+  "wav": "wav/1000_chime1_11khz.wav"
+ },
+ {
+  "id": 1001,
+  "name": "bugle 11khz",
+  "bytes": 15685,
+  "wav": "wav/1001_bugle_11khz.wav"
+ },
+ {
+  "id": 1002,
+  "name": "zap 11khz",
+  "bytes": 23462,
+  "wav": "wav/1002_zap_11khz.wav"
+ },
+ {
+  "id": 1003,
+  "name": "gong 11hz",
+  "bytes": 19462,
+  "wav": "wav/1003_gong_11hz.wav"
+ },
+ {
+  "id": 1004,
+  "name": "whistle refs 11khz",
+  "bytes": 8966,
+  "wav": "wav/1004_whistle_refs_11khz.wav"
+ },
+ {
+  "id": 1005,
+  "name": "slow",
+  "bytes": 13574,
+  "wav": "wav/1005_slow.wav"
+ },
+ {
+  "id": 1006,
+  "name": "snap",
+  "bytes": 2374,
+  "wav": "wav/1006_snap.wav"
+ },
+ {
+  "id": 3001,
+  "name": "rooster 11khz",
+  "bytes": 22150,
+  "wav": "wav/3001_rooster_11khz.wav"
+ },
+ {
+  "id": 1007,
+  "name": "hurry up",
+  "bytes": 6253,
+  "wav": "wav/1007_hurry_up.wav"
+ },
+ {
+  "id": 1102,
+  "name": "1",
+  "bytes": 4482,
+  "wav": "wav/1102_1.wav"
+ },
+ {
+  "id": 1100,
+  "name": "hut 11khz",
+  "bytes": 2126,
+  "wav": "wav/1100_hut_11khz.wav"
+ },
+ {
+  "id": 1101,
+  "name": "huh 11khz",
+  "bytes": 6274,
+  "wav": "wav/1101_huh_11khz.wav"
+ },
+ {
+  "id": 1103,
+  "name": "2",
+  "bytes": 4234,
+  "wav": "wav/1103_2.wav"
+ },
+ {
+  "id": 1104,
+  "name": "3",
+  "bytes": 4314,
+  "wav": "wav/1104_3.wav"
+ },
+ {
+  "id": 1105,
+  "name": "4",
+  "bytes": 4570,
+  "wav": "wav/1105_4.wav"
+ },
+ {
+  "id": 1106,
+  "name": "5",
+  "bytes": 4850,
+  "wav": "wav/1106_5.wav"
+ },
+ {
+  "id": 1500,
+  "name": "challenge round",
+  "bytes": 55270,
+  "wav": "wav/1500_challenge_round.wav"
+ },
+ {
+  "id": 1501,
+  "name": "HiScore",
+  "bytes": 94406,
+  "wav": "wav/1501_HiScore.wav"
+ },
+ {
+  "id": 1502,
+  "name": "competition winner",
+  "bytes": 76070,
+  "wav": "wav/1502_competition_winner.wav"
+ },
+ {
+  "id": 26486,
+  "name": "moon blast 11khz",
+  "bytes": 18462,
+  "wav": "wav/26486_moon_blast_11khz.wav"
+ }
+]

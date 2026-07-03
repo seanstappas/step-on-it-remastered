@@ -1,0 +1,11 @@
+[configuration]
+entry_symbol = "soi_library_init"
+compatibility_minimum = "4.3"
+
+[libraries]
+windows.debug.x86_64   = "res://bin/soi_bridge.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/soi_bridge.windows.template_release.x86_64.dll"
+linux.debug.x86_64     = "res://bin/libsoi_bridge.linux.template_debug.x86_64.so"
+linux.release.x86_64   = "res://bin/libsoi_bridge.linux.template_release.x86_64.so"
+macos.debug            = "res://bin/libsoi_bridge.macos.template_debug.framework"
+macos.release          = "res://bin/libsoi_bridge.macos.template_release.framework"

@@ -1,0 +1,23 @@
+/.github/
+
+# Generated / regenerable (reproducible via tools/ from raw_game/)
+# NOTE: /extracted/ and /analysis/decomp/ are temporarily TRACKED for the
+# decompilation-investigation pass (re-ignore later if the repo gets too big).
+/bin/
+
+# Build outputs
+/build/
+*.dll
+*.o
+*.obj
+*.exe
+
+# Emulator ROMs / OS images — never commit (copyright)
+*.rom
+*.img
+# godot-cpp bindings (fetch via: git clone --depth 1 -b 4.3 https://github.com/godotengine/godot-cpp bridge/godot-cpp)
+/bridge/godot-cpp/
+# GDExtension build output
+/godot_project/bin/
+/godot_project/.godot/
+# media/ (screenshots + gameplay clips) is kept tracked for posterity
