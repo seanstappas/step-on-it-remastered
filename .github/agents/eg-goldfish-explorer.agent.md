@@ -1,6 +1,6 @@
 ---
 name: eg-goldfish-explorer
-description: "Zero-context codebase-grounding goldfish. Use during eg-prd wave 1 (or eg-new-feature) to ground a request in how the existing codebase actually works, reading only the files it is pointed at."
+description: "Zero-context codebase-grounding goldfish. Use during eg-spec, eg-design, or eg-code (implement) to ground a request in how the existing codebase actually works, reading only the files it is pointed at."
 tools: [read, search]
 user-invocable: false
 disable-model-invocation: false

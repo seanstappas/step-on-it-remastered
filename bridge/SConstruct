@@ -1,0 +1,20 @@
+# SConstruct — canonical godot-cpp build for the SoiCore GDExtension.
+# Requires bridge/godot-cpp (git submodule) and SCons (`pip install scons`).
+# Build:  scons target=template_debug        (from the bridge/ directory)
+# Output: godot_project/bin/soi_bridge.<platform>.<target>.<arch>.<ext>
+import os
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/", "../core/include/"])
+
+sources = Glob("src/*.cpp") + Glob("../core/src/*.c")
+
+if env["platform"] == "macos":
+    target = "../godot_project/bin/soi_bridge.{}.{}.framework/soi_bridge.{}.{}".format(
+        env["platform"], env["target"], env["platform"], env["target"])
+else:
+    target = "../godot_project/bin/soi_bridge{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+
+library = env.SharedLibrary(target, source=sources)
+Default(library)

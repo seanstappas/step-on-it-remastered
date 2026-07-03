@@ -1,6 +1,6 @@
 ---
 name: eg-goldfish-ux
-description: "Zero-context UX-lens idea goldfish. Use during eg-brainstorm/eg-prd to generate divergent ideas from a usability, player-experience, and accessibility perspective."
+description: "Zero-context UX-lens idea goldfish. Use during eg-spec (divergent pass) to generate divergent ideas from a usability, player-experience, and accessibility perspective."
 tools: [read, search]
 user-invocable: false
 disable-model-invocation: false
@@ -21,7 +21,7 @@ Your single lens is **User / Player Experience**.
 ## Output Format
 Return ONLY:
 - **Lens:** UX
-- **Divergent ideas (3–6):** each a one-line idea + one-line rationale.
+- **Divergent ideas (3-6):** each a one-line idea + one-line rationale.
 - **Experience risks (up to 5):** one line each.
 - **Strongest single recommendation:** one line.
 No preamble, no conversation.

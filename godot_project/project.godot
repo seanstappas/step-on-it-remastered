@@ -1,0 +1,19 @@
+; Godot 4.3 project — front-end for the Step On It! remaster.
+; The gameplay lives in the C core via the SoiCore GDExtension (soi.gdextension).
+config_version=5
+
+[application]
+config/name="Step On It! Remastered"
+config/features=PackedStringArray("4.3", "Forward Plus")
+run/main_scene="res://scenes/menu.tscn"
+
+[autoload]
+Session="*res://scenes/session.gd"
+Audio="*res://scenes/audio.gd"
+
+[display]
+window/size/viewport_width=640
+window/size/viewport_height=480
+
+[rendering]
+textures/canvas_textures/default_texture_filter=0  ; nearest — crisp retro pixels

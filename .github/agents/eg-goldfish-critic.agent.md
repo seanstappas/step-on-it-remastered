@@ -1,6 +1,6 @@
 ---
 name: eg-goldfish-critic
-description: "Zero-context critic-review goldfish (article Step 6). Use during eg-new-feature every round to find missed edge cases, faulty assumptions, and gaps in a design doc."
+description: "Zero-context critic-review goldfish (article Step 6). Use during eg-design/eg-spec review every round to find missed edge cases, faulty assumptions, and gaps in a design doc."
 tools: [read, search]
 user-invocable: false
 disable-model-invocation: false

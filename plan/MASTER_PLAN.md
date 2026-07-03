@@ -1,42 +1,51 @@
 # Master Plan & Design Document: Project "Step On It!" Remaster
 
+> **Canonical docs:** This file (`MASTER_PLAN.md`) is the architecture/spec authority. `EXECUTION_PLAN.md` is the step-by-step execution plan (driven from a single chat; no custom agents). Deep reverse-engineering findings live in `docs/`. The legacy agent/prompt docs (`MASTER_PROMPT.md`, `PROMPTS_REPOSITORY.md`, `PROMPTS_SUBAGENTS_PLAN.md`) have been removed.
+
 ## 1. High-Level Requirements
-* **Target Platforms:** Standalone Windows desktop (`.exe`) first; web assembly (`HTML5/WASM`) as a deferred stretch goal (gdext web export is experimental).
-* **Core Engine:** A headless **Rust** backend that is a faithful, behavior-verified port of the 1996 Mac OS game logic. Developed as a `std` crate for testing (replaying emulator traces), then gated to `#![no_std]` for the final build.
-* **Front-End Engine:** Godot 4, acting strictly as a high-performance visual and input puppet.
+* **Target Platforms:** Standalone Windows desktop (`.exe`) first; web (`HTML5/WASM`) is a deferred stretch goal.
+* **Core Engine:** A headless **C** core — a faithful, behavior-verified port of the 1996 Mac OS game logic, decompiled from the PowerPC PEF. Freestanding, deterministic, no OS/UI dependencies. Built as a static/shared library with a small C ABI (`tick_engine`, load-level, read-state).
+* **Wrapper / Front-End:** **Godot 4** as the visual+input host, bound to the C core through a thin **C++ GDExtension (`godot-cpp`)** shim (C++ confined to glue; no game logic). **GDScript** for menus, the map editor, and WebRTC netcode. **Python** for the build/asset tooling.
 * **The "D2R" Toggle:** Instant real-time switching between native 1996 4:3 graphics (640×480 logical space) and modern 4K widescreen assets.
-* **Online Multiplayer:** P2P WebRTC online co-op and competitive play (expanded to 3 players) mapped onto a deterministic engine core using **lockstep** netcode (1-byte input bitmask per player per tick). Rollback is a later option, not the baseline.
+* **Online Multiplayer:** P2P WebRTC co-op/competitive (parity 2 players; 3rd reserved) on a deterministic core using **lockstep** netcode (1-byte input bitmask per player per tick). Rollback is a later option.
 * **Extended Features:** In-engine Godot Map Editor (exporting to JSON), remastered audio (QuickTime MIDI music + `snd ` SFX re-rendered), and fragment shaders for infinite customizable player colors.
 
 ## 2. Canonical Game Elements (Baseline Dictionary)
-* **Protagonist:** Ted (robotic man).
-* **Objective:** Acquire the Key and exit through the Red Door.
-* **Mechanics:** Ted creates White Blocks to navigate and trap enemies. Levels feature Chain Reactions and Clock/Time Panels.
+* **Protagonist:** Ted (robotic man); P1 = blue, P2 = green.
+* **Objective:** Acquire the **Key** and exit through the open **Door** (key/door are color-coded; competitive mode gives each player their own).
+* **Mechanics:** Ted **creates and destroys blocks** (build to climb, destroy to clear, and break blocks *above his head* with the jump key); some blocks are **permanent**. The **Starting Bonus counts down and kills the player at zero**. Levels feature chain reactions, Clock/Time panels, and transporters.
+* **Play modes:** One Player, Alternate (turn-based 2P), Cooperate (2P shared), Compete (2P, separate keys/doors). ~100 boards in tiers of 20 (Beginner/Novice/Intermediate/Advanced/Expert), plus a second board set.
 * **Weapons:** Magic Arrow (straight line), Magic Ball (rolls along walls).
-* **Goodies:** Magic Shoes (speed), Shield (invulnerability), Thunder Balls (kills reproducers), Coins, Gold Bars, Gems.
-* **The Nasties:** Ant (50 pts), Ostrich (100 pts), Hippo (200 pts), Piggy (250 pts), Wheelie (300 pts), Beenie (750 pts).
+* **Goodies:** Shoes (speed), Turtles (slow nasties), Shield (invulnerability), Thunderballs (kill nasties), Silver/Gold coins (500/1000), Gem/Gold bars (2000/5000), Clock (bonus), 2× Multiplier, Magnifying glass (reveal hidden), Stop/Go switch, 1UP (extra life), IN/OUT transporters.
+* **The Nasties (13):** Cannon & Spinner (hazards), Ant (50), Ostrich (100), Hippo (200), Piggy (250), Wheelie (300), Smiley (400), Hammer (500), Beanie (750), Robo (1000), Walker (1250), Teeth (1500). *(The manual listed only six; full roster confirmed from the in-game Help — see `docs/original_game/gameplay-and-design.md`.)*
+* **Challenge Boards:** the **Gargoyle** throws Badguys or **UltraBusters** (weapons that destroy Ted's blocks), governed by Percent-UltraBuster / Percent-Badguy / thrown-badguy params (Board Designer ReadMe).
 
 ## 2a. Verified Binary & Asset Facts (recon 2026-07-02)
 These supersede earlier assumptions and drive the pipeline below.
 
-* **The app is a FAT binary.** `Step On It!™` data fork = a **PowerPC PEF** (magic `Joy!peff`, 220,181 B). The resource fork also holds **68k `CODE`** resources + a `cfrg`. **Decompile the PowerPC PEF** (data fork) — its CFM imports are named, so Toolbox/OS calls arrive labeled and PPC pseudocode is far cleaner than 68k. Keep 68k `CODE` only as a cross-reference.
-* **Resource forks live in `__MACOSX/._*` AppleDouble files** on this extracted copy; the plain data-fork files (`SOI Graphics`, `SOI Sounds`, `SOI Boards`) are **0 bytes**. Extraction MUST target the `._*` forks (or re-extract from `StepOnIt_1_0_1.zip` preserving forks):
-  * `._SOI Graphics` ≈ 2.55 MB (`Lockstep PICT` etc.)
+* **Ghidra discovery pass complete** (`analysis/shared_symbols.json`, generated by `analysis/ghidra/discover.py` under **Ghidra 11.3.2 headless**). The PEF loads as **`PowerPC:BE:32:default`** (NOT the auto-suggested `PowerPC:BE:64:VLE` — that VLE variant is wrong for classic Mac PPC and must be overridden with `-processor PowerPC:BE:32:default`). Load base **`0x10000000`**. Inventory: **721 functions, 257 CFM imports, 517 candidate globals**. All expected Toolbox imports resolve from `InterfaceLib`: `Random`, `TickCount`, `GetKeys`, `Button`, `FSRead`, `FSWrite`, `SetEntries`, `MakeITable`, `CopyBits`, `SndNewChannel`, `NewPtr`, `NewHandle`.
+
+* **The app is a FAT binary.** The app's **data fork** is a **PowerPC PEF** (magic `Joy!peff`, 220,181 B) at `raw_game/Step On It™/Step On It!™`. Its **resource fork** (the AppleDouble `raw_game/Step On It™/__MACOSX/._Step On It!™`, 271,454 B) holds the **68k `CODE`** resources + a `cfrg`. **Decompile the PowerPC PEF** (the app data fork) — its CFM imports are named, so Toolbox/OS calls arrive labeled and PPC pseudocode is far cleaner than 68k. Keep 68k `CODE` only as a cross-reference. NOTE: the app data fork is NOT empty; only the *data-file* forks below are.
+* **Data-file resource forks live in `__MACOSX/._*` AppleDouble files** on this extracted copy; the plain data-fork files (`SOI Graphics`, `SOI Sounds`, `SOI Boards`) are **0 bytes**. Extraction MUST target the `._*` forks:
+  * `._SOI Graphics` ≈ 2.55 MB (`PICT` etc.)
   * `._SOI Sounds` ≈ 757 KB (`snd `)
-  * `._SOI Boards` ≈ 53 KB — **level data as `BORD` resources**; fields documented in the Board Designer ReadMe.
-* **RNG is the Toolbox `Random()`** (imported from `InterfaceLib`) → minimal-standard LCG `seed = seed * 16807 mod (2^31 − 1)`. Fully reproducible; replicate exactly for determinism + netcode.
-* **Timing/input:** `TickCount` (60 Hz fixed tick), `GetKeys`/`Button` (keyboard state → input bitmask). No `MathLib` → integer math (good for determinism).
-* **Audio is QuickTime MIDI**, not trackers: music movies live in `Step On It!  Movies/` (`Cminor`, `spooky`, `green wins`, …; "thin" = Light Music variants); SFX are `snd ` resources. Uses `QuickTimeLib`.
-* **Reference oracle:** the original runs in an emulator; use it to capture ground-truth memory/behavior to verify each ported function.
+  * `._SOI Boards` ≈ 53 KB — **level data as `BORD` resources**; editor-level field meanings documented in the Board Designer ReadMe (byte layout still to be reversed — see §7).
+* **RNG is the Toolbox `Random()`** (imported from `InterfaceLib`) → **provisionally** the minimal-standard LCG `seed = seed * 16807 mod (2^31 − 1)` (**not yet confirmed** — classic Mac `Random()` is not guaranteed pure minimal-standard; the exact recurrence is pinned from the disassembly, §5.3/§7.1). **Discovery located the 4 `Random()` call sites** — `FUN_1000c278`, `FUN_1000c680`, `FUN_1000cbe0`, `FUN_1002401c` — these are the seeding/consumption sites to reverse first. **Decompiled (§5.3): consumers mask the sign off** — `(Random() & 0x7FFF)` for ranged rolls, `(Random() & 0x3F)` for weighted spawn tables. **Seed source confirmed:** a whole-program scan finds no `randSeed` write and `main` (`FUN_1001a4b8`) does not seed it, so the RNG uses the Toolbox default (`1`) and is deterministic from launch.
+* **Timing/input:** `TickCount` present (classic Mac Tick = 1/60 s) and `GetKeys`/`Button` (keyboard state → input bitmask). **Game-loop cadence — decompiled (`FUN_10029264`, the in-round loop):** it **busy-waits on a frame-sync flag** (`FUN_100193a8` returns `0x1003b28a == 1`) each iteration, running **one logic/physics step per frame** and **sampling input every 2 frames** (an in-loop countdown calls the `FUN_10029ca0`/`FUN_1002d440` input routine). `TickCount` itself is **pacing-only** (used for a startup sync + an idle-time metric, never gameplay — §5.6). **Frame rate RESOLVED — it is a *Time Manager* timer, NOT the 60 Hz `TickCount`:** a Time Manager task (installed by `FUN_10019428` via `InsXTime`/`PrimeTime`, re-armed each frame by `FUN_100193c8`) fires at the interval in global `0x1003b286`; the **Speed menu handler `FUN_1001c398` sets it (ms):** Really Fast **9**, Fast **11**, **Medium 14**, Slow **18** → Medium ≈ **71 Hz** physics, input every 2 frames (≈ **35.7 Hz**). **Canonical port rate = Speed `Medium` (14 ms frame).** The 30 fps sprite-animation rate is separate. Rate-dependent constants are in **frames** at this rate.
+* **Floating point: CONFIRMED absent from code.** The Ghidra headless FP scan (`discover.py` → `fp_scan`) found **0 floating-point instructions across all 721 functions** (no `f*` ops, no `lfs/lfd/stfs/stfd`). `MathLib` is not imported either. **Game logic is integer-only** — so §5.1's integer deterministic path is the *actual reality*, not a contingency, and there is no FP-in-hash risk to mitigate.
+* **Audio is QuickTime MIDI**, not trackers: music movies live in `Step On It!  Movies/` (`Cminor`, `spooky`, `green wins`, …; "thin" = Light Music variants); SFX are `snd ` resources. Uses `QuickTimeLib`. Music is **off by default** (per the About doc), which is strong evidence game logic is audio-independent.
+* **Reference oracle:** the original runs in an emulator; the built-in **Demo** plays deterministically and is the primary trace source (see §6).
+* **Assets decoded** (`tools/analyze_formats.py`, `docs/original_game/graphics-and-audio.md`): sprites use a custom **`sssf`** format (u32 frame count + u32 offset table + per-frame `w,h` + palette-indexed pixels); the master 256-colour palette is `clut` “ss Super Palette v2”; player/effect recolour uses 62-entry “color shift” cluts. The **`DMKY`** demo input is a run-length-encoded per-key bitmask stream.
+* **Speed setting affects tick rate.** `Options → Speed` offers Really Fast / Fast / Medium / Slow (Medium default), so the original's simulation rate is user-adjustable — there is no single fixed rate in the shipped game. The port must pick one **canonical speed** (Medium) as the deterministic tick, and the netcode/oracle are defined against that. (Reinforces the per-Tick-vs-per-frame gate in §6.)
 
 ## 3. System Architecture (Visualized)
 
 ```mermaid
 graph TD
     subgraph "Godot 4 (Front-End Presentation)"
-        UI[Input: Local + WebRTC Netcode]
+        UI[Input: Local + WebRTC Lockstep Netcode]
         M_AUDIO[AudioStreamPlayer: Remastered OGGs]
-        M_MAP[Godot Map Editor UI]from PowerPC PEF
+        M_MAP[Godot Map Editor UI]
         
         subgraph "Visual Layers (The D2R Toggle)"
             V_RETRO[CanvasLayer: 1996 Original Assets]
@@ -46,12 +55,12 @@ graph TD
     end
 
     subgraph "The Bridge"
-        GDEXT[godot-rust / gdext]
+        GDEXT[godot-cpp (C++ GDExtension shim)]
     end
 
-    subgraph "Headless Rust Core (Decompiled Engine)"
+    subgraph "Headless C Core (Decompiled from PowerPC PEF)"
         R_STATE[(shared_symbols.json)]
-        R_PHYSICS[Physics Solver & 3-Player State]
+        R_PHYSICS[Physics Solver & Player State]
         R_GRID[Grid, Blocks & Chain Reactions]
         R_AI[Enemy Bestiary AI]
     end
@@ -81,22 +90,246 @@ graph TD
 * **Discovery:** load the **PowerPC PEF** (`Step On It!™` data fork) into Ghidra (native PEF loader auto-detects PPC), apply Mac Toolbox / Universal Interfaces data types, and export decompiled C + named CFM imports + the call graph into the shared knowledge base.
 * **Dictionary Setup:** Auto-populate `shared_symbols.json` with canonical naming conventions.
 
-### Phase 2: Rust Decompilation (behavior-verified, per subsystem)
+### Phase 2: C Decompilation (behavior-verified, per subsystem)
 
-* Port function-by-function from Ghidra's **PPC pseudocode** into Rust, preserving integer/fixed-point math and the `Random()` LCG exactly. Reverse the core structs (player, enemy, grid cell) and the `BORD` format first.
-* **Verification loop (required):** for each function, capture inputs/outputs from the emulator (breakpoint + memory snapshot), run the Rust port on the same inputs, and diff until they match. This replaces "byte-matching" with provable behavioral equivalence.
-* To avoid concurrent-write races, each domain writes its **own** symbol file (`symbols.physics.json`, `symbols.grid.json`, `symbols.enemies.json`); the Manager merges into `shared_symbols.json`.
-* **Agent_Physics:** Movement, jump arcs, gravity, expanded 3-Player state array.
-* **Agent_Grid:** Grid/`BORD` parsing, White Block create/destroy, chain reactions, Clock/Time panels, JSON level loading.
-* **Agent_Bestiary:** Enemy state machines (Ant, Ostrich, Hippo, Piggy, Wheelie, Beenie) incl. spawn Start/Spawn delays.
+* Port function-by-function from Ghidra's **PPC pseudocode** into clean C, honoring the determinism contract (§5) and verifying every function against the oracle (§6).
+* **RNG & state (first):** port the `Random()` LCG (§5.3) and the shared game-state struct/globals before anything else — everything downstream depends on them. Verify the RNG sequence against the reference for N draws. Output `core/src/rng.c`, `core/src/state.c`.
+* **Verification loop (required):** for each function, capture inputs/outputs from the emulator (seed-patched demo trace log — §6), run the C port on the same inputs, and diff until the ported state matches (endianness-normalized). Provable behavioral equivalence, not raw byte-matching.
+* Each subsystem writes its **own** symbol file (`analysis/symbols.<domain>.json`); you merge into `analysis/shared_symbols.json` after each so later steps read earlier merges (§7.1).
+* **Grid (before Physics):** `BORD` parsing + level-JSON converter, block create/destroy (incl. jump-break), chain reactions, Clock/Time panels.
+* **Physics/Players:** movement, jump arcs, gravity, player-state array (P1/P2 active; P3 capacity reserved & zero-initialised — §5.5/§10).
+* **Enemies:** state machines for all 13 nasties (Cannon, Spinner, Ant, Ostrich, Hippo, Piggy, Wheelie, Smiley, Hammer, Beanie, Robo, Walker, Teeth) + the Gargoyle/UltraBuster thrower, incl. spawn Start/Spawn delays.
 
 ### Phase 3: Peripheral Engine Building (Concurrent)
 
-* **Graphics:** Local AI upscaling creating 4K environmental assets. A grayscale Ted sprite is generated for Godot shaders.
-* **Audio:** QuickTime MIDI music movies and `snd ` SFX are isolated for modern DAW re-rendering.
-* **Godot Bridge:** `gdext` compiles the Rust core into a Windows `.dll` first; Web `.wasm` is a deferred stretch goal (experimental gdext web export).
+* **Graphics:** Decode the custom `sssf` sprites, upscale environmental art to 4K, generate a grayscale Ted for the recolor shader.
+* **Audio:** QuickTime MIDI music movies and `snd ` SFX are re-rendered to OGG (presentational).
+* **Godot Bridge:** `godot-cpp` compiles the C core + C++ shim into a Windows `.dll` (GDExtension) first; Web `.wasm` is a deferred stretch goal.
 
 ### Phase 4: Multiplayer & Map Editing
 
 * Godot handles the WebRTC handshakes. The **lockstep** network layer sends only a 1-byte input bitmask per player, per tick; all peers advance the deterministic core in step. (Rollback with prediction/resim can be layered on later.)
 * The runtime Godot map editor saves tile coordinates directly to JSON (mirroring the reversed `BORD` struct), bypassing the legacy Mac OS format.
+
+## 5. Determinism Contract
+
+The core is a **deterministic** simulation: identical (initial state + input stream) MUST yield identical state on every platform. This is required for both replay-verification and lockstep netcode.
+
+### 5.1 Numeric policy (integer-only — confirmed by the §2a FP scan)
+* **The game is integer-only.** The Ghidra `fp_scan` found **0 floating-point instructions** across all 721 functions (§2a), and no `MathLib` is imported. So the core is ported 1:1 in integer arithmetic and logical state compares **exactly** (tolerance `0`) on every platform, including the long-horizon trace (§6.4). Cross-platform bit-identical reproduction is therefore straightforward — there is no floating point in gameplay to reconcile.
+* Match the original 32-bit PPC **integer** arithmetic exactly: fixed-width types (`uint32_t`/`int32_t`), defined unsigned wraparound, no signed-overflow UB.
+* **All simulation/hash-critical state is exact by construction:** every field feeding the desync **state hash** (§5.5) or the Windows↔wasm cross-play path is integer, hence bit-identical across platforms.
+* *(Closed contingency: had the scan found gameplay floats, a bit-exact-matched or bounded-tolerance port would have been needed. It found none, so **tolerance-0 exact integer comparison is the sole path** and the fixture `tolerance` stays `0` everywhere.)*
+
+### 5.2 Data layout & ordering
+* No hash-ordered iteration in simulation paths — use fixed-size arrays/structs with explicit, stable iteration order.
+* Serialize only **fixed-width integers** (`int32_t`, `uint16_t`, …), never pointer-width values or raw struct memory (padding differs by platform).
+* **Canonical serialization = little-endian, fixed-width, field-by-field** (never raw struct memory). One routine feeds both the fixture comparison and the state hash, so byte order is identical on every platform.
+
+### 5.3 RNG
+* Reproduce the Toolbox `Random()` minimal-standard LCG. **Seed source — CONFIRMED:** a whole-program scan (`analysis/ghidra/seed_and_loop.py`) finds **no write to `randSeed` (0x08FE) anywhere**, and the decompiled `entry`→`main` (`FUN_1001a4b8`) does not seed it — so the app runs on the Toolbox **default seed (`InitGraf` sets `randSeed = 1`)** and is **RNG-deterministic from cold start**. Only the count of attract/menu `Random()` draws before gameplay shifts the stream, so the oracle pins the seed at gameplay start regardless.
+* **Determinism override:** the core exposes an explicit seed setter; the game/host sets it at match start rather than relying on wall-clock. For netcode, the host broadcasts the seed so all peers agree.
+* **Return-slice & signedness — PINNED from disassembly (Ghidra 11.3.2).** `Random()` returns a **signed 16-bit** value; every consumer **discards the sign by masking the low bits**, so only the low N bits matter:
+  * `RandomInRange(1, n)` (`FUN_1000c278` and its duplicate `FUN_1000cbe0`): `result = ((Random() & 0x7FFF) * n) / 0x7FFF + 1`, then clamped to `n`. → uses the low **15 bits** (0–32767), sign dropped.
+  * Weighted table pick (`FUN_1000c680`): `Random() & 0x3F` (low **6 bits**, 0–63) indexing a hardcoded distribution → tile/nasty spawn weights.
+  So `rng.c` must reproduce `Random()`'s full 16-bit signed return **bit-exactly**, then port these masks verbatim. Validate against N reference draws before porting anything RNG-dependent.
+
+### 5.4 Core vs wrapper boundary
+* **Core:** freestanding, portable **C** — depends only on `stdint.h`/`string.h`-level facilities, no OS/UI/allocator assumptions (use fixed pools or a caller-provided allocator for dynamic level/entity data). Portable to Windows, and later wasm.
+* **Wrapper:** **C++** (`godot-cpp`) glue only; it links the core and exposes it to Godot. The wrapper depends on the core, never the reverse.
+
+### 5.5 State hashing & test gating
+* The desync/cross-play **state hash is computed over the serialized *logical* state** (the same fixed-width fields the fixtures compare), never over raw memory, pointers, or struct padding — otherwise identical simulations would hash differently across platforms.
+* The shipped **core has no test/serialization dependencies.** The verification harness is a separate host program (C driver or a Python script that links/loads the core) that replays fixtures; JSON/file-IO live only in the harness.
+* **Reserved slots are zero-initialised.** The unused P3 player slot (and any reserved capacity) is deterministically zeroed so it never perturbs the logical-state hash (avoids false desyncs).
+* **Hash primitive:** **FNV-1a 64-bit** over the little-endian serialized state (§5.2) — a fixed, non-cryptographic hash with an identical implementation in the C core and the harness. (Any fixed hash works; FNV-1a is pinned for reproducibility.)
+* **Hashes are scoped to a state-schema version.** The set of fields fed to the hash **grows across phases** (Phase 1 = the minimal scalar globals, §6.3; Phase 2 adds struct fields), so a golden hash is only comparable **within the same field set**. Tag each golden hash with its schema/phase and treat **Phase-1 goldens as provisional** — regenerate them when Phase 2 widens the state. Fixtures also compare the named `expected.globals` fields directly (schema-independent); the `state_hash` is just the fast desync check *within* a fixed schema.
+
+### 5.6 Time source (`TickCount`)
+* Like `randSeed`, **`TickCount` is virtualized — but only if gameplay logic actually reads it** (see next bullet). The core itself never reads wall-clock time; it advances an internal tick counter, and any original code that consumed `TickCount` *for gameplay* maps to that counter.
+* **Discovery must determine whether gameplay logic reads `TickCount`** vs. using it only for frame pacing / `Delay`. **This is now CONFIRMED pacing-only:** the decompiled in-round loop (`FUN_10029264`, §2a) **busy-waits on the tick to advance** and on a frame-sync, feeding tick values only into pacing + an idle-time metric — never gameplay. **So no gameplay virtualization is needed** — the pin machinery below does **not** apply; pacing reads simply must not leak into logged/hashed state. (The pin is kept specified only as a contingency if a gameplay read is later found.)
+* Pairs with the seed patch (§6.2): if a pin is needed, **seed and time are both pinned**, so the demo trace is fully reproducible run-to-run.
+* **Mechanism (only if a gameplay read is found; native-PPC-correct).** `TickCount` in the PEF is a **native CFM import from `InterfaceLib`**, so the classic **68k A-trap (`0xA975`) is *not* the hook** — native PPC calls bypass the 68k trap dispatcher. Instead **hook the CFM `TickCount` import stub** (the PEF imported-symbol thunk, located in discovery) and **read-hook it to *return* a deterministic value** (`tick0 + step × ticks_per_step`, `ticks_per_step` from the §2a timestep gate). **Do not freeze/rewrite the `Ticks` low-mem global (`0x016A`)**: the async VBL task re-bumps it ~60×/s, and the pacing busy-waits that legitimately poll it would stall/deadlock. The read-hook is applied around the logic step and is **decoupled from** the §6.3 end-of-tick trace hook (which only *observes* post-step state — pinning time there would land one tick late).
+
+## 6. Emulator Oracle & Verification
+
+### 6.1 Environment (pinned per fixture)
+* **One emulator for the oracle: SheepShaver (PowerPC)** — it runs the **same PPC PEF we port**, so the trace and the C port derive from the *same binary* (no 68k-vs-PPC equivalence assumption). §6.3 instruments it.
+* **Canonical OS: Mac OS 9.0.4** (single pinned build; satisfies the app's System-7.0+ / QuickTime-2.1 minimums — the `STR# 128` “System 7.0+” string is the app's *floor*, not our pin). No OS range.
+* **Environment lock:** the exact SheepShaver build, ROM SHA-256, and OS build are recorded **once in §8** and referenced by every fixture `env`. ROMs/OS images are copyright-encumbered and **never committed**.
+* **JIT is fine — no special CPU mode needed.** Gameplay is integer-only (§2a `fp_scan` = 0), and integer results are identical under SheepShaver's JIT or interpreter, so the oracle needs no interpreter/non-JIT build. (An optional 68k↔PPC cross-check under Basilisk II remains available in §6.3, but it is a general equivalence check, not a float-rounding workaround.)
+
+### 6.2 Reproducible runs (seed patch)
+`Random()` is clock-seeded, so an unpatched run diverges each time. We force determinism by writing a constant to `randSeed` (0x08FE).
+* **Mechanism & timing:** set a breakpoint in SheepShaver's built-in debugger (`mon`) at the **seed-init store** located by discovery (the instruction that writes the clock-derived value to `randSeed`) — or, if awkward, at the **main-event-loop entry just before the first `Random()` call**. Overwrite `randSeed` with the fixture's constant, then continue. **Confirm no re-seed:** verify the seed-init store runs exactly once per game (not per frame); if the app re-seeds, NOP the store or re-write the seed on each entry.
+* **Canonical demo (one resource set):** the attract-mode demo is the **app's own** `BORD 300 'demo'` + `DEMO 128` driver + `DMKY 1000 'current demo keys'`. The `BORD 301 'demo'` board in `SOI Boards` is a level-set entry, **not** the attract trace; likewise the separate **`DMKY 15639` in `SOI Boards` is unrelated to the attract trace** (purpose TBD) — see `docs/original_game/binary-and-resources.md` §6.
+* **Time pin (conditional, with the seed):** **only if discovery finds gameplay reads `TickCount`** (§5.6 — recon leans pacing-only, in which case this is skipped entirely), **read-hook the CFM `TickCount` import** to return the deterministic sequence, established **before** the step's gameplay reads and **decoupled from** the end-of-tick trace hook (§6.3). **Never freeze the `Ticks` low-mem global** — it would stall the pacing busy-waits that poll it.
+* **Seed/board choice:** any reproducible `(seed + DMKY inputs)` pair is a valid trace — the port must match whatever the original does given identical seed and inputs, even if demo-Ted dies early. Trace length is only a convenience; capture **multiple seeds and boards** for coverage.
+
+### 6.3 Capture mechanism (PPC PEF — same binary as the port)
+We instrument the **same PPC build we port and run in the oracle** (SheepShaver), so the trace and the C port derive from one binary — no 68k-vs-PPC equivalence assumption. Classic emulators expose no per-tick gdbstub, so:
+1. **PEF hook (primary).** Discovery (Phase 1) locates the **end-of-tick function** in the PEF plus an unused/expandable region. We patch a trampoline into the PEF that appends the tick's globals to a log via Toolbox `FSWrite` (confirmed import), redirecting through the call site (or the CFM main/init TVector). Toolchain: a PEF patcher (`tools/pef_patch.py`) that rewrites the code section and fixes the affected loader relocations. The seed-patched demo then writes a **deterministic per-tick trace log** we parse.
+2. **Debugger-checkpoint fallback.** SheepShaver's built-in debugger (`mon`) dumps memory ranges at breakpoints for a set of checkpoints — full fidelity for a handful of ticks; cross-checks the trampoline or substitutes when patching is blocked.
+3. **68k cross-check (optional, gated).** The 68k `CODE` build under Basilisk II is easier to patch, but may be used **only after** an explicit **68k↔PPC logical-equivalence check**: run both on the same seed + demo and compare the minimal scalar globals tick-for-tick; they must match before any 68k-derived trace is trusted. This path also requires disassembling the relevant `CODE` segment to find its end-of-tick site.
+* **Log ground-truth inputs.** The trampoline also records the per-tick **input bitmask the game actually read from `GetKeys`** (both players in a 2P session). Verification feeds the port **these logged inputs**, not the still-TODO `DMKY` decode — so a mismatch is a *port* bug, never a *decode* bug. (The `DMKY` decode is validated separately, by checking it reproduces the logged inputs.)
+* **Minimal Phase-1 global set (no struct reversal):** `randSeed`, the (virtualized) tick counter, the per-tick input bitmask, score, bonus timer, and Ted's screen X/Y — simple scalars independent of Phase-2 structs, enough for a real gate fixture. Richer struct fields come in Phase 2.
+* **Discovery deliverable:** locating the PEF end-of-tick hook site (and the seed-init site) is an explicit Phase-1 task (§2a gates).
+
+### 6.4 Fixtures (`analysis/fixtures/*.json`)
+```jsonc
+// Illustrative TEMPLATE (values are examples).
+{ "env": { "emulator": "SheepShaver <build>", "rom_sha256": "<hex>", "os": "Mac OS 9.0.4",
+           "speed": "Medium" },
+  "level": "demo", "seed": 12345, "tick0": 0,
+  "tolerance": { "default": 0 },
+  "units": { "ted_x": "px", "ted_y": "px" },
+  "ticks": [ { "n": 0, "inputs": [0,0], "state_hash": "<hex>",
+              "expected": { "globals": { "ted_x": 160, "ted_y": 208 } } } ] }
+```
+* **`env.speed` is pinned to `Medium`** (the canonical rate, §5); it affects per-tick content, so it is part of the fixture identity. There is **no `fp_mode`** field: gameplay is integer-only (§2a), so JIT-vs-interpreter is irrelevant to logical state.
+* **`seed` + `tick0` pin the RNG and the virtualized time source** (§5.3, §5.6): `tick0` is the initial value of the pinned `Ticks`/tick-counter, so both are part of fixture identity and the trace is reproducible run-to-run.
+* **Units declared per field** (`px` for screen coords like `ted_x`; grid **cells** for level/`BORD` coordinates — §7.3).
+* **Tolerance** is `0` (exact) **everywhere** — gameplay is integer-only (§5.1), so there is no fixed-point subsystem needing a per-field tolerance.
+* **Long-horizon fixtures required** per subsystem (hundreds–thousands of ticks, cumulative match).
+* **Netcode gate = a *plumbing* test, not a tautology.** There is no original 2P oracle (the demo is single-player). To actually exercise the netcode, feed a **distinct-input** P1/P2 stream through the **full lockstep path on two OS processes**: each process serializes its input, applies the **input-delay buffer** (§12), advances the core, then **serializes its logical state and exchanges the hash** (§5.5); assert the two stay hash-identical every tick. This tests the real risks — serialization/endianness, the delay buffer, and cross-process determinism — not just “same input → same output.” (Extend to a Windows↔wasm process pair once wasm exists.)
+* **2-player *fidelity* gate (separate from the sync test).** The two-process test proves peers *agree*, not that 2P *mechanics* are *faithful*. So also capture a **real 2-player session** from the original under the emulator (the trace hook logs both players' `GetKeys` inputs, §6.3) and gate the ported **Compete/Cooperate** logic — separate keys/doors, the P2 entity, player–player interaction — against that trace, exactly like the single-player oracle. The capture is **seed- and time-patched per §6.2** (not a one-shot unrepeatable recording), so it is reproducible and RNG-aligned; a short hand-played session suffices. **Phase-1 caveat (provisional):** a Phase-1 capture can only log the minimal scalars (shared score/bonus + Ted's X/Y), which is **not enough to gate 2P mechanics** — the P2 entity, per-player score, and key/door state are Phase-2 struct fields. So the Phase-1 2P capture is **provisional**; the real fidelity gate needs a **Phase-2 re-capture** once those struct addresses are resolved.
+* **Comparison = behavioral, not byte-for-byte** (big-endian PPC values byte-swapped to native).
+
+### 6.5 Phasing (resolves the ordering circularity)
+* All oracle work lives under **`analysis/`** (created in Phase 1), independent of the `core/` scaffold: `analysis/shared_symbols.json`, `analysis/fixtures/`, and trace-log outputs — while the runnable patch/parse tools (`tools/pef_patch.py`, `tools/trace_parse.py`) live under `tools/`. The C `tests/` harness (post-gate) reads `analysis/fixtures/`.
+* **Phase 1** builds oracle **infrastructure** + a first fixture using the **minimal scalar global set** (§6.3) — no Phase-2 struct addresses required.
+* **Phase 2** adds **struct-aware assertions** once discovery/decompile resolve addresses/layouts.
+* **Timestep gate — RESOLVED:** the loop is **per-frame and pacing-only**. The frame period is a **Time Manager** interval (`FUN_1001c398`), **Speed=Medium = 14 ms ≈ 71 Hz** (Really Fast 9 / Fast 11 / Slow 18 ms), with input re-sampled every **2 frames**. The netcode tick locks to this frame rate (not the 60 Hz `TickCount`).
+
+## 7. Data Schemas & Contracts
+
+### 7.1 `shared_symbols.json`
+```jsonc
+// Illustrative TEMPLATE (values are examples).
+{ "names": { "protagonist": "Ted", "nasties": ["Ant", "..."] },
+  "imports": { "Random": { "lib": "InterfaceLib" } },
+  "functions": { "0x0012b0": { "space": "pef", "name": "FUN_0012b0", "domain": null, "signature": "", "calls": [] } },
+  "globals": { "0x08fe": { "space": "lowmem", "name": "randSeed", "type": "i32", "size": 4 } },
+  "rng": { "seed_addr": "0x08fe", "algorithm": "TODO-confirm" } }
+```
+* **`space`** distinguishes **`pef`** (PEF/program-relative addresses, e.g. functions) from **`lowmem`** (classic Mac low-memory globals like `randSeed` at 0x08FE) — the two address spaces must not be conflated under one key.
+* **`rng.algorithm` is provisional** (`TODO-confirm`): classic Mac `Random()` is **not** pure minimal-standard park-miller; the exact LCG + return slice are pinned from the disassembly (§5.3) before the label is fixed.
+* **Location & merge rule (structured read-modify-write, never blind text append):** the map lives at `analysis/shared_symbols.json`; per-domain files (`analysis/symbols.<domain>.json`) contribute `functions`/`globals` keyed by address. You merge by address key after each subsystem; each domain owns the entries it claims (`domain` field). Only the merge step writes `shared_symbols.json`.
+
+### 7.2 `manifest.json`
+```jsonc
+// Illustrative TEMPLATE (values are examples).
+{ "source": "raw_game/Step On It™/", "generated_at": "<iso8601>",
+  "pef": { "path": "bin/core_pef.bin", "size": 220181, "arch": "ppc" },
+  "extracted": [ { "type": "PICT", "src": "__MACOSX/._SOI Graphics", "out": "extracted/art/", "count": 0 },
+                 { "type": "sssf", "src": "__MACOSX/._SOI Graphics", "out": "extracted/sprites/", "count": 0 },
+                 { "type": "snd ", "src": "__MACOSX/._SOI Sounds", "out": "extracted/audio/", "count": 0 } ] }
+```
+
+### 7.3 Canonical level JSON (authored by us; `BORD` maps INTO this)
+```json
+{ "name": "Board 1", "bonus_time": 0,
+  "grid": { "w": 0, "h": 0, "cells": [ { "block": "supportive|permanent|both|none" } ] },
+  "spawns": [ { "enemy": "Wheelie", "x": 0, "y": 0, "start_delay": 0, "spawn_delay": 0, "dir": "left_up|right_down|alternate|seek" } ],
+  "player_starts": [ { "player": 1, "x": 0, "y": 0 } ],
+  "challenge": { "percent_ultrabuster": 0, "percent_badguy": 0, "thrown_badguy": "Ant" } }
+```
+**Units:** all `x`/`y` are **grid-cell** coordinates (not pixels); the grid **cell is 32 × 32 px** (CONFIRMED, §7.4: screen `x = (col-1)*32 + 16`, `y = (row-1)*32 + 48`). `bonus_time` and the delays are in **ticks** (§2a). `dir` mirrors the original's **paired** encoding — `left_up`, `right_down`, `alternate`, `seek` (Seek-Player was "not available" in the original but is kept for round-trip fidelity). This schema is authoritative; the map editor emits it and the core parses it. The `BORD` reverse-engineering (the grid decompile step) produces a converter into this format.
+
+### 7.4 `BORD` binary format (reversed from the decompiled loader 2026-07-02; owned by the grid decompile step)
+Levels are `BORD` resources inside `SOI Boards` (**152** total: id **301** = a `demo`-named board in the level set — not the oracle trace; the attract trace is the app's own `BORD 300` + `DMKY 1000` (see §6.2); **401–501** = the **101** resources (100 tiered boards 401-500 in five difficulty tiers of 20, plus 501); **1001–1050** = a second set). `tools/parse_bord.py` reads the AppleDouble resource fork and extracts them to `extracted/levels/board_<id>.bord`. **The loader `FUN_1002b448` selects the resource** (`Get1Resource('BORD', N+400)`, or `+1000` for the second set) and calls **the parser `FUN_1001a348`**.
+
+**Header — 26 bytes, big-endian u16, copied 1:1 into the level struct by `FUN_1001a348` (CONFIRMED from the loader; field roles CONFIRMED by board 450 = 50/19/25 matching the clamps):**
+| off | field | notes |
+|---|---|---|
+| `0x00` | u16 | board flags/type (unused by loader) |
+| `0x02` | P1 attribute | constant `0x006D` across boards |
+| `0x04` | P2 attribute | constant `0x0073` across boards |
+| `0x06` | **P1 start col** | → x via `(col-1)*32 + 16` |
+| `0x08` | **P1 start row** | → y via `(row-1)*32 + 48` |
+| `0x0A` | **P2 start col** | |
+| `0x0C` | **P2 start row** | |
+| `0x0E` | shared attr | → both players (`aa60`/`aad0`); varies per board (**supersedes** the earlier "0x0E=bonus" guess) |
+| `0x10` | **percent_ultrabuster** | clamped 0–100 |
+| `0x12` | **thrown_badguy type** | clamped 0–20 (a nasty index) |
+| `0x14` | **percent_badguy** | clamped 0–100; coupled with `0x12` (both zero together) |
+| `0x16` | **bonus / time** | default `5000` if `0` or `0x3A20`; scale vs the HUD's ~3000 still to confirm at runtime |
+
+**Body (from `0x18`) — tile-placement records (CONFIRMED):** a sequence of `[u32 tile_type][ (x:u8, y:u8) pairs… ][ 0x64 0x64 ]` records, **terminated when `tile_type == 0`**. Each `(x,y)` pair stores `tile_type` into the grid; the `(100,100)` = `0x64 0x64` pair ends the current record. **Grid = 19 × 13** (loop bounds `0x13 × 0xd`); at load, `FUN_1002b708` copies it into a bordered live playfield and sets the border ring to tile-type **`0x300` = permanent wall**.
+
+**Grid geometry (CONFIRMED, `FUN_1002e6ac`/`FUN_1002e6bc`): cell = 32 × 32 px; `x = (col-1)*32 + 16`, `y = (row-1)*32 + 48`.**
+
+**Still TODO (Phase-2):** the **tile_type → block-property** mapping (which values are supportive/permanent/etc.; `0x300` = permanent is known), the **badguy/spawn records** (parsed separately — not in `FUN_1001a348`; find the spawn reader), the exact **col/row orientation** vs the 19×13 grid (player-start values can exceed 13, so confirm against the emulator), the **bonus scale**, and the `DATA:` block in 4 boards. **Fallback:** if the spawn-record reversal stalls, hand-author a badguy table validated cell-by-cell against the emulator and flag the level JSON provisional.
+
+### 7.5 Input bitmask (per player, per tick)
+**8-bit mask; bits 0–6 are used, bit 7 unused** — the decompiled demo-playback routine (`FUN_10029ca0`) unpacks the per-frame key byte into exactly **7 booleans** (`0x01 0x02 0x04 0x08 0x10 0x20 0x40`), confirming the input fits a `uint8_t` (no widening needed, cf. §11).
+* **Two-player latches (decompiled):** P1 input booleans live at `0x1003aa3e..44`, P2 at `0x1003aab0..b4` (+0x72 stride). Three functions marshal them: `FUN_1002d440` (live — `GetKeys` + **configurable keycodes** from prefs, tested via `FUN_1002d388`), `FUN_10029ca0` (demo **playback** — unpacks the `DMKY` mask), and `FUN_1002a15c` (demo **record** — packs the mask with the *same* bit order). Record + playback agreeing confirms the `DMKY` `(run_length, mask)` RLE format end-to-end.
+* The **bit→action mapping below is still HYPOTHESIS**: the five low bits match the `DMKY` sample; the two high bits (`0x20`/`0x40`) are confirmed *present*. The movement code reads a per-player copy via TOC-relative access, so pinning each bit's meaning (Jump / Fire) is a Phase-2 correlation task.
+| bit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| action | Up | Down | Left | Right | **Action** (block create/remove) | Jump? | Fire? | unused |
+* **Create vs. Remove** is not a separate bit in the observed data — it is context-dependent on one Action key (create on an empty cell, remove on your own block), unless the decode shows otherwise. **Jump** and **Fire Weapon** exist in the game (Help screen) but did not appear as distinct bits in the DMKY sample, so their bit assignment is deferred to the decode.
+* **Default key bindings (CONFIRMED — decoded from the `keys 128` resource):** 14 entries (`00 00 <mac-keycode> 00`) = **2 players × 7 actions**. **P1:** D `0x02`, G `0x05`, F `0x03`, Shift `0x38`, Option `0x3A`, Z `0x06`, Command `0x37`. **P2 (keypad):** Kp1 `0x53`, Kp3 `0x55`, Kp5 `0x57`, KpClear `0x47`, Kp7 `0x59`, Kp= `0x51`, Kp8 `0x5B`. The action-per-slot order (which key = up/down/left/right/jump/fire/action) is the last input item — resolve from `FUN_1002d440`'s key-test order or the oracle.
+* **`tick_engine` is 2-player for parity:** `void tick_engine(uint8_t p1_input, uint8_t p2_input)`. A 3rd player is reserved (§10).
+* **Meta-actions are NOT lockstep input:** Pause (Tab) and QuickSave (Cmd-S) are local UI actions. Widen the mask to `uint16_t` if the decode reveals more than 8 distinct inputs.
+
+## 8. Toolchain & Versions (pinned; bump only on a verified incompatibility)
+| Tool | Pinned | Notes |
+|---|---|---|
+| `resource_dasm` | build from a **pinned commit SHA** (record it) under **WSL Ubuntu 24.04** | Feed it **bare resource forks** dumped by `tools/rezfork.py` (sidesteps any AppleDouble-support question); it decodes `PICT`→PNG and `snd `→WAV. `tools/parse_bord.py` handles `BORD` without it. |
+| Ghidra | **11.3.2** (installed `D:\SOI-tools\ghidra\ghidra_11.3.2_PUBLIC`) | native PEF loader + PPC decompiler. Import PEF with `-processor PowerPC:BE:32:default` (override the wrong VLE auto-pick). |
+| JDK | **Temurin 21.0.11+10** (installed `D:\SOI-tools\jdk\jdk-21.0.11+10`) | for Ghidra `analyzeHeadless`; set `JAVA_HOME` to it. |
+| Rust | — | not used; core is C, wrapper is C++. |
+| C compiler | **Clang 18** (MSVC 19.4x also OK) | builds the freestanding C core library. |
+| C++ binding | **godot-cpp** matching Godot 4.3 (C++17) | the GDExtension shim only — no game logic. |
+| Build system | **CMake 3.28+** | builds the core lib + godot-cpp shim into the `.dll`. |
+| Godot | **4.3** | editor/runtime; must match `godot-cpp`. |
+| Emscripten | deferred | for the wasm build only, when un-deferred. |
+| Upscaler | **Real-ESRGAN `realesrgan-ncnn-vulkan` v0.2.0** | environmental art to 4K. |
+| Audio render | **FluidSynth 2.x + `FluidR3_GM` SoundFont** | GM approximation of QuickTime Musical Instruments; presentational only, non-gameplay. |
+| Emulator (oracle) | **SheepShaver** — build recorded at first oracle capture | PowerPC host; runs the same PEF we port (§6). Not needed until a trace is captured. |
+| Emulator (68k cross-check, optional) | **Basilisk II** (optional) | only for the gated 68k↔PPC equivalence check (§6.3). |
+| Mac ROM | **New World PPC ROM** — SHA-256 recorded at first oracle capture | never committed (copyright); a provenance stamp only, recorded when a trace is first captured. |
+| Mac OS | **9.0.4** (single pinned build) | satisfies System 7.0+ / QuickTime 2.1. |
+
+**Environment lock — recorded at first oracle capture (user-supplied provenance, not a design decision).** These three values describe **your** emulator setup and only become relevant when the first real trace is captured (Phase 0/1). They are a **provenance stamp** so a trace can be reproduced/verified later — nothing in the port or tooling is blocked on them, and no committed fixture exists until they are filled. Record them here and copy into each fixture `env` at capture time:
+```
+emulator   = SheepShaver <build>       # your SheepShaver version / build date
+rom_sha256 = <hash of your ROM file>   # PowerShell: Get-FileHash -Algorithm SHA256 "<rom>"
+os         = Mac OS 9.0.4               # change if your install differs
+```
+The native side is configured by a top-level `CMakeLists.txt` (core lib + godot-cpp shim); pin exact compiler/CMake versions in that file and in CI once the environment is stood up.
+
+## 9. Per-Phase Acceptance Criteria (Definition of Done)
+| Phase | Done when |
+|---|---|
+| 1 – Extract/Discover | `manifest.json` lists all PICT/snd/movie/BORD outputs; `bin/core_pef.bin` loads in Ghidra as PPC; `shared_symbols.json` has functions + named imports + `randSeed`; oracle **infra** produces one deterministic Demo trace log from a seed-patched run (no address-specific asserts yet). *(The Phase-1 `state_hash` is scoped to the minimal global set — provisional until Phase-2 widens state, §5.5.)* |
+| 2 – Decompile | Grid, then Physics, then Enemies each pass their (now address-resolved) fixture assertions — including a long-horizon trace — against the oracle; the **2-player modes/match-flow** (Compete/Cooperate) pass the **§6.4 2-player fidelity capture**; `BORD`→level-JSON round-trips; RNG sequence (with correct signedness) matches the reference for N draws. |
+| 3 – Peripherals | Windows `.dll` builds; the **`.gdextension`** descriptor + minimal **`project.godot`** load it in Godot; `tick_engine` advances state from an input stream; upscaled + retro assets both align to the 640×480 grid (D2R toggle swaps textures only). |
+| 4 – MP/Editor | 2-peer lockstep stays in sync over a **distinct-input** 2-player fixture (not just the Demo) with matching periodic logical-state hashes; the ported **Compete/Cooperate** mechanics match the **§6.4 2-player fidelity capture** (separate keys/doors, win condition); editor emits §7.3 JSON the core loads. |
+
+## 10. Scope Boundaries
+* **Distribution model (bundle everything; personal project, legality deferred).** The build **bundles the game assets** — both the extracted **retro** assets and the **remastered** ones — alongside the engine, so it runs standalone with no user-supplied files. A **Retro ↔ Remastered toggle** (D2R-style) swaps the graphics/audio at runtime. **Architecture is unchanged:** a **faithful core engine** (the reversed gameplay/determinism logic) with **everything else a wrapper on top** — rendering, audio, UI, netcode, editor. *(The core is still written fresh rather than compiling the decompiled C — that choice is now purely technical, not legal: the decompiled PowerPC / Mac-Toolbox output won't build natively on Windows and is unmaintainable. Revisit the ship-clean vs. bundle question if this ever goes public.)*
+* **Parity target is 2 players.** The source `BORD` only defines P1/P2 starts; `MAX_PLAYERS = 3` reserves array capacity but **P3 is a post-parity extended feature** requiring its own design (spawn point, scoring, camera/keyboard model) before activation.
+* **Decompilation scope:** port gameplay/determinism code only — physics, grid, enemies, RNG, scoring, level load. **Out of scope for decompilation:** Mac Toolbox UI/menus/dialogs, QuickDraw rendering internals, Sound Manager glue, and the legacy save-file format (save/load is reimplemented fresh in Godot, not decompiled).
+* **Coordinate/scale contract (D2R):** the logical space is fixed at 640×480; the grid **cell is 32 × 32 px** (CONFIRMED from the loader, §7.4). Retro and 4K assets are integer-scaled to the same logical grid; the toggle swaps textures and never changes logical coordinates.
+* **Explicitly out of scope (initial):** online 3P, rollback netcode, local 3-player keyboard ghosting, and the wasm/web build (scaffolded in the build config but not built).
+
+## 11. Repo & Build Scaffolding
+**Phase-1 RE working dir `analysis/`** (holding `shared_symbols.json`, `fixtures/`, and trace-log outputs; the runnable patch/parse tools are `tools/pef_patch.py` + `tools/trace_parse.py`) is created up front and does **not** depend on the core scaffold. The build scaffolding below is created **after the gate**, before the decompile steps emit `core/src/*.c` (those steps only fill in their subsystem file):
+* **C core:** `core/CMakeLists.txt`, `core/include/soi_core.h` — the public C ABI (`tick_engine`, `soi_load_level`, `soi_read_state`, `soi_set_seed`) — and `core/src/{rng,state,physics,grid,enemies,modes}.c` stubs. Freestanding C (§5.4). (`modes.c` = play-mode / match-flow logic: One Player / Alternate / Cooperate / Compete, per the §6.4 2-player fidelity gate.)
+* **C++ wrapper:** `bridge/` (godot-cpp GDExtension, C++17) with its own `CMakeLists.txt` linking the core.
+* **Godot project:** the single `godot_project/project.godot`, with the **`.gdextension`** descriptor in `godot_project/` referencing the built `.dll`. (One project.godot only — in `godot_project/`, never `bridge/`.)
+* **Verification harness:** `tests/` host driver that links the core and replays `analysis/fixtures/` (§6).
+* **Audio re-render** (MIDI→OGG via FluidSynth + `FluidR3_GM`) — presentational only.
+The native side builds via a top-level CMake configuration; the decompile steps never touch build/scaffolding files.
+
+## 12. Netcode Robustness Parameters (lockstep)
+All constants are in **ticks** at the canonical logic rate. **`TICK_HZ` is the Time-Manager frame rate, confirmed from the disassembly (§2a): Speed=Medium = 14 ms/frame ≈ 71 Hz** (Really Fast 9 ms / Fast 11 ms / Slow 18 ms); the input latch refreshes every **2 frames** (≈ 35.7 Hz). This is **not** the 60 Hz `TickCount`, which is pacing-only. Re-derive ms if a different canonical Speed is chosen.
+* **Input-delay buffer:** lockstep runs with an **N-tick input delay** (tick T uses inputs from T−N) so local play stays responsive while remote input arrives. **N is tuned to the connection**, sized so `N / TICK_HZ` ≥ one-way latency; default **N = 4** (~66 ms at 60 Hz) for LAN/low-latency. High-RTT internet play needs a larger N (more input lag) or the deferred rollback option — pure lockstep does not hide RTT beyond N.
+* **Input timeout:** if a peer's required-tick input is missing after **~30 ticks (0.5 s)**, stall; after **~600 ticks (10 s)** total, surface a disconnect/abort choice.
+* **State-hash cadence:** compute the logical-state hash (§5.5) **every tick**; exchange it every **4 ticks**, and on mismatch halt and report the last-matching tick — bounding silent divergence to ≤ ~4 ticks (~66 ms), not ~1 s.
+* **Transport:** a **reliable, ordered** WebRTC data channel (lockstep requires lossless, in-order input delivery).
+* **Dropped peer:** on disconnect, pause all peers and offer reconnect or abort; never continue on stale input.
+* **Seed agreement:** the host broadcasts the initial RNG seed at match start (§5.3).
+* **Sync validation:** the **two-process** distinct-input fixture that round-trips serialization + the input-delay buffer (§6.4).

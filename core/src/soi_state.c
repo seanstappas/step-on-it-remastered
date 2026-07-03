@@ -1,0 +1,344 @@
+/* soi_state.c — world lifecycle, BORD level loading, the per-frame tick, and
+ * the canonical serialize + FNV-1a-64 state hash (MASTER_PLAN §5.5).
+ * Integer-only; all logical state is fixed-width for cross-platform identical
+ * hashing.
+ */
+#include "soi_internal.h"
+
+/* ---------- byte helpers ---------- */
+static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
+static uint32_t be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+typedef struct { uint8_t *p; size_t cap, len; } SoiBuf;
+static void bput(SoiBuf *b, const void *src, size_t n)
+{
+    const uint8_t *s = (const uint8_t *)src;
+    size_t i;
+    for (i = 0; i < n; i++) {
+        if (b->len < b->cap && b->p) b->p[b->len] = s[i];
+        b->len++;
+    }
+}
+static void bput_u32(SoiBuf *b, uint32_t v)  /* little-endian */
+{
+    uint8_t t[4] = { (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
+    bput(b, t, 4);
+}
+static void bput_i32(SoiBuf *b, int32_t v)  { bput_u32(b, (uint32_t)v); }
+static void bput_u16(SoiBuf *b, uint16_t v) { uint8_t t[2] = { (uint8_t)v, (uint8_t)(v >> 8) }; bput(b, t, 2); }
+static void bput_u8(SoiBuf *b, uint8_t v)   { bput(b, &v, 1); }
+
+/* ---------- lifecycle ---------- */
+size_t soi_world_size(void) { return sizeof(struct SoiWorld); }
+
+static void zero_world(SoiWorld *w)
+{
+    uint8_t *p = (uint8_t *)w; size_t i;
+    for (i = 0; i < sizeof(*w); i++) p[i] = 0;
+}
+
+void soi_world_init(SoiWorld *w, uint32_t seed)
+{
+    int i;
+    zero_world(w);
+    soi_rng_seed(w, seed ? seed : 1u);   /* Toolbox default seed = 1 */
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        w->players[i].lives = 3;         /* TODO(oracle): starting lives */
+        w->players[i].block_type = 1;
+    }
+}
+
+void soi_set_seed(SoiWorld *w, uint32_t seed) { soi_rng_seed(w, seed ? seed : 1u); }
+
+/* ---------- BORD level loader (docs BORD §, FUN_1002b448/FUN_1001a348) ---------- */
+static void place_player(SoiWorld *w, int idx, int col, int row)
+{
+    SoiPlayer *p = &w->players[idx];
+    p->active = 1; p->alive = 1; p->eliminated = 0;
+    p->x = soi_cell_x(col); p->y = soi_cell_y(row);
+    p->facing = 1;                 /* face right */
+    p->move_ctr = 0; p->run_dir = 0; p->in_air = 0; p->ground_state = SOI_ST_IDLE;
+    p->spawn_x = (int16_t)p->x; p->spawn_y = (int16_t)p->y;
+    p->respawn_timer = 0;
+    p->block_type = 1;
+}
+
+int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
+{
+    size_t off;
+    int bonus;
+    if (!bord || len < 0x1A) return 0;
+
+    /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
+    place_player(w, 1, be16(bord + 0x06), be16(bord + 0x08));
+    place_player(w, 2, be16(bord + 0x0A), be16(bord + 0x0C));
+    w->pct_ultrabuster = (int16_t)be16(bord + 0x10);
+    w->thrown_badguy   = (int16_t)be16(bord + 0x12);
+    w->pct_badguy      = (int16_t)be16(bord + 0x14);
+    bonus = (int)be16(bord + 0x16);
+    if (bonus <= 0 || bonus == 0x3A20) bonus = 5000;   /* loader default */
+    w->bonus_timer = (int16_t)bonus;
+    w->players[1].bonus_time = bonus;
+    w->players[2].bonus_time = bonus;
+
+    /* body: tile-placement records from 0x18, terminated by tile_type == 0.
+     * record = [tile_type:u32 BE][ (row:u8, col:u8) pairs... ][ 0x64 0x64 ] */
+    off = 0x18;
+    while (off + 4 <= len) {
+        uint32_t tile = be32(bord + off);
+        off += 4;
+        if (tile == 0) break;               /* end of tile section */
+        while (off + 2 <= len) {
+            uint8_t a = bord[off], b = bord[off + 1];
+            off += 2;
+            if (a == 100 || b == 100) break; /* (100,100) sentinel */
+            /* Record coords are (col, row): the first byte is the COLUMN (X,
+             * 0-18) and the second is the ROW (Y, 0-12). The grid is 19 wide x
+             * 13 tall (landscape) -- the 0x3c-stride live-grid dimension (from
+             * X) spans 19, Y spans 13 (asm FUN_1002b708 / FUN_10012348). The
+             * BORD cell value already carries its flag bits (0x2xx/0x3xx solid,
+             * 0x9xx goodie, 0x197 background); store it verbatim. */
+            soi_set_cell(w, a, b, tile);
+        }
+    }
+    w->level_loaded = 1;
+    /* Level objective (FIRST-DRAFT, TODO(oracle)): clear all treasure placed on
+     * the board (coins/gems/gold). Count it now; pickups decrement it. */
+    {
+        int rr, cc, n = 0;
+        for (rr = 0; rr < SOI_GRID_ROWS; rr++)
+            for (cc = 0; cc < SOI_GRID_COLS; cc++) {
+                unsigned tt = SOI_CELL_TYPE(w->cell[rr][cc]);
+                if (tt == 0x0A || tt == 0x17 || tt == 0x18 || tt == 0x19) n++;
+            }
+        w->goodies_total = (int16_t)n;
+        w->goodies_left = (int16_t)n;
+    }
+    return 1;
+}
+
+/* ---------- tick ---------- */
+void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
+{
+    int i;
+    w->tick++;
+    w->frame_parity ^= 1u;
+    w->sfx_count = 0;   /* drop last frame's sound events; this tick refills */
+
+    /* Input is sampled every 2 frames (CONFIRMED, docs runtime-structures §1):
+     * the game loop refreshes the input latch on alternate frames while physics
+     * runs every frame. Latch on odd ticks; reuse on even. */
+    if ((w->tick & 1u) != 0u) {
+        w->players[1].input = p1_input;
+        w->players[2].input = p2_input;
+    }
+
+    for (i = 0; i < SOI_MAX_PLAYERS; i++)
+        if (w->players[i].invuln > 0) w->players[i].invuln--;   /* tick i-frames */
+    for (i = 0; i < SOI_MAX_PLAYERS; i++)
+        if (w->players[i].fire_cd > 0) w->players[i].fire_cd--; /* tick fire cd */
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {                      /* respawn timer */
+        SoiPlayer *rp = &w->players[i];
+        if (rp->active && !rp->alive && !rp->eliminated && rp->respawn_timer > 0) {
+            if (--rp->respawn_timer == 0) {
+                rp->x = rp->spawn_x; rp->y = rp->spawn_y;
+                rp->alive = 1; rp->in_air = 0; rp->move_ctr = 0; rp->run_dir = 0;
+                rp->ground_state = SOI_ST_IDLE;
+                rp->invuln = 90;                                /* spawn grace */
+            }
+        }
+    }
+
+    soi_player_update(w, 1);
+    soi_player_update(w, 2);
+    soi_enemies_update(w);
+    soi_projectiles_update(w);
+
+    /* round bonus countdown (pacing per frame). Reaching 0 kills the players
+     * (the on-screen "Bonus" is a survival timer). */
+    if (w->bonus_timer > 0) {
+        w->bonus_timer--;
+        if (w->bonus_timer == 0) {
+            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+                SoiPlayer *p = &w->players[i];
+                if (p->active && p->alive && !p->eliminated) {
+                    p->alive = 0;
+                    if (--p->lives < 1) p->eliminated = 1;
+                    else p->respawn_timer = 90;
+                }
+            }
+            /* TODO(oracle): exact expiry behaviour (per-player timer vs round). */
+        }
+    }
+
+    /* Procedural enemy spawning from the level params + RNG (first draft;
+     * rate/placement TODO(oracle)). Roughly once every ~120 frames, roll
+     * pct_badguy against 100 and spawn the level's thrown_badguy type up top. */
+    if (w->level_loaded && (w->tick % 120u) == 0u && w->pct_badguy > 0) {
+        if (soi_rand_range(w, 100) <= w->pct_badguy) {
+            SoiEnemyType t = (SoiEnemyType)w->thrown_badguy;
+            if (t <= SOI_ENEMY_NONE || t >= SOI_ENEMY_TYPE_COUNT) t = SOI_ENEMY_ANT;
+            soi_enemy_spawn(w, t, soi_rand_range(w, SOI_GRID_COLS) - 1, 0);
+        }
+    }
+    /* TODO(oracle): the level-complete condition. */
+}
+
+/* ---------- accessors ---------- */
+static const SoiPlayer *pget(const SoiWorld *w, int i)
+{
+    if (i < 0 || i >= SOI_MAX_PLAYERS) i = 0;
+    return &w->players[i];
+}
+int32_t  soi_player_score(const SoiWorld *w, int p) { return pget(w, p)->score; }
+int      soi_player_lives(const SoiWorld *w, int p) { return pget(w, p)->lives; }
+int      soi_player_alive(const SoiWorld *w, int p) { return pget(w, p)->active && pget(w, p)->alive && !pget(w, p)->eliminated; }
+int      soi_game_over(const SoiWorld *w)
+{
+    int i, any = 0;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        if (!w->players[i].active) continue;
+        any = 1;
+        if (!w->players[i].eliminated) return 0;   /* someone is still in */
+    }
+    return any;   /* over only if there were active players and all are out */
+}
+int      soi_level_complete(const SoiWorld *w)
+{
+    /* WIN = a player exited through the DOOR carrying the KEY (CONFIRMED docs §0:
+     * key cell 0x0B, door bit 0x800). soi_pickup_check sets has_key=2 on exit. */
+    int i;
+    if (!w->level_loaded) return 0;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++)
+        if (w->players[i].active && w->players[i].has_key == 2) return 1;
+    return 0;
+}
+int      soi_player_x(const SoiWorld *w, int p)     { return pget(w, p)->x; }
+int      soi_player_y(const SoiWorld *w, int p)     { return pget(w, p)->y; }
+int      soi_player_arrows(const SoiWorld *w, int p) { return pget(w, p)->arrows; }
+int      soi_player_shield(const SoiWorld *w, int p) { return pget(w, p)->shield; }
+int      soi_player_facing(const SoiWorld *w, int p) { return pget(w, p)->facing; }
+int      soi_player_invuln(const SoiWorld *w, int p) { return pget(w, p)->invuln; }
+int      soi_player_has_key(const SoiWorld *w, int p) { return pget(w, p)->has_key; }
+int      soi_goodies_total(const SoiWorld *w)       { return w->goodies_total; }
+int      soi_goodies_left(const SoiWorld *w)        { return w->goodies_left; }
+int      soi_bonus_time(const SoiWorld *w)          { return w->bonus_timer; }
+uint32_t soi_tick_count(const SoiWorld *w)          { return w->tick; }
+uint32_t soi_grid_cell(const SoiWorld *w, int c, int r) { return soi_get_cell(w, c, r); }
+int      soi_enemy_count(const SoiWorld *w)
+{
+    int i, n = 0;
+    for (i = 0; i < SOI_MAX_ENEMIES; i++) if (w->enemies[i].active) n++;
+    return n;
+}
+int      soi_projectile_count(const SoiWorld *w)
+{
+    int i, n = 0;
+    for (i = 0; i < SOI_MAX_PROJECTILES; i++) if (w->projectiles[i].active) n++;
+    return n;
+}
+
+/* ---- sound-event queue ---- */
+void soi_sfx_emit(SoiWorld *w, int id)
+{
+    if (w->sfx_count < SOI_SFX_QUEUE_MAX) w->sfx_queue[w->sfx_count++] = (uint8_t)id;
+}
+int soi_sfx_count(const SoiWorld *w) { return w->sfx_count; }
+int soi_sfx_get(const SoiWorld *w, int i)
+{
+    return (i >= 0 && i < w->sfx_count) ? w->sfx_queue[i] : 0;
+}
+
+/* per-entity accessors (bounds-checked; inactive/OOB slots read as 0). */
+static const SoiEnemy *eget(const SoiWorld *w, int i)
+{
+    static const SoiEnemy dead;   /* zeroed */
+    return (i >= 0 && i < SOI_MAX_ENEMIES) ? &w->enemies[i] : &dead;
+}
+int      soi_enemy_active(const SoiWorld *w, int i) { return eget(w, i)->active; }
+int      soi_enemy_type(const SoiWorld *w, int i)   { return eget(w, i)->type; }
+int      soi_enemy_x(const SoiWorld *w, int i)      { return eget(w, i)->x; }
+int      soi_enemy_y(const SoiWorld *w, int i)      { return eget(w, i)->y; }
+int      soi_enemy_dir(const SoiWorld *w, int i)    { return eget(w, i)->dir; }
+
+static const SoiProjectile *prget(const SoiWorld *w, int i)
+{
+    static const SoiProjectile none;   /* zeroed */
+    return (i >= 0 && i < SOI_MAX_PROJECTILES) ? &w->projectiles[i] : &none;
+}
+int      soi_projectile_active(const SoiWorld *w, int i) { return prget(w, i)->active; }
+int      soi_projectile_x(const SoiWorld *w, int i)      { return prget(w, i)->x; }
+int      soi_projectile_y(const SoiWorld *w, int i)      { return prget(w, i)->y; }
+
+/* ---------- canonical serialize (little-endian, field-by-field) ---------- */
+size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
+{
+    SoiBuf b; int i, c, r;
+    b.p = out; b.cap = cap; b.len = 0;
+
+    bput_u32(&b, w->tick);
+    bput_u32(&b, w->rng_seed);
+    bput_i32(&b, w->bonus_timer);
+    bput_u8(&b, w->frame_parity);
+    bput_u8(&b, w->enemies_frozen);
+    bput_u16(&b, (uint16_t)w->pct_ultrabuster);
+    bput_u16(&b, (uint16_t)w->thrown_badguy);
+    bput_u16(&b, (uint16_t)w->pct_badguy);
+    bput_u16(&b, (uint16_t)w->goodies_total);
+    bput_u16(&b, (uint16_t)w->goodies_left);
+
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        const SoiPlayer *p = &w->players[i];
+        bput_u8(&b, p->active); bput_u8(&b, p->alive); bput_u8(&b, p->eliminated);
+        bput_u8(&b, p->ground_state); bput_u8(&b, p->in_air); bput_u8(&b, p->block_type);
+        bput_u8(&b, p->has_key); bput_u8(&b, p->input);
+        bput_i32(&b, p->x); bput_i32(&b, p->y);
+        bput_u16(&b, (uint16_t)p->facing); bput_u16(&b, (uint16_t)p->move_ctr);
+        bput_u16(&b, (uint16_t)p->run_dir); bput_i32(&b, p->run_x0);
+        bput_u16(&b, (uint16_t)p->jump_t); bput_u16(&b, (uint16_t)p->launch_y);
+        bput_u16(&b, (uint16_t)p->lives);
+        bput_i32(&b, p->score); bput_i32(&b, p->bonus_time);
+        bput_u16(&b, (uint16_t)p->shield); bput_u16(&b, (uint16_t)p->arrows);
+        bput_u16(&b, (uint16_t)p->invuln); bput_u16(&b, (uint16_t)p->fire_cd);
+        bput_u16(&b, (uint16_t)p->spawn_x); bput_u16(&b, (uint16_t)p->spawn_y);
+        bput_u16(&b, (uint16_t)p->respawn_timer);
+    }
+    for (i = 0; i < SOI_MAX_ENEMIES; i++) {
+        const SoiEnemy *e = &w->enemies[i];
+        bput_u8(&b, e->active); bput_u8(&b, e->type); bput_u8(&b, e->dir); bput_u8(&b, e->state);
+        bput_i32(&b, e->x); bput_i32(&b, e->y);
+        bput_u16(&b, (uint16_t)e->vx); bput_u16(&b, (uint16_t)e->vy);
+        bput_u16(&b, (uint16_t)e->points); bput_u8(&b, e->owner);
+        bput_u16(&b, e->anim);
+    }
+    for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
+        const SoiProjectile *pr = &w->projectiles[i];
+        bput_u8(&b, pr->active); bput_u8(&b, pr->owner);
+        bput_i32(&b, pr->x); bput_i32(&b, pr->y);
+        bput_u16(&b, (uint16_t)pr->vx); bput_u16(&b, (uint16_t)pr->vy);
+    }
+    for (r = 0; r < SOI_GRID_ROWS; r++)
+        for (c = 0; c < SOI_GRID_COLS; c++)
+            bput_u32(&b, w->cell[r][c]);
+
+    return b.len;
+}
+
+/* ---------- FNV-1a 64-bit over the serialized logical state ---------- */
+uint64_t soi_state_hash(const SoiWorld *w)
+{
+    uint8_t buf[8192];
+    size_t n = soi_serialize(w, buf, sizeof(buf));
+    uint64_t h = 1469598103934665603ULL;      /* FNV offset basis */
+    size_t i;
+    if (n > sizeof(buf)) n = sizeof(buf);      /* fits comfortably for now */
+    for (i = 0; i < n; i++) {
+        h ^= buf[i];
+        h *= 1099511628211ULL;                 /* FNV prime */
+    }
+    return h;
+}

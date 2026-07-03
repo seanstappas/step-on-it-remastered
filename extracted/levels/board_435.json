@@ -1,0 +1,1016 @@
+{
+ "name": "Board 435",
+ "bonus_time": 5000,
+ "grid": {
+  "w": 13,
+  "h": 19,
+  "cells": [
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 2308,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 2311,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   },
+   {
+    "type": 407,
+    "block": "permanent"
+   },
+   {
+    "type": 0,
+    "block": "none"
+   }
+  ]
+ },
+ "player_starts": [
+  {
+   "player": 1,
+   "x": 8,
+   "y": 0
+  },
+  {
+   "player": 2,
+   "x": 10,
+   "y": 0
+  }
+ ],
+ "challenge": {
+  "percent_ultrabuster": 0,
+  "thrown_badguy": "none",
+  "percent_badguy": 0
+ },
+ "spawns": []
+}

@@ -1,0 +1,20 @@
+{
+ "source": "raw_game\\Step On It\u2122",
+ "generated_at": "2026-07-03T02:13:24.413077+00:00",
+ "levels": {
+  "count": 152,
+  "dir": "levels/"
+ },
+ "palette": {
+  "colours": 256,
+  "source_clut_id": 1000
+ },
+ "sprites": {
+  "sssf_count": 30,
+  "note": "pixel RLE decode is partial (docs \u00a7sssf); use decode_assets.py for previews"
+ },
+ "sounds": {
+  "count": 56,
+  "note": "snd->WAV needs resource_dasm (Phase 3)"
+ }
+}
