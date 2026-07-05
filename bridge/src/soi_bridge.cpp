@@ -44,10 +44,13 @@ bool    SoiCore::level_complete() const        { return soi_level_complete(w()) 
 int64_t SoiCore::player_x(int64_t p) const     { return soi_player_x(w(), (int)p); }
 int64_t SoiCore::player_y(int64_t p) const     { return soi_player_y(w(), (int)p); }
 int64_t SoiCore::player_arrows(int64_t p) const { return soi_player_arrows(w(), (int)p); }
+int64_t SoiCore::player_balls(int64_t p) const { return soi_player_balls(w(), (int)p); }
 int64_t SoiCore::player_shield(int64_t p) const { return soi_player_shield(w(), (int)p); }
 int64_t SoiCore::player_facing(int64_t p) const { return soi_player_facing(w(), (int)p); }
 int64_t SoiCore::player_invuln(int64_t p) const { return soi_player_invuln(w(), (int)p); }
 int64_t SoiCore::player_has_key(int64_t p) const { return soi_player_has_key(w(), (int)p); }
+int64_t SoiCore::player_state(int64_t p) const { return soi_player_state(w(), (int)p); }
+int64_t SoiCore::player_movectr(int64_t p) const { return soi_player_movectr(w(), (int)p); }
 int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); }
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
 int64_t SoiCore::bonus_time() const            { return soi_bonus_time(w()); }
@@ -64,9 +67,13 @@ int64_t SoiCore::enemy_type(int64_t i) const   { return soi_enemy_type(w(), (int
 int64_t SoiCore::enemy_x(int64_t i) const      { return soi_enemy_x(w(), (int)i); }
 int64_t SoiCore::enemy_y(int64_t i) const      { return soi_enemy_y(w(), (int)i); }
 int64_t SoiCore::enemy_dir(int64_t i) const    { return soi_enemy_dir(w(), (int)i); }
+int64_t SoiCore::enemy_fire_cd(int64_t i) const { return soi_enemy_fire_cd(w(), (int)i); }
 bool    SoiCore::projectile_active(int64_t i) const { return soi_projectile_active(w(), (int)i) != 0; }
 int64_t SoiCore::projectile_x(int64_t i) const { return soi_projectile_x(w(), (int)i); }
 int64_t SoiCore::projectile_y(int64_t i) const { return soi_projectile_y(w(), (int)i); }
+bool    SoiCore::projectile_hostile(int64_t i) const { return soi_projectile_hostile(w(), (int)i) != 0; }
+int64_t SoiCore::projectile_kind(int64_t i) const { return soi_projectile_kind(w(), (int)i); }
+int64_t SoiCore::projectile_src_type(int64_t i) const { return soi_projectile_src_type(w(), (int)i); }
 
 int64_t SoiCore::state_hash() const
 {
@@ -98,10 +105,13 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("player_x", "player"), &SoiCore::player_x);
     ClassDB::bind_method(D_METHOD("player_y", "player"), &SoiCore::player_y);
     ClassDB::bind_method(D_METHOD("player_arrows", "player"), &SoiCore::player_arrows);
+    ClassDB::bind_method(D_METHOD("player_balls", "player"), &SoiCore::player_balls);
     ClassDB::bind_method(D_METHOD("player_shield", "player"), &SoiCore::player_shield);
     ClassDB::bind_method(D_METHOD("player_facing", "player"), &SoiCore::player_facing);
     ClassDB::bind_method(D_METHOD("player_invuln", "player"), &SoiCore::player_invuln);
     ClassDB::bind_method(D_METHOD("player_has_key", "player"), &SoiCore::player_has_key);
+    ClassDB::bind_method(D_METHOD("player_state", "player"), &SoiCore::player_state);
+    ClassDB::bind_method(D_METHOD("player_movectr", "player"), &SoiCore::player_movectr);
     ClassDB::bind_method(D_METHOD("goodies_total"), &SoiCore::goodies_total);
     ClassDB::bind_method(D_METHOD("goodies_left"), &SoiCore::goodies_left);
     ClassDB::bind_method(D_METHOD("bonus_time"), &SoiCore::bonus_time);
@@ -118,9 +128,13 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("enemy_x", "i"), &SoiCore::enemy_x);
     ClassDB::bind_method(D_METHOD("enemy_y", "i"), &SoiCore::enemy_y);
     ClassDB::bind_method(D_METHOD("enemy_dir", "i"), &SoiCore::enemy_dir);
+    ClassDB::bind_method(D_METHOD("enemy_fire_cd", "i"), &SoiCore::enemy_fire_cd);
     ClassDB::bind_method(D_METHOD("projectile_active", "i"), &SoiCore::projectile_active);
     ClassDB::bind_method(D_METHOD("projectile_x", "i"), &SoiCore::projectile_x);
     ClassDB::bind_method(D_METHOD("projectile_y", "i"), &SoiCore::projectile_y);
+    ClassDB::bind_method(D_METHOD("projectile_hostile", "i"), &SoiCore::projectile_hostile);
+    ClassDB::bind_method(D_METHOD("projectile_kind", "i"), &SoiCore::projectile_kind);
+    ClassDB::bind_method(D_METHOD("projectile_src_type", "i"), &SoiCore::projectile_src_type);
 
     ClassDB::bind_method(D_METHOD("state_hash"), &SoiCore::state_hash);
     ClassDB::bind_method(D_METHOD("serialize"), &SoiCore::serialize);

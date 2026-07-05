@@ -133,21 +133,28 @@ input latch and start an action. `+0x30` (e0) encodes direction+facing
   **squashes any enemy there** (awards `enemy+0x42` points to `player+0x3c`). Destroy
   (`FUN_100279c4`): skips permanent, clears the cell or reveals the `0x1000` payload
   (payload in the upper 16 bits) as the new cell.
-- **Level-load → support pipeline — CONFIRMED (2026-07-03, resolves the old
-  "tile_type → property" TODO):** BORD tile types are small ids (`≤ 0x97`) and carry
-  **NO** flag bits in the file. Three stages:
-  1. `FUN_1001a348` parses the BORD body and stores the **raw** tile id into a temp
-     grid (base `+0x7134`, stride `0x34`) — no flags.
-  2. `FUN_1002b708` copies that temp grid **verbatim** into the live physics grid
-     (base `+0x6bf8`, stride `0x3c`), then sets the **border ring to `0x300`**
-     (permanent wall).
-  3. Every placed tile is (re)stamped via the set-cell/draw routine **`FUN_1002754c`,
-     which ALWAYS `ori`s bit `0x200`** onto the cell (or `0x300` in its alt branch).
-     **This is what makes loaded platform tiles standable.** ⇒ In the port the BORD
-     loader ORs `SOI_CELL_SUPPORTIVE` (0x200) onto every placed tile. **Residual:**
-     the exact per-type split (which ids get `0x300` permanent vs `0x200` destructible
-     vs are non-solid pickups, and which id is the `0x800` DOOR) still needs the
-     per-type property table / video validation.
+- **Level-load → support pipeline — CONFIRMED (2026-07-03), CORRECTED (2026-07-03):**
+  The extracted BORD files **already carry the flag bits** in each tile's `u32`
+  (verified with `tools/dump_board_grid.py`): `0x2xx` = supportive/destructible block,
+  `0x3xx` = permanent+supportive, `0x8xx`/`0x9xx` = goodies/coins (bit `0x800`, **not**
+  supportive), `0x197` = background/air. **Low byte = sprite/block type.** Stages:
+  1. `FUN_1001a348` parses the BORD body and stores each tile `u32` **verbatim** into a
+     temp grid (base `+0x7134`, stride `0x34`).
+  2. `FUN_1002b708` copies the temp grid **verbatim** into the live physics grid
+     (base `+0x6bf8`, stride `0x3c`), then sets the **border ring to `0x300`**.
+  3. `FUN_1002754c` (set-cell/draw) `ori`s `0x200`/`0x300` **only when the *player*
+     stamps/creates a block** — loaded tiles keep their authored flags.
+  ⇒ **The port loader stores the BORD `u32` as-is** (earlier belief that it must OR
+  `0x200` onto every tile was WRONG — that turned coins and background into floors).
+  Coin/door disambiguation: door = bit `0x800` with low type `≤ 3`; coins/goodies =
+  `0x800` with higher low bytes (silver `0x0A`, gold `0x17`, gold-bars `0x19`).
+  **Rendering: block/goody sprite frame = `tile_low_byte + 1`** (see
+  [graphics-and-audio.md](graphics-and-audio.md) §1a-SHEETS).
+- **Grid orientation — CONFIRMED LANDSCAPE 19 wide × 13 tall.** The `0x3c`-stride
+  live-grid dimension (`col`, from X) spans **19**; Y (`row`) spans **13**
+  (`FUN_1002b708`/`FUN_10012348`). BORD record coords are **(col, row)**: first byte =
+  column 0-18, second = row 0-12. Playfield 608×416 px fits the 640×480 screen under a
+  48-px HUD. (The port was initially transposed to 13×19; fixed 2026-07-03.)
 - **WIN = door entry (`FUN_1002bc64`):** door cells have bit **`0x800`** and low type
   **0-3**; entering one matching the player (`type == player_id+1 || type == 1`) sets
   `player+0x129 = 1` + SFX `0x27`, which drives completion (`DAT_1003ad0e` via

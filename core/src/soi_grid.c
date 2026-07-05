@@ -82,7 +82,34 @@ void soi_pickup_check(SoiWorld *w, int player)
      * docs §0). Coins/goodies also carry 0x800 but with a higher low type, so
      * gate on t <= 3 to avoid swallowing them here. */
     if ((c & SOI_CELL_DOOR) && t <= 3u) {
-        if (p->has_key) p->has_key = 2;   /* 2 = exited through the door */
+        if (p->has_key == 1) {            /* first exit through the door: level won */
+            p->has_key = 2;
+            p->score += w->bonus_timer;   /* remaining round bonus -> score (FUN_10015714) */
+            w->bonus_timer = 0;
+            soi_sfx_emit(w, SOI_SFX_POWERUP);
+        }
+        return;
+    }
+    /* COLORED KEY (low 7/8/9 with 0x800) -- the real boards' key/exit system
+     * (FUN_1002bc64). No board ships a plain 0x0B key or a pre-open 0x80x door;
+     * instead each board pairs a colored key (0x0907/8/9) with matching LOCK
+     * cells (0x0904/5/6, low = key-3). Collecting the key holds it and sweeps the
+     * grid, turning every matching lock into an OPENED DOOR (cell = low + 0x8fd
+     * => 0x901/0x902/0x903 = low 1/2/3 + 0x800). Stepping on an opened door then
+     * hits the DOOR branch above and completes the level. Key 7 is universal;
+     * 8/9 are per-player, but low-1 doors (from key 7) are universal exits. */
+    if ((c & SOI_CELL_DOOR) && t >= 7u && t <= 9u) {
+        int cc, rr;
+        p->has_key = 1;                              /* the key is now held */
+        for (rr = 0; rr < SOI_GRID_ROWS; rr++)
+            for (cc = 0; cc < SOI_GRID_COLS; cc++) {
+                uint32_t lc = w->cell[rr][cc];
+                unsigned lt = SOI_CELL_TYPE(lc);
+                if ((lc & SOI_CELL_DOOR) && lt + 3u == t)
+                    w->cell[rr][cc] = lt + 0x8FDu;   /* lock -> opened door (asm) */
+            }
+        soi_sfx_emit(w, SOI_SFX_KEY);                /* colored-key collect (evt 0x14 -> 17661 "Announce") */
+        w->cell[prow][pcol] = SOI_CELL_EMPTY;        /* consume the key */
         return;
     }
     if (t == 0) return;
@@ -90,7 +117,11 @@ void soi_pickup_check(SoiWorld *w, int player)
     /* Transporters (0x1A-0x23 = 5 IN/OUT pairs): stepping on an IN marker zaps
      * the player to its paired OUT marker (FUN_1002b9bc). These are permanent
      * infrastructure — handled before the permanent guard and never consumed.
-     * Pairing (IN = even code, OUT = the next odd code) is HYPOTHESIS TODO(oracle). */
+     * Pairing CONFIRMED (decompiled FUN_1002bc64: five hardcoded blocks scan the
+     * whole grid for code IN+1 and teleport to the FIRST match; even = IN, the next
+     * odd = OUT; OUT tiles are inert; no row constraint. The asm also gates on the
+     * player being fully within one column before firing — our pickup only runs
+     * when the player is cell-aligned, so that gate is already satisfied). */
     if (t >= 0x1Au && t <= 0x23u) {
         if ((t & 1u) == 0u) {                 /* even = IN: seek the paired OUT */
             unsigned out_type = t + 1u;
@@ -124,12 +155,12 @@ void soi_pickup_check(SoiWorld *w, int player)
         case 0x17: p->score += 1000; break;   /* gold coin     (CONFIRMED) */
         case 0x18: p->score += 2000; break;   /* gem           (CONFIRMED) */
         case 0x19: p->score += 5000; break;   /* gold bars     (CONFIRMED) */
-        case 0x10: p->lives += 1;    break;   /* magic ball    TODO(oracle) */
-        case 0x11: p->arrows += 1;   break;   /* arrow         TODO(oracle) */
-        case 0x12: p->shield += 1;   break;   /* shield pickup TODO(oracle) */
-        case 0x2E:                            /* clock: ADD bonus time (cap 30000) */
-            w->bonus_timer += 600;
-            if (w->bonus_timer > 30000) w->bonus_timer = 30000;
+        case 0x10: p->shield += 1;   break;   /* shield/protective pickup (asm FUN_1000e9c8 -> player +0x46) */
+        case 0x11: p->arrows += 1;   break;   /* Magic Arrow ammo (asm FUN_1000eb34 -> +0x4c, arrow-fire reads +0x4c) */
+        case 0x12: p->balls += 1;    break;   /* Magic Ball ammo (asm FUN_1000ec50 -> +0x4a, ball-fire reads +0x4a) */
+        case 0x2E:                            /* clock (asm FUN_1002bc64 -> _DAT_1003b294 = 600):
+                                               * SLOW every nasty to half speed for ~10s. */
+            w->enemy_slow = 600;
             break;
         case 0x13: case 0x14: case 0x15: case 0x16: {
             /* time bonuses x1..x4 = +2500/5000/7500/10000, cap 30000 (CONFIRMED,
@@ -146,16 +177,42 @@ void soi_pickup_check(SoiWorld *w, int player)
             break;
         }
         case 0x30: p->invuln = 600; break;    /* shield (activate): timed i-frames */
+        case 0x31: {                          /* shoes/turtles: tame every real nasty
+                                               * so each is defeated for this player
+                                               * (FUN_1000543c sets enemy +0x88). */
+            int e;
+            for (e = 0; e < SOI_MAX_ENEMIES; e++)
+                if (w->enemies[e].active) w->enemies[e].claimed = (uint8_t)player;
+            break;
+        }
         case 0x32: p->lives += 1;    break;   /* 1UP           (CONFIRMED) */
         default:
-            /* 0x1a-0x23 transporters, 0x24-0x2d stop/go handled above;
-             * 0x31 shoes/turtles slows enemies (FUN_1000543c) — TODO. */
+            /* 0x1a-0x23 transporters, 0x24-0x2d stop/go handled above. */
             return;
     }
-    /* a collected pickup clears its cell (non-permanent). */
-    soi_sfx_emit(w, (t == 0x0A || t == 0x17 || t == 0x18 || t == 0x19) ? SOI_SFX_COIN
-                    : (t == 0x2F) ? SOI_SFX_THUNDER : SOI_SFX_POWERUP);
-    if ((t == 0x0A || t == 0x17 || t == 0x18 || t == 0x19) && w->goodies_left > 0)
-        w->goodies_left--;                /* treasure collected (level objective) */
+    /* SFX: coins play a per-tier sound (asm FUN_1002bc64 events: silver 0x15,
+     * gold 0x1c, gem 0x1d, bars 0x1e); everything else uses the generic chime. */
+    if (t == 0x0A || t == 0x17 || t == 0x18 || t == 0x19) {
+        soi_sfx_emit(w, (t == 0x17) ? SOI_SFX_COIN_GOLD :
+                        (t == 0x18) ? SOI_SFX_COIN_GEM  :
+                        (t == 0x19) ? SOI_SFX_COIN_BARS : SOI_SFX_COIN);
+        if (w->goodies_left > 0) w->goodies_left--;   /* treasure collected (level objective) */
+    } else {
+        SoiSfx s;
+        switch (t) {                                   /* per-goody sounds (FUN_1002bc64, ch 10) */
+            case 0x10: s = SOI_SFX_PICKUP_SHIELD; break;   /* shield pickup (evt 0x18 -> 31429) */
+            case 0x11: s = SOI_SFX_PICKUP_ARROW;  break;   /* arrow ammo    (evt 0x19 -> 3001)  */
+            case 0x12: s = SOI_SFX_PICKUP_BALL;   break;   /* ball ammo     (evt 0x1a -> 24336) */
+            case 0x13: case 0x14: case 0x15: case 0x16:
+                       s = SOI_SFX_PICKUP_TIME;   break;   /* time bonus    (evt 0x1b -> 7119)  */
+            case 0x2E: s = SOI_SFX_CLOCK;         break;   /* clock (slow)  (evt 0x2B -> 1005)  */
+            case 0x2F: s = SOI_SFX_THUNDER;       break;   /* thunderballs                     */
+            case 0x30: s = SOI_SFX_SHIELD_ON;     break;   /* shield on     (evt 0x29 -> 1003)  */
+            case 0x31: s = SOI_SFX_SHOES;         break;   /* shoes/turtles (evt 0x2a -> 1004)  */
+            case 0x32: s = SOI_SFX_ONEUP;         break;   /* 1-UP          (evt 0x28 -> 1002)  */
+            default:   s = SOI_SFX_POWERUP;       break;
+        }
+        soi_sfx_emit(w, s);
+    }
     w->cell[prow][pcol] = SOI_CELL_EMPTY; /* a collected goodie clears its cell */
 }

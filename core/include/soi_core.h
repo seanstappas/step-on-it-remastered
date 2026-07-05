@@ -61,6 +61,12 @@ typedef enum {
     SOI_ENEMY_ROBO,     /* 1000 */
     SOI_ENEMY_WALKER,   /* 1250 */
     SOI_ENEMY_TEETH,    /* 1500 */
+    /* Extended roster: Cannon+Spinner complete the 13-creature in-game Help
+     * roster; Gargoyle+Knight are the two extra sprite sets. Points TODO(oracle). */
+    SOI_ENEMY_CANNON,
+    SOI_ENEMY_SPINNER,
+    SOI_ENEMY_GARGOYLE,
+    SOI_ENEMY_KNIGHT,
     SOI_ENEMY_TYPE_COUNT
 } SoiEnemyType;
 
@@ -74,11 +80,40 @@ typedef enum {
     SOI_SFX_COIN,
     SOI_SFX_ENEMY_KILL,
     SOI_SFX_PLAYER_HIT,
-    SOI_SFX_JUMP,
+    SOI_SFX_JUMP,         /* reserved/unused: the jump launch is silent in the original */
     SOI_SFX_FIRE,
     SOI_SFX_TELEPORT,
     SOI_SFX_POWERUP,
     SOI_SFX_THUNDER,
+    SOI_SFX_COIN_GOLD,    /* gold coin 0x17 (asm event 0x1c) */
+    SOI_SFX_COIN_GEM,     /* gem 0x18       (asm event 0x1d) */
+    SOI_SFX_COIN_BARS,    /* gold bars 0x19 (asm event 0x1e) */
+    SOI_SFX_BALL,         /* Magic Ball fire (asm event 1 "Whip"; distinct from the arrow) */
+    /* Per-source sounds recovered from the binary event->snd table (DAT_10037074). */
+    SOI_SFX_CANNON_FIRE,  /* Cannon fire  (asm event 0x10 -> snd 12863 "Flens") */
+    SOI_SFX_KILL_WHEELIE, /* Wheelie kill (asm event 0x0b -> 4704  "Gabing") */
+    SOI_SFX_KILL_HAMMER,  /* Hammer kill  (asm event 0x05 -> 2224  "hammer") */
+    SOI_SFX_KILL_BEANIE,  /* Beanie kill  (asm event 0x07 -> 25564 "knock") */
+    SOI_SFX_KILL_ROBO,    /* Robo kill    (asm event 0x0a -> 18366 "Bell") */
+    SOI_SFX_KILL_WALKER,  /* Walker kill  (asm event 0x0c -> 30612 "metal crash") */
+    SOI_SFX_KILL_ANT,     /* Ant kill     (asm event 0x0e -> 1769  "Cow bell") */
+    SOI_SFX_KILL_OSTRICH, /* Ostrich kill (asm event 0x0f -> 1628  "bike horn") */
+    SOI_SFX_KILL_HIPPO,   /* Hippo kill   (asm event 0x09 -> 18221 "Moof") */
+    SOI_SFX_KILL_PIGGY,   /* Piggy kill   (asm event 0x0d -> 400   "Train whistle") */
+    SOI_SFX_KILL_SMILEY,  /* Smiley kill  (asm event 0x06 -> 404   "Baby seagull") */
+    SOI_SFX_KILL_TEETH,   /* Teeth kill   (asm event 0x08 -> 32129 "Honk") */
+    SOI_SFX_BLOCK_CRACK,  /* head-bonk 1st hit -> crack (asm event 0x23 -> 13478) */
+    SOI_SFX_BLOCK_BREAK,  /* head-bonk 2nd hit -> break (asm event 0x24 -> 29940 "Smack") */
+    SOI_SFX_ROBO_PUNCH,   /* Robo smashes a breakable block (asm event 0x11 -> 15960 "Metal") */
+    SOI_SFX_CLOCK,        /* Clock goody: slow every nasty (asm event 0x2B -> 1005 "slow") */
+    SOI_SFX_PICKUP_BALL,  /* Magic Ball ammo goody 0x12  (asm event 0x1a -> 24336 "slide whistle") */
+    SOI_SFX_PICKUP_ARROW, /* Magic Arrow ammo goody 0x11 (asm event 0x19 -> 3001  "rooster") */
+    SOI_SFX_PICKUP_SHIELD,/* shield pickup goody 0x10    (asm event 0x18 -> 31429 "oh la la") */
+    SOI_SFX_PICKUP_TIME,  /* time bonus x1-4  (asm event 0x1b -> 7119  "space balls") */
+    SOI_SFX_ONEUP,        /* 1-UP             (asm event 0x28 -> 1002  "zap") */
+    SOI_SFX_SHIELD_ON,    /* shield activate  (asm event 0x29 -> 1003  "gong") */
+    SOI_SFX_SHOES,        /* shoes/turtles    (asm event 0x2a -> 1004  "whistle") */
+    SOI_SFX_KEY,          /* colored-key collect (asm event 0x14 -> 17661 "Announce") */
     SOI_SFX_COUNT
 } SoiSfx;
 
@@ -108,10 +143,13 @@ int      soi_level_complete(const SoiWorld *w); /* 1 = a player exited the door 
 int      soi_player_x(const SoiWorld *w, int player);
 int      soi_player_y(const SoiWorld *w, int player);
 int      soi_player_arrows(const SoiWorld *w, int player);
+int      soi_player_balls(const SoiWorld *w, int player);
 int      soi_player_shield(const SoiWorld *w, int player);
 int      soi_player_facing(const SoiWorld *w, int player);
 int      soi_player_invuln(const SoiWorld *w, int player);  /* >0 = flashing/invulnerable */
 int      soi_player_has_key(const SoiWorld *w, int player); /* 0 none, 1 carrying, 2 exited */
+int      soi_player_state(const SoiWorld *w, int player);   /* ground_state: 0 idle,1 run,2 jump,3 fall,0xC dead */
+int      soi_player_movectr(const SoiWorld *w, int player); /* 0..6 run-step animation counter */
 int      soi_goodies_total(const SoiWorld *w);   /* treasure at level load */
 int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected */
 int      soi_bonus_time(const SoiWorld *w);
@@ -132,9 +170,13 @@ int      soi_enemy_type(const SoiWorld *w, int i);
 int      soi_enemy_x(const SoiWorld *w, int i);
 int      soi_enemy_y(const SoiWorld *w, int i);
 int      soi_enemy_dir(const SoiWorld *w, int i);
+int      soi_enemy_fire_cd(const SoiWorld *w, int i);   /* reload counter; small = about to fire */
 int      soi_projectile_active(const SoiWorld *w, int i);
 int      soi_projectile_x(const SoiWorld *w, int i);
 int      soi_projectile_y(const SoiWorld *w, int i);
+int      soi_projectile_hostile(const SoiWorld *w, int i);
+int      soi_projectile_kind(const SoiWorld *w, int i);   /* 0 = Magic Arrow, 1 = Magic Ball */
+int      soi_projectile_src_type(const SoiWorld *w, int i);   /* hostile shot's shooter type (0 = player) */
 
 /* ---- determinism (MASTER_PLAN §5.5): canonical little-endian serialize +
  *      FNV-1a 64-bit hash over the logical state. ---- */
