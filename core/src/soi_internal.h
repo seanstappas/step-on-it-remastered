@@ -15,6 +15,7 @@
 #define SOI_CELL_SUPPORTIVE   0x200u                  /* standable (you stand on it) */
 #define SOI_CELL_DOOR         0x800u                  /* exit door (low type 0-3) */
 #define SOI_CELL_SPECIAL      0x1000u                 /* has a payload in bits 16.. */
+#define SOI_CELL_CRACKED      0x4000u                 /* head-bonked once; next bonk breaks it (asm 0x4000) */
 #define SOI_CELL_PAYLOAD(c)   (((c) >> 16) & 0xFFFFu) /* revealed goodie when destroyed */
 #define SOI_WALL              0x300u                  /* permanent + supportive wall (0x200|0x100) */
 
@@ -41,11 +42,13 @@ typedef struct {
     uint8_t  block_type;  /* block type this player creates */
     uint8_t  has_key;     /* collected the board's key */
     uint8_t  input;       /* input bitmask applied this frame */
+    uint8_t  input_prev;  /* previous frame's input (for edge-triggered actions) */
     int16_t  lives;
     int32_t  score;
     int32_t  bonus_time;  /* per-player starting bonus (BORD 0x16, default 5000) */
     int16_t  shield;
     int16_t  arrows;
+    int16_t  balls;       /* Magic Ball ammo (+0x4a; separate from arrows +0x4c) */
     int16_t  invuln;      /* post-hit i-frames; >0 = damage-immune */
     int16_t  fire_cd;     /* fire cooldown; >0 = can't fire yet */
     int16_t  spawn_x, spawn_y;      /* respawn pixel position (level start) */
@@ -55,8 +58,12 @@ typedef struct {
 typedef struct {
     uint8_t  active;
     uint8_t  owner;       /* firing player index, for kill scoring */
+    uint8_t  hostile;     /* 0 = player arrow (kills nasties); 1 = enemy shot (hits players) */
+    uint8_t  kind;        /* 0 = Magic Arrow (smashes blocks); 1 = Magic Ball (rolls, stops at a block) */
+    uint8_t  src_type;    /* shooter's SoiEnemyType for a hostile shot (0 = player); picks its art */
     int32_t  x, y;        /* pixel position */
     int16_t  vx, vy;      /* straight-line velocity (Magic Arrow) */
+    int16_t  age;         /* frames alive (bouncing Magic Arrow fizzles at ~500) */
 } SoiProjectile;
 
 typedef struct {
@@ -68,7 +75,14 @@ typedef struct {
     int16_t  vx, vy;      /* velocity added each frame */
     int16_t  points;      /* score awarded on kill (+0x42) */
     uint8_t  owner;       /* killer player index, for scoring */
+    uint8_t  claimed;     /* Shoes/Turtles owner (+0x88): 0 = none, else the
+                           * collecting player this nasty is defeated for */
     uint16_t anim;        /* animation frame counter */
+    int16_t  fire_cd;     /* shooter reload countdown (Cannon +0x6c) */
+    int16_t  fire_period; /* shooter reload period = StartDelay(b0)*6 (Cannon +0x50) */
+    uint8_t  spawn_child; /* persistent-spawner emitted nasty (SoiEnemyType; 0 = not a spawner) */
+    int16_t  life;        /* transient lifespan in frames (0 = immortal; spawned children only) */
+    uint8_t  child;       /* Beanie: slot+1 of its one living bud (0 = none) */
 } SoiEnemy;
 
 struct SoiWorld {
@@ -80,9 +94,10 @@ struct SoiWorld {
     SoiPlayer players[SOI_MAX_PLAYERS];
     SoiEnemy  enemies[SOI_MAX_ENEMIES];
     SoiProjectile projectiles[SOI_MAX_PROJECTILES];
-    int32_t  bonus_timer;  /* round countdown (_DAT_1003b294 analogue) */
+    int32_t  bonus_timer;  /* round "Bonus" survival countdown */
     uint8_t  frame_parity; /* input sampled every 2 frames */
     uint8_t  enemies_frozen; /* Stop/Go switch state: 1 = nasties halted */
+    int16_t  enemy_slow;     /* Clock goody (asm _DAT_1003b294): >=0 = nasties at half rate; counts down */
 
     /* level parameters (BORD header) */
     int16_t  pct_ultrabuster;  /* 0x10 */
@@ -116,7 +131,9 @@ void     soi_player_update(SoiWorld *w, int player);
 
 /* ---- enemies (soi_enemies.c) ---- */
 int16_t  soi_enemy_points(SoiEnemyType t);
-void     soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row);
+int      soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row);
+SoiEnemyType soi_bord_badguy_type(uint8_t bord_type);
+int      soi_bord_is_spawner(uint8_t bord_type);
 void     soi_enemies_update(SoiWorld *w);
 void     soi_enemy_kill(SoiWorld *w, int idx, int by_player);
 int      soi_enemy_at(const SoiWorld *w, int col, int row); /* -1 if none */
@@ -124,6 +141,9 @@ int      soi_enemy_at(const SoiWorld *w, int col, int row); /* -1 if none */
 void     soi_player_hit(SoiWorld *w, int idx);
 /* fire a Magic Arrow in the player's facing direction (consumes an arrow). */
 void     soi_projectile_fire(SoiWorld *w, int player);
+/* fire a Magic Ball in the player's facing direction (consumes a ball); the ball
+ * rolls horizontally at a fixed height and stops (without smashing) at a block. */
+void     soi_ball_fire(SoiWorld *w, int player);
 void     soi_projectiles_update(SoiWorld *w);
 
 /* ---- goodies (soi_grid.c) ---- */

@@ -53,15 +53,17 @@ def frame_offsets(d: bytes) -> list[int]:
     return offs
 
 
-def decode_frame(d: bytes, off: int, ctrl_off: int, lead: int) -> tuple[int, int, list[int]]:
-    """Decode one frame to a flat list of palette indices (0 = transparent)."""
+def decode_frame(d: bytes, off: int, ctrl_off: int, lead: int, swap: bool = False) -> tuple[int, int, list[int]]:
+    """Decode one frame to a flat list of palette indices (0 = transparent).
+    Layout (from the disassembly): W@0 H@2 (u16); data-stream at frame+u32@8;
+    initial run length = byte@0xc; control (run-length) stream at frame+0xd."""
     w, h = struct.unpack_from(">HH", d, off)
     data_rel = struct.unpack_from(">I", d, off + 8)[0]
-    ctrl = off + ctrl_off
-    data = off + data_rel
+    ctrl = off + ctrl_off          # control run-lengths (frame+0xd)
+    data = off + data_rel          # literal palette indices (frame+u32@8)
     out = []
-    state = 0          # 0 = opaque run, 1 = transparent run
-    run = 0
+    state = 1                      # CONFIRMED: start in the transparent phase
+    run = d[off + 0x0c]            # CONFIRMED: initial (transparent) run = byte@0xc
     for _row in range(h):
         skip = lead
         rem = w
@@ -93,7 +95,7 @@ def decode_frame(d: bytes, off: int, ctrl_off: int, lead: int) -> tuple[int, int
     return w, h, out
 
 
-def render(name, res, pal, ctrl_off, lead, nframes=6, scale=4):
+def render(name, res, pal, ctrl_off, lead, nframes=6, scale=4, swap=False):
     e = next((x for x in res["sssf"] if x["name"] == name), None)
     if not e:
         print(f"  no sssf {name!r}"); return
@@ -132,15 +134,52 @@ def dump_header(name, res):
           " u32@8 =", struct.unpack_from(">I", d, off + 8)[0])
 
 
+def export_all(res, pal, scale=1):
+    """Decode every frame of every sssf resource to extracted/sprites/<name>/fNN.png."""
+    total = 0
+    for e in res["sssf"]:
+        name = e["name"].strip() or ("id_%d" % e["id"])
+        safe = "".join(ch if (ch.isalnum() or ch in "._-") else "_" for ch in name)
+        d = e["data"]
+        offs = frame_offsets(d)
+        sub = OUT / safe
+        for fi, off in enumerate(offs):
+            if not (0 < off < len(d) - 12):
+                continue
+            w, h = struct.unpack_from(">HH", d, off)
+            if not (0 < w <= 128 and 0 < h <= 128):
+                continue
+            try:
+                w, h, px = decode_frame(d, off, 0x0d, 0)
+            except Exception:
+                continue
+            rows = []
+            for y in range(h):
+                row = bytearray()
+                for x in range(w):
+                    idx = px[y * w + x] if y * w + x < len(px) else 0
+                    r, g, b = pal[idx]
+                    a = 0 if idx == 0 else 255
+                    for _ in range(scale):
+                        row += bytes((r, g, b, a))
+                for _ in range(scale):
+                    rows.append(bytes(row))
+            write_png(sub / ("f%02d_%dx%d.png" % (fi, w, h)), w * scale, h * scale, rows)
+            total += 1
+        print("  %-28s %d frames" % (name, len(offs)))
+    print("exported %d frames total -> %s" % (total, OUT))
+
+
 def main():
     res = parse_resource_fork(read_resource_fork(GFX))
     pal = decode_palette(res)
+    if len(sys.argv) > 1 and sys.argv[1] == "all":
+        export_all(res, pal)
+        return
     for n in ("blocks", "weapons"):
         dump_header(n, res)
-    ctrl_off = int(sys.argv[1]) if len(sys.argv) > 1 else 0x0c
-    lead = int(sys.argv[2]) if len(sys.argv) > 2 else 0
     for n in ("blocks", "weapons", "ant sprites"):
-        render(n, res, pal, ctrl_off, lead)
+        render(n, res, pal, 0x0d, 0)
 
 
 if __name__ == "__main__":

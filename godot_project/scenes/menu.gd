@@ -28,7 +28,11 @@ func _ready() -> void:
 
 	# headless/windowed capture harness: auto-launch a known board
 	var ua := OS.get_cmdline_user_args()
-	if "--shot" in ua or "--demo" in ua:
+	var want_play := false
+	for a in ua:
+		if a.begins_with("--play"):   # --play=N carries a value, so match by prefix
+			want_play = true
+	if "--shot" in ua or "--demo" in ua or want_play:
 		# --board=<file> overrides; else --demo uses a challenge board (has nasties)
 		var target := ""
 		for arg in ua:

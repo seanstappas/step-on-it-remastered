@@ -48,7 +48,7 @@ void soi_world_init(SoiWorld *w, uint32_t seed)
     soi_rng_seed(w, seed ? seed : 1u);   /* Toolbox default seed = 1 */
     for (i = 0; i < SOI_MAX_PLAYERS; i++) {
         w->players[i].lives = 3;         /* TODO(oracle): starting lives */
-        w->players[i].block_type = 1;
+        w->players[i].block_type = 0x07; /* standard white block (matches boards) */
     }
 }
 
@@ -59,12 +59,13 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
 {
     SoiPlayer *p = &w->players[idx];
     p->active = 1; p->alive = 1; p->eliminated = 0;
-    p->x = soi_cell_x(col); p->y = soi_cell_y(row);
+    p->x = soi_cell_x(col); p->y = soi_cell_y(row) + 1;   /* rest at block-top+1 (asm) */
     p->facing = 1;                 /* face right */
     p->move_ctr = 0; p->run_dir = 0; p->in_air = 0; p->ground_state = SOI_ST_IDLE;
     p->spawn_x = (int16_t)p->x; p->spawn_y = (int16_t)p->y;
     p->respawn_timer = 0;
-    p->block_type = 1;
+    p->block_type = 0x07;
+    p->input = 0; p->input_prev = 0;
 }
 
 int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
@@ -96,6 +97,43 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
             uint8_t a = bord[off], b = bord[off + 1];
             off += 2;
             if (a == 100 || b == 100) break; /* (100,100) sentinel */
+            /* Badguy spawn block: the asm scanner FUN_1002d980 keys on bit 0x400
+             * (byte2 == 0x05/0x06/0x07) and emits one enemy per block (low byte =
+             * type; it does NOT stay in the grid as a tile). TODO(oracle): the
+             * Start/Spawn-delay respawn cadence and the starting direction
+             * (byte2's low 2 bits: 1=left, 2=right, 3=alternate). */
+            if (tile & 0x400u) {
+                int ei = soi_enemy_spawn(w, soi_bord_badguy_type((uint8_t)(tile & 0xFFu)), a, b);
+                /* faithful starting direction (asm FUN_1002d980): cell bit 0x100
+                 * => left, 0x200 => right, both => alternate, 0x2000 => seek. The
+                 * spawn defaults to right; flip to left when only 0x100 is set. */
+                if (ei >= 0 && (tile & 0x100u) && !(tile & 0x200u)) {
+                    w->enemies[ei].dir = 1;
+                    w->enemies[ei].vx  = (int16_t)-w->enemies[ei].vx;
+                }
+                if (ei >= 0) {
+                    unsigned b0 = (tile >> 24) & 0xFFu;   /* StartDelay -> reload */
+                    unsigned b1 = (tile >> 16) & 0xFFu;   /* SpawnDelay -> initial */
+                    if (w->enemies[ei].type == SOI_ENEMY_CANNON ||
+                        w->enemies[ei].type == SOI_ENEMY_GARGOYLE ||
+                        w->enemies[ei].type == SOI_ENEMY_KNIGHT) {
+                        /* Shooter fire cadence from the delay bytes
+                         * (FUN_1002d980/FUN_100071a0 &c). */
+                        if (b0 > 0) w->enemies[ei].fire_period = (int16_t)(b0 * 6);
+                        w->enemies[ei].fire_cd = (int16_t)(b1 * 6);
+                    } else if (soi_bord_is_spawner((uint8_t)(tile & 0xFFu))) {
+                        /* Persistent spawner (FUN_100076a8 &c): a STATIONARY emitter
+                         * that produces its base nasty (child = placement+0x64) every
+                         * StartDelay*6 frames. We render it as a stationary instance
+                         * of that nasty. TODO(oracle): the distinct spawner sprite. */
+                        w->enemies[ei].spawn_child = (uint8_t)w->enemies[ei].type;
+                        w->enemies[ei].vx = 0;                       /* stationary */
+                        w->enemies[ei].fire_period = (int16_t)((b0 ? b0 : 20u) * 6u);
+                        w->enemies[ei].fire_cd = (int16_t)(b1 * 6u);
+                    }
+                }
+                continue;
+            }
             /* Record coords are (col, row): the first byte is the COLUMN (X,
              * 0-18) and the second is the ROW (Y, 0-12). The grid is 19 wide x
              * 13 tall (landscape) -- the 0x3c-stride live-grid dimension (from
@@ -129,9 +167,10 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
     w->frame_parity ^= 1u;
     w->sfx_count = 0;   /* drop last frame's sound events; this tick refills */
 
-    /* Input is sampled every 2 frames (CONFIRMED, docs runtime-structures §1):
-     * the game loop refreshes the input latch on alternate frames while physics
-     * runs every frame. Latch on odd ticks; reuse on even. */
+    /* Input is sampled every 2 frames and so is the PLAYER state machine: the asm
+     * main loop (FUN_10028a0c) gates {input FUN_1002d440 + locomotion FUN_1001166c
+     * + pickup FUN_1002bc64} behind the sVar7 divider = every 2nd VBL (30Hz), while
+     * enemies run ~every frame (60Hz). Latch input on the odd tick; reuse on even. */
     if ((w->tick & 1u) != 0u) {
         w->players[1].input = p1_input;
         w->players[2].input = p2_input;
@@ -153,9 +192,22 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
         }
     }
 
-    soi_player_update(w, 1);
-    soi_player_update(w, 2);
-    soi_enemies_update(w);
+    /* Player logic at 30Hz (odd tick); a DYING player's death-throw keeps animating
+     * every frame (the asm loop runs the state machine while the dying flag is set).
+     * Enemies + projectiles run every frame (60Hz). */
+    if ((w->tick & 1u) != 0u) {
+        soi_player_update(w, 1);
+        soi_player_update(w, 2);
+    } else {
+        if (w->players[1].ground_state == SOI_ST_DEAD) soi_player_update(w, 1);
+        if (w->players[2].ground_state == SOI_ST_DEAD) soi_player_update(w, 2);
+    }
+    /* Clock power-up (goody 0x2E): halves the enemy update rate for ~10s. The asm
+     * (_DAT_1003b294) decrements a counter each frame and runs the nasties only when
+     * it is < 0 (expired -> normal) or ODD -> every other frame = 30Hz while active. */
+    if (w->enemy_slow >= 0) w->enemy_slow--;
+    if (w->enemy_slow < 0 || (w->enemy_slow & 1))
+        soi_enemies_update(w);
     soi_projectiles_update(w);
 
     /* round bonus countdown (pacing per frame). Reaching 0 kills the players
@@ -220,10 +272,13 @@ int      soi_level_complete(const SoiWorld *w)
 int      soi_player_x(const SoiWorld *w, int p)     { return pget(w, p)->x; }
 int      soi_player_y(const SoiWorld *w, int p)     { return pget(w, p)->y; }
 int      soi_player_arrows(const SoiWorld *w, int p) { return pget(w, p)->arrows; }
+int      soi_player_balls(const SoiWorld *w, int p) { return pget(w, p)->balls; }
 int      soi_player_shield(const SoiWorld *w, int p) { return pget(w, p)->shield; }
 int      soi_player_facing(const SoiWorld *w, int p) { return pget(w, p)->facing; }
 int      soi_player_invuln(const SoiWorld *w, int p) { return pget(w, p)->invuln; }
 int      soi_player_has_key(const SoiWorld *w, int p) { return pget(w, p)->has_key; }
+int      soi_player_state(const SoiWorld *w, int p) { return pget(w, p)->ground_state; }
+int      soi_player_movectr(const SoiWorld *w, int p) { return pget(w, p)->move_ctr; }
 int      soi_goodies_total(const SoiWorld *w)       { return w->goodies_total; }
 int      soi_goodies_left(const SoiWorld *w)        { return w->goodies_left; }
 int      soi_bonus_time(const SoiWorld *w)          { return w->bonus_timer; }
@@ -264,6 +319,7 @@ int      soi_enemy_type(const SoiWorld *w, int i)   { return eget(w, i)->type; }
 int      soi_enemy_x(const SoiWorld *w, int i)      { return eget(w, i)->x; }
 int      soi_enemy_y(const SoiWorld *w, int i)      { return eget(w, i)->y; }
 int      soi_enemy_dir(const SoiWorld *w, int i)    { return eget(w, i)->dir; }
+int      soi_enemy_fire_cd(const SoiWorld *w, int i){ return eget(w, i)->fire_cd; }
 
 static const SoiProjectile *prget(const SoiWorld *w, int i)
 {
@@ -273,6 +329,9 @@ static const SoiProjectile *prget(const SoiWorld *w, int i)
 int      soi_projectile_active(const SoiWorld *w, int i) { return prget(w, i)->active; }
 int      soi_projectile_x(const SoiWorld *w, int i)      { return prget(w, i)->x; }
 int      soi_projectile_y(const SoiWorld *w, int i)      { return prget(w, i)->y; }
+int      soi_projectile_hostile(const SoiWorld *w, int i){ return prget(w, i)->hostile; }
+int      soi_projectile_kind(const SoiWorld *w, int i)   { return prget(w, i)->kind; }
+int      soi_projectile_src_type(const SoiWorld *w, int i){ return prget(w, i)->src_type; }
 
 /* ---------- canonical serialize (little-endian, field-by-field) ---------- */
 size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
@@ -285,6 +344,7 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
     bput_i32(&b, w->bonus_timer);
     bput_u8(&b, w->frame_parity);
     bput_u8(&b, w->enemies_frozen);
+    bput_u16(&b, (uint16_t)w->enemy_slow);
     bput_u16(&b, (uint16_t)w->pct_ultrabuster);
     bput_u16(&b, (uint16_t)w->thrown_badguy);
     bput_u16(&b, (uint16_t)w->pct_badguy);
@@ -295,7 +355,7 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         const SoiPlayer *p = &w->players[i];
         bput_u8(&b, p->active); bput_u8(&b, p->alive); bput_u8(&b, p->eliminated);
         bput_u8(&b, p->ground_state); bput_u8(&b, p->in_air); bput_u8(&b, p->block_type);
-        bput_u8(&b, p->has_key); bput_u8(&b, p->input);
+        bput_u8(&b, p->has_key); bput_u8(&b, p->input); bput_u8(&b, p->input_prev);
         bput_i32(&b, p->x); bput_i32(&b, p->y);
         bput_u16(&b, (uint16_t)p->facing); bput_u16(&b, (uint16_t)p->move_ctr);
         bput_u16(&b, (uint16_t)p->run_dir); bput_i32(&b, p->run_x0);
@@ -303,6 +363,7 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)p->lives);
         bput_i32(&b, p->score); bput_i32(&b, p->bonus_time);
         bput_u16(&b, (uint16_t)p->shield); bput_u16(&b, (uint16_t)p->arrows);
+        bput_u16(&b, (uint16_t)p->balls);
         bput_u16(&b, (uint16_t)p->invuln); bput_u16(&b, (uint16_t)p->fire_cd);
         bput_u16(&b, (uint16_t)p->spawn_x); bput_u16(&b, (uint16_t)p->spawn_y);
         bput_u16(&b, (uint16_t)p->respawn_timer);
@@ -312,14 +373,19 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u8(&b, e->active); bput_u8(&b, e->type); bput_u8(&b, e->dir); bput_u8(&b, e->state);
         bput_i32(&b, e->x); bput_i32(&b, e->y);
         bput_u16(&b, (uint16_t)e->vx); bput_u16(&b, (uint16_t)e->vy);
-        bput_u16(&b, (uint16_t)e->points); bput_u8(&b, e->owner);
-        bput_u16(&b, e->anim);
+        bput_u16(&b, (uint16_t)e->points); bput_u8(&b, e->owner); bput_u8(&b, e->claimed);
+        bput_u16(&b, e->anim); bput_u16(&b, (uint16_t)e->fire_cd);
+        bput_u16(&b, (uint16_t)e->fire_period);
+        bput_u8(&b, e->spawn_child); bput_u16(&b, (uint16_t)e->life);
+        bput_u8(&b, e->child);
     }
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         const SoiProjectile *pr = &w->projectiles[i];
-        bput_u8(&b, pr->active); bput_u8(&b, pr->owner);
+        bput_u8(&b, pr->active); bput_u8(&b, pr->owner); bput_u8(&b, pr->hostile);
+        bput_u8(&b, pr->kind);
         bput_i32(&b, pr->x); bput_i32(&b, pr->y);
         bput_u16(&b, (uint16_t)pr->vx); bput_u16(&b, (uint16_t)pr->vy);
+        bput_u16(&b, (uint16_t)pr->age);
     }
     for (r = 0; r < SOI_GRID_ROWS; r++)
         for (c = 0; c < SOI_GRID_COLS; c++)

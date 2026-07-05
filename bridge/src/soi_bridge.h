@@ -49,10 +49,13 @@ public:
     int64_t player_x(int64_t player) const;
     int64_t player_y(int64_t player) const;
     int64_t player_arrows(int64_t player) const;
+    int64_t player_balls(int64_t player) const;
     int64_t player_shield(int64_t player) const;
     int64_t player_facing(int64_t player) const;
     int64_t player_invuln(int64_t player) const;
     int64_t player_has_key(int64_t player) const;
+    int64_t player_state(int64_t player) const;
+    int64_t player_movectr(int64_t player) const;
     int64_t goodies_total() const;
     int64_t goodies_left() const;
     int64_t bonus_time() const;
@@ -71,9 +74,13 @@ public:
     int64_t enemy_x(int64_t i) const;
     int64_t enemy_y(int64_t i) const;
     int64_t enemy_dir(int64_t i) const;
+    int64_t enemy_fire_cd(int64_t i) const;
     bool    projectile_active(int64_t i) const;
     int64_t projectile_x(int64_t i) const;
     int64_t projectile_y(int64_t i) const;
+    bool    projectile_hostile(int64_t i) const;
+    int64_t projectile_kind(int64_t i) const;
+    int64_t projectile_src_type(int64_t i) const;
 
     /* determinism helpers for netcode / verification */
     int64_t          state_hash() const;   /* FNV-1a 64 as a Godot int */

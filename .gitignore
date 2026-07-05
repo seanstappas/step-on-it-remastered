@@ -21,3 +21,4 @@
 /godot_project/bin/
 /godot_project/.godot/
 # media/ (screenshots + gameplay clips) is kept tracked for posterity
+/tools/__pycache__
