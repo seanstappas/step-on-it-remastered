@@ -53,9 +53,12 @@ public:
     int64_t player_shield(int64_t player) const;
     int64_t player_facing(int64_t player) const;
     int64_t player_invuln(int64_t player) const;
+    int64_t player_fast(int64_t player) const;
     int64_t player_has_key(int64_t player) const;
     int64_t player_state(int64_t player) const;
     int64_t player_movectr(int64_t player) const;
+    int64_t player_pose(int64_t player) const;
+    int64_t player_pose_t(int64_t player) const;
     int64_t goodies_total() const;
     int64_t goodies_left() const;
     int64_t bonus_time() const;

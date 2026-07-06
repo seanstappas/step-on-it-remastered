@@ -31,6 +31,7 @@ int16_t soi_enemy_points(SoiEnemyType t)
         case SOI_ENEMY_SPINNER: return 0;      /* CONFIRMED: no score awarded */
         case SOI_ENEMY_GARGOYLE:return 0;      /* CONFIRMED: no score awarded */
         case SOI_ENEMY_KNIGHT:  return 0;      /* CONFIRMED: no score awarded */
+        case SOI_ENEMY_CREEPER: return 0;      /* hazard: asm leaves +0x8a=type; no clear score path */
         default:                return 0;
     }
 }
@@ -41,8 +42,11 @@ int16_t soi_enemy_points(SoiEnemyType t)
  * (struct type = index+0x64); we map them to the nasty they emit (a simplification
  * -- the real spawner keeps emitting). CONFIRMED: 2=Wheelie, 4=Walker, 7/8=Beanie,
  * 15=Robo. Spawners: 5->Hippo,6->Hammer,10->Teeth,11->Smiley,12->Ant,18->Ostrich,
- * 19->Piggy. Shooters/hazards: 1&13=Cannon, 9=Spinner, 16=Gargoyle, 17=Knight,
- * 14=Hammer. TODO(oracle): a few points/behaviours still first-draft. */
+ * 19->Piggy. Shooters: 1=Cannon, 13=Knight (FUN_1000c2e8 fires 0x71), 14=Gargoyle
+ * (FUN_1000adc4 fires 0x72/0xc8), 9=Spinner. Creepers (sssf 1016 'bigger mblock'):
+ * 16=horizontal, 17=vertical (asm FUN_10008618/8b18 -- block-layers, NOT shooters).
+ * Enemy type -> sprite is sssf id 1000+type (loader FUN_10017b68 -> FUN_10017cd8);
+ * CONFIRMED via rezfork. TODO(oracle): a few points/behaviours still first-draft. */
 SoiEnemyType soi_bord_badguy_type(uint8_t bord_type)
 {
     static const uint8_t map[20] = {
@@ -59,11 +63,11 @@ SoiEnemyType soi_bord_badguy_type(uint8_t bord_type)
         SOI_ENEMY_TEETH,     /* 10  spawner -> Teeth (0x6e) */
         SOI_ENEMY_SMILEY,    /* 11  spawner -> Smiley (0x6f) */
         SOI_ENEMY_ANT,       /* 12  spawner -> Ant (0x70) */
-        SOI_ENEMY_CANNON,    /* 13  shooter (FUN_1000c2e8 fires 0x71) */
-        SOI_ENEMY_HAMMER,    /* 14  HIGH */
-        SOI_ENEMY_ROBO,      /* 15  CONFIRMED */
-        SOI_ENEMY_GARGOYLE,  /* 16  shooter (FUN_10008618) */
-        SOI_ENEMY_KNIGHT,    /* 17  shooter (FUN_10008b18) */
+        SOI_ENEMY_KNIGHT,    /* 13  Knight shooter (asm FUN_1000c2e8 fires 0x71; sssf 1013) */
+        SOI_ENEMY_GARGOYLE,  /* 14  Gargoyle shooter (asm FUN_1000adc4 fires 0x72/0xc8; sssf 1014) */
+        SOI_ENEMY_ROBO,      /* 15  CONFIRMED (sssf 1015) */
+        SOI_ENEMY_CREEPER,   /* 16  block-laying creeper, HORIZONTAL (asm FUN_10008618; sssf 1016) */
+        SOI_ENEMY_CREEPER,   /* 17  block-laying creeper, VERTICAL   (asm FUN_10008b18; sssf 1016) */
         SOI_ENEMY_OSTRICH,   /* 18  spawner -> Ostrich (0x76) */
         SOI_ENEMY_PIGGY,     /* 19  spawner -> Piggy (0x77) */
     };
@@ -107,6 +111,7 @@ int soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row)
         e->spawn_child = 0;
         e->life = 0;
         e->child = 0;
+        e->under = 0;
         e->anim   = 0;
         return i;                      /* slot index so the caller can tweak dir/vx */
     }
@@ -203,8 +208,9 @@ static int enemy_speed(int type)
         case SOI_ENEMY_TEETH:   return 3;
         case SOI_ENEMY_CANNON:
         case SOI_ENEMY_SPINNER:
-        case SOI_ENEMY_GARGOYLE:  /* stationary turret, fires horizontally (FUN_10008618) */
-        case SOI_ENEMY_KNIGHT:    /* stationary turret, fires vertically   (FUN_10008b18) */
+        case SOI_ENEMY_GARGOYLE:  /* stationary shooter (asm FUN_1000adc4, bord 14) */
+        case SOI_ENEMY_KNIGHT:    /* stationary shooter (asm FUN_1000c2e8, bord 13) */
+        case SOI_ENEMY_CREEPER:   /* self-propelled; steps in enemy_creeper(), not via vx */
             return 0;    /* stationary hazards (spin/fire in place; never move their own pos) */
         default:                return 2;
     }
@@ -293,6 +299,47 @@ static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
     e->vy = -11;                                         /* launch the next hop (asm -0xb) */
 }
 
+/* Creeper (asm FUN_10008618 horizontal / FUN_10008b18 vertical; bord types 16/17):
+ * a self-propelled "bigger mblock" (sssf 1016) that steps one cell at a time along
+ * its axis (state 0 = horizontal, 1 = vertical), reversing at a wall or edge. It
+ * carries NO projectile. While active it TEMP-SOLIDIFIES the cell it occupies (asm
+ * lays cell|0x300) so it is a moving SOLID block (stand on / blocked -- NOT a touch
+ * hazard). It steps onto any NON-SOLID cell (empty, 0x197 background, &c -- asm
+ * FUN_10009030), remembering the covered tile in `under` (asm +0x70) and restoring
+ * it exactly on leaving, so nothing is erased; it never steps onto a player.
+ * fire_cd = step countdown, fire_period = interval (board StartDelay byte).
+ * TODO(oracle): the asm grows bidirectionally via child copies (SOI_MAX_ENEMIES=32). */
+static void enemy_creeper(SoiWorld *w, SoiEnemy *e)
+{
+    int col, row, ac, ar, pj, blocked;
+    col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
+    row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+    /* invariant: our cell is solid; on first touch capture what we cover (asm +0x70). */
+    if (!(soi_get_cell(w, col, row) & SOI_CELL_SUPPORTIVE)) {
+        e->under = soi_get_cell(w, col, row);
+        soi_set_cell(w, col, row, SOI_WALL);
+    }
+    if (e->fire_cd > 0) { e->fire_cd--; return; }        /* wait out the step interval */
+    e->fire_cd = (e->fire_period > 0) ? e->fire_period : 24;
+    ac = col + ((e->state == 0) ? ((e->dir == 2) ? 1 : -1) : 0);   /* horizontal step */
+    ar = row + ((e->state == 1) ? ((e->dir == 2) ? 1 : -1) : 0);   /* vertical step */
+    /* blocked by an edge, a SOLID (0x200) cell, or a standing player -- else it may
+     * cross empty / background / non-solid tiles (asm FUN_10009030). */
+    blocked = (!soi_in_bounds(ac, ar) || (soi_get_cell(w, ac, ar) & SOI_CELL_SUPPORTIVE));
+    for (pj = 1; !blocked && pj < SOI_MAX_PLAYERS; pj++) {
+        const SoiPlayer *p = &w->players[pj];
+        if (p->active && p->alive &&
+            (p->x - SOI_ORIGIN_X) / SOI_CELL_PX == ac &&
+            (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX == ar) blocked = 1;
+    }
+    if (blocked) { e->dir = (uint8_t)((e->dir == 2) ? 1 : 2); return; }  /* reverse */
+    soi_set_cell(w, col, row, e->under);                 /* restore what we covered (asm +0x70) */
+    e->under = soi_get_cell(w, ac, ar);                  /* capture the cell we move onto */
+    e->x = soi_cell_x(ac);
+    e->y = soi_cell_y(ar);
+    soi_set_cell(w, ac, ar, SOI_WALL);                   /* temp-solidify (covered by the sprite) */
+}
+
 static void enemy_step(SoiWorld *w, SoiEnemy *e)
 {
     int col, row, ahead, spd = enemy_speed(e->type);
@@ -306,6 +353,8 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
     /* Hammer: a hopper that bounds in arcs. A Hammer SPAWNER (spawn_child set)
      * stays put and emits, so only real hopping Hammers are routed here. */
     if (e->type == SOI_ENEMY_HAMMER && e->spawn_child == 0) { enemy_hammer_hop(w, e); return; }
+    /* Creeper: self-propelled block that steps cell-to-cell; gravity-free. */
+    if (e->type == SOI_ENEMY_CREEPER) { enemy_creeper(w, e); return; }
 
     /* Gravity: a nasty is supported while EITHER foot rests on a SOLID block
      * (0x200) in the cell below; only over open air (BOTH feet clear) does it
@@ -424,14 +473,16 @@ static void enemy_cannon_fire(SoiWorld *w, SoiEnemy *e)
     }
 }
 
-/* Gargoyle (FUN_10008618, horizontal) and Knight (FUN_10008b18, vertical) are
- * stationary turrets that fire at the player. The asm emits a short-range beam of
- * stationary "puffs"; we approximate it with a hostile projectile along the line
- * of fire (reusing the Cannon shot), AIMED at the nearest player (the asm faces
- * the player via its LOS checks). `vertical` selects the Knight's up/down axis. */
-static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e, int vertical)
+/* Gargoyle (bord 14, asm FUN_1000adc4) and Knight (bord 13, asm FUN_1000c2e8) are
+ * stationary shooters that both AIM AT THE PLAYER: the asm spawners target the
+ * player-position globals _DAT_10037d54/56 with LOS checks -- FUN_1000b44c/bf54 emit
+ * the Gargoyle's 0x72/0xc8 puffs, FUN_1000c8bc the Knight's 0x71, from a +0x1e,-8
+ * offset. We approximate with one hostile shot fired toward the nearest player along
+ * the DOMINANT axis (reusing the Cannon shot; src_type picks the Gargoyle/Knight
+ * art). TODO(oracle): the real puffs are moving nasties, not a straight bolt. */
+static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e)
 {
-    int i, pj, tx = 0, ty = 0, bestd = 1 << 30, found = 0, dcx = 0, dcy = 0;
+    int i, pj, tx = 0, ty = 0, bestd = 1 << 30, found = 0, dcx = 0, dcy = 0, adx, ady;
     if (e->fire_cd > 0) { e->fire_cd--; return; }
     e->fire_cd = (e->fire_period > 0) ? e->fire_period : SOI_CANNON_RELOAD;
     for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
@@ -443,8 +494,11 @@ static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e, int vertical)
         if (d < bestd) { bestd = d; tx = p->x; ty = p->y; found = 1; }
     }
     if (!found) return;
-    if (vertical) dcy = (ty >= e->y) ? 1 : -1;
-    else { dcx = (tx >= e->x) ? 1 : -1; e->dir = (uint8_t)(dcx > 0 ? 2 : 1); }
+    /* aim along the axis the player is furthest along (keeps the bolt axis-aligned). */
+    adx = (tx >= e->x) ? (tx - e->x) : (e->x - tx);
+    ady = (ty >= e->y) ? (ty - e->y) : (e->y - ty);
+    if (adx >= ady) { dcx = (tx >= e->x) ? 1 : -1; e->dir = (uint8_t)(dcx > 0 ? 2 : 1); }
+    else            { dcy = (ty >= e->y) ? 1 : -1; }
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
         if (pr->active) continue;
@@ -457,8 +511,8 @@ static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e, int vertical)
         pr->y = e->y + dcy * 0x20;
         pr->vx = (int16_t)(dcx * 8);
         pr->vy = (int16_t)(dcy * 8);
-        /* The Gargoyle (FUN_10008618) and Knight (FUN_10008b18) fire SILENTLY --
-         * neither calls the SFX trigger (unlike the Cannon's event 0x10). */
+        /* The Gargoyle (asm FUN_1000adc4) and Knight (asm FUN_1000c2e8) fire
+         * SILENTLY -- neither calls the SFX trigger (unlike the Cannon's 0x10). */
         return;
     }
 }
@@ -500,16 +554,17 @@ void soi_enemies_update(SoiWorld *w)
         if (!w->enemies_frozen) enemy_step(w, e);   /* Stop switch halts nasties */
         if (!w->enemies_frozen && e->type == SOI_ENEMY_CANNON)
             enemy_cannon_fire(w, e);                /* stationary shooter (FUN_100071a0) */
-        if (!w->enemies_frozen && e->type == SOI_ENEMY_GARGOYLE)
-            enemy_shooter_fire(w, e, 0);            /* horizontal turret (FUN_10008618) */
-        if (!w->enemies_frozen && e->type == SOI_ENEMY_KNIGHT)
-            enemy_shooter_fire(w, e, 1);            /* vertical turret (FUN_10008b18) */
+        if (!w->enemies_frozen &&
+            (e->type == SOI_ENEMY_GARGOYLE || e->type == SOI_ENEMY_KNIGHT))
+            enemy_shooter_fire(w, e);               /* bord 14/13 shooters both aim at the player */
         if (!w->enemies_frozen && e->spawn_child)
             enemy_spawner_emit(w, i);               /* persistent spawner (FUN_100076a8 &c) */
-        /* player contact: touching an enemy kills the player (first draft). */
+        /* player contact: touching an enemy kills the player (first draft). The
+         * Creeper is a solid moving BLOCK (it solidifies its cell), not a touch
+         * hazard, so it is exempt. */
         for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
             SoiPlayer *p = &w->players[pj];
-            if (!p->active || !p->alive) continue;
+            if (!p->active || !p->alive || e->type == SOI_ENEMY_CREEPER) continue;
             if ((p->x - SOI_ORIGIN_X) / SOI_CELL_PX == (e->x - SOI_ORIGIN_X) / SOI_CELL_PX &&
                 (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX == (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX) {
                 soi_player_hit(w, pj);

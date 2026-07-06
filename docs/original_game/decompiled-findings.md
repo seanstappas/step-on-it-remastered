@@ -265,7 +265,7 @@ implement.
 
 ---
 
-## 5. Win / board-advance condition  (STILL AMBIGUOUS — the real oracle item)
+## 5. Win / board-advance condition  (BEHAVIOR CONFIRMED — only the exact ASM flag-setter is still untraced)
 
 - Board loader `FUN_1002b448`; advance = load `board+1` via `FUN_10029acc`
   (outer loop `FUN_1001f4f8`). Round loop `FUN_1002a308` acts on a
@@ -274,15 +274,21 @@ implement.
   map and sets complete when specific **goal-row indices** (`sRam10034a8c`,
   `sRam10034a8a`) are non-zero — **the logic reads inverted and the trigger
   (`DAT_100393d0`) setter was not found**.
-- **Explicitly REJECTED:** "collect all treasure", "clear all enemies", "timer
-  expiry", "reach a tile" — none matched the real check. **⇒ our current
-  `soi_level_complete` (all-treasure) is very likely WRONG** and is only a
-  placeholder.
+- **The in-game Help + manual + HUD CONFIRM the objective:** get the **KEY**, then
+  exit through the open **DOOR** (color-coded per player in Compete mode) — see
+  [gameplay-and-design.md](gameplay-and-design.md) §1. `soi_level_complete` now
+  implements exactly that (`has_key == 2` = a player who exited the door carrying
+  the key); it is **no longer the old all-treasure placeholder**. Treasure
+  (coins/gems/gold) is **scoring only**, not the win condition (regression-guarded
+  by test 11). The decomp check separately rejected "clear all enemies" and "timer
+  expiry" as the flag trigger — consistent with key+door.
 - Game-over CONFIRMED: both players eliminated (lives<1) or bonus timer to 0
   (that path is death). Board set = BORD ids 401–500 + 1001–1050.
 
-**This is the one genuine oracle task left:** play a board to completion and watch
-what sets `DAT_1003ad0e` (door? key? region cleared?).
+**Remaining fidelity detail (not a behavioral unknown):** trace the exact ASM that
+sets `DAT_1003ad0e` (`FUN_10017a70`'s per-row map) to confirm edge cases like
+Compete-mode per-player doors — the *behavioral* win condition itself (key+door)
+is settled.
 
 ---
 

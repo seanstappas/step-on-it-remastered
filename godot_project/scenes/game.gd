@@ -88,12 +88,20 @@ const PLAYER_LAND_FRAME := 26
 # (asm FUN_1001386c) both set frame 0x3D facing right / 0x34 facing left.
 const PLAYER_STAND_R := 61
 const PLAYER_STAND_L := 52
+# Action pose (DISPLAY hint): fire + build share the same arm-extension swing. Byte-exact
+# frames recovered from the PEF step tables (asm FUN_1001166c): right = mode-3 table
+# @0x100346ec, left = mode-1 table @0x100346fa. DIRECTIONAL art (no mirror).
+# Recover with tools/dump_pose_tables.py.
+const PLAYER_ACT_R := [102, 104, 106, 106, 104, 102]
+const PLAYER_ACT_L := [97, 99, 101, 101, 99, 97]
+const PLAYER_POSE_MAX := 12
 # Core enemy enum (soi_core.h) -> decoded sssf sprite folder.
 const ENEMY_FOLDER := {
 	1: "ant_sprites", 2: "ostrich_sprites", 3: "hippo_sprites", 4: "piggy_sprites",
 	5: "disk_sprites", 6: "smiley_sprites", 7: "hammer_sprites", 8: "beenie_sprites",
 	9: "robo_sprites", 10: "walker_sprites", 11: "teeth_sprites",
 	12: "cannon_sprites", 13: "spinner_sprites", 14: "Gargoyle_sprites", 15: "knight_sprites",
+	16: "bigger_mblock",   # creeper (bord 16/17): a pulsing block that walks the grid (sssf 1016)
 }
 # Enemies whose whole frame set is a ROLL cycle (a ball tumbling along the
 # ground) rather than a leg walk: the smiley "face-ball" (etype 6) is a red ball
@@ -103,9 +111,9 @@ const ENEMY_ROLL := { 6: true }
 # Enemies that SPIN in place on a timer (rotate through their whole sheet): the
 # Spinner trap (etype 13, 14 frames) and the flying star-disk Wheelie (etype 5,
 # a green orb with a rotating red star, 22 frames). etype -> frame count.
-const ENEMY_SPIN := { 5: 22, 13: 14 }
+const ENEMY_SPIN := { 5: 22, 13: 14, 16: 13 }   # 16 = creeper: cycle bigger_mblock's 13 pulse frames
 # Stationary turrets that IDLE then CHARGE an energy orb as their reload nears 0
-# and RELEASE it at the shot (asm FUN_10008618 gargoyle / FUN_10008b18 knight).
+# and RELEASE it at the shot (asm FUN_1000adc4 gargoyle=bord14 / FUN_1000c2e8 knight=bord13).
 #   etype: { idle:[start,count], charge:[start,count] }  (charge over the last 30 reload frames)
 const ENEMY_SHOOTER := {
 	14: { "idle": [12, 9], "charge": [42, 31] },   # gargoyle: idle wings f12-20, red-orb charge f42-72
@@ -494,6 +502,22 @@ func _post_fx() -> void:
 		draw_rect(Rect2(0, 0, edge, 480), Color(0, 0, 0, 0.22))
 		draw_rect(Rect2(640 - edge, 0, edge, 480), Color(0, 0, 0, 0.22))
 
+# Speed-shoes (goody 0x32) draw a spinning indicator over the player while fast-mode
+# is active (asm FUN_10014ccc sets player +0x6a = sssf 132 'spin ind sprite family';
+# FUN_10014a10 blits it at ~player.x+6, y-0x10). 58 small (16x12) frames.
+func _draw_powerup_overlay(idx: int, pos: Vector2) -> void:
+	if _core.player_fast(idx) <= 0:
+		return
+	var n: int = _folder_index("spin_ind_sprite_family").size()
+	if n <= 0:
+		return
+	var frame := 2 + (int(_core.tick_count() / 2) % n)
+	var tex := _sprite("spin_ind_sprite_family", frame, false)
+	if tex != null:
+		var s := tex.get_size()
+		draw_texture(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5))
+
+
 func _draw_player(idx: int, shirt: Color) -> void:
 	if not _core.player_alive(idx):
 		return
@@ -504,6 +528,7 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	var facing := int(_core.player_facing(idx))
 	var right := facing >= 0
 	var st := int(_core.player_state(idx))
+	var pose := int(_core.player_pose(idx))
 	# The core's ground_state flickers idle<->run between grid steps, so keep the run
 	# alive briefly off actual horizontal motion. Advance the leg cycle by DISTANCE
 	# travelled (not the wall clock) so the feet stay planted to the ground.
@@ -530,12 +555,17 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	elif int(_p_runtimer.get(idx, 0)) > 0:       # running
 		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
 		flip = not right
+	elif pose > 0:                               # fire/build arm-extension swing (asm FUN_1001166c step tables)
+		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
+		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
+		flip = false                             # frames are directional -- no mirror
 	var folder := "BP_sprites" if idx == 1 else "GP_sprites"
 	var tex := _sprite(folder, frame, flip)
 	if tex != null:
 		var s := tex.get_size()
 		# bottom-align the character to the cell (feet at pos.y + CELL_PX)
 		draw_texture(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y + CELL_PX - s.y))
+		_draw_powerup_overlay(idx, pos)
 		return
 	# procedural fallback
 	if _mode == 1:
@@ -561,16 +591,16 @@ func _draw_player(idx: int, shirt: Color) -> void:
 func _draw_hud() -> void:
 	# The original HUD is pre-rendered SPRITES (the `extra's` sssf sheet): the
 	# blue "Score"/"Bonus" labels (f04/f02), red digits 0-9 (f06-f15), the smiley
-	# face (f16 = lives), rocket (f17 = arrows), potion (f18 = shield) and "Board#"
-	# (f28). Blitting them gives the exact original font + icons.
+	# face (f16 = per-life hit-buffer +0x46), rocket (f17 = arrows), potion (f18 = balls)
+	# and "Board#" (f28). Blitting them gives the exact original font + icons.
 	var y := 9.0
 	var iy := 3.0
 	var x := _ex(4, 14, y)                       # "Score"
 	x = _ex_num(_core.player_score(1), 10, x + 4, y)
 	x = _ex(2, x + 22, y)                        # "Bonus"
 	x = _ex_num(_core.bonus_time(), 5, x + 4, y)
-	x = _ex(16, x + 26, iy)                      # face (lives)
-	x = _ex_num(_core.player_lives(1), 2, x + 3, y)
+	x = _ex(16, x + 26, iy)                      # face = per-life hit-buffer (asm FUN_1000fb18 draws +0x46)
+	x = _ex_num(_core.player_shield(1), 2, x + 3, y)
 	x = _ex(17, x + 14, iy)                      # rocket (arrows)
 	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(18, x + 14, iy)                      # potion (Magic Ball ammo; asm draws +0x4a at x=0x184)
@@ -887,14 +917,17 @@ func _showcase_level() -> PackedByteArray:
 	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x02; b[n + 3] = 0x0D; n += 4
 	b[n] = 3; b[n + 1] = 10; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
-	# Magic-Arrow pickups (0x11) sitting on the floor row to run through
-	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x11; n += 4
+	# Magic-Arrow ammo (0x0911, +0x4c) on the floor row to run through. Real boards
+	# store goodies in the 0x09xx class (0x800 goody bit set); a BARE 0x11 would be
+	# collected but never rendered (draw + the original's pickup both need 0x800).
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x09; b[n + 3] = 0x11; n += 4
 	b[n] = 5; b[n + 1] = 11; n += 2
 	b[n] = 6; b[n + 1] = 11; n += 2
 	b[n] = 7; b[n + 1] = 11; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
-	# Magic-Ball pickups (0x10) further along the same floor row
-	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x10; n += 4
+	# Magic-Ball ammo (0x0912, +0x4a) further along the same floor row (0x10 is the
+	# shield pickup, NOT the ball -- the ball is type 0x12; asm FUN_1000ec50).
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x09; b[n + 3] = 0x12; n += 4
 	b[n] = 8; b[n + 1] = 11; n += 2
 	b[n] = 9; b[n + 1] = 11; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
