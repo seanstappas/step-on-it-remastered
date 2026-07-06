@@ -124,11 +124,32 @@ Contact sheets for every `sssf` resource are saved under
 | 2 | OSTRICH | `ostrich_sprites` | | 8 | BEANIE | `beenie_sprites` |
 | 3 | HIPPO | `hippo_sprites` | | 9 | ROBO | `robo_sprites` |
 | 4 | PIGGY | `piggy_sprites` | | 10 | WALKER | `walker_sprites` |
-| 5 | WHEELIE | `disk_sprites` *(hypothesis)* | | 11 | TEETH | `teeth_sprites` |
-| 6 | SMILEY | `smiley_sprites` | | | | |
+| 5 | WHEELIE | `disk_sprites` | | 11 | TEETH | `teeth_sprites` |
+| 6 | SMILEY | `smiley_sprites` | | 12 | CANNON | `cannon_sprites` |
+| 13 | SPINNER | `spinner_sprites` | | 14 | GARGOYLE | `Gargoyle_sprites` |
+| 15 | KNIGHT | `knight_sprites` | | 16 | CREEPER | `bigger_mblock` |
 
-`cannon`/`spinner`/`Gargoyle`/`knight` sheets exist but aren't in the current 11-entry core enum
-(Cannon & Spinner are in the Help bestiary; Gargoyle/knight are likely Challenge-mode / boss art).
+**BORD spawn-block type → sprite — CONFIRMED (2026-07-05) from the sprite loader.** The loader
+`FUN_10017b68` fills a pointer table `DAT_1003a314[type] = GetResource('sssf', 1000+type)` for spawn
+types 1-19, and the per-entity graphics dispatch `FUN_10017cd8` assigns each entity's sheet from it, so
+**BORD badguy type N draws sssf id `1000+N`** (names read via `tools/rezfork.py`):
+
+| bord | sssf | sheet / enemy | | bord | sssf | sheet / enemy |
+|---|---|---|---|---|---|---|
+| 1 | 1001 | cannon | | 11 | 1011 | smiley |
+| 2/3 | 1002 | disk (**Wheelie**) | | 12 | 1012 | ant (stride-test) |
+| 4 | 1004 | walker | | 13 | 1013 | **Knight** |
+| 5 | 1005 | hippo | | 14 | 1014 | **Gargoyle** |
+| 6 | 1006 | hammer | | 15 | 1015 | robo |
+| 7/8 | 1007 | beenie | | 16/17 | 1016 | **`bigger mblock`** (Creeper) |
+| 9 | 1009 | spinner | | 18 | 1018 | ostrich |
+| 10 | 1010 | teeth | | 19 | 1019 | piggy |
+
+So **Wheelie = `disk_sprites` is CONFIRMED** (not a hypothesis), and **`Gargoyle`/`knight` are ordinary
+badguys at bord types 14/13** — NOT challenge/boss art. Bord 16 & 17 are the horizontal/vertical axes of
+the block-laying **Creeper** and share `bigger mblock` (sssf 1016); `spinner` (bord 9) is its own enemy.
+The core `soi_bord_badguy_type` map and `game.gd` `ENEMY_FOLDER` follow this table (sssf 1003/1008/1017
+are unused; the fuller ant sheet is sssf 10121 `ant sprites`).
 
 **Player animation frames** (into `BP_sprites`/`GP_sprites`, CONFIRMED anchors from the disassembly;
 `game.gd` selects by the core's `ground_state`): idle **f61**, landing **f26**, jump **f133** (+ a

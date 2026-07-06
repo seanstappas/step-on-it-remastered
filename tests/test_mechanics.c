@@ -23,8 +23,9 @@ static void reset_player(SoiWorld *w, int idx, int col, int row)
     p->active = 1; p->alive = 1;
     p->x = soi_cell_x(col); p->y = soi_cell_y(row);
     p->facing = 1;                 /* +1 = right */
-    p->lives = 3; p->block_type = 0x07;
+    p->lives = 3; p->block_type = 0x19;   /* blue built block (ref-confirmed) */
     p->spawn_x = (int16_t)p->x; p->spawn_y = (int16_t)p->y;
+    p->mult = 1;                          /* default score multiplier (matches soi_world_init) */
 }
 
 /* Mark the player's feet cell supportive so soi_tick keeps it grounded instead
@@ -162,6 +163,20 @@ int main(void)
     soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
           "block-high: a second press at the same cell removes it");
+
+    /* action poses are a DISPLAY hint (asm FUN_1001166c busy-state); ours sets pose on
+     * fire/build with NO input lock, so behavior is unchanged (soi_player_pose>0 only
+     * for the brief pose window). */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+    w->players[1].facing = 1;
+    soi_tick(w, SOI_IN_BLOCK_HIGH, 0); soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    CHECK(soi_player_pose(w, 1) == 2, "pose: building sets the BUILD pose (display)");
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+    w->players[1].facing = 1; w->players[1].balls = 3;
+    soi_tick(w, SOI_IN_BALL, 0); soi_tick(w, SOI_IN_BALL, 0);
+    CHECK(soi_player_pose(w, 1) == 1, "pose: firing a ball sets the FIRE pose (display)");
 
     /* ---- 4. Thunderballs pickup clears every nasty on the board ---- */
     soi_world_init(w, 1);
@@ -346,31 +361,37 @@ int main(void)
         CHECK(n == 2, "beanie: at most one living bud at a time");
     }
 
-    /* ---- 8f. The Gargoyle (horizontal) and Knight (vertical) turrets fire a
-     * hostile shot aimed at the player on their reload; the Knight fires on the
-     * VERTICAL axis (FUN_10008618/FUN_10008b18, approximated as an aimed shot). */
+    /* ---- 8f. The Gargoyle (bord 14, asm FUN_1000adc4) and Knight (bord 13, asm
+     * FUN_1000c2e8) shooters both AIM AT THE PLAYER (the asm spawners target the
+     * player-position globals _DAT_10037d54/56); we fire one hostile shot along the
+     * dominant axis toward the nearest player. */
     {
         int gi, ki, i, gh = -1, kh = -1;
+        /* Gargoyle: player to the RIGHT (same row) -> the shot goes rightward. */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
-        reset_player(w, 1, 8, 3);                       /* player right + high */
-        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 3, 9);   /* left of the player */
+        reset_player(w, 1, 8, 9);
+        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 3, 9);
         soi_set_cell(w, 3, 10, SOI_CELL_SUPPORTIVE);    /* floor so it stands */
         w->enemies[gi].fire_cd = 0;
         soi_enemies_update(w);
         for (i = 0; i < SOI_MAX_PROJECTILES; i++)
             if (w->projectiles[i].active && w->projectiles[i].hostile) { gh = i; break; }
         CHECK(gh >= 0 && w->projectiles[gh].vx > 0 && w->projectiles[gh].vy == 0,
-              "gargoyle: fires a hostile horizontal shot toward the player");
-        for (i = 0; i < SOI_MAX_PROJECTILES; i++) w->projectiles[i].active = 0;
-        ki = soi_enemy_spawn(w, SOI_ENEMY_KNIGHT, 8, 9);     /* below the player */
+              "gargoyle: aims a hostile shot toward the player (rightward)");
+        /* Knight: player ABOVE (same column) -> the shot goes upward. Same code path
+         * as the Gargoyle, proving both aim at the player (not a fixed axis). */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 8, 3);
+        ki = soi_enemy_spawn(w, SOI_ENEMY_KNIGHT, 8, 9);
         soi_set_cell(w, 8, 10, SOI_CELL_SUPPORTIVE);
         w->enemies[ki].fire_cd = 0;
         soi_enemies_update(w);
         for (i = 0; i < SOI_MAX_PROJECTILES; i++)
             if (w->projectiles[i].active && w->projectiles[i].hostile) { kh = i; break; }
         CHECK(kh >= 0 && w->projectiles[kh].vy < 0 && w->projectiles[kh].vx == 0,
-              "knight: fires a hostile vertical shot toward the player (upward)");
+              "knight: aims a hostile shot toward the player (upward)");
     }
 
     /* ---- 8g. Enemies fall off a ledge only when BOTH feet clear it (the asm
@@ -496,8 +517,8 @@ int main(void)
             { 0x12, SOI_SFX_PICKUP_BALL,   "goody: ball ammo plays its own sound (evt 0x1a)"    },
             { 0x14, SOI_SFX_PICKUP_TIME,   "goody: time bonus plays its own sound (evt 0x1b)"   },
             { 0x30, SOI_SFX_SHIELD_ON,     "goody: shield activate plays its own sound (evt 0x29)" },
-            { 0x31, SOI_SFX_SHOES,         "goody: shoes plays its own sound (evt 0x2a)"        },
-            { 0x32, SOI_SFX_ONEUP,         "goody: 1-UP plays its own sound (evt 0x28)"         },
+            { 0x31, SOI_SFX_WHISTLE,       "goody: enemy-claim plays its own sound (evt 0x2a)"  },
+            { 0x32, SOI_SFX_SHOES,         "goody: speed shoes play their own sound (evt 0x28)" },
         };
         int k;
         for (k = 0; k < 7; k++) {
@@ -525,13 +546,51 @@ int main(void)
         soi_world_init(w, 1);
         w->players[1].active = 1; w->players[1].alive = 1;
         w->players[1].x = soi_cell_x(5); w->players[1].y = soi_cell_y(5);
+        w->players[1].balls = 0; w->players[1].shield = 0;   /* isolate from new-game ammo/shield */
         soi_set_cell(w, 5, 5, 0x10u); soi_pickup_check(w, 1);
         CHECK(w->players[1].shield == 1 && w->players[1].balls == 0, "goody: 0x10 grants a shield (not a ball)");
         soi_world_init(w, 1);
         w->players[1].active = 1; w->players[1].alive = 1;
         w->players[1].x = soi_cell_x(5); w->players[1].y = soi_cell_y(5);
+        w->players[1].balls = 0; w->players[1].shield = 0;   /* isolate from new-game ammo/shield */
         soi_set_cell(w, 5, 5, 0x12u); soi_pickup_check(w, 1);
         CHECK(w->players[1].balls == 1 && w->players[1].shield == 0, "goody: 0x12 grants a ball (not a shield)");
+
+        /* the speed-shoes goody 0x32 (asm FUN_10014ccc) arms 2x fast-mode for ~20s;
+         * it is NOT a 1UP -- no goody grants a life in the original dispatch. */
+        soi_world_init(w, 1);
+        w->players[1].active = 1; w->players[1].alive = 1;
+        w->players[1].x = soi_cell_x(5); w->players[1].y = soi_cell_y(5);
+        {
+            int lv0 = w->players[1].lives;
+            soi_set_cell(w, 5, 5, 0x32u); soi_pickup_check(w, 1);
+            CHECK(w->players[1].fast == 1200 && w->players[1].lives == lv0,
+                  "goody: 0x32 arms fast-mode speed shoes, not a life");
+            CHECK(soi_player_fast(w, 1) == 1200, "accessor: player_fast reflects speed-shoes");
+        }
+
+        /* fast-mode runs the player at 60Hz: a shoed faller drops ~2x as far as a
+         * normal one over the same ticks (even-tick physics; edges already consumed). */
+        {
+            int y_norm, y_fast, t, y0;
+            soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+            reset_player(w, 1, 5, 3);
+            w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+            y0 = w->players[1].y;
+            for (t = 0; t < 10; t++) soi_tick(w, 0, 0);
+            y_norm = w->players[1].y - y0;
+
+            soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+            reset_player(w, 1, 5, 3);
+            w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+            w->players[1].fast = 1200;
+            y0 = w->players[1].y;
+            for (t = 0; t < 10; t++) soi_tick(w, 0, 0);
+            y_fast = w->players[1].y - y0;
+
+            CHECK(y_norm > 0 && y_fast > y_norm + y_norm / 2,
+                  "goody: 0x32 fast-mode ~doubles the fall rate (60Hz physics)");
+        }
     }
 
     /* ---- 8h. The Hammer HOPS (FUN_10007998): it launches into a ballistic arc
@@ -663,6 +722,13 @@ int main(void)
         CHECK(soi_level_complete(w) == 1, "levelclear: key + door exit -> complete");
         CHECK(w->players[1].score == 2000 && w->bonus_timer == 0,
               "levelclear: remaining bonus added to score on exit");
+        /* Treasure is SCORING, not the objective: the CONFIRMED win condition is
+         * key + door (docs gameplay-and-design.md 1), NOT "collect all treasure".
+         * Completion must still fire with treasure uncollected -- this guards the
+         * old all-treasure placeholder (decompiled-findings.md 5) from returning. */
+        w->goodies_total = 3; w->goodies_left = 2;
+        CHECK(soi_level_complete(w) == 1,
+              "levelclear: key+door completes even with treasure left (treasure = score, not objective)");
     }
 
     /* ---- 11b. Colored key/lock/door = the REAL boards' win system. Collecting a
@@ -688,6 +754,33 @@ int main(void)
         CHECK(soi_level_complete(w) == 1, "colorkey: key + opened-door exit -> complete");
         CHECK(w->players[1].score == 1500 && w->bonus_timer == 0,
               "colorkey: remaining bonus added to score on exit");
+    }
+
+    /* ---- 11c. Score multiplier goody (0x0C-0x0F = 2x/3x/4x/5x, asm FUN_10011428):
+     * SETS the player's multiplier (default 1), which multiplies the end-of-level
+     * BONUS awarded at the door (mult x bonus_timer; FUN_10029264 tallies +0x44 * +0x40).
+     * Coins are NOT multiplied. Multipliers appear on 20+ boards (e.g. board_1001). */
+    {
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        CHECK(w->players[1].mult == 1, "mult: default multiplier is 1");
+        soi_set_cell(w, 4, 9, 0x090Du);                 /* 3x multiplier goody on the player cell */
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].mult == 3, "mult: 0x0D goody sets the 3x multiplier");
+        CHECK(soi_get_cell(w, 4, 9) == SOI_CELL_EMPTY, "mult: multiplier goody is consumed");
+        /* win: key + door with a remaining bonus -> bonus x 3 into score */
+        soi_set_cell(w, 4, 9, SOI_TILE_KEY);
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].has_key == 1, "mult: key collected");
+        soi_set_cell(w, 10, 9, SOI_CELL_DOOR | 0x01u);
+        w->players[1].x = soi_cell_x(10); w->players[1].y = soi_cell_y(9);
+        w->players[1].score = 0;
+        w->bonus_timer = 1000;
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].has_key == 2, "mult: exited the door");
+        CHECK(w->players[1].score == 3000 && w->bonus_timer == 0,
+              "mult: end-of-level bonus is multiplied (1000 x 3 = 3000)");
     }
 
     /* ---- 12. The player's Magic Arrow RICOCHETS off a solid block (asm
@@ -778,14 +871,14 @@ int main(void)
     reset_player(w, 1, 5, 9);
     ground_player(w, 5, 9);
     w->players[1].facing = 1;                       /* face right */
-    w->players[1].block_type = 0x07;
+    w->players[1].block_type = 0x19;
     { /* blanket the front / front-below cells with hidden coins; the block-low
        * verb builds on one and that block must inherit the payload. */
         int c, r, found = 0;
         for (c = 6; c <= 7; c++) for (r = 8; r <= 12; r++) soi_set_cell(w, c, r, 0x090A1000u);
         soi_tick(w, SOI_IN_BLOCK_LOW, 0);           /* build a block in front-below */
         for (c = 6; c <= 7; c++) for (r = 8; r <= 12; r++)
-            if (soi_get_cell(w, c, r) == 0x090A1207u) found = 1;
+            if (soi_get_cell(w, c, r) == 0x090A1219u) found = 1;   /* built block = blue 0x19 + payload */
         CHECK(found, "payload: a block built on a hidden-payload cell inherits the goody");
     }
 
@@ -928,6 +1021,85 @@ int main(void)
         soi_set_cell(w, 3, 9, 0x12);                    /* magic-ball goody on the player's cell */
         soi_pickup_check(w, 1);
         CHECK(w->players[1].balls == b0 + 1, "ball: the 0x12 pickup grants ball ammo");
+    }
+
+    /* ---- 16. Creeper (bord 16/17) is a self-propelled block-layer, NOT a shooter.
+     * Corrects the earlier map that mislabelled 16/17 as Gargoyle/Knight; the real
+     * Gargoyle/Knight are bord 14/13 (sssf 1014/1013). Creeper = sssf 1016. ---- */
+    CHECK(soi_bord_badguy_type(13) == SOI_ENEMY_KNIGHT,   "map: bord 13 -> Knight");
+    CHECK(soi_bord_badguy_type(14) == SOI_ENEMY_GARGOYLE, "map: bord 14 -> Gargoyle");
+    CHECK(soi_bord_badguy_type(16) == SOI_ENEMY_CREEPER,  "map: bord 16 -> Creeper (horizontal)");
+    CHECK(soi_bord_badguy_type(17) == SOI_ENEMY_CREEPER,  "map: bord 17 -> Creeper (vertical)");
+
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    {
+        int ci = soi_enemy_spawn(w, SOI_ENEMY_CREEPER, 4, 6);   /* mid-board, open cells */
+        CHECK(ci >= 0, "creeper: spawned");
+        w->enemies[ci].state = 0;          /* 0 = horizontal axis */
+        w->enemies[ci].dir   = 2;          /* stepping right */
+        w->enemies[ci].fire_period = 1;    /* short step interval for the test */
+        w->enemies[ci].fire_cd = 1;
+        soi_set_cell(w, 6, 6, 0x197);      /* a background tile in its path (passable, not solid) */
+        {
+            int t;
+            for (t = 0; t < 8; t++) soi_tick(w, 0, 0);
+            CHECK(soi_enemy_x(w, ci) >= soi_cell_x(7),
+                  "creeper: traverses a background (0x197) tile instead of getting stuck");
+            CHECK(soi_projectile_count(w) == 0, "creeper: never fires a projectile");
+            /* Moving SOLID block: its cell is solid; the cells it covered are restored
+             * -- including the 0x197 background (asm captures +0x70), so nothing erases. */
+            CHECK(soi_get_cell(w, 8, 6) & SOI_CELL_SUPPORTIVE,
+                  "creeper: temp-solidifies the cell it occupies");
+            CHECK(soi_get_cell(w, 6, 6) == 0x197,
+                  "creeper: restores the background tile it covered (capture/restore)");
+            CHECK((soi_get_cell(w, 4, 6) & SOI_CELL_SUPPORTIVE) == 0,
+                  "creeper: restores the cell it left (temporary trail)");
+        }
+    }
+
+    /* ---- 17. A hostile shot's src_type is LOGICAL state -- a Gargoyle shot
+     * despawns at age 14 (soi_enemies.c) -- so the canonical serialize / state
+     * hash must include it (else a cross-play desync would slip through). ---- */
+    {
+        static uint8_t sbuf1[8192], sbuf2[8192];
+        size_t n1, n2;
+        soi_world_init(w, 1);
+        w->projectiles[0].active = 1;
+        w->projectiles[0].src_type = SOI_ENEMY_CANNON;
+        n1 = soi_serialize(w, sbuf1, sizeof sbuf1);
+        w->projectiles[0].src_type = SOI_ENEMY_GARGOYLE;
+        n2 = soi_serialize(w, sbuf2, sizeof sbuf2);
+        CHECK(n1 == n2 && n1 > 0 && memcmp(sbuf1, sbuf2, n1) != 0,
+              "serialize: projectile src_type is part of the state hash");
+    }
+
+    /* ---- 18. The level-objective treasure count keys off the GOODIE nibble
+     * (0x9xx) / hidden payload, NOT the raw low byte: a BLUE block is type 0x19,
+     * colliding with gold-bars, so counting by low byte miscounts a board's blue
+     * blocks as treasure (real bug on board_422's maze etc.). ---- */
+    {
+        soi_world_init(w, 1);
+        soi_set_cell(w, 3, 3, 0x90Au);        /* visible silver-coin goodie (treasure) */
+        soi_set_cell(w, 4, 3, 0x319u);        /* BLUE block (type 0x19) -- NOT treasure */
+        soi_set_cell(w, 5, 3, 0x219u);        /* BLUE block again */
+        soi_set_cell(w, 6, 3, 0x090A1207u);   /* white SPECIAL block hiding a silver coin */
+        CHECK(soi_count_treasure(w) == 2,
+              "objective: counts goodie + hidden treasure, not blue blocks");
+    }
+
+    /* ---- 19. Transporter OUT-seeking must skip a solid block that shares the OUT's
+     * low byte: a PINK block is type 0x1F, colliding with the 0x1e/0x1f pair -- the
+     * scan must land on the walk-on OUT marker, not the (earlier-scanned) block. ---- */
+    {
+        soi_world_init(w, 1);
+        reset_player(w, 1, 5, 5);
+        soi_set_cell(w, 2, 2, 0x31Fu);   /* PINK block (0x1F, supportive) -- scanned FIRST */
+        soi_set_cell(w, 8, 8, 0x11Fu);   /* the real transporter OUT (0x1F, walk-on) */
+        soi_set_cell(w, 5, 5, 0x11Eu);   /* transporter IN (0x1E) under the player */
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].x == soi_cell_x(8) && w->players[1].y == soi_cell_y(8),
+              "transporter: OUT scan lands on the marker, not a same-low-byte pink block");
     }
 
     free(w);

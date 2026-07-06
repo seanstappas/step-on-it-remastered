@@ -48,9 +48,12 @@ int64_t SoiCore::player_balls(int64_t p) const { return soi_player_balls(w(), (i
 int64_t SoiCore::player_shield(int64_t p) const { return soi_player_shield(w(), (int)p); }
 int64_t SoiCore::player_facing(int64_t p) const { return soi_player_facing(w(), (int)p); }
 int64_t SoiCore::player_invuln(int64_t p) const { return soi_player_invuln(w(), (int)p); }
+int64_t SoiCore::player_fast(int64_t p) const { return soi_player_fast(w(), (int)p); }
 int64_t SoiCore::player_has_key(int64_t p) const { return soi_player_has_key(w(), (int)p); }
 int64_t SoiCore::player_state(int64_t p) const { return soi_player_state(w(), (int)p); }
 int64_t SoiCore::player_movectr(int64_t p) const { return soi_player_movectr(w(), (int)p); }
+int64_t SoiCore::player_pose(int64_t p) const { return soi_player_pose(w(), (int)p); }
+int64_t SoiCore::player_pose_t(int64_t p) const { return soi_player_pose_t(w(), (int)p); }
 int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); }
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
 int64_t SoiCore::bonus_time() const            { return soi_bonus_time(w()); }
@@ -109,9 +112,12 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("player_shield", "player"), &SoiCore::player_shield);
     ClassDB::bind_method(D_METHOD("player_facing", "player"), &SoiCore::player_facing);
     ClassDB::bind_method(D_METHOD("player_invuln", "player"), &SoiCore::player_invuln);
+    ClassDB::bind_method(D_METHOD("player_fast", "player"), &SoiCore::player_fast);
     ClassDB::bind_method(D_METHOD("player_has_key", "player"), &SoiCore::player_has_key);
     ClassDB::bind_method(D_METHOD("player_state", "player"), &SoiCore::player_state);
     ClassDB::bind_method(D_METHOD("player_movectr", "player"), &SoiCore::player_movectr);
+    ClassDB::bind_method(D_METHOD("player_pose", "player"), &SoiCore::player_pose);
+    ClassDB::bind_method(D_METHOD("player_pose_t", "player"), &SoiCore::player_pose_t);
     ClassDB::bind_method(D_METHOD("goodies_total"), &SoiCore::goodies_total);
     ClassDB::bind_method(D_METHOD("goodies_left"), &SoiCore::goodies_left);
     ClassDB::bind_method(D_METHOD("bonus_time"), &SoiCore::bonus_time);

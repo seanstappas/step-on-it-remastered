@@ -84,7 +84,7 @@ void soi_pickup_check(SoiWorld *w, int player)
     if ((c & SOI_CELL_DOOR) && t <= 3u) {
         if (p->has_key == 1) {            /* first exit through the door: level won */
             p->has_key = 2;
-            p->score += w->bonus_timer;   /* remaining round bonus -> score (FUN_10015714) */
+            p->score += w->bonus_timer * p->mult; /* bonus x score-multiplier (FUN_10029264: +0x40 * +0x44) */
             w->bonus_timer = 0;
             soi_sfx_emit(w, SOI_SFX_POWERUP);
         }
@@ -128,7 +128,9 @@ void soi_pickup_check(SoiWorld *w, int player)
             int r, col;
             for (r = 0; r < SOI_GRID_ROWS; r++)
                 for (col = 0; col < SOI_GRID_COLS; col++)
-                    if (SOI_CELL_TYPE(w->cell[r][col]) == out_type) {
+                    if (SOI_CELL_TYPE(w->cell[r][col]) == out_type &&
+                        !(w->cell[r][col] & SOI_CELL_SUPPORTIVE)) {   /* a walk-on OUT marker,
+                              * NOT a solid block that shares the low byte (pink = 0x1F) */
                         p->x = soi_cell_x(col); p->y = soi_cell_y(r);
                         soi_sfx_emit(w, SOI_SFX_TELEPORT);
                         return;
@@ -185,7 +187,18 @@ void soi_pickup_check(SoiWorld *w, int player)
                 if (w->enemies[e].active) w->enemies[e].claimed = (uint8_t)player;
             break;
         }
-        case 0x32: p->lives += 1;    break;   /* 1UP           (CONFIRMED) */
+        case 0x32:                            /* speed shoes: 2x player speed for ~20s.
+                                               * asm FUN_10014ccc arms fast-mode +0x5c=1 +
+                                               * timer +0x6e=0x4b0(1200). NOT a 1UP -- no
+                                               * goody grants a life in the dispatch. */
+            p->fast = 1200;
+            break;
+        case 0x0C: case 0x0D: case 0x0E: case 0x0F:
+            /* score multiplier 2x/3x/4x/5x (asm FUN_10011428(player, type-0x0A) -> +0x44).
+             * SET (not stacked); multiplies the end-of-level bonus at the door exit
+             * (mult x bonus_timer, tallied by FUN_10029264). Coins stay unmultiplied. */
+            p->mult = (int16_t)(t - 0x0Au);
+            break;
         default:
             /* 0x1a-0x23 transporters, 0x24-0x2d stop/go handled above. */
             return;
@@ -208,8 +221,8 @@ void soi_pickup_check(SoiWorld *w, int player)
             case 0x2E: s = SOI_SFX_CLOCK;         break;   /* clock (slow)  (evt 0x2B -> 1005)  */
             case 0x2F: s = SOI_SFX_THUNDER;       break;   /* thunderballs                     */
             case 0x30: s = SOI_SFX_SHIELD_ON;     break;   /* shield on     (evt 0x29 -> 1003)  */
-            case 0x31: s = SOI_SFX_SHOES;         break;   /* shoes/turtles (evt 0x2a -> 1004)  */
-            case 0x32: s = SOI_SFX_ONEUP;         break;   /* 1-UP          (evt 0x28 -> 1002)  */
+            case 0x31: s = SOI_SFX_WHISTLE;       break;   /* enemy-claim (FUN_1000543c, evt 0x2a -> 1004) */
+            case 0x32: s = SOI_SFX_SHOES;         break;   /* speed shoes (FUN_10014ccc, evt 0x28 -> 1002) */
             default:   s = SOI_SFX_POWERUP;       break;
         }
         soi_sfx_emit(w, s);

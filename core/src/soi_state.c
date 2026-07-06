@@ -47,8 +47,14 @@ void soi_world_init(SoiWorld *w, uint32_t seed)
     zero_world(w);
     soi_rng_seed(w, seed ? seed : 1u);   /* Toolbox default seed = 1 */
     for (i = 0; i < SOI_MAX_PLAYERS; i++) {
-        w->players[i].lives = 3;         /* TODO(oracle): starting lives */
-        w->players[i].block_type = 0x07; /* standard white block (matches boards) */
+        w->players[i].lives = 4;         /* single-player lives pool (asm FUN_1002b060 sRam1003aa66 = 4) */
+        w->players[i].shield = 2;        /* per-life hit-buffer + HUD face count (asm FUN_1002b060 -> +0x46 = 2) */
+        w->players[i].block_type = 0x19; /* BLUE block: the player's BUILT blocks are blue in the
+                                          * refs (montage/video), distinct from board white 0x07
+                                          * (block_sprites: 0x07 white, 0x13 green, 0x19 blue). */
+        w->players[i].balls  = 1;        /* new-game ammo (asm FUN_1002b060 -> +0x4a = 1) */
+        w->players[i].arrows = 1;        /* new-game ammo (asm FUN_1002b060 -> +0x4c = 1) */
+        w->players[i].mult   = 1;        /* score multiplier default 1 (asm FUN_1002b174 -> +0x44 = 1) */
     }
 }
 
@@ -66,6 +72,7 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
     p->respawn_timer = 0;
     p->block_type = 0x07;
     p->input = 0; p->input_prev = 0;
+    p->mult = 1;                   /* multiplier resets to 1 each level (asm FUN_1002b174 -> +0x44) */
 }
 
 int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
@@ -130,6 +137,15 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
                         w->enemies[ei].vx = 0;                       /* stationary */
                         w->enemies[ei].fire_period = (int16_t)((b0 ? b0 : 20u) * 6u);
                         w->enemies[ei].fire_cd = (int16_t)(b1 * 6u);
+                    } else if (w->enemies[ei].type == SOI_ENEMY_CREEPER) {
+                        /* Creeper (asm FUN_10008618/8b18): bord 16 = horizontal,
+                         * 17 = vertical (state). Step interval = cell byte3 (asm
+                         * +0x50 = StartDelay) * ~6 (asm +0x6e = +0x50*3 at a 2-frame
+                         * cadence). It is self-propelled, never a shooter. */
+                        w->enemies[ei].state = (uint8_t)(((tile & 0xFFu) == 0x11u) ? 1 : 0);
+                        w->enemies[ei].vx = 0;
+                        w->enemies[ei].fire_period = (int16_t)(b0 ? b0 * 6u : 24u);
+                        w->enemies[ei].fire_cd = (int16_t)(b0 ? b0 * 6u : 24u);
                     }
                 }
                 continue;
@@ -146,16 +162,8 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     w->level_loaded = 1;
     /* Level objective (FIRST-DRAFT, TODO(oracle)): clear all treasure placed on
      * the board (coins/gems/gold). Count it now; pickups decrement it. */
-    {
-        int rr, cc, n = 0;
-        for (rr = 0; rr < SOI_GRID_ROWS; rr++)
-            for (cc = 0; cc < SOI_GRID_COLS; cc++) {
-                unsigned tt = SOI_CELL_TYPE(w->cell[rr][cc]);
-                if (tt == 0x0A || tt == 0x17 || tt == 0x18 || tt == 0x19) n++;
-            }
-        w->goodies_total = (int16_t)n;
-        w->goodies_left = (int16_t)n;
-    }
+    w->goodies_total = (int16_t)soi_count_treasure(w);
+    w->goodies_left  = w->goodies_total;
     return 1;
 }
 
@@ -199,9 +207,18 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
         soi_player_update(w, 1);
         soi_player_update(w, 2);
     } else {
-        if (w->players[1].ground_state == SOI_ST_DEAD) soi_player_update(w, 1);
-        if (w->players[2].ground_state == SOI_ST_DEAD) soi_player_update(w, 2);
+        /* even tick: a DYING player animates every frame; a SPEED-SHOES player (goody
+         * 0x32 -> asm fast-mode +0x5c) also updates -> 60Hz = 2x speed. The action edge
+         * was already consumed on the odd tick (input latches at 30Hz), so this doubles
+         * movement/physics without re-firing jump/shot actions. */
+        if (w->players[1].ground_state == SOI_ST_DEAD || w->players[1].fast > 0) soi_player_update(w, 1);
+        if (w->players[2].ground_state == SOI_ST_DEAD || w->players[2].fast > 0) soi_player_update(w, 2);
     }
+    if (w->players[1].fast > 0) w->players[1].fast--;
+    if (w->players[2].fast > 0) w->players[2].fast--;
+    /* action pose (fire/build) is a brief DISPLAY hint -- count it down (no input lock). */
+    if (w->players[1].pose_t > 0 && --w->players[1].pose_t == 0) w->players[1].pose = 0;
+    if (w->players[2].pose_t > 0 && --w->players[2].pose_t == 0) w->players[2].pose = 0;
     /* Clock power-up (goody 0x2E): halves the enemy update rate for ~10s. The asm
      * (_DAT_1003b294) decrements a counter each frame and runs the nasties only when
      * it is < 0 (expired -> normal) or ODD -> every other frame = 30Hz while active. */
@@ -237,7 +254,8 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
             soi_enemy_spawn(w, t, soi_rand_range(w, SOI_GRID_COLS) - 1, 0);
         }
     }
-    /* TODO(oracle): the level-complete condition. */
+    /* Level-complete is polled via soi_level_complete() below (the CONFIRMED win
+     * condition = key + door exit, docs gameplay-and-design.md 1); nothing per-tick. */
 }
 
 /* ---------- accessors ---------- */
@@ -276,11 +294,38 @@ int      soi_player_balls(const SoiWorld *w, int p) { return pget(w, p)->balls; 
 int      soi_player_shield(const SoiWorld *w, int p) { return pget(w, p)->shield; }
 int      soi_player_facing(const SoiWorld *w, int p) { return pget(w, p)->facing; }
 int      soi_player_invuln(const SoiWorld *w, int p) { return pget(w, p)->invuln; }
+int      soi_player_fast(const SoiWorld *w, int p) { return pget(w, p)->fast; }
 int      soi_player_has_key(const SoiWorld *w, int p) { return pget(w, p)->has_key; }
 int      soi_player_state(const SoiWorld *w, int p) { return pget(w, p)->ground_state; }
 int      soi_player_movectr(const SoiWorld *w, int p) { return pget(w, p)->move_ctr; }
+int      soi_player_pose(const SoiWorld *w, int p) { const SoiPlayer *pp = pget(w, p); return pp->pose_t > 0 ? pp->pose : 0; }
+int      soi_player_pose_t(const SoiWorld *w, int p) { return pget(w, p)->pose_t; }
 int      soi_goodies_total(const SoiWorld *w)       { return w->goodies_total; }
 int      soi_goodies_left(const SoiWorld *w)        { return w->goodies_left; }
+
+/* Count the board's treasure -- the level-clear objective. A treasure is a VISIBLE
+ * goodie (0x9xx) of a coin/gem/gold type (0x0A silver, 0x17 gold, 0x18 gem, 0x19
+ * bars), OR a coin/gem/gold HIDDEN under a SPECIAL block (revealed when broken).
+ * A plain colored BLOCK is NOT treasure: blue is type 0x19, which collides with
+ * gold-bars' low byte, so we key off the 0x9xx goodie nibble / the special payload,
+ * never the raw low byte (else e.g. board_422's blue maze blocks miscount as gold
+ * bars and the objective can never clear). Matches the pickup's decrement set. */
+int soi_count_treasure(const SoiWorld *w)
+{
+    int rr, cc, n = 0;
+    for (rr = 0; rr < SOI_GRID_ROWS; rr++)
+        for (cc = 0; cc < SOI_GRID_COLS; cc++) {
+            uint32_t cell = w->cell[rr][cc];
+            unsigned lo  = SOI_CELL_TYPE(cell);
+            unsigned pay = SOI_CELL_TYPE(SOI_CELL_PAYLOAD(cell));
+            int is_t_lo  = (lo  == 0x0A || lo  == 0x17 || lo  == 0x18 || lo  == 0x19);
+            int is_t_pay = (pay == 0x0A || pay == 0x17 || pay == 0x18 || pay == 0x19);
+            if (((cell & 0xF00u) == 0x900u && is_t_lo) ||   /* visible goodie */
+                ((cell & SOI_CELL_SPECIAL) && is_t_pay))    /* hidden under a block */
+                n++;
+        }
+    return n;
+}
 int      soi_bonus_time(const SoiWorld *w)          { return w->bonus_timer; }
 uint32_t soi_tick_count(const SoiWorld *w)          { return w->tick; }
 uint32_t soi_grid_cell(const SoiWorld *w, int c, int r) { return soi_get_cell(w, c, r); }
@@ -362,11 +407,15 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)p->jump_t); bput_u16(&b, (uint16_t)p->launch_y);
         bput_u16(&b, (uint16_t)p->lives);
         bput_i32(&b, p->score); bput_i32(&b, p->bonus_time);
+        bput_u16(&b, (uint16_t)p->mult);
         bput_u16(&b, (uint16_t)p->shield); bput_u16(&b, (uint16_t)p->arrows);
         bput_u16(&b, (uint16_t)p->balls);
         bput_u16(&b, (uint16_t)p->invuln); bput_u16(&b, (uint16_t)p->fire_cd);
         bput_u16(&b, (uint16_t)p->spawn_x); bput_u16(&b, (uint16_t)p->spawn_y);
         bput_u16(&b, (uint16_t)p->respawn_timer);
+        bput_u16(&b, (uint16_t)p->fast);
+        bput_u8(&b, p->pose);
+        bput_u16(&b, (uint16_t)p->pose_t);
     }
     for (i = 0; i < SOI_MAX_ENEMIES; i++) {
         const SoiEnemy *e = &w->enemies[i];
@@ -378,11 +427,12 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)e->fire_period);
         bput_u8(&b, e->spawn_child); bput_u16(&b, (uint16_t)e->life);
         bput_u8(&b, e->child);
+        bput_u32(&b, e->under);
     }
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         const SoiProjectile *pr = &w->projectiles[i];
         bput_u8(&b, pr->active); bput_u8(&b, pr->owner); bput_u8(&b, pr->hostile);
-        bput_u8(&b, pr->kind);
+        bput_u8(&b, pr->kind); bput_u8(&b, pr->src_type);
         bput_i32(&b, pr->x); bput_i32(&b, pr->y);
         bput_u16(&b, (uint16_t)pr->vx); bput_u16(&b, (uint16_t)pr->vy);
         bput_u16(&b, (uint16_t)pr->age);
@@ -397,11 +447,16 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
 /* ---------- FNV-1a 64-bit over the serialized logical state ---------- */
 uint64_t soi_state_hash(const SoiWorld *w)
 {
-    uint8_t buf[8192];
+    /* The serialize packs the SAME logical fields with no struct padding (and omits
+     * the transient sfx queue), so its length is always < sizeof(SoiWorld). Sizing
+     * the buffer to that makes truncation IMPOSSIBLE and auto-tracks the schema as
+     * fields are added -- so the hash can never silently drop trailing state (the
+     * grid is serialized last, so a too-small buffer would have dropped it). */
+    uint8_t buf[sizeof(SoiWorld)];
     size_t n = soi_serialize(w, buf, sizeof(buf));
     uint64_t h = 1469598103934665603ULL;      /* FNV offset basis */
     size_t i;
-    if (n > sizeof(buf)) n = sizeof(buf);      /* fits comfortably for now */
+    if (n > sizeof(buf)) n = sizeof(buf);      /* provably dead now; kept defensively */
     for (i = 0; i < n; i++) {
         h ^= buf[i];
         h *= 1099511628211ULL;                 /* FNV prime */

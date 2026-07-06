@@ -274,10 +274,10 @@ void soi_player_update(SoiWorld *w, int player)
 
     /* idle: the 7 real actions (Configure-Keys order) */
     if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
-    if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); return; }
-    if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); return; }
-    if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); return; }
-    if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); return; }
+    if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; return; }
+    if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
+    if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+    if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
     if (in & SOI_IN_LEFT)       { run_step(w, player, -1); return; }
     if (in & SOI_IN_RIGHT)      { run_step(w, player, +1); return; }
     /* no direction held: settle to rest -- snap X to a 4 px boundary (asm idle

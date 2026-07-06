@@ -67,6 +67,11 @@ typedef enum {
     SOI_ENEMY_SPINNER,
     SOI_ENEMY_GARGOYLE,
     SOI_ENEMY_KNIGHT,
+    /* Creeper (bord types 16 & 17): a self-propelled "bigger mblock" (sssf 1016)
+     * that walks the grid one cell at a time laying/solidifying blocks -- 16 =
+     * horizontal (asm FUN_10008618), 17 = vertical (asm FUN_10008b18). NOT a
+     * projectile shooter (our earlier map mislabelled these as Gargoyle/Knight). */
+    SOI_ENEMY_CREEPER,
     SOI_ENEMY_TYPE_COUNT
 } SoiEnemyType;
 
@@ -110,9 +115,9 @@ typedef enum {
     SOI_SFX_PICKUP_ARROW, /* Magic Arrow ammo goody 0x11 (asm event 0x19 -> 3001  "rooster") */
     SOI_SFX_PICKUP_SHIELD,/* shield pickup goody 0x10    (asm event 0x18 -> 31429 "oh la la") */
     SOI_SFX_PICKUP_TIME,  /* time bonus x1-4  (asm event 0x1b -> 7119  "space balls") */
-    SOI_SFX_ONEUP,        /* 1-UP             (asm event 0x28 -> 1002  "zap") */
-    SOI_SFX_SHIELD_ON,    /* shield activate  (asm event 0x29 -> 1003  "gong") */
-    SOI_SFX_SHOES,        /* shoes/turtles    (asm event 0x2a -> 1004  "whistle") */
+    SOI_SFX_SHOES,        /* speed-shoes goody 0x32 (asm event 0x28 -> 1002 "zap"; 2x speed, NOT a 1UP) */
+    SOI_SFX_SHIELD_ON,    /* shield-activate goody 0x30 (asm event 0x29 -> 1003 "gong") */
+    SOI_SFX_WHISTLE,      /* enemy-claim goody 0x31 (asm event 0x2a -> 1004 "whistle") */
     SOI_SFX_KEY,          /* colored-key collect (asm event 0x14 -> 17661 "Announce") */
     SOI_SFX_COUNT
 } SoiSfx;
@@ -147,11 +152,15 @@ int      soi_player_balls(const SoiWorld *w, int player);
 int      soi_player_shield(const SoiWorld *w, int player);
 int      soi_player_facing(const SoiWorld *w, int player);
 int      soi_player_invuln(const SoiWorld *w, int player);  /* >0 = flashing/invulnerable */
+int      soi_player_fast(const SoiWorld *w, int player);    /* >0 = speed-shoes (goody 0x32) active */
 int      soi_player_has_key(const SoiWorld *w, int player); /* 0 none, 1 carrying, 2 exited */
 int      soi_player_state(const SoiWorld *w, int player);   /* ground_state: 0 idle,1 run,2 jump,3 fall,0xC dead */
 int      soi_player_movectr(const SoiWorld *w, int player); /* 0..6 run-step animation counter */
+int      soi_player_pose(const SoiWorld *w, int player);    /* action pose (display): 0 none, 1 fire, 2 build */
+int      soi_player_pose_t(const SoiWorld *w, int player);  /* action-pose countdown (frames) */
 int      soi_goodies_total(const SoiWorld *w);   /* treasure at level load */
 int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected */
+int      soi_count_treasure(const SoiWorld *w);  /* treasure cells now in the grid (objective count) */
 int      soi_bonus_time(const SoiWorld *w);
 uint32_t soi_tick_count(const SoiWorld *w);
 uint32_t soi_grid_cell(const SoiWorld *w, int col, int row);

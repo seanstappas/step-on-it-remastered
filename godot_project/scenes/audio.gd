@@ -45,9 +45,9 @@ const SFX_ID := {
 	32: 3001,   # PICKUP_ARROW  -> Magic Arrow ammo (goody 0x11), game evt 0x19 "rooster"
 	33: 31429,  # PICKUP_SHIELD -> shield pickup (goody 0x10), game evt 0x18 "oh la la"
 	34: 7119,   # PICKUP_TIME   -> time bonus, game evt 0x1b "space balls"
-	35: 1002,   # ONEUP         -> 1-UP, game evt 0x28 "zap"
-	36: 1003,   # SHIELD_ON     -> shield activate, game evt 0x29 "gong"
-	37: 1004,   # SHOES         -> shoes/turtles, game evt 0x2a "whistle"
+	35: 1002,   # SHOES         -> speed-shoes goody 0x32, game evt 0x28 "zap"
+	36: 1003,   # SHIELD_ON     -> shield-activate goody 0x30, game evt 0x29 "gong"
+	37: 1004,   # WHISTLE       -> enemy-claim goody 0x31, game evt 0x2a "whistle"
 	38: 17661,  # KEY           -> colored-key collect, game evt 0x14 "Announce"
 }
 # name-keyword fallbacks (used only if the id above isn't present)

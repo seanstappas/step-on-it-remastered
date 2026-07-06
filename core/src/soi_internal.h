@@ -46,6 +46,9 @@ typedef struct {
     int16_t  lives;
     int32_t  score;
     int32_t  bonus_time;  /* per-player starting bonus (BORD 0x16, default 5000) */
+    int16_t  mult;        /* score multiplier (goody 0x0C-0x0F -> asm +0x44 via FUN_10011428);
+                           * default 1; multiplies the end-of-level bonus (mult x bonus_timer,
+                           * tallied in FUN_10029264). Reset to 1 each level (FUN_1002b174). */
     int16_t  shield;
     int16_t  arrows;
     int16_t  balls;       /* Magic Ball ammo (+0x4a; separate from arrows +0x4c) */
@@ -53,6 +56,10 @@ typedef struct {
     int16_t  fire_cd;     /* fire cooldown; >0 = can't fire yet */
     int16_t  spawn_x, spawn_y;      /* respawn pixel position (level start) */
     int16_t  respawn_timer;         /* >0 = counting down to respawn */
+    int16_t  fast;                  /* speed-shoes timer (goody 0x32 -> asm +0x5c/+0x6e);
+                                     * >0 = 2x speed (player runs at 60Hz, not 30Hz) */
+    uint8_t  pose;                  /* action pose for DISPLAY: 0 none, 1 fire, 2 build */
+    int16_t  pose_t;                /* action-pose countdown (frames); display-only, no lock */
 } SoiPlayer;
 
 typedef struct {
@@ -83,6 +90,7 @@ typedef struct {
     uint8_t  spawn_child; /* persistent-spawner emitted nasty (SoiEnemyType; 0 = not a spawner) */
     int16_t  life;        /* transient lifespan in frames (0 = immortal; spawned children only) */
     uint8_t  child;       /* Beanie: slot+1 of its one living bud (0 = none) */
+    uint32_t under;       /* Creeper: the tile it currently covers (asm +0x70), restored on leave */
 } SoiEnemy;
 
 struct SoiWorld {
