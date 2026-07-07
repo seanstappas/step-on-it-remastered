@@ -190,9 +190,15 @@ cell to the previous to detect entry).
   plays death SFX `FUN_1002b020(0x21, 100)`, and switches to the death animation.
 - **Lives / game over (HYPOTHESIS, corroborated):** lives at **`player + 0x46`**, eliminated flag at
   **`+0x48`** (set when lives < 1); **game over when both players are eliminated**.
-- **Bonus timer:** a **round countdown `_DAT_1003b294`** decrements each frame (`FUN_1002a308`); the
-  per-player starting value comes from `BORD 0x16` → `player + 0x42` (default 5000). The **clock goodie**
-  adds time. Reaching 0 ends the player (decrement/zero-death site still being pinned).
+- **Bonus timer (PER-PLAYER):** the "Bonus" is a **per-player** countdown at `player + 0x42`
+  (= the completion-snapshot's `@0x1003a9f0`), seeded from `BORD 0x16` (default 5000). It decrements at a
+  ~1/3-frame rate (`FUN_1000f500`, which floors it at 0), the **time-bonus goodies** add to the
+  *collecting* player's copy (`FUN_1000f3f0`), the HUD draws it (`FUN_1002de00`), and at board end **each**
+  player is awarded their OWN remaining bonus ×score-multiplier (`FUN_10015714`, run per-player by
+  `FUN_100153d0`). Reaching 0 ends that player (per the About doc; the zero-death enforcement site is
+  separate from the `FUN_1000f500` decrement). **Correction:** `_DAT_1003b294` is a SEPARATE general
+  frame counter (reset/decremented in the main loop; set to `600` on door entry in `FUN_1002bc64` for the
+  win celebration) — **NOT** the bonus timer (earlier note conflated the two).
 - **Round-end / loop-exit:** the round loop exits when the flag at global `+0x5260` is set (→ `FUN_1002707c`).
   **Correction:** that flag is set by `FUN_1002146c`, which is a **file-load routine** (`FSpOpenDF`/`FSRead`)
   — so `+0x5260` is most likely a **QuickSave/restore-quit** flag (Cmd-S), **not** normal level completion.
@@ -218,15 +224,15 @@ score `+0x3c`, **bonus-time-add `+0x40`**, **lives `+0x46`**, **shield `+0x4a`**
 | `0x17` | gold coin | **+1000 score** (confirmed) |
 | `0x18` | gem | **+2000 score** (confirmed) |
 | `0x19` | gold bars | **+5000 score** (confirmed) |
-| `0x10` / `0x11` / `0x12` | magic ball / arrow / shield pickup | +1 to lives / arrows / shield counters |
+| `0x10` / `0x11` / `0x12` | **1UP** / arrow / magic-ball ammo | +1 to lives (`+0x46`) / arrows (`+0x4c`) / balls (`+0x4a`) |
 | `0x13–0x16` | time bonuses | add to per-player bonus time (`+0x40`, cap 30000) via `FUN_1000f3f0` |
 | `0x1A–0x23` | **transporters** (5 IN/OUT pairs) | teleport to the paired marker (`FUN_1002b9bc`) |
-| `0x24–0x2D` | **Stop/Go switches** (pairs) | toggle a gate/enemy state (`FUN_10016544`) |
-| `0x2E` | **clock** | round timer `_DAT_1003b294 = 600` |
-| `0x2F` | **thunderballs** | clears all threat cells (`FUN_10016b28` loops the grid) |
-| `0x30` | **shield (activate)** | timed shield (`FUN_10014c28`, ~600 ticks) |
-| `0x31` | **shoes / turtles** | slows all non-boss enemies (`FUN_1000543c` loops the enemy array) |
-| `0x32` | **1UP** | extra life + effect (`FUN_10014ccc`) |
+| `0x24–0x2D` | **Stop/Go switches** | toggle persistent gate/directional marker states (marker table `DAT_10004d58` cycled by `FUN_100166b8`; `FUN_10016544`) — not a global freeze |
+| `0x2E` | **turtles** | slow every nasty (`_DAT_1003b294`-timed, ~600) |
+| `0x2F` | **magnifying glass** | reveal hidden payload cells (`FUN_10016b28` loops the grid) |
+| `0x30` | **shield (activate)** | timed invuln (`FUN_10014c28`, ~600 ticks) |
+| `0x31` | **thunderballs** | defeat all nasties (`FUN_1000543c` loops the enemy array) |
+| `0x32` | **speed shoes** | 2× player speed ~20s (`FUN_10014ccc`) — NOT a 1UP |
 
 ## 11. Enemy AI behaviours (per-type)
 
@@ -241,8 +247,8 @@ within 32 units):
 | Ant / Ostrich / Hippo / Piggy / Smiley | horizontal walk-and-turn patrollers (CONFIRMED pattern); differ in speed + collision footprint + sprite table |
 | **Hammer** | jumper — sets a jump field (`0x6e`) on hitting a wall, arcs up then lands |
 | **Beanie** | splitter — spawns a child Beanie (same 750 value) on collision (`FUN_10006840` = child cleanup) |
-| **Robo** | multi-state machine (left / right / idle / climb) with vertical movement |
-| **Wheelie / Walker** | **player-seeking** (VERIFIED via `FUN_1000e5c8`/`FUN_1000e7c8` proximity checks) + can fire/spawn |
+| **Robo** | walk-and-turn + **punch** — states 5/6 are stationary turn animations; punches breakable blocks, turns at permanent walls/ledges (no climb / vertical movement; verified 2026-07-06) |
+| **Wheelie / Walker** | NEITHER homes (verified 2026-07-06): Wheelie = gravity-free wall-bouncing flyer; Walker patrols + shoots when a player shares its row (`FUN_1000e5c8`/`FUN_1000e7c8` gate the SHOT, not movement) |
 | Cannon / Spinner | static hazards (no points; separate handling — TBD) |
 
 **Next (oracle-territory):** input bit→action labels, level-complete/win condition, and the precise

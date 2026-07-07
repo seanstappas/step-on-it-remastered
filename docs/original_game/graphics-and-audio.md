@@ -248,6 +248,9 @@ This is a bounded follow-up (the instruments are plain GM). Status: **not yet ex
 ## 4. Open items (TODO)
 
 - **Music:** build the QTMA→MIDI(+OGG) converter (`tools/qtma_to_midi.py`) per §3.
-- Pin the exact per-event `snd ` id table from the PEF (`DAT_10037074`) to replace the best-guess `SFX_ID`.
+- ~~Pin the exact per-event `snd ` id table from the PEF (`DAT_10037074`) to replace the best-guess `SFX_ID`.~~
+  **DONE (2026-07-06):** `tools/pef_tables.py` dumps `DAT_10037074` (DBASE `0x100337f0`, u16[56]) and it
+  validates against `SFX_ID`. Notable: events `0x2e-0x34` → snd `1100-1106` = the board-completed count-up
+  scale (1100 "hut" reveal, 1102-1106 rising notes, 1101 "huh" settle), now wired via `Audio.play_snd`.
 - HUD icons (face/arrow/potion) are the `cicn` colour-icon resources (61 of them) — decode for 1:1 icons.
 

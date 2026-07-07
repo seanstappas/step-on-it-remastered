@@ -64,7 +64,71 @@ var _grid_prev := {}       # cell key -> last-frame cell value (create/destroy d
 var _cell_fx := {}         # cell key -> { grow:bool, cell:int, t:float } grow/shrink pop
 var _mode := 0   # display mode: 0 = Retro (faithful 1996 look), 1 = Remastered (glow + vignette)
 var _paused := false
+var _num_players := 2   # 2 = original co-op; 3 = remaster's extra RED co-op player (--players=3)
+var _mode_compete := false   # Session.mode: false = Cooperate (shared), true = Compete (first to exit wins)
 var _level_bytes: PackedByteArray
+
+# Board-completed BONUS tally. Grounded: the "Board Completed" screen is FUN_100153d0
+# (PICT 1000) with per-player tally panels FUN_100159f4 (PICT 1010/1011/1020), and the
+# score count-up is FUN_10015714 -- it adds the time BONUS (x score-multiplier) plus a
+# second reward into the score step-by-step with ascending "ding" SFX. The door exit
+# awards EACH player their own `bonus_time * mult` at completion (soi_grid.c, per-player);
+# we size the award per player as the score delta across the completing tick and drain it
+# into the shown score. The count-up is CONFIRMED and we now play its ascending "ding" scale
+# (see _tally_dings); we approximate only the cadence (smooth vs the original's discrete per-
+# multiplier steps) and render the multiplier as "xN" text (the original drew an icon). The
+# original's second-reward ("Weapons-Reward") column is VESTIGIAL -- @player+0x1003a9f2 is only
+# ever reset on weapon-
+# fire and never incremented (no writer in the decomp), so it is always 0; omitting it is
+# faithful. (NB: PICT 300/FUN_10016c90 is the separate "Challenge Round" screen, not this one.)
+const TALLY_FRAMES := 90.0
+# Options -> Speed (About doc 8; plan 10 -- a LOCAL sim-rate option; Medium = the canonical
+# deterministic rate). This scales Godot's physics tick (which drives the core tick), NOT the
+# core logic, so determinism is unaffected. Rates are reasonable multiples (exact originals
+# undocumented).
+const SPEED_HZ := [90, 75, 60, 45]   # Really Fast / Fast / Medium / Slow
+var _tally_pre := {}        # idx -> score before the current tick (to size the bonus award)
+var _tally_bonus := {}      # idx -> bonus awarded at completion
+var _tally_final := {}      # idx -> final score at completion
+var _tally_captured := false
+var _tally_anim := 0.0      # 0..1 count-up progress on the completed screen
+var _tally_prebonus := 0    # bonus_time() before the completing tick (to derive the multiplier)
+var _tally_award_max := 0   # largest per-player award (the exiting player's bonus)
+var _tally_mult := 1        # award / prebonus, clamped 1..5 = how many rising count-up notes
+
+# Alternate mode (Session.mode == 2): two SEPARATE single-player games taking turns
+# (gameplay-and-design.md 1a). One player holds the seat at a time; a turn is one board
+# attempt and ends on a board clear (advance that player's board) or a death (lose a life),
+# then the seat passes to the other player. Godot owns each player's lives/score/board pool
+# because the core resets per board (soi_world_init). INTERPRETATION: the exact original
+# turn-grain (one-attempt here) and cross-board score persistence are not pinned in the
+# decomp -- flagged.
+var _alt := false
+var _alt_lives := [4, 4]         # per-player remaining lives (P1=index0, P2=index1)
+var _alt_score := [0, 0]         # per-player banked score from finished board attempts
+var _alt_board := [0, 0]         # per-player index into Session.board_list
+var _alt_active := 0             # whose turn (0=P1, 1=P2)
+var _alt_out := [false, false]   # per-player: out of lives / finished all boards
+var _alt_prev_alive := true      # death-edge detector for the active player
+var _alt_state := "play"         # "play" | "transition" (PLAYER N ready) | "results"
+
+# High-score name entry: offered once when the game ends and the best score qualifies
+# for the table (Session.high_scores, menu "High Scores").
+var _hs_state := ""              # "" = inactive, "entry" = typing initials
+var _hs_name := ""              # up to 3 initials
+var _hs_score := 0             # the qualifying score being entered
+var _hs_checked := false       # only offer the entry once per game-over
+
+# QuickSave (Ctrl-S) / Resume (About doc 8). The save is a BOARD-START snapshot; we cache each
+# board's entry stats and write those, so Resume restarts the board with the entry stats.
+var _board_start_stats: Array = []   # per-player {score,lives,arrows,balls,shield} at this board's start
+var _save_flash := 0                 # frames left to show the "GAME SAVED" confirmation
+
+# "Challenge Round" intro (PICT 300). REMASTER PRESENTATION: shown when entering a board in the
+# 1001-1050 Challenge set. The original's exact trigger (DAT_100393d0) is not statically
+# recoverable, so this is keyed on the board id rather than the original gate -- flagged.
+var _challenge_intro := 0            # frames remaining to show the intro (freezes play)
+var _challenge_forfeited := false    # challenge boards: loot forfeited on game over (survive-to-keep)
 
 # --- real sprite pipeline (decoded from the original sssf, tools/sssf_decode.py) ---
 const SPRITES_DIR := "res://../extracted/sprites"
@@ -79,9 +143,12 @@ const PLAYER_RUN_CYCLE := 12
 const PLAYER_RUN_PX := 2.0       # asm advances the leg frame 1 per 2px moved (matches the 2px/tick run)
 const PLAYER_JUMP_FRAME := 133   # right-facing leap; flipped for left (asm FUN_10013404 +0x10 0x85..0x8D)
 const PLAYER_JUMP_CYCLE := 9     # jump animates frames 133..141 while airborne
-# The DEATH throw (hit by a nasty / thrown off) is a SOMERSAULT: the asm cycles the
-# LARGER 36x34 frames 0x76..0x7D (FUN_10011fcc, gated on the dying flag). This is a
-# DIFFERENT animation from the jump above -- do not use it for a plain jump.
+# The DEATH throw (hit by a nasty / thrown off) is a SOMERSAULT: the asm (FUN_10011fcc,
+# gated on the dying flag) PING-PONGS the larger 36x34 frames 0x75..0x7D (117-125) -- it
+# counts UP 0x76->0x7d, snaps 0x7e->0x7c and reverses DOWN to 0x75, then snaps 0x74->0x76
+# and repeats. We approximate with a forward loop over 0x76..0x7D (118-125); the brief
+# 117 + the ping-pong wobble are a minor visual nuance (render-verified acceptable). This
+# is a DIFFERENT animation from the jump above -- do not use it for a plain jump.
 const PLAYER_DEATH_SPIN := [118, 119, 120, 121, 122, 123, 124, 125]
 const PLAYER_LAND_FRAME := 26
 # The standing pose is DIRECTIONAL, not a flip: idle (asm FUN_100128f8) and fall
@@ -111,7 +178,7 @@ const ENEMY_ROLL := { 6: true }
 # Enemies that SPIN in place on a timer (rotate through their whole sheet): the
 # Spinner trap (etype 13, 14 frames) and the flying star-disk Wheelie (etype 5,
 # a green orb with a rotating red star, 22 frames). etype -> frame count.
-const ENEMY_SPIN := { 5: 22, 13: 14, 16: 13 }   # 16 = creeper: cycle bigger_mblock's 13 pulse frames
+const ENEMY_SPIN := { 5: 22, 13: 14, 16: 3 }   # 16 = creeper: only bigger_mblock's OPAQUE full-block frames f02-04 (f05-14 shrink w/ transparency -> showed the white cell behind + looked glitchy)
 # Stationary turrets that IDLE then CHARGE an energy orb as their reload nears 0
 # and RELEASE it at the shot (asm FUN_1000adc4 gargoyle=bord14 / FUN_1000c2e8 knight=bord13).
 #   etype: { idle:[start,count], charge:[start,count] }  (charge over the last 30 reload frames)
@@ -142,6 +209,7 @@ var _tex_cache := {}      # "folder/frame/flip" -> Texture2D (or null)
 var _p_lastx := {}        # player idx -> last x (run-animation motion tracking)
 var _p_runtimer := {}     # player idx -> frames of run animation left to play
 var _p_walkdist := {}     # player idx -> accumulated |travel| px (leg cadence)
+var _p_stuck := {}        # player idx -> frames held-but-not-moving (run-in-place at a wall)
 
 ## Build (once) a frame->path map for a sprite folder by parsing "fNN_WxH.png".
 func _folder_index(folder: String) -> Dictionary:
@@ -161,8 +229,8 @@ func _folder_index(folder: String) -> Dictionary:
 
 ## Load (cached) one decoded sprite frame as a Texture2D, or null if missing.
 ## `flip` returns a horizontally mirrored variant (for left-facing entities).
-func _sprite(folder: String, frame: int, flip: bool = false) -> Texture2D:
-	var key := "%s/%d/%s" % [folder, frame, flip]
+func _sprite(folder: String, frame: int, flip: bool = false, red: bool = false) -> Texture2D:
+	var key := "%s/%d/%s/%s" % [folder, frame, flip, red]
 	if _tex_cache.has(key):
 		return _tex_cache[key]
 	var idx := _folder_index(folder)
@@ -170,11 +238,25 @@ func _sprite(folder: String, frame: int, flip: bool = false) -> Texture2D:
 	if idx.has(frame):
 		var img := Image.load_from_file(idx[frame])
 		if img:
+			if red:
+				_redden(img)
 			if flip:
 				img.flip_x()
 			tex = ImageTexture.create_from_image(img)
 	_tex_cache[key] = tex
 	return tex
+
+## Recolour the BLUE player's shirt (its blue-dominant pixels) to RED, in place, for
+## the remaster's 3rd co-op player -- the original ships no red sprite sheet. Skin,
+## outline and the (already-red) pants are R>=B, so they are left untouched.
+func _redden(img: Image) -> void:
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a > 0.0 and c.b > c.r + 0.06:
+				img.set_pixel(x, y, Color(c.b, c.g * 0.45, c.r, c.a))
 
 ## Draw a sprite centered in a 32x32 cell at pos (nearest-neighbour, no scaling
 ## up beyond native). Returns true if a real sprite was drawn.
@@ -233,6 +315,211 @@ func _draw_pict_screen(name_substr: String, title: String, hint: String) -> void
 	draw_texture(t, ((Vector2(640, 480) - t.get_size()) * 0.5).floor())
 	draw_string(_font, Vector2(0, 452), hint, HORIZONTAL_ALIGNMENT_CENTER, 640, 15, Color(0.9, 0.9, 0.95))
 
+## Play the board-completed count-up scale as the SCORE climbs -- grounded in FUN_10015714:
+## snd 1100 "hut" on reveal, the rising notes 1102..1106 (one per score-multiplier step,
+## event 0x30+i), then snd 1101 "huh" as it settles. We spread the `_tally_mult` notes across
+## the smooth count-up (the original ticks them per discrete multiplier step). Silent when
+## there is no bonus to award.
+func _tally_dings(prev_anim: float, cur_anim: float) -> void:
+	if _tally_award_max <= 0:
+		return
+	if prev_anim <= 0.0 and cur_anim > 0.0:
+		Audio.play_snd(1100)                       # "hut" -- bonus revealed
+	for i in _tally_mult:
+		var thresh := float(i + 1) / float(_tally_mult + 1)
+		if prev_anim < thresh and cur_anim >= thresh:
+			Audio.play_snd(1102 + mini(i, 4))      # rising note per multiplier step
+	if prev_anim < 1.0 and cur_anim >= 1.0:
+		Audio.play_snd(1101)                       # "huh" -- settle chime
+
+## Per-player BONUS -> SCORE tally drawn into the black centre of the "Board Completed"
+## frame (FUN_100153d0 / PICT 1000). Grounded in the animated count-up FUN_10015714 + the
+## confirmed exit award (soi_grid.c:87): the remaining BONUS counts down while the SCORE
+## counts up by the same amount, settling with the bonus fully drained into the score.
+## (We render the multiplier as "xN" text where the original drew an icon; the separate
+## second-reward column stays omitted -- it is vestigial/always-0 in this build.)
+func _draw_complete_tally() -> void:
+	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5), Color(1.0, 0.45, 0.4)]
+	var names := ["BLUE", "GREEN", "RED"]
+	var y := 196.0
+	for idx in range(1, mini(_num_players, 3) + 1):
+		var bonus := int(_tally_bonus.get(idx, 0))
+		var final_score := int(_tally_final.get(idx, _core.player_score(idx)))
+		var remaining := int(round(bonus * (1.0 - _tally_anim)))   # bonus drains to 0
+		var shown_score := final_score - remaining                 # score rises to final
+		var m := int(_core.player_mult(idx))                       # score-multiplier (FUN_10015714 shows it)
+		var mtxt := ("  x%d" % m) if m > 1 else ""
+		var line := "%s    BONUS %d%s    SCORE %d" % [names[idx - 1], remaining, mtxt, shown_score]
+		draw_string(_font, Vector2(120, y), line, HORIZONTAL_ALIGNMENT_LEFT, 400, 20, cols[idx - 1])
+		y += 46.0
+
+## Challenge-board completion ("Your Rewards", PICT 301): the LOOT kept = the score gained on
+## this board (the survive-to-keep rule stated on PICT 300). REMASTER PRESENTATION for 1001-1050.
+func _draw_challenge_rewards() -> void:
+	_draw_pict_screen("challenge_rewards", "YOUR REWARDS", "Enter: next board     Esc: menu")
+	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5), Color(1.0, 0.45, 0.4)]
+	var names := ["BLUE", "GREEN", "RED"]
+	var y := 200.0
+	for idx in range(1, mini(_num_players, 3) + 1):
+		var entry := 0
+		if idx - 1 < _board_start_stats.size():
+			entry = int(_board_start_stats[idx - 1].get("score", 0))
+		var loot := maxi(int(_core.player_score(idx)) - entry, 0)
+		draw_string(_font, Vector2(140, y), "%s    LOOT  %d" % [names[idx - 1], loot], HORIZONTAL_ALIGNMENT_LEFT, 360, 20, cols[idx - 1])
+		y += 46.0
+
+## Compete mode: the FIRST player to exit through their door wins (has_key == 2).
+func _winner() -> int:
+	for idx in range(1, mini(_num_players, 3) + 1):
+		if _core.player_has_key(idx) == 2:
+			return idx
+	return 0
+
+func _draw_win_screen() -> void:
+	match _winner():
+		1: _draw_pict_screen("blue_wins", "BLUE WINS!", "Enter: next board     Esc: menu")
+		2: _draw_pict_screen("green_wins", "GREEN WINS!", "Enter: next board     Esc: menu")
+		3: _draw_banner("RED WINS!", "Enter: next board     Esc: menu")
+		_: _draw_pict_screen("no_winner", "NO WINNER", "Enter: next board     Esc: menu")
+
+## --- Alternate mode (two solo games taking turns) ---------------------------
+
+## End the active player's turn: bank their board score, then advance (on a clear)
+## or dock a life (on a death), and pass the seat to the other player.
+func _alt_end_turn(won: bool) -> void:
+	_alt_score[_alt_active] += int(_core.player_score(1))
+	if won:
+		_alt_board[_alt_active] += 1
+		if Session.board_list.size() > 0 and _alt_board[_alt_active] >= Session.board_list.size():
+			_alt_out[_alt_active] = true            # cleared every board -> done
+	else:
+		_alt_lives[_alt_active] -= 1
+		if _alt_lives[_alt_active] <= 0:
+			_alt_out[_alt_active] = true
+	if _alt_out[0] and _alt_out[1]:
+		_alt_state = "results"
+		return
+	var other := 1 - _alt_active
+	if not _alt_out[other]:
+		_alt_active = other                         # hand the seat to the other player
+	# else: the other player is out, so the still-in player keeps going solo
+	_alt_state = "transition"
+
+## Start the (new) active player's turn on their own current board.
+func _alt_begin_turn() -> void:
+	if Session.board_list.size() > 0:
+		Session.board_path = Session.board_list[clampi(_alt_board[_alt_active], 0, Session.board_list.size() - 1)]
+	_level_bytes = _load_level_bytes()
+	_start()
+	_alt_prev_alive = true
+	_alt_state = "play"
+
+## "PLAYER N -- GET READY" seat-hand-off screen with the running scoreboard.
+func _draw_alt_transition() -> void:
+	draw_rect(Rect2(0, 0, 640, 480), Color(0, 0, 0, 0.82))
+	var who := "PLAYER %d" % (_alt_active + 1)
+	var col: Color = Color(0.4, 0.6, 1.0) if _alt_active == 0 else Color(0.4, 0.9, 0.5)
+	draw_string(_font, Vector2(0, 150), who, HORIZONTAL_ALIGNMENT_CENTER, 640, 40, col)
+	draw_string(_font, Vector2(0, 192), "GET READY", HORIZONTAL_ALIGNMENT_CENTER, 640, 24, Color.WHITE)
+	_draw_alt_scoreboard(250.0)
+	draw_string(_font, Vector2(0, 372), "Enter: start your turn     Esc: menu", HORIZONTAL_ALIGNMENT_CENTER, 640, 15, Color(0.85, 0.85, 0.9))
+
+## Final scoreboard + winner when both players are out.
+func _draw_alt_results() -> void:
+	draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
+	draw_string(_font, Vector2(0, 120), "FINAL SCORES", HORIZONTAL_ALIGNMENT_CENTER, 640, 34, Color.WHITE)
+	_draw_alt_scoreboard(200.0)
+	var tie: bool = int(_alt_score[0]) == int(_alt_score[1])
+	var winner := 0 if int(_alt_score[0]) >= int(_alt_score[1]) else 1
+	var wc: Color = Color(0.4, 0.6, 1.0) if winner == 0 else Color(0.4, 0.9, 0.5)
+	var msg := "TIE GAME" if tie else ("PLAYER %d WINS!" % (winner + 1))
+	draw_string(_font, Vector2(0, 330), msg, HORIZONTAL_ALIGNMENT_CENTER, 640, 30, Color.WHITE if tie else wc)
+	draw_string(_font, Vector2(0, 380), "Enter: menu", HORIZONTAL_ALIGNMENT_CENTER, 640, 15, Color(0.85, 0.85, 0.9))
+
+## Two-row PLAYER / SCORE / LIVES board shared by the transition + results screens.
+func _draw_alt_scoreboard(y: float) -> void:
+	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5)]
+	for i in 2:
+		var live := int(_alt_score[i]) + (int(_core.player_score(1)) if (_alt_state == "play" and _alt_active == i) else 0)
+		var status := "OUT" if _alt_out[i] else ("LIVES %d" % int(_alt_lives[i]))
+		var line := "PLAYER %d    SCORE %d    %s" % [i + 1, live, status]
+		draw_string(_font, Vector2(150, y + i * 40.0), line, HORIZONTAL_ALIGNMENT_LEFT, 360, 20, cols[i])
+
+## --- High-score name entry ---------------------------------------------------
+
+## The game has ended for high-score purposes: co-op/compete game over, the Alternate
+## results screen, OR the whole campaign beaten (final board cleared, no next board). The
+## last case lets a WINNING run record its score -- otherwise beating the game discards it.
+func _hs_game_ended() -> bool:
+	if _alt:
+		return _alt_state == "results"
+	if _core.game_over():
+		return true
+	return _core.level_complete() and _tally_anim >= 1.0 and not _has_next_board()
+
+## Is there another board to advance to after this one? Mirrors Session.advance()'s test
+## without mutating -- used to detect "beat the campaign" on the final board.
+func _has_next_board() -> bool:
+	return Session.board_index >= 0 and Session.board_index + 1 < Session.board_list.size()
+
+## The best final score to submit (max across players; max of both Alternate games).
+func _hs_final_score() -> int:
+	if _alt:
+		return maxi(int(_alt_score[0]), int(_alt_score[1]))
+	var best := 0
+	for i in range(1, mini(_num_players, 3) + 1):
+		best = maxi(best, int(_core.player_score(i)))
+	return best
+
+## Capture up to 3 initials; Enter commits to Session (defaults to "AAA").
+func _hs_input(e: InputEventKey) -> void:
+	match e.keycode:
+		KEY_ENTER, KEY_KP_ENTER:
+			Session.add_score(_hs_name if _hs_name != "" else "AAA", _hs_score)
+			_hs_state = ""
+		KEY_BACKSPACE:
+			if _hs_name.length() > 0:
+				_hs_name = _hs_name.substr(0, _hs_name.length() - 1)
+		_:
+			if _hs_name.length() < 3 and e.unicode > 0:
+				var ch := String.chr(e.unicode).to_upper()
+				if ch.length() == 1 and ((ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9")):
+					_hs_name += ch
+
+## "NEW HIGH SCORE" initials prompt, drawn over the game-over / results screen.
+func _draw_hs_entry() -> void:
+	draw_rect(Rect2(0, 300, 640, 118), Color(0, 0, 0, 0.86))
+	draw_string(_font, Vector2(0, 336), "NEW HIGH SCORE!   %d" % _hs_score, HORIZONTAL_ALIGNMENT_CENTER, 640, 24, Color(1.0, 0.85, 0.2))
+	var shown := _hs_name
+	while shown.length() < 3:
+		shown += "_"
+	draw_string(_font, Vector2(0, 378), "Type initials:  %s      Enter = confirm" % shown, HORIZONTAL_ALIGNMENT_CENTER, 640, 18, Color.WHITE)
+
+## Snapshot each player's PERSISTENT stats at the current board's start (for QuickSave, which
+## records board-start state so Resume restarts the board with these -- About doc 8).
+func _capture_board_start() -> void:
+	_board_start_stats = []
+	for i in range(1, mini(_num_players, 3) + 1):
+		_board_start_stats.append({
+			"score": int(_core.player_score(i)), "lives": int(_core.player_lives(i)),
+			"arrows": int(_core.player_arrows(i)), "balls": int(_core.player_balls(i)),
+			"shield": int(_core.player_shield(i)),
+		})
+
+## QuickSave the current game (board + board-start stats). Not supported in Alternate mode
+## (Godot owns those per-player pools) or after game over.
+func _do_save() -> void:
+	if _alt or _core.game_over():
+		return
+	if Session.save_game(_board_start_stats):
+		_save_flash = 90
+		Audio.play_snd(1101)   # "huh" confirmation (About doc 8: QuickSave plays a "Huuuh!" sound)
+
+## Is the current board in the 1001-1050 Challenge set?
+func _is_challenge_board() -> bool:
+	var n := _board_number()
+	return n >= 1001 and n <= 1050
+
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
@@ -249,14 +536,36 @@ func _ready() -> void:
 	if _level_bytes.is_empty():
 		push_warning("using built-in demo level")
 		_level_bytes = _demo_level()
+	# Resolve player count + mode from Session (and cmdline overrides) BEFORE the first _start(),
+	# so _start() spawns the 3rd co-op player on board 1 too. Otherwise P3 was absent on the first
+	# board (only _next_board re-spawned it) and Resume wrote P3's stats to an unspawned player.
+	var ua := OS.get_cmdline_user_args()
+	_num_players = Session.num_players if Session.num_players > 0 else 2
+	_mode_compete = Session.mode == 1
+	_alt = Session.mode == 2
+	for arg in ua:
+		if arg == "--mode=retro": _mode = 0
+		elif arg == "--mode=remastered": _mode = 1
+		elif arg == "--players=3": _num_players = 3
+	if _alt:
+		_num_players = 1
+		var s := maxi(Session.board_index, 0)
+		_alt_board = [s, s]
+		_alt_lives = [4, 4]; _alt_score = [0, 0]; _alt_active = 0
+		_alt_out = [false, false]; _alt_prev_alive = true; _alt_state = "play"
 	_start()
 
 	print("SoiCore ready: P1=(%d,%d) bonus=%d hash=%d" %
 		[_core.player_x(1), _core.player_y(1), _core.bonus_time(), _core.state_hash()])
-	var ua := OS.get_cmdline_user_args()
-	for arg in ua:
-		if arg == "--mode=retro": _mode = 0
-		elif arg == "--mode=remastered": _mode = 1
+	# Resume: apply the saved board-start stats onto the freshly-loaded board.
+	if not _alt and not Session.resume_stats.is_empty():
+		for i in range(1, mini(_num_players, 3) + 1):
+			if i - 1 < Session.resume_stats.size():
+				var st: Dictionary = Session.resume_stats[i - 1]
+				_core.set_player_stats(i, int(st.get("score", 0)), int(st.get("lives", 4)),
+					int(st.get("arrows", 1)), int(st.get("balls", 1)), int(st.get("shield", 2)))
+	Session.resume_stats = []
+	_capture_board_start()   # snapshot this board's entry stats (with the correct player count)
 	if "--shot" in ua:
 		_shot_countdown = 130
 		for arg in ua:
@@ -272,16 +581,51 @@ func _ready() -> void:
 	for arg in ua:
 		if arg.begins_with("--play="):
 			_play_frames = int(arg.substr(7))   # record the real board (no showcase override)
+	var _harness := false
+	for a in ua:
+		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play"):
+			_harness = true
+	if not _alt and not _harness and _is_challenge_board():
+		_challenge_intro = 150   # brief "Challenge Round" intro before a challenge board
+	Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]   # Options->Speed (local)
 	set_physics_process(true)
 
 ## (re)start the current board from a clean core state.
 func _start() -> void:
 	_core.init(1)
 	_core.load_level(_level_bytes)
+	if _num_players >= 3:
+		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
+	_reset_round_ui()
+
+## Advance to the next board WITHOUT wiping the persistent stats -- score/lives/ammo/shield
+## carry across boards (new-game-only per FUN_1002b060); only mult + per-board state reset.
+func _next_board() -> void:
+	_core.next_level(_level_bytes)
+	if _num_players >= 3:
+		_core.spawn_player3()
+	_reset_round_ui()
+
+## Reset the per-round UI/animation state shared by _start and _next_board.
+func _reset_round_ui() -> void:
 	_paused = false
+	_tally_captured = false
+	_tally_anim = 0.0
+	_tally_bonus.clear()
+	_tally_final.clear()
+	_tally_award_max = 0
+	_tally_mult = 1
+	_tally_prebonus = 0
+	_hs_checked = false
+	_hs_state = ""
+	_challenge_forfeited = false
+	_capture_board_start()
 
 func _physics_process(_delta: float) -> void:
-	if not _paused and not _core.game_over() and not _core.level_complete():
+	if not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0:
+		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
+		for idx in range(1, mini(_num_players, 3) + 1):
+			_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
 		var p1 := _read_input(0)
 		if _demo_frames > 0:
 			p1 = _demo_input()         # scripted play for the --demo movie / capture
@@ -289,9 +633,50 @@ func _physics_process(_delta: float) -> void:
 			p1 = _play_input()         # scripted play on a real board (--play recording)
 		elif _shot_countdown > 0:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
-		_core.tick(p1, _read_input(1))
+		var p3 := _read_input(2) if _num_players >= 3 else 0
+		_core.tick3(p1, _read_input(1), p3)
 		for i in _core.sfx_count():
 			Audio.play(_core.sfx_get(i))
+		if _alt:
+			if _alt_prev_alive and not _core.player_alive(1):
+				_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
+			_alt_prev_alive = _core.player_alive(1)
+		if _core.level_complete() and not _tally_captured:
+			for idx in range(1, mini(_num_players, 3) + 1):
+				var fin := int(_core.player_score(idx))
+				_tally_final[idx] = fin
+				var aw := maxi(fin - int(_tally_pre.get(idx, fin)), 0)   # bonus drained into score this tick
+				_tally_bonus[idx] = aw
+				_tally_award_max = maxi(_tally_award_max, aw)
+			# rising-note count = award / remaining-bonus = the score multiplier (1..5),
+			# matching FUN_10015714's per-multiplier count-up loop.
+			_tally_mult = clampi(int(round(float(_tally_award_max) / float(maxi(_tally_prebonus, 1)))), 1, 5)
+			_tally_captured = true
+	if _core.level_complete() and _tally_anim < 1.0:
+		var prev_anim := _tally_anim
+		_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)   # count-up progress (also gates HS-on-win)
+		# The count-up scale belongs to the VISIBLE coop "Board Completed" tally (FUN_10015714 /
+		# PICT 1000) only -- not the Compete wins screens (blue_wins/green_wins), the Challenge
+		# rewards (PICT 301), or Alternate's hand-off. Advance the anim in every mode (HS-on-win
+		# needs it) but ring the dings only where the tally is actually drawn.
+		if not _alt and not _mode_compete and not _is_challenge_board():
+			_tally_dings(prev_anim, _tally_anim)
+	if not _alt and _is_challenge_board() and _core.game_over() and not _challenge_forfeited:
+		_challenge_forfeited = true   # challenge rule (PICT 300): lose the board's loot if you don't survive
+		for i in range(1, mini(_num_players, 3) + 1):
+			if i - 1 < _board_start_stats.size():
+				_core.set_player_stats(i, int(_board_start_stats[i - 1].get("score", 0)),
+					int(_core.player_lives(i)), int(_core.player_arrows(i)),
+					int(_core.player_balls(i)), int(_core.player_shield(i)))
+	if not _hs_checked and _hs_game_ended():
+		_hs_checked = true
+		var sc := _hs_final_score()
+		if Session.qualifies(sc):
+			_hs_score = sc; _hs_name = ""; _hs_state = "entry"   # NEW HIGH SCORE -> take initials
+	if _save_flash > 0:
+		_save_flash -= 1
+	if _challenge_intro > 0:
+		_challenge_intro -= 1
 	queue_redraw()
 	if _demo_frames > 0:
 		_demo_frames -= 1
@@ -336,21 +721,37 @@ func _demo_input() -> int:
 func _input(e: InputEvent) -> void:
 	if not (e is InputEventKey and e.pressed):
 		return
+	if _challenge_intro > 0:
+		_challenge_intro = 0   # any key dismisses the Challenge Round intro
+		return
+	if _hs_state == "entry":
+		_hs_input(e)
+		return
 	match e.keycode:
 		KEY_ESCAPE:
 			get_tree().change_scene_to_file("res://scenes/menu.tscn")
-		KEY_P:
+		KEY_TAB, KEY_P:
 			if not _core.game_over():
-				_paused = not _paused
-		KEY_TAB:
-			_mode = 1 - _mode   # toggle Retro <-> Remastered
+				_paused = not _paused   # pause (the original pauses on Tab; P also works)
+		KEY_M:
+			_mode = 1 - _mode   # toggle Retro <-> Remastered display
+		KEY_S:
+			if (e as InputEventKey).ctrl_pressed:
+				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
 		KEY_ENTER, KEY_KP_ENTER:
-			if _core.game_over():
+			if _alt:
+				if _alt_state == "results":
+					get_tree().change_scene_to_file("res://scenes/menu.tscn")
+				elif _alt_state == "transition":
+					_alt_begin_turn()
+				elif _core.level_complete():
+					_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
+			elif _core.game_over():
 				_start()   # retry the board
 			elif _core.level_complete():
 				if Session.advance():
 					_level_bytes = _load_level_bytes()   # next board (Session.board_path)
-					_start()
+					_next_board()   # keep score/lives/ammo across boards
 				else:
 					get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
@@ -370,7 +771,7 @@ func _read_input(which: int) -> int:
 		if Input.is_key_pressed(KEY_X): m |= IN_BLOCK_LOW
 		if Input.is_key_pressed(KEY_C): m |= IN_ARROW
 		if Input.is_key_pressed(KEY_V): m |= IN_BALL
-	else:
+	elif which == 1:
 		if Input.is_key_pressed(KEY_A): m |= IN_LEFT
 		if Input.is_key_pressed(KEY_D): m |= IN_RIGHT
 		if Input.is_key_pressed(KEY_W): m |= IN_JUMP
@@ -378,6 +779,15 @@ func _read_input(which: int) -> int:
 		if Input.is_key_pressed(KEY_G): m |= IN_BLOCK_LOW
 		if Input.is_key_pressed(KEY_H): m |= IN_ARROW
 		if Input.is_key_pressed(KEY_J): m |= IN_BALL
+	else:
+		# P3 (remaster co-op): numpad 4/6/8 = left/right/jump, 7/9 = build high/low, 1/3 = arrow/ball
+		if Input.is_key_pressed(KEY_KP_4): m |= IN_LEFT
+		if Input.is_key_pressed(KEY_KP_6): m |= IN_RIGHT
+		if Input.is_key_pressed(KEY_KP_8): m |= IN_JUMP
+		if Input.is_key_pressed(KEY_KP_7): m |= IN_BLOCK_HIGH
+		if Input.is_key_pressed(KEY_KP_9): m |= IN_BLOCK_LOW
+		if Input.is_key_pressed(KEY_KP_1): m |= IN_ARROW
+		if Input.is_key_pressed(KEY_KP_3): m |= IN_BALL
 	return m
 
 # --- rendering ---------------------------------------------------------------
@@ -417,6 +827,16 @@ func _draw() -> void:
 				continue
 			_draw_cell(cell, pos)
 
+	# Magnifying glass (goody 0x2F): while the reveal timer is active, mark every hidden
+	# treasure (SPECIAL 0x1000 cell) so the player can see where to dig. The asm
+	# (FUN_10016b28) flashes each hidden cell for ~5s while busy-waiting; we overlay it
+	# non-blocking so play continues.
+	if _core.reveal_timer() > 0:
+		for r in range(GRID_ROWS):
+			for c in range(GRID_COLS):
+				if int(_core.grid_cell(c, r)) & CELL_SPECIAL:
+					_draw_reveal_marker(Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX))
+
 	# projectiles: BOTH the Magic Ball and Magic Arrow are the SAME spinning red-white
 	# swirl -- the same projectile bank 0x83 in the asm (ball = index 9/10, arrow =
 	# index 1, FUN_1000fd5c). They differ by BEHAVIOUR (ball rolls, arrow ricochets),
@@ -428,34 +848,42 @@ func _draw() -> void:
 			var c := pp + Vector2(16, 16)
 			if _core.projectile_hostile(i):
 				if _core.projectile_src_type(i) == 12:    # Cannon: its spinning beach ball (f04-21)
-					if _mode == 1:
-						_glow(c, 9.0, Color(1, 0.5, 0.2))
 					var bf := 4 + (int(_core.tick_count() / 2) % 18)
 					if not _blit("cannon_sprites", bf, pp):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
 				elif _core.projectile_src_type(i) == 14:  # Gargoyle: a short-range PUFF (breath), not a bolt
-					if _mode == 1:
-						_glow(c, 12.0, Color(1, 0.5, 0.2))
 					draw_circle(c, 8.0, Color(0.85, 0.5, 0.25, 0.30))
 					draw_circle(c + Vector2(-3, -2), 4.5, Color(0.95, 0.65, 0.35, 0.55))
 					draw_circle(c + Vector2(3, 2), 4.0, Color(0.90, 0.55, 0.30, 0.50))
-				else:                                     # Knight: an energy bolt
-					_glow(c, 9.0, Color(0.85, 0.2, 0.95))
+				elif _core.projectile_src_type(i) == 10:  # Walker: its own small RED bolt
+					# The walker fires a horizontal block-smashing bolt (asm type 0x68,
+					# FUN_1000e3c0) that animates frames 0x31..0x40 -- the small 20x19
+					# red-bolt frames on the walker sheet (f50..f63). Render THAT, not a
+					# made-up green blob.
+					var kf := 50 + (int(_core.tick_count() / 2) % 14)
+					if not _blit("walker_sprites", kf, pp):
+						draw_circle(c, 4.5, Color(0.85, 0.15, 0.12))
+				else:                                     # other hostile shot: a generic energy bolt
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
 					draw_circle(c, 2.5, Color(1, 0.55, 1))
+			elif _core.projectile_kind(i) == 2:
+				# Knight GIFT in flight: a random goody flown to a target cell
+				# (enemy_knight_gift / FUN_1000c8bc) -- a treasure sparkle, NOT a
+				# weapon shot. (It used to fall through to the arrow's ball swirl.)
+				_draw_gift_sparkle(c)
 			elif _core.projectile_kind(i) == 1:
-				# Magic Ball: the spinning red-white swirl (weapons sheet f02..f09)
-				if _mode == 1:
-					_glow(c, 10.0, Color(1, 0.4, 0.2))
-				var wf := 2 + (int(_core.tick_count() / 2) % 8)   # spin the 8 weapon frames
-				if not _blit("weapons", wf, pp):
+				# Magic BALL: the candy swirl held at a FIXED frame -- it ROLLS, it does not
+				# spin (asm FUN_1000fd5c draws the ball at a steady weapons frame by facing --
+				# the higher of the sheet's top pair when moving right; only the ARROW cycles
+				# the swirl). The weapons sheet is f02..f09; use its top pair 9/8. No glow.
+				var bl: float = pp.x - float(_proj_lastpos.get(i, pp).x)
+				if not _blit("weapons", 9 if bl >= 0.0 else 8, pp):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			else:
-				# Magic Arrow: ALSO the spinning red-white swirl (same bank as the ball;
-				# arrow = bank index 1). It differs from the ball only in BEHAVIOUR
-				# (it ricochets). The red arrow icon (goody f19) is the ammo PICKUP.
-				if _mode == 1:
-					_glow(c, 8.0, Color(1, 0.35, 0.2))
+				# Magic ARROW: the SAME weapons swirl but CYCLING (it spins as it flies) --
+				# asm FUN_1000fd5c animates the frame while it ricochets. BOTH shots are this
+				# swirl; they differ only in BEHAVIOUR (ball rolls / arrow bounces). The pointed
+				# red arrow goody f19 is the ball-AMMO PICKUP icon, NOT a projectile. No glow.
 				var af := 2 + (int(_core.tick_count() / 2) % 8)
 				if not _blit("weapons", af, pp):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
@@ -470,15 +898,35 @@ func _draw() -> void:
 	# players
 	_draw_player(1, Color(0.15, 0.25, 0.85))
 	_draw_player(2, Color(0.15, 0.6, 0.2))
+	_draw_player(3, Color(0.85, 0.2, 0.15))   # remaster's RED co-op player (drawn only when active)
 	_post_fx()
 
 	_draw_hud()
-	if _core.game_over():
-		_draw_banner("GAME OVER", "Enter: retry     Esc: menu")
+	if _alt and _alt_state == "results":
+		_draw_alt_results()
+	elif _alt and _alt_state == "transition":
+		_draw_alt_transition()
+	elif _core.game_over():
+		if not _alt and _is_challenge_board():
+			_draw_pict_screen("Nothing", "NOTHING!", "Enter: retry     Esc: menu")   # challenge: loot forfeited
+		else:
+			_draw_banner("GAME OVER", "Enter: retry     Esc: menu")
 	elif _core.level_complete():
-		_draw_pict_screen("board_completed", "LEVEL CLEAR!", "Enter: next board     Esc: menu")
+		if _mode_compete:
+			_draw_win_screen()
+		elif not _alt and _is_challenge_board():
+			_draw_challenge_rewards()
+		else:
+			_draw_pict_screen("board_completed", "LEVEL CLEAR!", "Enter: next board     Esc: menu")
+			_draw_complete_tally()
 	elif _paused:
-		_draw_pict_screen("paused", "PAUSED", "P: resume     Esc: menu")
+		_draw_pict_screen("paused", "PAUSED", "Tab: resume     Esc: menu")
+	if _hs_state == "entry":
+		_draw_hs_entry()
+	if _save_flash > 0:
+		draw_string(_font, Vector2(0, 232), "GAME SAVED", HORIZONTAL_ALIGNMENT_CENTER, 640, 26, Color(0.5, 1.0, 0.6, clampf(float(_save_flash) / 45.0, 0.0, 1.0)))
+	if _challenge_intro > 0:
+		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
 
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))
@@ -518,6 +966,38 @@ func _draw_powerup_overlay(idx: int, pos: Vector2) -> void:
 		draw_texture(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5))
 
 
+# Magnifying-glass reveal marker: a pulsing gold diamond over a hidden-treasure cell.
+func _draw_reveal_marker(pos: Vector2) -> void:
+	var pulse := 0.5 + 0.5 * sin(float(int(_core.tick_count()) % 30) / 30.0 * TAU)
+	var ctr := pos + Vector2(CELL_PX, CELL_PX) * 0.5
+	var rad := CELL_PX * (0.28 + 0.06 * pulse)
+	var gold := Color(1.0, 0.85, 0.15, 0.55 + 0.35 * pulse)
+	var pts := PackedVector2Array([
+		ctr + Vector2(0, -rad), ctr + Vector2(rad, 0),
+		ctr + Vector2(0, rad), ctr + Vector2(-rad, 0)])
+	draw_colored_polygon(pts, Color(gold.r, gold.g, gold.b, 0.22 * pulse))
+	draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), gold, 2.0, true)
+
+
+## The Knight's airborne GIFT (kind-2 projectile): a gold twinkle that reads as an
+## incoming treasure, not a weapon. Drawn at the projectile centre `c`.
+func _draw_gift_sparkle(c: Vector2) -> void:
+	var t := float(_core.tick_count())
+	var puls := 0.7 + 0.3 * sin(t * 0.45)
+	if _mode == 1:
+		_glow(c, 11.0, Color(1.0, 0.85, 0.3))
+	var gold := Color(1.0, 0.9, 0.35)
+	var r := 8.0 * puls
+	var r2 := 4.5 * puls
+	# 4-point star: long vertical/horizontal rays + shorter diagonals
+	draw_line(c + Vector2(-r, 0), c + Vector2(r, 0), gold, 2.0)
+	draw_line(c + Vector2(0, -r), c + Vector2(0, r), gold, 2.0)
+	var diag := gold.lerp(Color.WHITE, 0.35)
+	draw_line(c + Vector2(-r2, -r2), c + Vector2(r2, r2), diag, 1.5)
+	draw_line(c + Vector2(-r2, r2), c + Vector2(r2, -r2), diag, 1.5)
+	draw_circle(c, 2.6 * puls, Color(1.0, 1.0, 0.85))
+
+
 func _draw_player(idx: int, shirt: Color) -> void:
 	if not _core.player_alive(idx):
 		return
@@ -534,9 +1014,15 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	# travelled (not the wall clock) so the feet stay planted to the ground.
 	var dx: float = pos.x - float(_p_lastx.get(idx, pos.x))
 	_p_lastx[idx] = pos.x
-	if absf(dx) > 0.5 or st == 1:
+	if absf(dx) > 0.5:                            # MOVING -> advance the legs by TRAVEL so the feet stay
+		_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + absf(dx)   # PLANTED (the 30Hz/60fps stutter
+		_p_runtimer[idx] = 6                       # gives dx=2,0,2,0 -- must NOT double the leg cadence)
+		_p_stuck[idx] = 0
+	elif st == 1:                                # held but not moving THIS frame
 		_p_runtimer[idx] = 6
-		_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + absf(dx)
+		_p_stuck[idx] = int(_p_stuck.get(idx, 0)) + 1
+		if int(_p_stuck[idx]) >= 3:              # blocked by a wall for a few frames -> run IN PLACE
+			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX
 	elif _p_runtimer.get(idx, 0) > 0:
 		_p_runtimer[idx] = int(_p_runtimer[idx]) - 1
 	# idle/fall default: a static DIRECTIONAL pose (asm idle FUN_100128f8 + fall
@@ -559,8 +1045,8 @@ func _draw_player(idx: int, shirt: Color) -> void:
 		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
 		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
 		flip = false                             # frames are directional -- no mirror
-	var folder := "BP_sprites" if idx == 1 else "GP_sprites"
-	var tex := _sprite(folder, frame, flip)
+	var folder := "GP_sprites" if idx == 2 else "BP_sprites"   # P2 = green art; P1/P3 = blue art
+	var tex := _sprite(folder, frame, flip, idx == 3)   # P3 = the blue art recoloured RED (_redden)
 	if tex != null:
 		var s := tex.get_size()
 		# bottom-align the character to the cell (feet at pos.y + CELL_PX)
@@ -591,16 +1077,17 @@ func _draw_player(idx: int, shirt: Color) -> void:
 func _draw_hud() -> void:
 	# The original HUD is pre-rendered SPRITES (the `extra's` sssf sheet): the
 	# blue "Score"/"Bonus" labels (f04/f02), red digits 0-9 (f06-f15), the smiley
-	# face (f16 = per-life hit-buffer +0x46), rocket (f17 = arrows), potion (f18 = balls)
-	# and "Board#" (f28). Blitting them gives the exact original font + icons.
+	# face (f16 = LIVES, the single +0x46 survival counter), rocket (f17 = arrows),
+	# potion (f18 = balls) and "Board#" (f28). Blitting them gives the exact original
+	# font + icons.
 	var y := 9.0
 	var iy := 3.0
 	var x := _ex(4, 14, y)                       # "Score"
-	x = _ex_num(_core.player_score(1), 10, x + 4, y)
+	x = _ex_num((_alt_score[_alt_active] + int(_core.player_score(1))) if _alt else int(_core.player_score(1)), 10, x + 4, y)
 	x = _ex(2, x + 22, y)                        # "Bonus"
 	x = _ex_num(_core.bonus_time(), 5, x + 4, y)
-	x = _ex(16, x + 26, iy)                      # face = per-life hit-buffer (asm FUN_1000fb18 draws +0x46)
-	x = _ex_num(_core.player_shield(1), 2, x + 3, y)
+	x = _ex(16, x + 26, iy)                      # face = LIVES (asm FUN_1000fb18 draws +0x46 = lives)
+	x = _ex_num(_core.player_lives(1), 2, x + 3, y)
 	x = _ex(17, x + 14, iy)                      # rocket (arrows)
 	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(18, x + 14, iy)                      # potion (Magic Ball ammo; asm draws +0x4a at x=0x184)
@@ -685,12 +1172,28 @@ func _draw_frame(pf: Rect2) -> void:
 func _draw_cell(cell: int, pos: Vector2) -> void:
 	var t := cell & 0xFF
 	if cell & CELL_SUPPORTIVE:
+		# Stop/Go BLOCK: low byte = 5 colour pairs x {Stop 0x9d+12g, Go 0xa3+12g} (g=0..4).
+		# The original draws the flip SIGN on these solid blocks (asm FUN_10016784, its own
+		# sheet Stop_Go_sprite_family) -- the block stays solid in BOTH states, only the sign
+		# graphic flips. Draw the settled Stop (octagon) / Go (circle) sign for the low byte.
+		var sgf := -1
+		if t >= 0x9D and t <= 0xD3:
+			var ds := t - 0x9D          # Stop block = 0x9d + 12*pair
+			var dg := t - 0xA3          # Go block   = 0xa3 + 12*pair
+			if ds % 12 == 0 and ds < 60:
+				sgf = [2, 10, 18, 26, 34][ds / 12]
+			elif dg >= 0 and dg % 12 == 0 and dg < 60:
+				sgf = [9, 17, 25, 33, 39][dg / 12]
+		if sgf >= 0 and _blit("Stop_Go_sprite_family", sgf, pos):
+			if cell & CELL_CRACKED:
+				_draw_crack(pos)
+			return
 		if not _blit("block_sprites", t + 1, pos):
 			if t == 0x2B:
 				_draw_ball(pos, Color(0.85, 0.13, 0.13))
 			elif t == 0x0D or t == 0x13:
 				_draw_block(pos, Color(0.85, 0.16, 0.16))
-			else:
+			else:                               # plain solid (incl. low-0 permanent floor/border walls)
 				_draw_block(pos, Color(0.87, 0.87, 0.90))
 		if cell & CELL_CRACKED:                 # head-bonked once: show the fracture
 			_draw_crack(pos)
@@ -770,6 +1273,15 @@ func _draw_door(pos: Vector2) -> void:
 ## A small creature body. Prefers the real decoded enemy sheet (walk cycle,
 ## flipped by travel direction); falls back to a per-type coloured blob.
 func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
+	# A persistent SPAWNER (bord 5/6/10/11/12/18/19) is NOT a walking nasty. The
+	# original stamps a solid RED block at the spawner cell and emits the moving
+	# children from it (asm FUN_10009778 / FUN_100076a8). Reference board_3 top-right
+	# shows this as a RED block with the spawned nasty standing on it -- NOT a grey
+	# block and NOT a stuck-looking nasty. Render the red marker. VERIFIED vs
+	# refs/images/board_3.png (2026-07-06).
+	if _core.enemy_is_spawner(slot):
+		_draw_block(e, Color(0.85, 0.16, 0.16))
+		return
 	# travel-synced walk cycle: a moving nasty animates; a stationary one
 	# (turret / spawner / Spinner) holds its frame instead of walking in place.
 	var last: Vector2 = _enemy_lastpos.get(slot, e)
@@ -821,14 +1333,10 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		var tex := _sprite(folder, frame, flip)
 		if tex != null:
 			var s := tex.get_size()
-			if _mode == 1:
-				_glow(e + Vector2(16, 16), 12.0, Color(1, 0.4, 0.2))
 			draw_texture(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
 			return
 	var c := e + Vector2(16, 16)
 	var body := _enemy_color(etype)
-	if _mode == 1:
-		_glow(c, 12.0, body)
 	draw_circle(c, 11, body.darkened(0.25))
 	draw_circle(c, 9, body)
 	draw_circle(c + Vector2(-3.5, -3), 2.2, Color.WHITE)

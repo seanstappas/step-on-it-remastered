@@ -47,7 +47,7 @@ typedef struct {
     int32_t  score;
     int32_t  bonus_time;  /* per-player starting bonus (BORD 0x16, default 5000) */
     int16_t  mult;        /* score multiplier (goody 0x0C-0x0F -> asm +0x44 via FUN_10011428);
-                           * default 1; multiplies the end-of-level bonus (mult x bonus_timer,
+                           * default 1; multiplies the end-of-level bonus (mult x bonus_time,
                            * tallied in FUN_10029264). Reset to 1 each level (FUN_1002b174). */
     int16_t  shield;
     int16_t  arrows;
@@ -66,11 +66,15 @@ typedef struct {
     uint8_t  active;
     uint8_t  owner;       /* firing player index, for kill scoring */
     uint8_t  hostile;     /* 0 = player arrow (kills nasties); 1 = enemy shot (hits players) */
-    uint8_t  kind;        /* 0 = Magic Arrow (smashes blocks); 1 = Magic Ball (rolls, stops at a block) */
+    uint8_t  kind;        /* 0 = Magic Arrow; 1 = Magic Ball (rolls); 2 = Knight gift (flies to a cell, drops a goody) */
     uint8_t  src_type;    /* shooter's SoiEnemyType for a hostile shot (0 = player); picks its art */
     int32_t  x, y;        /* pixel position */
     int16_t  vx, vy;      /* straight-line velocity (Magic Arrow) */
     int16_t  age;         /* frames alive (bouncing Magic Arrow fizzles at ~500) */
+    uint8_t  pierce;      /* Gargoyle UltraBuster (pct_ultrabuster roll): 1 = passes THROUGH blocks,
+                           * destroying several; 0 = breaks one block and dies (asm FUN_1000b0a4 +0x8a). */
+    uint8_t  gtype;       /* Knight gift (kind 2): goody type to drop on arrival (FUN_1000c680) */
+    int16_t  tcol, trow;  /* Knight gift: target cell it flies toward (FUN_1000c8bc/FUN_1000cafc) */
 } SoiProjectile;
 
 typedef struct {
@@ -102,10 +106,14 @@ struct SoiWorld {
     SoiPlayer players[SOI_MAX_PLAYERS];
     SoiEnemy  enemies[SOI_MAX_ENEMIES];
     SoiProjectile projectiles[SOI_MAX_PROJECTILES];
-    int32_t  bonus_timer;  /* round "Bonus" survival countdown */
     uint8_t  frame_parity; /* input sampled every 2 frames */
-    uint8_t  enemies_frozen; /* Stop/Go switch state: 1 = nasties halted */
+    uint8_t  enemies_frozen; /* VESTIGIAL (always 0): a former Stop/Go "freeze" stand-in. Stop/Go is a
+                              * cosmetic block-graphic swap with NO gameplay effect (see soi_grid.c), so the
+                              * switch never freezes enemies. Kept only for serialize-format stability. */
     int16_t  enemy_slow;     /* Clock goody (asm _DAT_1003b294): >=0 = nasties at half rate; counts down */
+    int16_t  bonus_div;      /* Bonus-countdown frame divider (asm _DAT_10038eb0): fires every 3rd frame */
+    int16_t  reveal_timer;   /* Magnifying-glass goody 0x2F (asm FUN_10016b28): >0 = hidden 0x1000
+                              * (SPECIAL) treasure cells are shown to the player; counts down (~300 frames). */
 
     /* level parameters (BORD header) */
     int16_t  pct_ultrabuster;  /* 0x10 */

@@ -2,8 +2,10 @@ extends Node
 ## audio.gd — autoload "Audio". Loads the extracted SFX WAVs at startup and
 ## plays SoiSfx events emitted by the core. WAVs live outside res:// (in
 ## extracted/audio/wav) and are un-imported, so they are parsed into
-## AudioStreamWAV at runtime. The event→sound mapping is presentational
-## (matched by name keywords) until the oracle pins each snd id (TODO).
+## AudioStreamWAV at runtime. The event→snd map (SFX_ID) is PINNED from the
+## binary's DAT_10037074 table (tools/pef_tables.py, DBASE 0x100337f0) and
+## re-verified 2026-07-06; the name-keyword table is only a fallback. Music
+## playback (remaster/original) is in the Music section further down.
 
 # SoiSfx event id -> original `snd ` resource id. CONCLUSIVE: extracted from the
 # PEF sound-event table DAT_10037074 (tools/pef_tables.py, DBASE 0x100337f0) and
@@ -59,8 +61,25 @@ const SFX := {
 var _streams: Array[AudioStreamWAV] = []
 var _names: Array[String] = []
 var _by_event := {}
+var _by_snd := {}   # original `snd ` resource id -> stream (for play_snd, e.g. the tally scale)
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
+var _effects_db := 0.0   # Sound -> Effects Volume (About doc 8); applied to each SFX player on play
+
+# --- Music (About doc 8; OFF BY DEFAULT, as in the original). The extracted QTMA
+# tunes (extracted/music/*.mid) are rendered to OGG by tools/render_music.py +
+# tools/render_music.ps1 and loaded on demand. FIDELITY: the notes / timing / tempo
+# are faithful (from the QTMA extraction); the synth VOICE is an APPROXIMATE mellow
+# default (see render_music.py) -- swap the OGGs for a fluidsynth+soundfont render
+# to get closer to the original Apple QTMA voices. Which tune plays on which screen
+# is presentational (TODO oracle); we default to one looping track. ---
+var _music_player: AudioStreamPlayer = null
+var _music_enabled := false
+var _music_dir := ""
+var _music_cache := {}          # "variant/track" -> AudioStream (or null if missing)
+var _music_variant := "remaster"   # "remaster" (extracted/music) | "original" (extracted/music/original)
+var _current_track := "6lilt"
+const DEFAULT_MUSIC := "6lilt"
 
 func _ready() -> void:
 	_load_all()
@@ -69,7 +88,8 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
-	print("audio: loaded %d SFX, mapped %d events" % [_streams.size(), _by_event.size()])
+	_init_music()
+	print("audio: loaded %d SFX, mapped %d events, music=%s" % [_streams.size(), _by_event.size(), has_music()])
 
 ## Play the sound mapped to a SoiSfx event id (round-robin over a player pool).
 func play(sfx_id: int) -> void:
@@ -78,7 +98,109 @@ func play(sfx_id: int) -> void:
 	var p := _players[_next]
 	_next = (_next + 1) % _players.size()
 	p.stream = _by_event[sfx_id]
+	p.volume_db = _effects_db
 	p.play()
+
+## Play a sound by its ORIGINAL `snd ` resource id (bypasses the event map). Used for
+## sequences the core does not emit as SoiSfx events -- e.g. the board-completed count-up
+## scale (snd 1100 "hut", the rising notes 1102-1106, then 1101 "huh"), grounded in
+## FUN_10015714's FUN_1002b020 calls resolved through the DAT_10037074 event->snd table.
+func play_snd(snd_id: int) -> void:
+	if not _by_snd.has(snd_id) or _players.is_empty():
+		return
+	var p := _players[_next]
+	_next = (_next + 1) % _players.size()
+	p.stream = _by_snd[snd_id]
+	p.volume_db = _effects_db
+	p.play()
+
+## Sound -> Effects Volume (About doc 8). Applied to each SFX AudioStreamPlayer on play.
+func set_effects_volume(db: float) -> void:
+	_effects_db = db
+
+func get_effects_volume() -> float:
+	return _effects_db
+
+# --- Music playback -----------------------------------------------------------
+func _init_music() -> void:
+	_music_dir = ProjectSettings.globalize_path("res://../extracted/music")
+	_music_player = AudioStreamPlayer.new()
+	_music_player.volume_db = -6.0            # sit under the SFX
+	add_child(_music_player)
+
+## Is the rendered music available on disk?
+func has_music() -> bool:
+	return _music_dir != "" and DirAccess.dir_exists_absolute(_music_dir)
+
+## Resolve the OGG path for a track under the current variant. "original" prefers
+## extracted/music/original/<track>.ogg and falls back to the remaster for any track
+## the user didn't supply. (docs/original_game/music-tracks.md)
+func _music_path(track: String) -> String:
+	if _music_variant == "original":
+		var op := _music_dir.path_join("original").path_join(track + ".ogg")
+		if FileAccess.file_exists(op):
+			return op
+	return _music_dir.path_join(track + ".ogg")
+
+## Load a looping OGG track by base name (no extension). Cached per variant.
+func _load_music(track: String) -> AudioStream:
+	var key := _music_variant + "/" + track
+	if _music_cache.has(key):
+		return _music_cache[key]
+	var s: AudioStream = null
+	var path := _music_path(track)
+	if FileAccess.file_exists(path):
+		var ogg := AudioStreamOggVorbis.load_from_file(path)
+		if ogg != null:
+			ogg.loop = true
+			s = ogg
+	_music_cache[key] = s
+	return s
+
+## Select a looping track by base name; starts it only if music is enabled.
+func play_music(track: String) -> void:
+	if _music_player == null:
+		return
+	var s := _load_music(track)
+	if s == null:
+		return
+	_current_track = track
+	_music_player.stream = s
+	if _music_enabled:
+		_music_player.play()
+
+## Choose the soundtrack: "remaster" (synth default) or "original" (your recordings
+## in extracted/music/original/). Reloads the current track. See music-tracks.md.
+func set_music_variant(v: String) -> void:
+	if (v != "remaster" and v != "original") or v == _music_variant:
+		return
+	_music_variant = v
+	if _music_player != null:
+		var was_playing := _music_player.playing
+		var s := _load_music(_current_track)
+		if s != null:
+			_music_player.stream = s
+			if was_playing and _music_enabled:
+				_music_player.play()
+
+func get_music_variant() -> String:
+	return _music_variant
+
+## Music on/off (Sound -> Music checkbox). Off by default (the original default).
+func set_music_enabled(on: bool) -> void:
+	_music_enabled = on
+	if _music_player == null:
+		return
+	if on:
+		if _music_player.stream == null:
+			play_music(DEFAULT_MUSIC)
+		elif not _music_player.playing:
+			_music_player.play()
+	else:
+		_music_player.stop()
+
+func is_music_enabled() -> bool:
+	return _music_enabled
 
 func _load_all() -> void:
 	var dir := ProjectSettings.globalize_path("res://../extracted/audio/wav")
@@ -93,6 +215,11 @@ func _load_all() -> void:
 			if s != null:
 				_streams.append(s)
 				_names.append(f.to_lower())
+				var us := f.find("_")   # filenames are "<snd id>_<name>.wav"
+				if us > 0:
+					var sid := f.substr(0, us).to_int()
+					if sid > 0:
+						_by_snd[sid] = s
 		f = da.get_next()
 	da.list_dir_end()
 

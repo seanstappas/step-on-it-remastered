@@ -40,7 +40,11 @@ static int check_board(const char *path, int verbose)
             uint32_t cell = soi_get_cell(w, c, r);
             unsigned t = SOI_CELL_TYPE(cell);
             if (!(cell & SOI_CELL_DOOR)) continue;
-            if (t >= 7 && t <= 9) { keys[t-7]++; if (kcol < 0) { kcol = c; krow = r; } }
+            if (t >= 7 && t <= 9) { keys[t-7]++;
+                /* simulate PLAYER 1: pick the first key P1 can actually collect --
+                 * universal (7) or P1's own (8) -- matching the player-gated
+                 * soi_pickup_check (P2's key 9 is not P1-collectible / not P1-winnable). */
+                if (kcol < 0 && (t == 7 || t == 8)) { kcol = c; krow = r; } }
             if (t >= 4 && t <= 6) locks[t-4]++;
         }
 

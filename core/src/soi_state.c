@@ -75,10 +75,70 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
     p->mult = 1;                   /* multiplier resets to 1 each level (asm FUN_1002b174 -> +0x44) */
 }
 
+/* Remaster extension: activate the 3rd co-op player. The BORD header has only two
+ * spawns (P1 @0x06, P2 @0x0A), so P3 starts at P1's spawn column -- one cell to the
+ * right if that cell is clear. Call after soi_load_level when 3 players are in. */
+void soi_spawn_player3(SoiWorld *w)
+{
+    int col = (w->players[1].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX;
+    int row = (w->players[1].spawn_y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+    if (soi_in_bounds(col + 1, row) && SOI_CELL_TYPE(w->cell[row][col + 1]) == 0)
+        col += 1;
+    place_player(w, 3, col, row);
+    w->players[3].bonus_time = w->players[1].bonus_time;   /* P3 shares the board's starting bonus */
+}
+
+/* Board->board transition: preserve the persistent per-player stats (score/lives/ammo/
+ * shield -- new-game-only per FUN_1002b060) and the RNG stream, but otherwise fully reset
+ * for the incoming board (mult=1/positions/has_key/grid/enemies via world_init+load_level,
+ * matching the per-level reset FUN_1002b174). */
+int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
+{
+    struct { int32_t score; int16_t lives, arrows, balls, shield; uint8_t elim; } keep[SOI_MAX_PLAYERS];
+    uint32_t seed = w->rng_seed;
+    int i, r;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        keep[i].score  = w->players[i].score;
+        keep[i].lives  = w->players[i].lives;
+        keep[i].arrows = w->players[i].arrows;
+        keep[i].balls  = w->players[i].balls;
+        keep[i].shield = w->players[i].shield;
+        keep[i].elim   = w->players[i].eliminated;
+    }
+    soi_world_init(w, 1);                 /* full per-board reset (mult=1, transient cleared) */
+    w->rng_seed = seed;                   /* continue the RNG stream across boards */
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        w->players[i].score  = keep[i].score;
+        w->players[i].lives  = keep[i].lives;
+        w->players[i].arrows = keep[i].arrows;
+        w->players[i].balls  = keep[i].balls;
+        w->players[i].shield = keep[i].shield;
+    }
+    r = soi_load_level(w, bord, len);
+    for (i = 0; i < SOI_MAX_PLAYERS; i++)
+        if (keep[i].elim) { w->players[i].eliminated = 1; w->players[i].alive = 0; }
+    return r;
+}
+
+/* Overwrite a player's PERSISTENT stats -- used by Resume to restore a saved game onto a
+ * freshly-loaded board (the save is board-start state, About doc 8). mult resets per board
+ * (FUN_1002b174), so it is not restored here. */
+void soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arrows, int balls, int shield)
+{
+    SoiPlayer *p;
+    if (idx < 1 || idx >= SOI_MAX_PLAYERS) return;
+    p = &w->players[idx];
+    p->score  = score;
+    p->lives  = (int16_t)lives;
+    p->arrows = (int16_t)arrows;
+    p->balls  = (int16_t)balls;
+    p->shield = (int16_t)shield;
+}
+
 int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
 {
     size_t off;
-    int bonus;
+    int bonus, i;
     if (!bord || len < 0x1A) return 0;
 
     /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
@@ -89,12 +149,16 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     w->pct_badguy      = (int16_t)be16(bord + 0x14);
     bonus = (int)be16(bord + 0x16);
     if (bonus <= 0 || bonus == 0x3A20) bonus = 5000;   /* loader default */
-    w->bonus_timer = (int16_t)bonus;
-    w->players[1].bonus_time = bonus;
-    w->players[2].bonus_time = bonus;
+    /* the "Bonus" is PER-PLAYER (@0x1003a9f0): each player gets their own copy of the
+     * board's starting bonus, counts it down, and is awarded it x mult at the tally
+     * (FUN_10015714, run per-player by FUN_100153d0). */
+    for (i = 1; i < SOI_MAX_PLAYERS; i++)
+        w->players[i].bonus_time = bonus;
 
     /* body: tile-placement records from 0x18, terminated by tile_type == 0.
-     * record = [tile_type:u32 BE][ (row:u8, col:u8) pairs... ][ 0x64 0x64 ] */
+     * record = [tile_type:u32 BE][ (col:u8, row:u8) pairs... ][ 0x64 0x64 ]
+     * (first byte = COLUMN 0-18, second = ROW 0-12 -- CONFIRMED; matches the
+     * (col,row) store below and soi_set_cell/soi_enemy_spawn's signatures). */
     off = 0x18;
     while (off + 4 <= len) {
         uint32_t tile = be32(bord + off);
@@ -137,6 +201,12 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
                         w->enemies[ei].vx = 0;                       /* stationary */
                         w->enemies[ei].fire_period = (int16_t)((b0 ? b0 : 20u) * 6u);
                         w->enemies[ei].fire_cd = (int16_t)(b1 * 6u);
+                        /* Emit DIRECTION MODE (asm FUN_100076a8 switch on +0x4c): the
+                         * fixed left/right cases use the dir set above; flag ALTERNATE
+                         * (both dir bits 0x100|0x200 -> toggle each emit) and SEEK
+                         * (0x2000 -> aim at the nearest player) in `state` for the emitter. */
+                        if (tile & 0x2000u)                 w->enemies[ei].state = 4;
+                        else if ((tile & 0x300u) == 0x300u) w->enemies[ei].state = 3;
                     } else if (w->enemies[ei].type == SOI_ENEMY_CREEPER) {
                         /* Creeper (asm FUN_10008618/8b18): bord 16 = horizontal,
                          * 17 = vertical (state). Step interval = cell byte3 (asm
@@ -170,6 +240,13 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
 /* ---------- tick ---------- */
 void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
 {
+    soi_tick3(w, p1_input, p2_input, 0);   /* 2-player entry; the 3rd co-op player gets no input here */
+}
+
+/* Advance one frame with up to THREE player inputs (the remaster's 3rd co-op player is
+ * slot 3; the original is 2-player). */
+void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input)
+{
     int i;
     w->tick++;
     w->frame_parity ^= 1u;
@@ -182,6 +259,7 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
     if ((w->tick & 1u) != 0u) {
         w->players[1].input = p1_input;
         w->players[2].input = p2_input;
+        w->players[3].input = p3_input;
     }
 
     for (i = 0; i < SOI_MAX_PLAYERS; i++)
@@ -204,55 +282,73 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
      * every frame (the asm loop runs the state machine while the dying flag is set).
      * Enemies + projectiles run every frame (60Hz). */
     if ((w->tick & 1u) != 0u) {
-        soi_player_update(w, 1);
-        soi_player_update(w, 2);
+        for (i = 1; i < SOI_MAX_PLAYERS; i++) soi_player_update(w, i);
     } else {
         /* even tick: a DYING player animates every frame; a SPEED-SHOES player (goody
          * 0x32 -> asm fast-mode +0x5c) also updates -> 60Hz = 2x speed. The action edge
          * was already consumed on the odd tick (input latches at 30Hz), so this doubles
          * movement/physics without re-firing jump/shot actions. */
-        if (w->players[1].ground_state == SOI_ST_DEAD || w->players[1].fast > 0) soi_player_update(w, 1);
-        if (w->players[2].ground_state == SOI_ST_DEAD || w->players[2].fast > 0) soi_player_update(w, 2);
+        for (i = 1; i < SOI_MAX_PLAYERS; i++)
+            if (w->players[i].ground_state == SOI_ST_DEAD || w->players[i].fast > 0)
+                soi_player_update(w, i);
     }
-    if (w->players[1].fast > 0) w->players[1].fast--;
-    if (w->players[2].fast > 0) w->players[2].fast--;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++)
+        if (w->players[i].fast > 0) w->players[i].fast--;
     /* action pose (fire/build) is a brief DISPLAY hint -- count it down (no input lock). */
-    if (w->players[1].pose_t > 0 && --w->players[1].pose_t == 0) w->players[1].pose = 0;
-    if (w->players[2].pose_t > 0 && --w->players[2].pose_t == 0) w->players[2].pose = 0;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++)
+        if (w->players[i].pose_t > 0 && --w->players[i].pose_t == 0) w->players[i].pose = 0;
     /* Clock power-up (goody 0x2E): halves the enemy update rate for ~10s. The asm
      * (_DAT_1003b294) decrements a counter each frame and runs the nasties only when
      * it is < 0 (expired -> normal) or ODD -> every other frame = 30Hz while active. */
     if (w->enemy_slow >= 0) w->enemy_slow--;
     if (w->enemy_slow < 0 || (w->enemy_slow & 1))
         soi_enemies_update(w);
+    if (w->reveal_timer > 0) w->reveal_timer--;   /* magnifying-glass reveal (goody 0x2F) counts down */
     soi_projectiles_update(w);
 
-    /* round bonus countdown (pacing per frame). Reaching 0 kills the players
-     * (the on-screen "Bonus" is a survival timer). */
-    if (w->bonus_timer > 0) {
-        w->bonus_timer--;
-        if (w->bonus_timer == 0) {
-            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
-                SoiPlayer *p = &w->players[i];
-                if (p->active && p->alive && !p->eliminated) {
+    /* PER-PLAYER Bonus countdown (@0x1003a9f0, decremented by FUN_1000f500). Each
+     * player's on-screen "Bonus" is their own survival timer; reaching 0 costs THAT
+     * player a life (gameplay-and-design.md 1: "if the Bonus reaches zero, you die").
+     * FUN_1000f500 runs once per VBL but decrements the bonus only every 3rd frame
+     * via a divider (_DAT_10038eb0: clamp<=3, --, fires at <1 -> reset 3), so the
+     * clock ticks at ~20Hz. Decrementing every tick would run it 3x too fast. A
+     * warning fires as the bonus passes 1000 (FUN_10018b24 -> sound evt 0x2d). */
+    if (w->bonus_div > 3) w->bonus_div = 3;
+    if (--w->bonus_div < 1) {
+        w->bonus_div = 3;
+        for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+            SoiPlayer *p = &w->players[i];
+            if (p->active && p->alive && !p->eliminated && p->bonus_time > 0) {
+                p->bonus_time--;
+                if (p->bonus_time == 1000) soi_sfx_emit(w, SOI_SFX_HURRY);
+                if (p->bonus_time == 0) {
                     p->alive = 0;
                     if (--p->lives < 1) p->eliminated = 1;
                     else p->respawn_timer = 90;
                 }
             }
-            /* TODO(oracle): exact expiry behaviour (per-player timer vs round). */
         }
     }
 
-    /* Procedural enemy spawning from the level params + RNG (first draft;
-     * rate/placement TODO(oracle)). Roughly once every ~120 frames, roll
-     * pct_badguy against 100 and spawn the level's thrown_badguy type up top. */
-    if (w->level_loaded && (w->tick % 120u) == 0u && w->pct_badguy > 0) {
-        if (soi_rand_range(w, 100) <= w->pct_badguy) {
-            SoiEnemyType t = (SoiEnemyType)w->thrown_badguy;
-            if (t <= SOI_ENEMY_NONE || t >= SOI_ENEMY_TYPE_COUNT) t = SOI_ENEMY_ANT;
-            soi_enemy_spawn(w, t, soi_rand_range(w, SOI_GRID_COLS) - 1, 0);
-        }
+    /* Procedural badguy throw (challenge/Gargoyle boards). thrown_badguy (BORD 0x12)
+     * + pct_badguy (0x14) accompany a GARGOYLE on 7 of the 8 boards that set them.
+     * DEEPER RE (asm FUN_1000adc4 state 3 -> FUN_1000b44c / FUN_1000bf54): the Gargoyle,
+     * from its own cell (x+0x1e, y-8), rolls RNG vs a pct and throws a flying type-0x72
+     * puff-ENEMY (pierce flag +0x42 = 1/2) or an ultrabuster -- it does NOT throw
+     * thrown_badguy directly (the type is hardcoded 0x72). The port's enemy_shooter_fire
+     * already models that Gargoyle puff, so this global thrown_badguy top-spawn is a
+     * rough, likely-REDUNDANT first-draft stand-in (thrown_badguy's exact role is
+     * unresolved; a faithful unified Gargoyle-throw reimpl is deferred -- intricate).
+     * GATE on VALID params: a percentage is <=100 and the type must be a real nasty.
+     * This rejects the 4 "DATA:" boards (301/428/446/498) whose 0x10-0x14 bytes hold the
+     * ASCII marker "DATA: " -> pct=21569/thrown=17473 = GARBAGE (which previously spawned
+     * a spurious ANT via the fallback), and skips out-of-range selector indices. */
+    if (w->level_loaded && (w->tick % 120u) == 0u &&
+        w->pct_badguy > 0 && w->pct_badguy <= 100 &&
+        w->thrown_badguy > SOI_ENEMY_NONE && w->thrown_badguy < SOI_ENEMY_TYPE_COUNT) {
+        if (soi_rand_range(w, 100) <= w->pct_badguy)
+            soi_enemy_spawn(w, (SoiEnemyType)w->thrown_badguy,
+                            soi_rand_range(w, SOI_GRID_COLS) - 1, 0);
     }
     /* Level-complete is polled via soi_level_complete() below (the CONFIRMED win
      * condition = key + door exit, docs gameplay-and-design.md 1); nothing per-tick. */
@@ -266,6 +362,7 @@ static const SoiPlayer *pget(const SoiWorld *w, int i)
 }
 int32_t  soi_player_score(const SoiWorld *w, int p) { return pget(w, p)->score; }
 int      soi_player_lives(const SoiWorld *w, int p) { return pget(w, p)->lives; }
+int      soi_player_mult(const SoiWorld *w, int p)  { return pget(w, p)->mult; }
 int      soi_player_alive(const SoiWorld *w, int p) { return pget(w, p)->active && pget(w, p)->alive && !pget(w, p)->eliminated; }
 int      soi_game_over(const SoiWorld *w)
 {
@@ -302,6 +399,7 @@ int      soi_player_pose(const SoiWorld *w, int p) { const SoiPlayer *pp = pget(
 int      soi_player_pose_t(const SoiWorld *w, int p) { return pget(w, p)->pose_t; }
 int      soi_goodies_total(const SoiWorld *w)       { return w->goodies_total; }
 int      soi_goodies_left(const SoiWorld *w)        { return w->goodies_left; }
+int      soi_reveal_timer(const SoiWorld *w)        { return w->reveal_timer; }
 
 /* Count the board's treasure -- the level-clear objective. A treasure is a VISIBLE
  * goodie (0x9xx) of a coin/gem/gold type (0x0A silver, 0x17 gold, 0x18 gem, 0x19
@@ -326,7 +424,7 @@ int soi_count_treasure(const SoiWorld *w)
         }
     return n;
 }
-int      soi_bonus_time(const SoiWorld *w)          { return w->bonus_timer; }
+int      soi_bonus_time(const SoiWorld *w)          { return w->players[1].bonus_time; }
 uint32_t soi_tick_count(const SoiWorld *w)          { return w->tick; }
 uint32_t soi_grid_cell(const SoiWorld *w, int c, int r) { return soi_get_cell(w, c, r); }
 int      soi_enemy_count(const SoiWorld *w)
@@ -365,6 +463,7 @@ int      soi_enemy_x(const SoiWorld *w, int i)      { return eget(w, i)->x; }
 int      soi_enemy_y(const SoiWorld *w, int i)      { return eget(w, i)->y; }
 int      soi_enemy_dir(const SoiWorld *w, int i)    { return eget(w, i)->dir; }
 int      soi_enemy_fire_cd(const SoiWorld *w, int i){ return eget(w, i)->fire_cd; }
+int      soi_enemy_is_spawner(const SoiWorld *w, int i){ return eget(w, i)->spawn_child != 0; }
 
 static const SoiProjectile *prget(const SoiWorld *w, int i)
 {
@@ -386,10 +485,10 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
 
     bput_u32(&b, w->tick);
     bput_u32(&b, w->rng_seed);
-    bput_i32(&b, w->bonus_timer);
     bput_u8(&b, w->frame_parity);
     bput_u8(&b, w->enemies_frozen);
     bput_u16(&b, (uint16_t)w->enemy_slow);
+    bput_u16(&b, (uint16_t)w->reveal_timer);
     bput_u16(&b, (uint16_t)w->pct_ultrabuster);
     bput_u16(&b, (uint16_t)w->thrown_badguy);
     bput_u16(&b, (uint16_t)w->pct_badguy);
@@ -436,6 +535,9 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_i32(&b, pr->x); bput_i32(&b, pr->y);
         bput_u16(&b, (uint16_t)pr->vx); bput_u16(&b, (uint16_t)pr->vy);
         bput_u16(&b, (uint16_t)pr->age);
+        bput_u8(&b, pr->pierce);
+        bput_u8(&b, pr->gtype);
+        bput_u16(&b, (uint16_t)pr->tcol); bput_u16(&b, (uint16_t)pr->trow);
     }
     for (r = 0; r < SOI_GRID_ROWS; r++)
         for (c = 0; c < SOI_GRID_COLS; c++)

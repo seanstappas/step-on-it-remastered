@@ -33,9 +33,12 @@ certain; **UNKNOWN** = not found.
 >   exactly why a platformer can't work without it. (Walls `0x300 = 0x200|0x100`.)
 > - **Win = KEY → DOOR → EXIT** (player-confirmed + video): door cells carry the
 >   **`0x800`** flag (`FUN_1002bc64` door branch, ~L51-57); entering an *unlocked*
->   door drives `FUN_10017a70` → completion flag `DAT_1003ad0e` →
->   `FUN_10016c90` "Board Completed" (PICT 300, Bonus/Weapons-Reward/Score tally)
->   → load `board+1` (`FUN_10029acc`→`FUN_1002b448`). **Still fuzzy:** the exact
+>   door drives `FUN_10017a70` → completion flag `DAT_1003ad0e` → the "Board Completed"
+>   screen `FUN_100153d0` (PICT 1000) → load `board+1` (`FUN_10029acc`→`FUN_1002b448`).
+>   [CORRECTED 2026-07-06: this line originally read `FUN_10016c90`/PICT 300 — that is
+>   actually the separate "Challenge Round" screen; the real tally is `FUN_100159f4` +
+>   the count-up `FUN_10015714`. See the WIN bullet in the Confirmed section.]
+>   **Still fuzzy:** the exact
 >   key cell id and the key→door-unlock link (`DAT_100393d0` setter not found) —
 >   the ONE genuine remaining oracle/validation item.
 > - **Switch Block High vs Low** (`FUN_1002d04c`/`cf08` horizontal twins,
@@ -157,8 +160,27 @@ input latch and start an action. `+0x30` (e0) encodes direction+facing
   48-px HUD. (The port was initially transposed to 13×19; fixed 2026-07-03.)
 - **WIN = door entry (`FUN_1002bc64`):** door cells have bit **`0x800`** and low type
   **0-3**; entering one matching the player (`type == player_id+1 || type == 1`) sets
-  `player+0x129 = 1` + SFX `0x27`, which drives completion (`DAT_1003ad0e` via
-  `FUN_10017a70` → `FUN_10016c90` "Board Completed" PICT 300 → board+1). The **KEY is
+  `player+0x129 = 1` + SFX `0x27`, which drives completion (`DAT_1003ad0e`, set by
+  `FUN_10017a70`) → the **"Board Completed"** screen **`FUN_100153d0` (PICT `1000`)** —
+  per-player tally panels `FUN_100159f4` (PICT `1010/1011/1020`) with an **animated score
+  count-up `FUN_10015714`** (adds the time BONUS ×score-multiplier, then a second reward,
+  into the score step-by-step with an ascending "ding" scale — events `0x2e/0x2f/0x30+i` =
+  snd `1100`/`1101`/`1102-1106` via `DAT_10037074`) → board+1. The **second-reward column
+  (`@player+0x1003a9f2`, "Weapons-Reward") is VESTIGIAL**: only ever reset on weapon-fire
+  (`FUN_10010d30`/`FUN_100110b4`) and never incremented (no writer in C or asm) — always 0.
+  **Per-player award (RESOLVED model; deviation flagged):** `FUN_100153d0` runs `FUN_10015714`
+  for EACH active player, so at the tally every player gets their OWN remaining bonus
+  `@0x1003a9f0 × mult` — not just the door-exiter. The bonus is genuinely PER-PLAYER (`@f0`
+  seeded from BORD 0x16, decremented ~1/3-rate by `FUN_1000f500`, goodies add per-player via
+  `FUN_1000f3f0`); `_DAT_1003b294` is NOT the bonus (it is the win-celebration counter, set 600
+  by `FUN_1002bc64`). The port instead keeps ONE shared `bonus_timer` awarded to the exiter alone
+  (soi_grid.c:85-88) — a known deviation; a faithful fix is a per-player refactor (rewrites the
+  bonus tests + determinism hash + the HUD), deferred pending a go-ahead.
+  **Correction:** PICT `300` / `FUN_10016c90` is the separate **"Challenge Round"** screen,
+  NOT Board Completed; `FUN_10028a0c`/`FUN_1002a308` select between them via `DAT_1003ad0e`
+  and the **`DAT_100393d0`** gate — whose setter-to-nonzero is **nowhere in the decomp** (all
+  38 refs are reads or `= 0` clears; it is set indirectly via the Mac event loop), so the
+  Challenge-screen trigger is **not statically recoverable**. The **KEY is
   cell type `0x0B`** (INFERRED: the only goodie with no effect but a pickup SFX 0x16 —
   collecting it presumably flips the door-unlock flag). The exact `DAT_100393d0`
   gate-setter and key→unlock link are **not directly in C or asm** (indirect) — but
@@ -205,17 +227,17 @@ Handler **`FUN_1002bc64(player)`**; effects dispatched to per-type helpers.
 | id (hex) | goodie | effect | status |
 |---|---|---|---|
 | `0x0A/0x17/0x18/0x19` | silver/gold coin, gem, gold bars | +500 / +1000 / +2000 / +5000 score | CONFIRMED |
-| `0x10` | magic ball | +1 to `player+0x46` (lives-ish counter) — `FUN_1000e9c8` | CONFIRMED (name unsure) |
+| `0x10` | **1UP (extra life)** | +1 life (`player+0x46` = lives) — `FUN_1000e9c8`; confirmed: bonus-expiry calls `FUN_1000e9c8(p,-1)` | CONFIRMED (2026-07-06) |
 | `0x11` | arrow | +1 arrows (`player+0x4c`) — `FUN_1000eb34` | CONFIRMED |
-| `0x12` | shield pickup | +1 shield (`player+0x4a`) — `FUN_1000ec50` | CONFIRMED |
+| `0x12` | magic ball ammo | +1 ball (`player+0x4a`) — `FUN_1000ec50` | CONFIRMED |
 | **`0x13–0x16`** | **time bonuses ×1–×4** | **+2500 / +5000 / +7500 / +10000** bonus time, **cap 30000** — `FUN_1000f3f0` | **CONFIRMED (was TODO)** |
 | `0x1A–0x23` | transporters (5 IN/OUT pairs) | teleport to paired OUT; **IN = even, OUT = odd** — `FUN_1002b9bc` | CONFIRMED (matches our impl) |
-| `0x24–0x2D` | stop/go switches (5 pairs) | toggle paired gate type — `FUN_10016544` | CONFIRMED (exact gameplay effect INFERRED) |
-| `0x2E` | clock | round timer `+= 600` | CONFIRMED |
-| `0x2F` | thunderballs | **kill ALL enemies** (grid loop `FUN_10016b28`) | CONFIRMED |
+| `0x24–0x2D` | stop/go switches | toggle persistent gate/directional MARKER states (per-code jump table -> marker table `DAT_10004d58` + state machine `FUN_100166b8`; stamps a `0x9xx` cell) — `FUN_10016544` | CONFIRMED mechanism (local effect on enemy pathing INFERRED; **our port simplifies to a global freeze**) |
+| `0x2E` | **turtles** | slow every nasty ~600 frames | CONFIRMED |
+| `0x2F` | **magnifying glass** | reveal hidden `0x1000`-payload cells ~300f (`FUN_10016b28`) | CONFIRMED |
 | `0x30` | shield activate | timed invuln ~600 frames — `FUN_10014c28` | CONFIRMED |
-| `0x31` | shoes/turtles | slow enemies (loops enemy array `FUN_1000543c`) | INFERRED |
-| `0x32` | 1UP | extra life + init — `FUN_10014ccc` | CONFIRMED |
+| `0x31` | **thunderballs** | defeat ALL nasties, credited to collector (`FUN_1000543c`) | CONFIRMED |
+| `0x32` | **speed shoes** | 2× player speed ~20s (`FUN_10014ccc`) — NOT a 1UP | CONFIRMED |
 | 2× multiplier / magnifying glass | — | **not found in this build** | UNKNOWN |
 
 ---
@@ -233,18 +255,29 @@ cell x/y `+0x58/+0x5a`, point value `+0x8a`, killer-player `+0x88`.
 | Ostrich | 100 | `FUN_100093a0` | walk-and-turn (tall) |
 | Hippo | 200 | `FUN_100081f8` | walk-and-turn + destroys blocks in path (`FUN_100279c4`) |
 | Piggy | 250 | `FUN_10009a78` | walk-and-turn + block destroy |
-| **Wheelie** | 300 | `FUN_10009e98` | **SEEK** — updated 2×/frame, 8-dir, moves toward nearest player |
+| **Wheelie** | 300 | `FUN_10009e98` | gravity-free 8-direction FLYER, wall-collision nav (~2 px/frame) — does **NOT** home (never reads the player position; verified 2026-07-06) |
 | Smiley | 400 | `FUN_1000d130` | walk-and-turn + aggressive block destroy |
 | **Hammer** | 500 | `FUN_10007998` | walk-and-turn + **JUMP** on obstacle (state 0x41, row −11) |
 | **Beanie** | 750 | `FUN_10006378` (child `FUN_10006840`) | walk-and-turn + **SPLIT** (spawns child on collision) |
-| **Robo** | 1000 | `FUN_1000a780` | **multi-state CLIMBER** + seek (state field `+0x6e`) |
+| **Robo** | 1000 | `FUN_1000a780` | walk-and-turn + **PUNCH** breakable blocks (`FUN_10027d84`/`ecc` + sound 0x11); turns at permanent walls/ledges — **not** a climber (states 5/6 are stationary turn anims) |
 | **Walker** | 1250 | `FUN_1000dd4c` | **SEEK + SHOOT** projectile (2-frame cycle; seek `FUN_1000e5c8/e7c8`) |
-| Teeth | 1500 | `FUN_1000d8c4` | walk-and-turn (large) |
+| Teeth | 1500 | `FUN_1000d8c4` | walk-and-turn (large) + **destroys blocks** in path (`FUN_100279c4`) |
 
 Seek helpers `FUN_1000e5c8` (right) / `FUN_1000e7c8` (left) compare enemy vs
-nearest-player cell. Our current core does seek only for Wheelie/Walker (correct
-set) but as first-draft; Hammer-jump, Beanie-split, Robo-climb are still to
-implement.
+nearest-player cell. The core now implements these per-type behaviours: Wheelie/Walker
+seek, Hammer-jump, Beanie-split, Hippo/Piggy/Smiley/Teeth block-destroy, and
+Robo-**punch** (states 5/6 are stationary turn animations — the Robo does **not**
+climb; verified 2026-07-06 by full asm read of `FUN_1000a780`).
+
+> **Point-value grounding (verified 2026-07-06).** Only **Beanie** (`0x2ee`=750),
+> **Walker** (`0x4e2`=1250) and **Teeth** (`0x5dc`=1500) are CONFIRMED by an inline
+> `+0x8a` score-field self-write in their update fn (`FUN_10006378`/`FUN_1000dd4c`/
+> `FUN_1000d8c4`). The walk-and-turn types (Ant/Ostrich/Hippo/Piggy/Wheelie/Smiley/
+> Hammer/Robo) only READ `+0x8a` to award on death — their update fns do **not** set
+> it, so those values are carried as *first-draft* in `soi_enemy_points` pending a
+> trace of the spawn-time source (or an emulator oracle). Attribution: **Cannon** is
+> `FUN_100071a0` (bord type 1); `FUN_1000c2e8` is the **Knight** (bord 13) — per the
+> dispatcher `FUN_1000503c`.
 
 ---
 
