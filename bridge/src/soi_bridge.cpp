@@ -31,13 +31,32 @@ bool SoiCore::load_level(const PackedByteArray &bord)
     return soi_load_level(w(), bord.ptr(), (size_t)bord.size()) != 0;
 }
 
+bool SoiCore::next_level(const PackedByteArray &bord)
+{
+    if (bord.is_empty()) return false;
+    return soi_next_level(w(), bord.ptr(), (size_t)bord.size()) != 0;
+}
+
+void SoiCore::set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t arrows, int64_t balls, int64_t shield)
+{
+    soi_set_player_stats(w(), (int)p, (int)score, (int)lives, (int)arrows, (int)balls, (int)shield);
+}
+
 void SoiCore::tick(int64_t p1_input, int64_t p2_input)
 {
     soi_tick(w(), (uint8_t)(p1_input & 0xFF), (uint8_t)(p2_input & 0xFF));
 }
 
+void SoiCore::tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input)
+{
+    soi_tick3(w(), (uint8_t)(p1_input & 0xFF), (uint8_t)(p2_input & 0xFF), (uint8_t)(p3_input & 0xFF));
+}
+
+void SoiCore::spawn_player3() { soi_spawn_player3(w()); }
+
 int64_t SoiCore::player_score(int64_t p) const { return soi_player_score(w(), (int)p); }
 int64_t SoiCore::player_lives(int64_t p) const { return soi_player_lives(w(), (int)p); }
+int64_t SoiCore::player_mult(int64_t p) const  { return soi_player_mult(w(), (int)p); }
 bool    SoiCore::player_alive(int64_t p) const { return soi_player_alive(w(), (int)p) != 0; }
 bool    SoiCore::game_over() const             { return soi_game_over(w()) != 0; }
 bool    SoiCore::level_complete() const        { return soi_level_complete(w()) != 0; }
@@ -56,6 +75,7 @@ int64_t SoiCore::player_pose(int64_t p) const { return soi_player_pose(w(), (int
 int64_t SoiCore::player_pose_t(int64_t p) const { return soi_player_pose_t(w(), (int)p); }
 int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); }
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
+int64_t SoiCore::reveal_timer() const          { return soi_reveal_timer(w()); }
 int64_t SoiCore::bonus_time() const            { return soi_bonus_time(w()); }
 int64_t SoiCore::tick_count() const            { return (int64_t)soi_tick_count(w()); }
 int64_t SoiCore::enemy_count() const           { return soi_enemy_count(w()); }
@@ -71,6 +91,7 @@ int64_t SoiCore::enemy_x(int64_t i) const      { return soi_enemy_x(w(), (int)i)
 int64_t SoiCore::enemy_y(int64_t i) const      { return soi_enemy_y(w(), (int)i); }
 int64_t SoiCore::enemy_dir(int64_t i) const    { return soi_enemy_dir(w(), (int)i); }
 int64_t SoiCore::enemy_fire_cd(int64_t i) const { return soi_enemy_fire_cd(w(), (int)i); }
+int64_t SoiCore::enemy_is_spawner(int64_t i) const { return soi_enemy_is_spawner(w(), (int)i); }
 bool    SoiCore::projectile_active(int64_t i) const { return soi_projectile_active(w(), (int)i) != 0; }
 int64_t SoiCore::projectile_x(int64_t i) const { return soi_projectile_x(w(), (int)i); }
 int64_t SoiCore::projectile_y(int64_t i) const { return soi_projectile_y(w(), (int)i); }
@@ -98,9 +119,14 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("init", "seed"), &SoiCore::init);
     ClassDB::bind_method(D_METHOD("set_seed", "seed"), &SoiCore::set_seed);
     ClassDB::bind_method(D_METHOD("load_level", "bord"), &SoiCore::load_level);
+    ClassDB::bind_method(D_METHOD("next_level", "bord"), &SoiCore::next_level);
+    ClassDB::bind_method(D_METHOD("set_player_stats", "player", "score", "lives", "arrows", "balls", "shield"), &SoiCore::set_player_stats);
     ClassDB::bind_method(D_METHOD("tick", "p1_input", "p2_input"), &SoiCore::tick);
+    ClassDB::bind_method(D_METHOD("tick3", "p1_input", "p2_input", "p3_input"), &SoiCore::tick3);
+    ClassDB::bind_method(D_METHOD("spawn_player3"), &SoiCore::spawn_player3);
 
     ClassDB::bind_method(D_METHOD("player_score", "player"), &SoiCore::player_score);
+    ClassDB::bind_method(D_METHOD("player_mult", "player"), &SoiCore::player_mult);
     ClassDB::bind_method(D_METHOD("player_lives", "player"), &SoiCore::player_lives);
     ClassDB::bind_method(D_METHOD("player_alive", "player"), &SoiCore::player_alive);
     ClassDB::bind_method(D_METHOD("game_over"), &SoiCore::game_over);
@@ -120,6 +146,7 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("player_pose_t", "player"), &SoiCore::player_pose_t);
     ClassDB::bind_method(D_METHOD("goodies_total"), &SoiCore::goodies_total);
     ClassDB::bind_method(D_METHOD("goodies_left"), &SoiCore::goodies_left);
+    ClassDB::bind_method(D_METHOD("reveal_timer"), &SoiCore::reveal_timer);
     ClassDB::bind_method(D_METHOD("bonus_time"), &SoiCore::bonus_time);
     ClassDB::bind_method(D_METHOD("tick_count"), &SoiCore::tick_count);
     ClassDB::bind_method(D_METHOD("enemy_count"), &SoiCore::enemy_count);
@@ -135,6 +162,7 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("enemy_y", "i"), &SoiCore::enemy_y);
     ClassDB::bind_method(D_METHOD("enemy_dir", "i"), &SoiCore::enemy_dir);
     ClassDB::bind_method(D_METHOD("enemy_fire_cd", "i"), &SoiCore::enemy_fire_cd);
+    ClassDB::bind_method(D_METHOD("enemy_is_spawner", "i"), &SoiCore::enemy_is_spawner);
     ClassDB::bind_method(D_METHOD("projectile_active", "i"), &SoiCore::projectile_active);
     ClassDB::bind_method(D_METHOD("projectile_x", "i"), &SoiCore::projectile_x);
     ClassDB::bind_method(D_METHOD("projectile_y", "i"), &SoiCore::projectile_y);

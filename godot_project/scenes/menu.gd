@@ -40,9 +40,12 @@ func _ready() -> void:
 				target = arg.substr(8)
 		if target == "":
 			target = "board_450.bord" if "--demo" in ua else "board_401.bord"
+		# match by basename so "--board=board_450" and "--board=board_450.bord" both
+		# resolve (a strict ends_with silently fell back to board_401 without the ext).
+		var want := (target as String).get_file().get_basename()
 		var idx := 0
 		for i in _files.size():
-			if _files[i].ends_with(target):
+			if (_files[i] as String).get_file().get_basename() == want:
 				idx = i
 				break
 		call_deferred("_on_activated", idx)
@@ -75,10 +78,21 @@ func _populate() -> void:
 	names.sort_custom(func(a, b): return _board_num(a) < _board_num(b))
 	for n in names:
 		_files.append(_levels_dir.path_join(n))
-		_list.add_item(n.get_basename())
+		_list.add_item(_board_label(_board_num(n)))
 
 func _board_num(fn: String) -> int:
 	return fn.get_basename().replace("board_", "").to_int()
+
+## Grounded difficulty tiers (gameplay-and-design.md 8): the tiered campaign is BORD 401-500
+## in five tiers of 20 -- Beginner / Novice / Intermediate / Advanced / Expert; 1001-1050 are
+## the Challenge set. Label each board by tier so "Set Starting Board" reads by difficulty.
+func _board_label(num: int) -> String:
+	if num >= 401 and num <= 500:
+		var tiers := ["Beginner", "Novice", "Intermediate", "Advanced", "Expert"]
+		return "%s  %d   (board_%d)" % [tiers[(num - 401) / 20], (num - 401) % 20 + 1, num]
+	if num >= 1001 and num <= 1050:
+		return "Challenge  %d   (board_%d)" % [num - 1000, num]
+	return "board_%d" % num
 
 func _on_activated(idx: int) -> void:
 	if idx >= 0 and idx < _files.size():

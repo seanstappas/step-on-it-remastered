@@ -7,8 +7,12 @@
  * 16 bits interpreted as a signed short — the value range Random() yields.
  *
  * The game never seeds randSeed (CONFIRMED), so the Toolbox default seed of 1
- * is the canonical start. TODO(oracle): validate this stream against N real
- * Random() draws captured from the emulator (MASTER_PLAN §5.3).
+ * is the canonical start. The LCG itself is validated against the canonical
+ * Park-Miller checkpoint (seed 1 -> 10000th iterate == 1043618065; see
+ * test_mechanics.c test 21), so our Schrage's-method stream is proven exact.
+ * TODO(oracle): confirm Mac Random() IS this minimal-standard stream (not a
+ * variant) + its return-bit mapping, against real draws captured from the
+ * emulator (MASTER_PLAN §5.3).
  */
 #include "soi_internal.h"
 

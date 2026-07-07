@@ -36,13 +36,18 @@ public:
     void init(int64_t seed);
     void set_seed(int64_t seed);
     bool load_level(const PackedByteArray &bord);
+    bool next_level(const PackedByteArray &bord);
+    void set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t arrows, int64_t balls, int64_t shield);
 
     /* one deterministic logic frame */
     void tick(int64_t p1_input, int64_t p2_input);
+    void tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input);
+    void spawn_player3();   /* remaster: activate the 3rd co-op player */
 
     /* read-only state (player 1 = P1, 2 = P2) */
     int64_t player_score(int64_t player) const;
     int64_t player_lives(int64_t player) const;
+    int64_t player_mult(int64_t player) const;
     bool    player_alive(int64_t player) const;
     bool    game_over() const;
     bool    level_complete() const;
@@ -61,6 +66,7 @@ public:
     int64_t player_pose_t(int64_t player) const;
     int64_t goodies_total() const;
     int64_t goodies_left() const;
+    int64_t reveal_timer() const;
     int64_t bonus_time() const;
     int64_t tick_count() const;
     int64_t enemy_count() const;
@@ -78,6 +84,7 @@ public:
     int64_t enemy_y(int64_t i) const;
     int64_t enemy_dir(int64_t i) const;
     int64_t enemy_fire_cd(int64_t i) const;
+    int64_t enemy_is_spawner(int64_t i) const;
     bool    projectile_active(int64_t i) const;
     int64_t projectile_x(int64_t i) const;
     int64_t projectile_y(int64_t i) const;

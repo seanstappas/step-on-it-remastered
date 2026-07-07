@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 /* ---- canonical constants (from the RE, docs/original_game) ---- */
-#define SOI_MAX_PLAYERS   3     /* slots 0(reserved),1(P1),2(P2) — §runtime-structures */
+#define SOI_MAX_PLAYERS   4     /* slots 0(reserved),1(P1),2(P2),3(P3 = remaster co-op) */
 #define SOI_MAX_ENEMIES   32    /* enemy entity pool (original array is fixed-size) */
 #define SOI_MAX_PROJECTILES 8   /* fired Magic Arrows in flight (pool) */
 #define SOI_GRID_COLS     19    /* playable columns (X, 0x13 loop bound) */
@@ -119,6 +119,7 @@ typedef enum {
     SOI_SFX_SHIELD_ON,    /* shield-activate goody 0x30 (asm event 0x29 -> 1003 "gong") */
     SOI_SFX_WHISTLE,      /* enemy-claim goody 0x31 (asm event 0x2a -> 1004 "whistle") */
     SOI_SFX_KEY,          /* colored-key collect (asm event 0x14 -> 17661 "Announce") */
+    SOI_SFX_HURRY,        /* low-bonus warning as the timer passes 1000 (asm FUN_10018b24 -> evt 0x2d) */
     SOI_SFX_COUNT
 } SoiSfx;
 
@@ -136,12 +137,28 @@ void   soi_set_seed(SoiWorld *w, uint32_t seed);
  * success, 0 on malformed input. Populates the grid + level parameters. */
 int    soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len);
 
+/* Load the NEXT board while PRESERVING the persistent per-player stats (score, lives,
+ * arrows, balls, shield -- reset only at new-game, FUN_1002b060) and continuing the RNG
+ * stream. Everything else resets per board exactly as a fresh load (mult=1, positions,
+ * has_key, grid, enemies -- the per-level reset FUN_1002b174). Use for board->board
+ * transitions; use soi_world_init + soi_load_level for a NEW game. */
+int    soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len);
+
+/* Overwrite a player's PERSISTENT stats (Resume restores a saved board-start game). */
+void   soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arrows, int balls, int shield);
+
 /* Advance one logic frame with the two players' input bitmasks. */
 void   soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input);
+/* Same, with a THIRD input channel for the remaster's 3rd co-op player (slot 3). */
+void   soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input);
+/* Remaster: activate the 3rd co-op player (BORD has no 3rd spawn; P1-derived). Call
+ * after soi_load_level when 3 players are in the game. */
+void   soi_spawn_player3(SoiWorld *w);
 
 /* ---- read-only state accessors (player index 1 = P1, 2 = P2) ---- */
 int32_t  soi_player_score(const SoiWorld *w, int player);
 int      soi_player_lives(const SoiWorld *w, int player);
+int      soi_player_mult(const SoiWorld *w, int player);  /* score multiplier (1..5) */
 int      soi_player_alive(const SoiWorld *w, int player);
 int      soi_game_over(const SoiWorld *w);   /* 1 = all active players eliminated */
 int      soi_level_complete(const SoiWorld *w); /* 1 = a player exited the door with the key */
@@ -161,6 +178,7 @@ int      soi_player_pose_t(const SoiWorld *w, int player);  /* action-pose count
 int      soi_goodies_total(const SoiWorld *w);   /* treasure at level load */
 int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected */
 int      soi_count_treasure(const SoiWorld *w);  /* treasure cells now in the grid (objective count) */
+int      soi_reveal_timer(const SoiWorld *w);    /* magnifying-glass reveal (goody 0x2F); >0 = hidden treasures shown */
 int      soi_bonus_time(const SoiWorld *w);
 uint32_t soi_tick_count(const SoiWorld *w);
 uint32_t soi_grid_cell(const SoiWorld *w, int col, int row);
@@ -180,6 +198,7 @@ int      soi_enemy_x(const SoiWorld *w, int i);
 int      soi_enemy_y(const SoiWorld *w, int i);
 int      soi_enemy_dir(const SoiWorld *w, int i);
 int      soi_enemy_fire_cd(const SoiWorld *w, int i);   /* reload counter; small = about to fire */
+int      soi_enemy_is_spawner(const SoiWorld *w, int i);/* 1 = persistent stationary spawner (draws as a spawn block, not a nasty) */
 int      soi_projectile_active(const SoiWorld *w, int i);
 int      soi_projectile_x(const SoiWorld *w, int i);
 int      soi_projectile_y(const SoiWorld *w, int i);
