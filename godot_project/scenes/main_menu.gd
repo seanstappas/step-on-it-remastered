@@ -6,13 +6,16 @@ extends Control
 ##
 ## The render / movie / play harness (tools/verify.ps1, --shot/--demo/--play) skips
 ## the title and drops straight into the board picker, which auto-launches a board,
-## so the gate still captures a frame.
+## so the gate still captures a frame. These capture runs also render the window
+## OFF-SCREEN so they don't pop up on the desktop (see _apply_window_mode); --hidden
+## forces it for any run, --visible keeps the window on-screen.
 
 var _overlay_bg: ColorRect = null
 var _overlay: TextureRect = null
 var _overlay_hint: Label = null
 var _overlay_pages: Array = []
 var _overlay_idx := 0
+var _hd := false   # --hd: prefer extracted/pict_hd + render the canvas at the window's resolution
 var _music_menu: PopupMenu = null
 var _menushot := -1
 var _splash: Control = null
@@ -21,32 +24,42 @@ var _hs_entries: Label = null
 
 # --- load an extracted PICT (they live in the repo, outside res://) ---
 func _pict(pict_name: String) -> Texture2D:
-	var path := ProjectSettings.globalize_path("res://../extracted/pict/" + pict_name)
-	if FileAccess.file_exists(path):
-		var img := Image.load_from_file(path)
-		if img != null and not img.is_empty():
-			return ImageTexture.create_from_image(img)
+	for sub in (["pict_hd_v2", "pict_hd", "pict"] if _hd else ["pict"]):
+		var path := ProjectSettings.globalize_path("res://../extracted/%s/%s" % [sub, pict_name])
+		if FileAccess.file_exists(path):
+			var img := Image.load_from_file(path)
+			if img != null and not img.is_empty():
+				return ImageTexture.create_from_image(img)
 	return null
 
 func _ready() -> void:
+	_apply_window_mode()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play"):
 			get_tree().change_scene_to_file.call_deferred("res://scenes/menu.tscn")
 			return
 	if Session.num_players <= 0:
 		Session.num_players = 2
+	# --hd: prefer the 4x AI-upscaled PICT art (tools/upscale_picts.py) + linear filtering. The
+	# window's canvas_items stretch (project.godot) renders the 640x480 canvas at window res so
+	# the extra detail shows. (SD default unchanged.)
+	if "--hd" in OS.get_cmdline_user_args() and (DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd_v2")) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd"))):
+		_hd = true
 
 	# title art fills the 640x480 screen (2x nearest-neighbour for the retro look)
 	var bg := TextureRect.new()
 	bg.texture = _pict("401_Title.png")
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
-	bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE   # FULL_RECT sets the size, not the (HD) texture's native size
+	bg.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR if _hd else CanvasItem.TEXTURE_FILTER_NEAREST
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
 	_build_menu_bar()
 	_build_buttons()
+	if Audio.has_method("play_menu_music"):
+		Audio.play_menu_music()   # title/menu tune (selector 5 = "6lilt"); silent unless music is on
 
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--menushot="):
@@ -55,6 +68,26 @@ func _ready() -> void:
 		_show_splash()   # brief startup splash (skipped for --menushot captures / the harness)
 	if _menushot >= 0:
 		set_process(true)
+
+## Headless-style capture: MINIMIZE the window so agent/CI screenshot + movie runs don't
+## pop up a window on the desktop. The window still renders on the GPU (unlike Godot's
+## --headless, which uses the dummy driver and captures BLANK), so --shot / --write-movie
+## keep working. Auto-applied for the capture flags; force with --hidden, or keep it
+## on-screen with --visible. (Launch with `--position 9000,9000` to also skip the brief
+## on-screen flash while the window is created, before this runs.)
+func _apply_window_mode() -> void:
+	var ua := OS.get_cmdline_user_args()
+	if "--visible" in ua:
+		return
+	const HIDE_FLAGS := ["--hidden", "--shot", "--menushot", "--demo", "--play"]
+	for a in ua:
+		for f in HIDE_FLAGS:
+			if a.begins_with(f):
+				# Render OFF-SCREEN (not minimized): the window still PRESENTS, so the --shot
+				# frame_post_draw await + --write-movie keep working. (Godot --headless captures
+				# BLANK; a MINIMIZED window never presents -> --shot would hang.)
+				get_window().position = Vector2i(9000, 9000)
+				return
 
 func _process(_dt: float) -> void:
 	if _splash != null:
@@ -89,7 +122,8 @@ func _show_splash() -> void:
 	tr.texture = t
 	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR if _hd else CanvasItem.TEXTURE_FILTER_NEAREST
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_splash.add_child(tr)
 	_splash_frames = 130
@@ -120,8 +154,19 @@ func _build_menu_bar() -> void:
 
 	var snd := PopupMenu.new()
 	snd.name = "Sound"
-	snd.add_check_item("Music", 0)
-	# Effects Volume (About doc 8): controls the SFX. (Music is off by default in the original.)
+	# Music (About doc 8; the original's Sound -> Music: Full / Light / No). OFF by
+	# default, as in the original. Full plays the rich arrangement, Light the sparser
+	# "_thin" one (FUN_10018414 + DAT_10039154 pick the movie variant). The title screen
+	# plays "6lilt" (selector 5); in-game the tune rotates per board (see audio.gd).
+	snd.add_separator("Music")
+	var mus_names := ["Full", "Light", "Off"]
+	for i in mus_names.size():
+		snd.add_radio_check_item(mus_names[i], 30 + i)
+	var mus_mode := 2
+	if Audio.is_music_enabled():
+		mus_mode = 1 if (Audio.has_method("is_music_light") and Audio.is_music_light()) else 0
+	snd.set_item_checked(snd.get_item_index(30 + mus_mode), true)
+	# Effects Volume (About doc 8): controls the SFX.
 	snd.add_separator("Effects Volume")
 	var vol_names := ["Full", "Medium", "Quiet", "Off"]
 	var vol_db := [0.0, -10.0, -22.0, -80.0]
@@ -129,8 +174,10 @@ func _build_menu_bar() -> void:
 		snd.add_radio_check_item(vol_names[i], 20 + i)
 	snd.set_item_checked(snd.get_item_index(20), true)   # default Full
 	snd.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
-			_toggle_music()
+		if id >= 30 and id <= 32:
+			_set_music_mode(id - 30)                      # 0 Full, 1 Light, 2 Off
+			for j in mus_names.size():
+				snd.set_item_checked(snd.get_item_index(30 + j), 30 + j == id)
 		elif id >= 20 and id <= 23:
 			Audio.set_effects_volume(vol_db[id - 20])
 			for j in vol_names.size():
@@ -247,13 +294,15 @@ func _on_help(id: int) -> void:
 		1: _show_picts(["700_Help_1.png", "701_Help_2.png", "702_Help_3.png"])
 		2: _show_picts(["402_High_Scores.png"])
 
-func _toggle_music() -> void:
-	if _music_menu == null:
-		return
-	var on := not _music_menu.is_item_checked(0)
-	_music_menu.set_item_checked(0, on)
+func _set_music_mode(mode: int) -> void:
+	# Sound -> Music: 0 Full, 1 Light (sparser "_thin" arrangement), 2 Off. The title
+	# screen tune is "6lilt" (selector 5); Full/Light choose its arrangement.
+	if Audio.has_method("set_music_light"):
+		Audio.set_music_light(mode == 1)
+	if Audio.has_method("play_menu_music"):
+		Audio.play_menu_music()      # ensure the menu tune is selected before enabling
 	if Audio.has_method("set_music_enabled"):
-		Audio.set_music_enabled(on)
+		Audio.set_music_enabled(mode != 2)
 
 # --- fullscreen PICT overlay (About / 3-page Help / High Scores) ---
 func _show_picts(pages: Array) -> void:
@@ -268,7 +317,8 @@ func _show_picts(pages: Array) -> void:
 		_overlay = TextureRect.new()
 		_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 		_overlay.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		_overlay.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_overlay.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR if _hd else CanvasItem.TEXTURE_FILTER_NEAREST
 		_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_overlay)
 		var hint := Label.new()

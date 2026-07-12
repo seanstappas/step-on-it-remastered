@@ -53,10 +53,12 @@ void SoiCore::tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input)
 }
 
 void SoiCore::spawn_player3() { soi_spawn_player3(w()); }
+void SoiCore::limit_players(int64_t n) { soi_limit_players(w(), (int)n); }
 
 int64_t SoiCore::player_score(int64_t p) const { return soi_player_score(w(), (int)p); }
 int64_t SoiCore::player_lives(int64_t p) const { return soi_player_lives(w(), (int)p); }
 int64_t SoiCore::player_mult(int64_t p) const  { return soi_player_mult(w(), (int)p); }
+int64_t SoiCore::player_no_weapons_reward(int64_t p) const { return soi_player_no_weapons_reward(w(), (int)p); }
 bool    SoiCore::player_alive(int64_t p) const { return soi_player_alive(w(), (int)p) != 0; }
 bool    SoiCore::game_over() const             { return soi_game_over(w()) != 0; }
 bool    SoiCore::level_complete() const        { return soi_level_complete(w()) != 0; }
@@ -124,9 +126,11 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("tick", "p1_input", "p2_input"), &SoiCore::tick);
     ClassDB::bind_method(D_METHOD("tick3", "p1_input", "p2_input", "p3_input"), &SoiCore::tick3);
     ClassDB::bind_method(D_METHOD("spawn_player3"), &SoiCore::spawn_player3);
+    ClassDB::bind_method(D_METHOD("limit_players", "n"), &SoiCore::limit_players);
 
     ClassDB::bind_method(D_METHOD("player_score", "player"), &SoiCore::player_score);
     ClassDB::bind_method(D_METHOD("player_mult", "player"), &SoiCore::player_mult);
+    ClassDB::bind_method(D_METHOD("player_no_weapons_reward", "player"), &SoiCore::player_no_weapons_reward);
     ClassDB::bind_method(D_METHOD("player_lives", "player"), &SoiCore::player_lives);
     ClassDB::bind_method(D_METHOD("player_alive", "player"), &SoiCore::player_alive);
     ClassDB::bind_method(D_METHOD("game_over"), &SoiCore::game_over);

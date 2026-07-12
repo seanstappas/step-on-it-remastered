@@ -6,14 +6,20 @@ Uses Godot's Movie Maker (--write-movie) with the front-end's built-in --demo
 scripted play (600 physics frames, then it quits and finalizes the file), then
 transcodes the raw AVI to a small mp4 with ffmpeg (if present).
 
+The game window renders OFF-SCREEN (position 9000,9000) so recording does not pop
+up a window on the desktop -- the capture flags auto-hide it (Godot --headless would
+be blank). Pass -Visible to watch it record on-screen instead.
+
 Usage:
-  powershell -ExecutionPolicy Bypass -File tools/record_video.ps1 [-Label sprites] [-Mode retro|remastered]
+  powershell -ExecutionPolicy Bypass -File tools/record_video.ps1 [-Label sprites] [-Mode retro|remastered] [-Visible]
 #>
 param(
     [string]$Label = "gameplay",
     [ValidateSet("retro", "remastered")][string]$Mode = "retro",
     [string]$Board = "",          # e.g. board_301.bord — records this real board via --play
     [int]$Play = 0,               # frames to play the real board (0 = use the --demo showcase)
+    [switch]$HD,                  # --hd: load the 4x AI-upscaled sheets + record at 1280x960 (native)
+    [switch]$Visible,             # record with the window ON-SCREEN (default: hidden/off-screen)
     [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
 )
 
@@ -32,10 +38,15 @@ try {
 
     Write-Host "==> recording $Mode demo -> $avi" -ForegroundColor Cyan
     $gargs = if ($Play -gt 0) { @("--play=$Play", "--mode=$Mode", "--board=$Board") } else { @("--demo", "--mode=$Mode") }
+    if ($HD) { $gargs += "--hd" }
+    if ($Visible) { $gargs += "--visible" }   # else the --demo/--play capture flag auto-hides the window
+    $gargs += "--hidden"   # force off-screen headless render (main_menu _apply_window_mode) so the
+                           # capture never pops a window onto the desktop
+    $res = if ($HD) { '1280x960' } else { '640x480' }   # HD renders the 640x480 canvas at 2x (crisp sprites)
     # Godot can print a harmless "ObjectDB instances leaked at exit" warning to
     # stderr when it quits mid-movie; don't let that abort the transcode below.
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $Godot --path godot_project --resolution 640x480 --fixed-fps 60 `
+    & $Godot --path godot_project --resolution $res --fixed-fps 60 --position 9000,9000 `
         --write-movie $avi -- @gargs 2>&1 | Out-Null
     $ErrorActionPreference = $prevEAP
 
@@ -46,11 +57,13 @@ try {
     $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
     if ($ff) {
         Write-Host "==> transcoding -> $mp4" -ForegroundColor Cyan
+        $vf = if ($HD) { "scale=iw:ih" } else { "scale=iw*2:ih*2:flags=neighbor" }
         & $ff.Source -y -loglevel error -i $avi -c:v libx264 -pix_fmt yuv420p -crf 20 `
-            -c:a aac -b:a 160k -vf "scale=iw*2:ih*2:flags=neighbor" $mp4
+            -c:a aac -b:a 160k -vf $vf $mp4
         if (Test-Path $mp4) {
             $mp4MB = [math]::Round((Get-Item $mp4).Length / 1MB, 1)
-            Write-Host "    wrote $mp4 ($mp4MB MB, 2x nearest-neighbour)" -ForegroundColor Green
+            $note = if ($HD) { "1280x960 HD" } else { "2x nearest-neighbour" }
+            Write-Host "    wrote $mp4 ($mp4MB MB, $note)" -ForegroundColor Green
             Remove-Item $avi -ErrorAction SilentlyContinue   # keep only the small mp4
         }
     } else {

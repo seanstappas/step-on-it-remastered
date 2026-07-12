@@ -7,13 +7,25 @@ movie whose sample data (an `mdat` atom in the DATA fork) is a stream of QTMA
 music events, and whose `moov` (track/media structure + tune header) lives in the
 RESOURCE fork (__MACOSX/Step On It!  Movies/._<name>).
 
-QTMA event stream (big-endian u32 events; CONFIRMED against the data):
+QTMA event stream (big-endian u32 events; verified by dumping the raw stream):
   * Rest  : top 3 bits == 000  -> advance time by (event & 0x1FFFFFFF).
   * Note  : top 3 bits == 001  -> part=(e>>24)&0x1f, pitch=((e>>18)&0x3f)+32,
             velocity=(e>>11)&0x7f, duration=e&0x7ff (short note-with-duration).
-  * General/extended events (top bits >= 010) carry a word count in their 2nd
-    long (e & 0xFFFF gives the extra long count for the 0x6.. "general" form);
-    we skip them but keep timing intact.
+  * XNote : top 3 bits == 100  -> Extended Note event, TWO longs:
+              L1 = [100][part @bits20-16][pitch @low byte]
+              L2 = [.. velocity @bits23-16 ..][duration @low 16 bits]
+            Carries the long/sustained and high notes the short form can't (e.g.
+            bass_for_lunch's sustained 0:47 lead). MUST be parsed as a note.
+  * Control: top 3 bits == 010 -> [010][part5][controller8][value16]. Controller
+    32 (0x20) = PITCH BEND, value = signed 8.8 fixed-point semitones; emitted as a
+    MIDI pitch-bend event (GM default +/-2 semitone range). Other controllers dropped.
+  * General/marker (top 3 bits 011/110/111): carry a following long count in their
+    low 16 bits (e & 0xFFFF); we consume that many longs and emit nothing.
+
+  Historical bug (fixed): the extended-note logic was mistakenly attached to
+  top==011 (a 1-long general/marker event), which both emitted garbage pitch-0
+  notes AND swallowed the following event (often a real note). The genuine
+  Extended Note type is top==100; parsing it recovers ~40 dropped notes/track.
 
 The QTMA note "pitch" field is a MIDI-ish key (field + 32). Durations/rests are in
 the media timescale; we emit MIDI with division = timescale and tempo = 1e6 us/qn
@@ -131,8 +143,10 @@ def mdat_events(datafork: bytes) -> bytes:
 
 
 def parse_events(stream: bytes):
-    """Yield ('note', t, part, pitch, vel, dur) and advance a shared clock via rests."""
+    """Parse the QTMA stream into (notes, controls): notes = (t, part, pitch, vel,
+    dur); controls = (t, part, controller, value16). The clock advances via rests."""
     notes = []
+    controls = []
     t = 0
     i = 0
     n = len(stream)
@@ -150,25 +164,30 @@ def parse_events(stream: bytes):
             vel = (e >> 11) & 0x7F
             dur = e & 0x7FF
             notes.append((t, part, pitch, vel, dur))
-        elif top == 3:                    # extended note (2 longs): part/pitch/vel/dur
+        elif top == 2:                    # Control event: [010][part5][ctrl8][value16]
+            controls.append((t, (e >> 24) & 0x1F, (e >> 16) & 0xFF, e & 0xFFFF))
+        elif top == 4:                    # Extended Note event (2 longs)
+            # L1: [100][.. part @bits20-16 ..][pitch @low byte]
+            # L2: [100][.. velocity @bits23-16 ..][duration @low 16 bits]
             if i + 4 > n:
                 break
             e2 = struct.unpack_from(">I", stream, i)[0]; i += 4
-            part = (e >> 16) & 0xFFF
-            pitch = (e >> 8) & 0xFF
-            vel = e & 0xFF
-            dur = (e2 >> 0) & 0xFFFFFF
-            notes.append((t, part & 0x1F, pitch, vel & 0x7F, dur & 0x7FFF))
-        else:                             # general/control/extended: skip extra longs
-            # 0x6..... general event: low 16 bits = count of following longs
-            extra = 0
-            if top in (2, 5, 6, 7):
-                extra = (e & 0xFFFF) if top in (6, 7) else 0
+            part = (e >> 16) & 0x1F
+            pitch = e & 0xFF
+            vel = (e2 >> 16) & 0x7F
+            dur = e2 & 0xFFFF
+            if vel == 0:
+                vel = 64
+            notes.append((t, part, pitch, vel, dur))
+        else:                             # general / marker: emit nothing
+            # general events (top 3 = 0x6/0x7, top 6/7 = 0xC../0xE..) carry a following
+            # long count in their low 16 bits (control events, top 2, handled above).
+            extra = (e & 0xFFFF) if top in (3, 6, 7) else 0
             i += extra * 4
-    return notes
+    return notes, controls
 
 
-def write_midi(path: Path, notes, timescale: int, instruments=None):
+def write_midi(path: Path, notes, timescale: int, instruments=None, controls=None):
     # collect per (part) -> channel; build one merged track (format 0)
     events = []  # (tick, order, bytes)
     # program changes (part -> channel) at t=0
@@ -182,6 +201,15 @@ def write_midi(path: Path, notes, timescale: int, instruments=None):
             continue
         events.append((t, 0, bytes([0x90 | ch, pitch, max(1, vel)])))
         events.append((t + max(1, dur), 1, bytes([0x80 | ch, pitch, 0])))
+    # QTMA controllers -> MIDI. Controller 32 = pitch bend; value = signed 8.8 fixed
+    # semitones -> 14-bit MIDI bend, assuming the GM default +/-2 semitone range.
+    for (t, part, cnum, val) in (controls or []):
+        if cnum != 32:
+            continue
+        ch = part & 0x0F
+        semis = (val - 0x10000 if val >= 0x8000 else val) / 256.0
+        bend = max(0, min(16383, 8192 + int(round(semis / 2.0 * 8192))))
+        events.append((t, -1, bytes([0xE0 | ch, bend & 0x7F, (bend >> 7) & 0x7F])))
     events.sort(key=lambda e: (e[0], e[1]))
 
     def vlq(n):
@@ -213,16 +241,17 @@ def convert(name: str):
     ts = read_timescale(res)
     instruments = read_instruments(res)
     ev = mdat_events(data)
-    notes = parse_events(ev)
+    notes, controls = parse_events(ev)
     if not notes:
         print("  %-18s no notes (events=%d bytes)" % (name, len(ev))); return
-    write_midi(OUT / (name.replace(" ", "_") + ".mid"), notes, ts, instruments)
+    write_midi(OUT / (name.replace(" ", "_") + ".mid"), notes, ts, instruments, controls)
     dur = max((t + d) for (t, _p, _k, _v, d) in notes) / ts
     parts = sorted(set(p for (_t, p, _k, _v, _d) in notes))
     gm_names = {v: k for k, v in GM.items()}
     inst = ", ".join(gm_names.get(p, str(p)) for p in instruments[:8])
-    print("  %-18s %4d notes, %2d parts, ~%.0fs  [%s]"
-          % (name, len(notes), len(parts), dur, inst))
+    bends = sum(1 for c in controls if c[2] == 32)
+    print("  %-18s %4d notes, %2d parts, ~%.0fs%s  [%s]"
+          % (name, len(notes), len(parts), dur, (" +%d bend" % bends) if bends else "", inst))
 
 
 def main():

@@ -88,6 +88,20 @@ void soi_spawn_player3(SoiWorld *w)
     w->players[3].bonus_time = w->players[1].bonus_time;   /* P3 shares the board's starting bonus */
 }
 
+/* Deactivate every player with index > n. The BORD header always spawns P1+P2, so a
+ * 1-player game must turn P2 off (else it walks, draws, and consumes P2's input). Marks
+ * them eliminated so completion / HUD / enemy-target logic all skip them. */
+void soi_limit_players(SoiWorld *w, int n)
+{
+    int i;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++)
+        if (i > n) {
+            w->players[i].active = 0;
+            w->players[i].alive = 0;
+            w->players[i].eliminated = 1;
+        }
+}
+
 /* Board->board transition: preserve the persistent per-player stats (score/lives/ammo/
  * shield -- new-game-only per FUN_1002b060) and the RNG stream, but otherwise fully reset
  * for the incoming board (mult=1/positions/has_key/grid/enemies via world_init+load_level,
@@ -144,16 +158,50 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
     place_player(w, 1, be16(bord + 0x06), be16(bord + 0x08));
     place_player(w, 2, be16(bord + 0x0A), be16(bord + 0x0C));
-    w->pct_ultrabuster = (int16_t)be16(bord + 0x10);
-    w->thrown_badguy   = (int16_t)be16(bord + 0x12);
-    w->pct_badguy      = (int16_t)be16(bord + 0x14);
-    bonus = (int)be16(bord + 0x16);
-    if (bonus <= 0 || bonus == 0x3A20) bonus = 5000;   /* loader default */
+    /* pct_ultrabuster (0x10), thrown_badguy (0x12), pct_badguy (0x14): the original VALIDATES
+     * these at load (asm FUN_1002b448) -- any out-of-range value -> 0 (pct 0..100, thrown 0..20),
+     * and thrown & pct are LINKED (either being 0 zeros both). 5 boards carry GARBAGE here:
+     * 301/428/446/498 hold the ASCII marker "DATA" in bytes 0x10-0x15 (pct_ultra=8224,
+     * thrown=17473, pct=21569) and board_440 has thrown=25. Without this clamp the port read them
+     * raw, so pct_ultrabuster=8224 made EVERY Gargoyle shot an UltraBuster (always-pierce) -- an
+     * unfaithful difficulty spike on those boards. */
+    {
+        int pu = (int16_t)be16(bord + 0x10);
+        int tb = (int16_t)be16(bord + 0x12);
+        int pb = (int16_t)be16(bord + 0x14);
+        if (pu > 100 || pu < 0) pu = 0;
+        if (tb > 20  || tb < 0) tb = 0;
+        if (pb > 100 || pb < 0) pb = 0;
+        if (tb == 0) pb = 0;
+        if (pb == 0) tb = 0;
+        w->pct_ultrabuster = (int16_t)pu;
+        w->thrown_badguy   = (int16_t)tb;
+        w->pct_badguy      = (int16_t)pb;
+    }
+    /* Per-board starting Bonus is at 0x0E, NOT 0x16. VERIFIED vs refs/images: board_1 has
+     * 0x0E=3000 and the reference HUD reads "Bonus 02968"; board_2 has 0x0E=6000 and reads
+     * "05995". Values are clean thousands (1500..30000, usually 6000). The old 0x16 read is
+     * a separate 0/0x3A20 flag, so EVERY board wrongly defaulted to 5000 -- a timer AND
+     * end-of-level-bonus (bonus x mult) fidelity bug across the whole campaign. */
+    bonus = (int)be16(bord + 0x0E);
+    if (bonus <= 0) bonus = 5000;   /* safety default */
     /* the "Bonus" is PER-PLAYER (@0x1003a9f0): each player gets their own copy of the
      * board's starting bonus, counts it down, and is awarded it x mult at the tally
      * (FUN_10015714, run per-player by FUN_100153d0). */
     for (i = 1; i < SOI_MAX_PLAYERS; i++)
         w->players[i].bonus_time = bonus;
+
+    /* "No Weapons Reward" (BORD 0x16): each player is awarded it at completion UNLESS they fire a
+     * weapon this board (asm FUN_1002b448 init / FUN_10010d30+100110b4 zero on fire / FUN_10015714
+     * award). The field is the 0x3A20 sentinel (57 boards) or 0 (95 boards) -- BOTH map to 5000; no
+     * board ships a custom value. VERIFIED vs the original gameplay video: the tally reads
+     * "No Weapons Reward 5000" on every board. */
+    {
+        int16_t rwf = (int16_t)be16(bord + 0x16);
+        int reward = (rwf == 0x3A20 || rwf < 1) ? 5000 : rwf;
+        for (i = 1; i < SOI_MAX_PLAYERS; i++)
+            w->players[i].no_weapons_reward = (int16_t)reward;
+    }
 
     /* body: tile-placement records from 0x18, terminated by tile_type == 0.
      * record = [tile_type:u32 BE][ (col:u8, row:u8) pairs... ][ 0x64 0x64 ]
@@ -216,6 +264,13 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
                         w->enemies[ei].vx = 0;
                         w->enemies[ei].fire_period = (int16_t)(b0 ? b0 * 6u : 24u);
                         w->enemies[ei].fire_cd = (int16_t)(b0 ? b0 * 6u : 24u);
+                    } else if (w->enemies[ei].type == SOI_ENEMY_WALKER) {
+                        /* Walker (asm FUN_1000dd4c): after each bolt it reloads +0x6e =
+                         * StartDelay(+0x50) << 2 = b0*4 (vs the shooters' b0*6) -- so it
+                         * paces off the same board delay byte, just faster. The port used
+                         * a flat 50 that fired far too often; load b0*4 (slow default when
+                         * the board leaves b0 unset). */
+                        w->enemies[ei].fire_period = (int16_t)(b0 ? b0 * 4u : 96u);
                     }
                 }
                 continue;
@@ -265,7 +320,9 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
     for (i = 0; i < SOI_MAX_PLAYERS; i++)
         if (w->players[i].invuln > 0) w->players[i].invuln--;   /* tick i-frames */
     for (i = 0; i < SOI_MAX_PLAYERS; i++)
-        if (w->players[i].fire_cd > 0) w->players[i].fire_cd--; /* tick fire cd */
+        if (w->players[i].fire_cd > 0) w->players[i].fire_cd--; /* vestigial: player weapons now
+                                                                * gate on one-shot-in-flight, not a
+                                                                * timer (asm has no fire cooldown) */
     for (i = 0; i < SOI_MAX_PLAYERS; i++) {                      /* respawn timer */
         SoiPlayer *rp = &w->players[i];
         if (rp->active && !rp->alive && !rp->eliminated && rp->respawn_timer > 0) {
@@ -323,7 +380,7 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
                 if (p->bonus_time == 1000) soi_sfx_emit(w, SOI_SFX_HURRY);
                 if (p->bonus_time == 0) {
                     p->alive = 0;
-                    if (--p->lives < 1) p->eliminated = 1;
+                    if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (asm) */
                     else p->respawn_timer = 90;
                 }
             }
@@ -339,10 +396,10 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
      * already models that Gargoyle puff, so this global thrown_badguy top-spawn is a
      * rough, likely-REDUNDANT first-draft stand-in (thrown_badguy's exact role is
      * unresolved; a faithful unified Gargoyle-throw reimpl is deferred -- intricate).
-     * GATE on VALID params: a percentage is <=100 and the type must be a real nasty.
-     * This rejects the 4 "DATA:" boards (301/428/446/498) whose 0x10-0x14 bytes hold the
-     * ASCII marker "DATA: " -> pct=21569/thrown=17473 = GARBAGE (which previously spawned
-     * a spurious ANT via the fallback), and skips out-of-range selector indices. */
+     * GATE on VALID params: a percentage is <=100 and the type must be a real nasty. The loader
+     * now also CLAMPS these fields at load (asm FUN_1002b448), so the 4 "DATA" boards
+     * (301/428/446/498) and board_440 arrive here already 0 -> no spurious throw; this gate
+     * stays as belt-and-suspenders. */
     if (w->level_loaded && (w->tick % 120u) == 0u &&
         w->pct_badguy > 0 && w->pct_badguy <= 100 &&
         w->thrown_badguy > SOI_ENEMY_NONE && w->thrown_badguy < SOI_ENEMY_TYPE_COUNT) {
@@ -362,8 +419,7 @@ static const SoiPlayer *pget(const SoiWorld *w, int i)
 }
 int32_t  soi_player_score(const SoiWorld *w, int p) { return pget(w, p)->score; }
 int      soi_player_lives(const SoiWorld *w, int p) { return pget(w, p)->lives; }
-int      soi_player_mult(const SoiWorld *w, int p)  { return pget(w, p)->mult; }
-int      soi_player_alive(const SoiWorld *w, int p) { return pget(w, p)->active && pget(w, p)->alive && !pget(w, p)->eliminated; }
+int      soi_player_mult(const SoiWorld *w, int p)  { return pget(w, p)->mult; } int      soi_player_no_weapons_reward(const SoiWorld *w, int p) { return pget(w, p)->no_weapons_reward; }int      soi_player_alive(const SoiWorld *w, int p) { return pget(w, p)->active && pget(w, p)->alive && !pget(w, p)->eliminated; }
 int      soi_game_over(const SoiWorld *w)
 {
     int i, any = 0;
@@ -507,6 +563,7 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)p->lives);
         bput_i32(&b, p->score); bput_i32(&b, p->bonus_time);
         bput_u16(&b, (uint16_t)p->mult);
+        bput_u16(&b, (uint16_t)p->no_weapons_reward);
         bput_u16(&b, (uint16_t)p->shield); bput_u16(&b, (uint16_t)p->arrows);
         bput_u16(&b, (uint16_t)p->balls);
         bput_u16(&b, (uint16_t)p->invuln); bput_u16(&b, (uint16_t)p->fire_cd);

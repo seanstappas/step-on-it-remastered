@@ -18,7 +18,7 @@ static size_t make_test_bord(unsigned char *b, size_t cap)
     b[0x08] = 0; b[0x09] = 11;  /* P1 row = 11 (on the floor) */
     b[0x0A] = 0; b[0x0B] = 9;   /* P2 col = 9 */
     b[0x0C] = 0; b[0x0D] = 11;  /* P2 row = 11 */
-    b[0x16] = 0x13; b[0x17] = 0x88; /* bonus = 5000 */
+    b[0x0E] = 0x13; b[0x0F] = 0x88; /* Bonus (BORD 0x0E) = 5000 (0x16 = No-Weapons Reward, left 0 -> 5000) */
     n = 0x18;
     /* one tile record: type 0x300 (permanent) along the bottom row 12 (floor),
      * across all 19 columns. Record coords are (col, row). */

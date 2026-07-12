@@ -64,9 +64,16 @@ static void block_toggle(SoiWorld *w, int col1, int row1, int player)
         set_cell1(w, col1, row1, (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u);
         soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
     } else {
-        uint8_t bt = w->players[player].block_type ? w->players[player].block_type : 1;
-        int victim = soi_enemy_at(w, col1 - 1, row1 - 1);   /* 0-based lookup */
-        if (victim >= 0) soi_enemy_kill(w, victim, player);
+        /* CREATE GATE (asm FUN_1002d04c -> FUN_100047e8 -> FUN_100033dc): the original
+         * only builds where the target cell is visually UNOBSTRUCTED (it compares the
+         * live screen region against the clean render buffer). A nasty overlapping the
+         * cell blocks the build -- no block, no sound. So you CANNOT squash a nasty by
+         * building on it (nasties are defeated by weapons or the thunderballs/shoes
+         * goody, never by a built block). The port's old build-squash was a divergence:
+         * the gate means create is never reached over a nasty. */
+        uint8_t bt;
+        if (soi_enemy_at(w, col1 - 1, row1 - 1) >= 0) return;   /* obstructed -> no build */
+        bt = w->players[player].block_type ? w->players[player].block_type : 1;
         /* A block built on a hidden-payload cell (bit 0x1000 + goody in the high
          * word, low byte 0) INHERITS the payload (asm FUN_1002d04c: block_type +
          * (cell & 0xffff1000)); breaking it later reveals the goody -- this is how
@@ -99,21 +106,51 @@ static const int16_t JUMP_DY[18] = {
     0, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, 0, 0, 1, 2, 2, 4
 };
 
+/* Horizontal-move clearance -- the SHARED wall test the asm uses for BOTH the grounded
+ * run (FUN_10012bf4) and the airborne steer (FUN_10013404), via FUN_100126c8 (left) /
+ * FUN_100127e0 (right). The target COLUMN is x+0x14 heading right / x+0x0a heading left,
+ * and it must be NON-solid (0x200) at TWO rows: the upper-body row (y+7 while actively
+ * JUMPING with jump_t<0x11, else y+1) AND the lower-body row (y+0x1e). Clear only if both
+ * pass. (The old code probed a single row and, in the air, the WRONG column x+0x20/-0x10.) */
+static int move_clear(SoiWorld *w, SoiPlayer *p, int dir)
+{
+    int col = px_col1(p->x + (dir > 0 ? 0x14 : 0x0a));
+    int r1  = (p->ground_state == SOI_ST_JUMP && p->jump_t < 0x11) ? 7 : 1;
+    if (cell1(w, col, px_row1(p->y + r1))   & SOI_CELL_SUPPORTIVE) return 0;
+    if (cell1(w, col, px_row1(p->y + 0x1e)) & SOI_CELL_SUPPORTIVE) return 0;
+    return 1;
+}
+
 /* Airborne horizontal steer: +/-2 px/frame toward the held run key, gated on the
  * target cell being clear (asm FUN_10013404 uses FUN_100126c8 / FUN_100127e0, the
- * 0x200 solid-bit wall tests). Same speed as a grounded run step. */
+ * 0x200 solid-bit wall tests). Same speed + same clearance test as a grounded run step. */
+/* Auto wall-rebound (asm FUN_10012554, called every airborne frame by BOTH the jump
+ * FUN_10013404 and the fall FUN_1001386c, INDEPENDENT of input): if a solid (0x200)
+ * cell sits against the player's left column (x+0x0a) at either body row (y+7 upper /
+ * y+0x1e lower) push +2 px RIGHT; if it sits against the right column (x+0x14) push
+ * -2 px LEFT. Nudges an airborne player out of / away from a wall. Same columns/rows
+ * as move_clear, so a normal open-air jump never triggers it. */
+static void wall_rebound(SoiWorld *w, SoiPlayer *p)
+{
+    int rowU = px_row1(p->y + 7);
+    int rowL = px_row1(p->y + 0x1e);
+    if ((cell1(w, px_col1(p->x + 0x0a), rowU) & SOI_CELL_SUPPORTIVE) ||
+        (cell1(w, px_col1(p->x + 0x0a), rowL) & SOI_CELL_SUPPORTIVE))
+        p->x += 2;                                  /* left side blocked -> push right */
+    if ((cell1(w, px_col1(p->x + 0x14), rowU) & SOI_CELL_SUPPORTIVE) ||
+        (cell1(w, px_col1(p->x + 0x14), rowL) & SOI_CELL_SUPPORTIVE))
+        p->x -= 2;                                  /* right side blocked -> push left */
+}
+
 static void air_drift(SoiWorld *w, SoiPlayer *p)
 {
-    int dir = 0, col, row;
-    uint32_t nc;
+    int dir = 0;
+    wall_rebound(w, p);                             /* asm FUN_10012554: push out of walls first */
     if (p->input & SOI_IN_RIGHT)      dir = 1;
     else if (p->input & SOI_IN_LEFT)  dir = -1;
     if (dir == 0) return;
     p->facing = (int16_t)dir;
-    col = px_col1(p->x + (dir > 0 ? 0x20 : -0x10));
-    row = px_row1(p->y);
-    nc = cell1(w, col, row);
-    if (SOI_CELL_TYPE(nc) == 0 || (nc & SOI_CELL_SUPPORTIVE) == 0)
+    if (move_clear(w, p, dir))
         p->x += dir * 2;
 }
 
@@ -161,7 +198,10 @@ static void jump_step(SoiWorld *w, int player)
     if (y >= IN_AIR_DEATH_Y) {                    /* leapt into a pit -> death */
         p->in_air = 0;
         p->alive = 0;
-        if (--p->lives < 1) p->eliminated = 1;
+        if (--p->lives < 0) p->eliminated = 1;   /* eliminate only when the killing blow takes
+                                                  * lives BELOW 0: the displayed "0 lives" is still a
+                                                  * playable last life (asm FUN_1000e9c8 allows -1,
+                                                  * FUN_1001f4f8 games-over at lives<0, HUD clamps to 0) */
         else p->respawn_timer = 90;
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
@@ -177,7 +217,11 @@ static void jump_step(SoiWorld *w, int player)
 }
 
 /* Gravity fall (asm state 3, FUN_1001386c): a flat 4 px/frame descent until the
- * feet find ground; off the board bottom (y >= 446) is a pit death. */
+ * feet find ground; off the board bottom (y >= 446) is a pit death. The fall is
+ * PURELY VERTICAL -- FUN_1001386c calls ONLY the wall-rebound (FUN_10012554) for
+ * any x change; it reads NO input, so you CANNOT steer a cliff-fall (unlike the
+ * jump FUN_10013404, which does air-steer). Walking off a ledge drops straight
+ * down (+ wall rebound if you fall against a wall), never at an angle. */
 static void fall_step(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
@@ -185,13 +229,13 @@ static void fall_step(SoiWorld *w, int player)
     if (y >= IN_AIR_DEATH_Y) {
         p->in_air = 0;
         p->alive = 0;
-        if (--p->lives < 1) p->eliminated = 1;
+        if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (dying at 0, asm) */
         else p->respawn_timer = 90;
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
     }
     p->y = (int16_t)y;
-    air_drift(w, p);
+    wall_rebound(w, p);                           /* asm FUN_1001386c: rebound ONLY, no input-steer */
     if (supported(w, p)) {
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
@@ -214,7 +258,7 @@ static void death_step(SoiWorld *w, int player)
     if (y >= IN_AIR_DEATH_Y) {
         p->in_air = 0;
         p->alive = 0;
-        if (--p->lives < 1) p->eliminated = 1;
+        if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (dying at 0, asm) */
         else p->respawn_timer = 90;
         return;
     }
@@ -234,17 +278,15 @@ static void air_step(SoiWorld *w, int player)
 }
 
 /* One continuous run step (asm FUN_10012bf4, ground-state 1): advance 2 px in dir
- * if the cell ahead is clear -- probe X+0x14 right / X+0x0a left at row Y+1, the
- * 0x200 solid bit (FUN_100127e0 / FUN_100126c8) -- else run in place. Collect any
- * goodie on the current cell (asm FUN_1002bc64, checked every player tick). */
+ * if the cell ahead is clear -- the shared dual-row wall test move_clear() (x+0x14 right /
+ * x+0x0a left, the 0x200 solid bit, FUN_100127e0 / FUN_100126c8) -- else run in place.
+ * Collect any goodie on the current cell (asm FUN_1002bc64, checked every player tick). */
 static void run_step(SoiWorld *w, int player, int dir)
 {
     SoiPlayer *p = &w->players[player];
-    int col = px_col1(p->x + (dir > 0 ? 0x14 : 0x0a));
-    int row = px_row1(p->y + 1);
     p->facing = (int16_t)dir;
     p->ground_state = SOI_ST_RUN;
-    if (!(cell1(w, col, row) & SOI_CELL_SUPPORTIVE))
+    if (move_clear(w, p, dir))
         p->x += dir * 2;
     soi_pickup_check(w, player);
 }
@@ -261,7 +303,20 @@ void soi_player_update(SoiWorld *w, int player)
 
     if (!p->active || p->eliminated || !p->alive) return;
 
-    if (p->in_air) { air_step(w, player); return; }
+    if (p->in_air) {
+        /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
+         * animation (FUN_1001166c) EVERY frame, gated ONLY by the death flag +0x28; jump/fall never gate
+         * it, and the build/fire actually fires from that animation (FUN_1002d04c / FUN_100110b4 / etc.)
+         * regardless of air state. A NEW jump is not allowed while already airborne. Same edge-triggered,
+         * one-action-per-frame dispatch as on the ground; do_block/fire target the front cell at the
+         * player's CURRENT (mid-air) x/y, exactly as the asm does. */
+        if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
+        else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
+        else if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
+        else if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
+        air_step(w, player);
+        return;
+    }
 
     /* gravity: fall if unsupported (asm state 3 = flat 4 px/frame; see fall_step). */
     if (!supported(w, p)) {

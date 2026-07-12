@@ -43,11 +43,13 @@ public:
     void tick(int64_t p1_input, int64_t p2_input);
     void tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input);
     void spawn_player3();   /* remaster: activate the 3rd co-op player */
+    void limit_players(int64_t n);   /* deactivate players beyond n (1-player: turn P2 off) */
 
     /* read-only state (player 1 = P1, 2 = P2) */
     int64_t player_score(int64_t player) const;
     int64_t player_lives(int64_t player) const;
     int64_t player_mult(int64_t player) const;
+    int64_t player_no_weapons_reward(int64_t player) const;
     bool    player_alive(int64_t player) const;
     bool    game_over() const;
     bool    level_complete() const;

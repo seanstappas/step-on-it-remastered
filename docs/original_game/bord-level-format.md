@@ -54,11 +54,11 @@ board 450 (`50` / `19` / `25` — all within the loader's clamps).
 | `0x08` | **P1 start row** | CONFIRMED | → y `= (row-1)*32 + 48`. |
 | `0x0A` | **P2 start col** | CONFIRMED | |
 | `0x0C` | **P2 start row** | CONFIRMED | |
-| `0x0E` | shared player attr | CONFIRMED | Copied to both players; varies per board. **Supersedes the earlier "0x0E = bonus" guess** (that was wrong). |
-| `0x10` | **percent_ultrabuster** | CONFIRMED | Clamped 0–100. |
-| `0x12` | **thrown_badguy type** | CONFIRMED | Clamped 0–20 (a nasty index). |
+| `0x0E` | **Bonus / time** | CONFIRMED | Per-player starting Bonus, copied to both players (asm `FUN_1002b448` → `+0x1003a9f0`). Loader default `5000` if `<= 0`. VERIFIED vs the original video + refs/images (board_1 `0x0E`=3000 → HUD "02968"; board_2=6000 → "05995"). **Corrects the earlier swap that put bonus at `0x16`.** |
+| `0x10` | **percent_ultrabuster** | CONFIRMED | Clamped 0–100 (out-of-range → 0). |
+| `0x12` | **thrown_badguy type** | CONFIRMED | Clamped 0–20 (a nasty index); linked to `0x14`. |
 | `0x14` | **percent_badguy** | CONFIRMED | Clamped 0–100; coupled with `0x12` (both forced to zero together). |
-| `0x16` | **bonus / time** | CONFIRMED | Loader default `5000` if `0` or **`0x3A20`** (a "use default" sentinel — many boards, e.g. 401, store `0x3A20` here; CONFIRMED by `tools/extract_assets.py`). |
+| `0x16` | **No-Weapons Reward** | CONFIRMED | Added to score at completion UNLESS the player fires a weapon (asm `FUN_1002b448` init / `FUN_10015714` award). Default `5000` if `< 1` or the **`0x3A20`** sentinel (scan: 57 boards store `0x3A20`, 95 store `0`, none custom → every board = 5000). VERIFIED vs the original video tally ("No Weapons Reward 5000"). |
 
 Body starts at `0x18`.
 
@@ -174,11 +174,13 @@ stream. Both the `DATA:` block and the `DMKY` format are still TODO.
   **start/spawn delays**, and **direction** (left-up / right-down / alternate / seek) encoding.
 - **Block-property mapping** — which `tile_type` values are Supportive / Permanent / both / neither
   (`0x300` = permanent wall is known).
-- **Bonus scale** — the loader reads `0x16` as bonus (default 5000); confirm the raw→displayed scale
-  against the emulator HUD.
+- ~~**Bonus scale**~~ **RESOLVED (2026-07-08):** the per-board Bonus is at `0x0E` (not `0x16`); `0x16`
+  is the **No-Weapons Reward**. Both verified vs the original gameplay video (HUD Bonus + tally reward)
+  and the decompiled `FUN_1002b448`/`FUN_10015714`.
 - **Col/row orientation** — player-start values can exceed the 13-col grid width, so confirm the exact
   coordinate range/orientation against the emulator.
-- The `0x00` flags word, the trailer's trailing value, and the `DATA:` block in 4 boards.
+- The `0x00` flags word and the trailer's trailing value. (The `DATA:` bytes in boards 301/428/446/498
+  land in `0x10`-`0x15` = the challenge params; the loader clamps them to 0 — asm `FUN_1002b448`.)
 
 **Resolution plan:** locate the spawn-record reader, then decode a board into the canonical level JSON
 (`plan/MASTER_PLAN.md` §7.3) and compare against the same board in the emulator.

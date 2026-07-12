@@ -51,6 +51,8 @@ const SFX_ID := {
 	36: 1003,   # SHIELD_ON     -> shield-activate goody 0x30, game evt 0x29 "gong"
 	37: 1004,   # WHISTLE       -> enemy-claim goody 0x31, game evt 0x2a "whistle"
 	38: 17661,  # KEY           -> colored-key collect, game evt 0x14 "Announce"
+	39: 1007,   # HURRY         -> low-bonus "hurry up" warning (timer passes 1000), game evt 0x2d -> 1007_hurry_up
+	40: 2689,   # WALKER_FIRE    -> Walker bolt throw, game evt 0x13 "Strings" (DAT_10037074[0x13])
 }
 # name-keyword fallbacks (used only if the id above isn't present)
 const SFX := {
@@ -79,9 +81,14 @@ var _music_dir := ""
 var _music_cache := {}          # "variant/track" -> AudioStream (or null if missing)
 var _music_variant := "remaster"   # "remaster" (extracted/music) | "original" (extracted/music/original)
 var _current_track := "6lilt"
+var _music_light := false           # Sound->Music Full(false)/Light(true): Light uses the sparser "_thin" arrangement
+var _current_selector := 0          # FUN_10018414 current-movie cache -> skip reloading the same selector (seamless loop)
 const DEFAULT_MUSIC := "6lilt"
 
 func _ready() -> void:
+	var ov := _sfx_variant_override()
+	if ov != "":
+		_sfx_variant = ov
 	_load_all()
 	_map_events()
 	for _i in 8:
@@ -89,7 +96,7 @@ func _ready() -> void:
 		add_child(p)
 		_players.append(p)
 	_init_music()
-	print("audio: loaded %d SFX, mapped %d events, music=%s" % [_streams.size(), _by_event.size(), has_music()])
+	print("audio: loaded %d SFX (variant=%s, %d enhanced), mapped %d events, music=%s" % [_streams.size(), _sfx_variant, _sfx_variant_hits, _by_event.size(), has_music()])
 
 ## Play the sound mapped to a SoiSfx event id (round-robin over a player pool).
 func play(sfx_id: int) -> void:
@@ -202,16 +209,130 @@ func set_music_enabled(on: bool) -> void:
 func is_music_enabled() -> bool:
 	return _music_enabled
 
+# --- RE-grounded per-screen music selection -----------------------------------
+## The original chooses the looping background-music QuickTime movie via
+## FUN_10018414(selector), selector 1..6. The Sound->Music "Light" setting
+## (DAT_10039154) swaps the sparser "_thin" arrangement for the four in-play tunes
+## (selectors 1-4); 5 (title/menu) and 6 (ending) have no thin variant. The movie
+## names were resolved from the PEF data by tools/dump_movie_names.py:
+##   1 6lilt   2 Cminor   3 bass_for_lunch   4 spooky   5 6lilt (menu)   6 Angel_Pie (ending)
+const MUSIC_SELECTOR := {
+	1: "6lilt", 2: "Cminor", 3: "bass_for_lunch", 4: "spooky",
+	5: "6lilt", 6: "Angel_Pie",
+}
+
+## Select the movie for a 1..6 selector (mirrors FUN_10018414). Skips work when the
+## same selector is already active, so the loop is seamless across same-tune boards
+## (the original's `_DAT_1003904e == param_1` early-out). Sets the stream even when
+## music is off, so enabling it later starts on the right track.
+func play_music_selector(selector: int) -> void:
+	if not MUSIC_SELECTOR.has(selector):
+		return
+	if selector == _current_selector:
+		return
+	_current_selector = selector
+	play_music(_selector_track(selector))
+
+## Resolve a selector to a track base name, honouring Light ("_thin") for tunes 1-4.
+func _selector_track(selector: int) -> String:
+	var track: String = MUSIC_SELECTOR.get(selector, DEFAULT_MUSIC)
+	if _music_light and selector >= 1 and selector <= 4:
+		var thin := track + "_thin"
+		if _load_music(thin) != null:
+			return thin
+	return track
+
+## Title / menu / attract music: selector 5 = "6lilt" (always the full arrangement).
+func play_menu_music() -> void:
+	play_music_selector(5)
+
+## In-game music for a 1-based level number. The original rotates three tunes by
+## (level % 3) + 1 (FUN_10018c88), UNLESS the board holds a Knight or Gargoyle, which
+## forces selector 4 "spooky" (DAT_1003ad0e, set by FUN_10017a70 when an enemy of
+## category 13/14 is present). `spooky` overrides the rotation.
+func play_level_music(level: int, spooky: bool) -> void:
+	play_music_selector(4 if spooky else (level % 3) + 1)
+
+## Ending music (the whole campaign beaten): selector 6 = "Angel Pie" (FUN_1001768c).
+func play_ending_music() -> void:
+	play_music_selector(6)
+
+## Sound->Music Full vs Light (the sparser "_thin" arrangement). Reloads the current
+## movie so the change is audible immediately (the original reloads on the toggle).
+func set_music_light(light: bool) -> void:
+	if light == _music_light:
+		return
+	_music_light = light
+	if _current_selector != 0:
+		var sel := _current_selector
+		_current_selector = 0           # force play_music_selector to reload with the new arrangement
+		play_music_selector(sel)
+
+func is_music_light() -> bool:
+	return _music_light
+
+# --- SFX variant selection ----------------------------------------------------
+# Three parallel SFX sets, chosen at runtime. "original" is the faithful 8-bit
+# source; the others are remaster passes (same filenames -> matched per file).
+# ANY file missing or unreadable in the chosen set falls back to the original
+# sound, so playback can never break. Default "original" leaves the SD set intact.
+const SFX_VARIANTS := {
+	"original": "res://../extracted/audio/wav",     # faithful 8-bit source
+	"light": "res://../extracted/audio/wav_hd",     # denoised 16-bit 44.1k clean-up
+	"ai": "res://../extracted/audio/wav_ai",        # AudioSR super-res (32-bit float)
+}
+var _sfx_variant := "original"
+var _sfx_variant_hits := 0   # how many sounds actually came from the chosen variant
+
+## Choose the SFX set: "original", "light" (extracted/audio/wav_hd) or "ai"
+## (extracted/audio/wav_ai). Reloads all SFX; unknown values are ignored.
+func set_sfx_variant(v: String) -> void:
+	if not SFX_VARIANTS.has(v) or v == _sfx_variant:
+		return
+	_sfx_variant = v
+	_reload_sfx()
+
+func get_sfx_variant() -> String:
+	return _sfx_variant
+
+## Optional startup override so the SFX set can be A/B'd without a settings UI:
+## set env SOI_SFX_VARIANT=ai (or light/original), or launch with `-- --sfx-variant=ai`.
+func _sfx_variant_override() -> String:
+	var v := OS.get_environment("SOI_SFX_VARIANT").strip_edges().to_lower()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--sfx-variant="):
+			v = a.substr(a.find("=") + 1).strip_edges().to_lower()
+	return v if SFX_VARIANTS.has(v) else ""
+
+func _reload_sfx() -> void:
+	_streams.clear()
+	_names.clear()
+	_by_snd.clear()
+	_by_event.clear()
+	_load_all()
+	_map_events()
+
 func _load_all() -> void:
-	var dir := ProjectSettings.globalize_path("res://../extracted/audio/wav")
-	var da := DirAccess.open(dir)
+	var orig := ProjectSettings.globalize_path(SFX_VARIANTS["original"])
+	var vdir := ProjectSettings.globalize_path(SFX_VARIANTS.get(_sfx_variant, SFX_VARIANTS["original"]))
+	var da := DirAccess.open(orig)
 	if da == null:
 		return
+	_sfx_variant_hits = 0
 	da.list_dir_begin()
 	var f := da.get_next()
 	while f != "":
 		if f.ends_with(".wav"):
-			var s := _load_wav(dir.path_join(f))
+			var s: AudioStreamWAV = null
+			# prefer the chosen variant; fall back to the original on miss/unreadable
+			if _sfx_variant != "original":
+				var cand := vdir.path_join(f)
+				if FileAccess.file_exists(cand):
+					s = _load_wav(cand)
+					if s != null:
+						_sfx_variant_hits += 1
+			if s == null:
+				s = _load_wav(orig.path_join(f))
 			if s != null:
 				_streams.append(s)
 				_names.append(f.to_lower())
@@ -246,37 +367,63 @@ func _map_events() -> void:
 		if idx >= 0:
 			_by_event[ev] = _streams[idx]
 
-## Minimal RIFF/WAVE parser -> AudioStreamWAV (8-bit unsigned is converted to
-## the signed 8-bit AudioStreamWAV expects).
+## RIFF/WAVE parser -> AudioStreamWAV. Walks the chunk list (does not trust fixed
+## offsets) and reads the real fmt fields. Handles 8-bit unsigned PCM and 16-bit
+## PCM natively; 32-bit IEEE float (e.g. AudioSR super-res output) is DOWN-CONVERTED
+## to 16-bit here because AudioStreamWAV has no float format. Any other/broken layout
+## returns null so the caller falls back to the original SD sound.
 func _load_wav(path: String) -> AudioStreamWAV:
 	var b := FileAccess.get_file_as_bytes(path)
-	if b.size() < 44 or b.slice(0, 4).get_string_from_ascii() != "RIFF":
+	if b.size() < 44 or b.slice(0, 4).get_string_from_ascii() != "RIFF" \
+			or b.slice(8, 12).get_string_from_ascii() != "WAVE":
 		return null
-	var channels := b.decode_u16(22)
-	var rate := b.decode_u32(24)
-	var bits := b.decode_u16(34)
+	var fmt_tag := 0
+	var channels := 0
+	var rate := 0
+	var bits := 0
 	var data := PackedByteArray()
+	var have_fmt := false
 	var o := 12
 	while o + 8 <= b.size():
 		var cid := b.slice(o, o + 4).get_string_from_ascii()
 		var csz := b.decode_u32(o + 4)
-		if cid == "data":
-			data = b.slice(o + 8, min(o + 8 + csz, b.size()))
-			break
+		var body := o + 8
+		if cid == "fmt " and body + 16 <= b.size():
+			fmt_tag = b.decode_u16(body)
+			channels = b.decode_u16(body + 2)
+			rate = b.decode_u32(body + 4)
+			bits = b.decode_u16(body + 14)
+			if fmt_tag == 0xFFFE and body + 26 <= b.size():
+				fmt_tag = b.decode_u16(body + 24)   # EXTENSIBLE: real tag in the subformat GUID
+			have_fmt = true
+		elif cid == "data":
+			data = b.slice(body, min(body + csz, b.size()))
+			if have_fmt:
+				break
 		o += 8 + csz + (csz & 1)
-	if data.is_empty():
+	if not have_fmt or data.is_empty() or channels == 0 or rate == 0:
 		return null
 	var s := AudioStreamWAV.new()
 	s.mix_rate = rate
 	s.stereo = channels == 2
-	if bits == 8:
+	if fmt_tag == 1 and bits == 8:
 		s.format = AudioStreamWAV.FORMAT_8_BITS
-		var out := PackedByteArray()
-		out.resize(data.size())
+		var out8 := PackedByteArray()
+		out8.resize(data.size())
 		for i in data.size():
-			out[i] = (data[i] - 128) & 0xFF     # unsigned -> signed
-		s.data = out
-	else:
+			out8[i] = (data[i] - 128) & 0xFF     # unsigned -> signed
+		s.data = out8
+	elif fmt_tag == 1 and bits == 16:
 		s.format = AudioStreamWAV.FORMAT_16_BITS
 		s.data = data
+	elif fmt_tag == 3 and bits == 32:
+		s.format = AudioStreamWAV.FORMAT_16_BITS   # no float format -> down-convert to 16-bit
+		var fl := data.to_float32_array()
+		var out16 := PackedByteArray()
+		out16.resize(fl.size() * 2)
+		for i in fl.size():
+			out16.encode_s16(i * 2, clampi(int(round(fl[i] * 32767.0)), -32768, 32767))
+		s.data = out16
+	else:
+		return null                              # unsupported -> caller falls back
 	return s

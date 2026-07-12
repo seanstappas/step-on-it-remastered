@@ -23,41 +23,6 @@ void soi_set_cell(SoiWorld *w, int col, int row, uint32_t v)
     if (soi_in_bounds(col, row)) w->cell[row][col] = v;
 }
 
-/* Create-or-destroy toggle at (col,row) for player (FUN_1002d04c). Permanent
- * cells are untouched; empty+buildable -> create the player's block type;
- * occupied -> destroy (revealing any 0x1000 payload as the new cell type). */
-void soi_block_action(SoiWorld *w, int col, int row, int player)
-{
-    uint32_t c;
-    if (!soi_in_bounds(col, row)) return;
-    c = w->cell[row][col];
-    if (c & SOI_CELL_PERMANENT) return;                 /* immutable */
-
-    if (SOI_CELL_TYPE(c) == SOI_CELL_EMPTY) {
-        /* create a block of the player's current type */
-        uint8_t bt = w->players[player].block_type;
-        int victim;
-        if (bt == 0) bt = 1;                            /* default block type */
-        /* a block created on an enemy's cell squashes it (the namesake verb). */
-        victim = soi_enemy_at(w, col, row);
-        if (victim >= 0) soi_enemy_kill(w, victim, player);
-        w->cell[row][col] = bt;
-        soi_sfx_emit(w, SOI_SFX_BLOCK_CREATE);
-        /* TODO(oracle): support/adjacency rule + create SFX (FUN_1002b020(4,7)). */
-    } else {
-        /* destroy: if it carries a payload (special block), that becomes the
-         * revealed goodie; otherwise the cell clears. */
-        if (c & SOI_CELL_SPECIAL) {
-            w->cell[row][col] = SOI_CELL_PAYLOAD(c);
-        } else {
-            w->cell[row][col] = SOI_CELL_EMPTY;
-        }
-        soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
-        /* TODO(oracle): destroy animation + SFX (FUN_1002b020(3,7)); block-on-
-         * enemy kill (a dropped/created block that lands on an enemy). */
-    }
-}
-
 /* Walk-over goodie pickup for the player's current cell (FUN_1002bc64).
  * Coin/gem values are CONFIRMED; the rest are first-draft (TODO(oracle)). */
 void soi_pickup_check(SoiWorld *w, int player)
@@ -65,8 +30,12 @@ void soi_pickup_check(SoiWorld *w, int player)
     SoiPlayer *p = &w->players[player];
     uint32_t c;
     unsigned t;
-    int pcol = (p->x - SOI_ORIGIN_X) / SOI_CELL_PX;
-    int prow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+    /* Pick up from the player's COLLISION-BOX CENTRE, not its left/top edge: asm
+     * FUN_1002bc64 converts (x+0xc, y+0x10) to a cell before the goody lookup. The
+     * port used raw p->x (the left edge), so a coin was only collected once the
+     * player was fully centred/past it; +0xc/+0x10 collects it on first real touch. */
+    int pcol = (p->x + 0x0C - SOI_ORIGIN_X) / SOI_CELL_PX;
+    int prow = (p->y + 0x10 - SOI_ORIGIN_Y) / SOI_CELL_PX;
     if (!soi_in_bounds(pcol, prow)) return;
     c = w->cell[prow][pcol];
     t = SOI_CELL_TYPE(c);
@@ -94,6 +63,10 @@ void soi_pickup_check(SoiWorld *w, int player)
                 if (pj->active) {
                     pj->score += (int)pj->bonus_time * pj->mult;
                     pj->bonus_time = 0;
+                    /* No-Weapons Reward: added ONCE (not x mult) if this player never fired a
+                     * weapon this board -- asm FUN_10015714 draws it at row 0x158 and adds it. */
+                    if (pj->no_weapons_reward >= 1)
+                        pj->score += pj->no_weapons_reward;
                 }
             }
             soi_sfx_emit(w, SOI_SFX_POWERUP);

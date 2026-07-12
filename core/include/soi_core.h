@@ -120,6 +120,7 @@ typedef enum {
     SOI_SFX_WHISTLE,      /* enemy-claim goody 0x31 (asm event 0x2a -> 1004 "whistle") */
     SOI_SFX_KEY,          /* colored-key collect (asm event 0x14 -> 17661 "Announce") */
     SOI_SFX_HURRY,        /* low-bonus warning as the timer passes 1000 (asm FUN_10018b24 -> evt 0x2d) */
+    SOI_SFX_WALKER_FIRE,  /* Walker bolt throw (asm event 0x13 -> snd 2689 "Strings") */
     SOI_SFX_COUNT
 } SoiSfx;
 
@@ -155,10 +156,15 @@ void   soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_inp
  * after soi_load_level when 3 players are in the game. */
 void   soi_spawn_player3(SoiWorld *w);
 
+/* Deactivate every player with index > n (the BORD header always spawns P1+P2, so a
+ * 1-player game must turn P2 off). n=1 keeps only P1; n>=3 leaves all active. */
+void   soi_limit_players(SoiWorld *w, int n);
+
 /* ---- read-only state accessors (player index 1 = P1, 2 = P2) ---- */
 int32_t  soi_player_score(const SoiWorld *w, int player);
 int      soi_player_lives(const SoiWorld *w, int player);
 int      soi_player_mult(const SoiWorld *w, int player);  /* score multiplier (1..5) */
+int      soi_player_no_weapons_reward(const SoiWorld *w, int player);  /* BORD 0x16, 5000 unless a weapon was fired */
 int      soi_player_alive(const SoiWorld *w, int player);
 int      soi_game_over(const SoiWorld *w);   /* 1 = all active players eliminated */
 int      soi_level_complete(const SoiWorld *w); /* 1 = a player exited the door with the key */

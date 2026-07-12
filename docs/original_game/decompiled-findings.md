@@ -21,13 +21,21 @@ certain; **UNKNOWN** = not found.
 >   NO up/down walk. (P1 keypad / P2 letters+modifiers; remappable via `keys 128`.)
 > - **Run** (`FUN_1001166c`): grid-based, **7 anim frames per cell**, screen x/y
 >   interpolated (`FUN_100147b8`); block verb fires at counter==5.
-> - **Jump** (`FUN_100110b4` init, `FUN_10011fcc` physics): parabolic arc with
->   gravity; breaks the block directly above; horizontal drift during the arc;
->   Y clamped to **[48, 446] px**; head-bonk re-targets (no damage).
-> - **Gravity / fall** (`FUN_10012348` support test): the player **falls** unless
->   the cell below the feet (`y+0x1f`) has **bit `0x200` (SUPPORTIVE)** set —
->   permanent walls `0x300` include it. Fall/jump share the same physics. **Fall
->   past y=446 = death** (`FUN_10011fcc` → death seq).
+> - **Jump** (`FUN_10013404`, ground-state 2 — **NOT** `FUN_100110b4`/`FUN_10011fcc`,
+>   which are ball-fire / death-throw): a **table-driven** arc, `Y += DAT_1003474c[t]`
+>   with `t` (`+0x32`) clamped 0..17; ±2 px/frame steerable drift (wall-gated); a solid
+>   block directly overhead is a head-bonk (state 4, breaks it, no leap); lands when
+>   `t>12` and the feet find support. At the END, **if `Y > 0x1ca` (458) it WRAPS
+>   `Y -= 0x140` (320) — a vertical wrap; it does NOT die** (asm `100137c0`).
+> - **Gravity / fall** (`FUN_1001386c`, ground-state 3; support test `FUN_10012348`):
+>   the player falls **`Y += 4`/frame** until the cell below the feet (`y+0x1f`) has
+>   **bit `0x200` (SUPPORTIVE)** set — permanent walls `0x300` include it — then snaps
+>   onto it. **The fall has NO pit-death and NO wrap of its own.** DEATH is a SEPARATE
+>   path: only `FUN_10012228` (enemy contact / bonus-zero, via `FUN_10028a0c`/`29264`/
+>   `2a308`) sets the dying flag `+0x28=1`, which then runs the `FUN_10011fcc` death-throw
+>   parabola that *completes* at `Y>=0x1be` (446). The port models an off-bottom fall as
+>   death at `Y>=0x1be` — a fair approximation of an untraced off-bottom life-loss; the one
+>   confirmed port-missing mechanic is the jump's `0x1ca` vertical wrap (see §8).
 > - **NEW CELL BIT: `0x200` = SUPPORTIVE** (standable). Prior encoding only had
 >   `0x100` permanent / `0x1000` payload — the support bit was missing, which is
 >   exactly why a platformer can't work without it. (Walls `0x300 = 0x200|0x100`.)
@@ -343,3 +351,127 @@ frame, render against the `clut`, and check (a) pixel count == w×h and (b) the
 image is recognizable. That empirically confirms or refutes the single-stream
 model. (Note: `FUN_10000944` uses *two* pointers `ctrl_ptr`/`data_ptr`, which
 argues for two regions, not one interleaved stream — the experiment decides it.)
+
+## 7. Player↔enemy fatal-contact box — FULLY RE'd (2026-07-08); PORT DEFERRED
+
+The port currently uses a **crude same-32px-cell** test for fatal contact
+([soi_enemies.c](../../core/src/soi_enemies.c) ~L822, a first-draft `TODO`). The
+original is a real **per-pixel AABB**. The complete mechanism is now recovered —
+this section is the implementation spec; the port is deferred only because the
+change is **unverifiable by the automated gate** (see "Why deferred").
+
+**The overlap primitive — `FUN_100030d4(left, top, right, bottom)`** (thin
+wrapper `FUN_100030ac`). Walks the **active-enemy linked list** (head index
+`_DAT_1003a36a`; node = enemy `i` at `0x10037e08 + i*0x46`; next-index link at
+`+0x7e`). For each enemy it tests the query rect against the enemy's cached
+**screen box** and returns the first overlapping enemy's index (0 = none). The
+four stored fields (relative to the enemy base `0x10037e08`, i.e. abs
+`0x10037e7e/80/82/84`) are:
+
+| enemy field | abs addr        | meaning     |
+|-------------|-----------------|-------------|
+| `+0x76`     | `0x10037e7e`    | box **bottom** (max y) |
+| `+0x78`     | `0x10037e80`    | box **top** (min y)    |
+| `+0x7a`     | `0x10037e82`    | box **left** (min x)   |
+| `+0x7c`     | `0x10037e84`    | box **right** (max x)  |
+| `+0x7e`     | `0x10037e86`    | next-in-list index     |
+
+Overlap = standard AABB: `qLeft <= eRight && eLeft <= qRight && qTop <= eBottom
+&& eTop <= qBottom`.
+
+**The player query box — `FUN_100299b4(player)`.** Only tests when the player's
+state `+0x1c == 2` (the normal/vulnerable state; other states = i-frames/dying →
+no contact). Query rect = **`(x+0xd, y+4)` → `(x+0x12, y+0x19)`** where `x,y` is
+the player's top-left screen pixel — a **narrow 5px-wide × 21px-tall torso
+strip** (this is why you can stand very close to a nasty before dying). Returns 1
+on any overlap. (A second branch after this one may widen the box; the else/other
+state may use `y+0x1d` — confirm before porting.)
+
+**The enemy box is recomputed every frame inside each enemy's update fn** from
+its screen x/y (`+0x50` = x, `+0x52` = y). The insets are **per-type** (NOT
+uniform) — sampled:
+
+| update fn      | left    | right     | top    | bottom    | (w×h)   |
+|----------------|---------|-----------|--------|-----------|---------|
+| `FUN_1000602c` | x+6     | x+0x20    | y+0    | y+0x10    | 26×16   |
+| `FUN_10006840` | x+2     | x+0x16    | y+2    | y+0x1c    | 20×26   |
+| `FUN_10006f6c` | x+10    | x+0xf     | y+5    | y+0x1c    | 5×23    |
+
+(Other setters: `FUN_10006378 +6`, `FUN_10006d44 +4`, `FUN_10007998 +6`,
+`FUN_100093a0 +8`, `FUN_10009a78 +7`, `FUN_10009e98 +4`, `FUN_1000a780 +9`,
+`FUN_1000adc4 +9`, `FUN_1000744c` … — each needs its full 4-field block read.)
+
+**To port faithfully:** (1) implement the AABB primitive + the confirmed player
+box; (2) extract all ~15 enemy update fns' 4-field box blocks and **map each asm
+fn → the port's `SoiEnemyType` enum** (via the spawn/type-init dispatch); (3)
+confirm the `state==2` gate maps to the port's `alive`/vulnerable flag and pin
+the `0x19` vs `0x1d` bottom; (4) confirm `FUN_100299b4`'s callers
+(`FUN_10028a0c`/`FUN_10029264`/`FUN_1002a308`) are the death-on-contact path.
+
+**Why deferred (not blind-ported):** contact changes = **deaths**, and *nothing
+in the automated gate exercises them* — the determinism harness walks right and
+never touches an enemy, and the winnability solver never dies. A single wrong
+asm-fn→enum mapping would silently cause unfair deaths on every board with that
+enemy while the gate stays green and 152/152 holds. This is the "don't port
+intricate, unverifiable gameplay blind" case: it needs the full per-type table
+**plus** an oracle play-test (compare deaths against the reference video) before
+it can be trusted. Mechanism is fully known; the port is a scoped follow-up.
+
+## 8. Pit-death vs vertical-wrap — port is a fair APPROXIMATION (2026-07-08)
+
+The port kills a jumping/falling player at `Y >= 0x1be` (446) inside
+`jump_step`/`fall_step` ([soi_physics.c](../../core/src/soi_physics.c)). **The
+original does NOT.** Verified from the asm (and the definitive prior note
+`jump-lifecycle-progress.md`):
+
+- **Jump** `FUN_10013404` (state 2): after the arc table it ends with
+  `if (Y > 0x1ca) Y -= 0x140` (asm `100137c0`–`100137dc`) — a **vertical WRAP**,
+  no death, and it does **not** set the dying flag `+0x28`.
+- **Fall** `FUN_1001386c` (state 3): `Y += 4` then land on the first `0x200`
+  support — **no death, no wrap** in the function itself.
+- **Death** is a wholly separate path: only `FUN_10012228` sets `+0x28 = 1`
+  (called from the collision sites `FUN_10028a0c`/`FUN_10029264` and main loop
+  `FUN_1002a308`, i.e. **enemy contact / bonus-zero**). While `+0x28==1` the
+  `FUN_10011fcc` death-throw parabola runs and *completes* at `Y>=0x1be` (446).
+  So `0x1be` is where the **death animation ends**, not a fall trigger. Cleared
+  only by `FUN_1002b174` (respawn/reset).
+
+So in the two **locomotion** functions there is no pit-death: jump wraps at
+0x1ca, fall just descends to support. BUT that does **not** mean the original
+never kills a fallen player. Board evidence (`tools/dump_board_grid.py
+board_401.bord`): P1 spawns at `(X=7,Y=6)`; the harness walks **right**, and at
+**X=12 the whole column `Y=3..12` is empty** — a genuine **bottomless pit**. A
+player *can* fall clean off the bottom, and can't fall forever, so the original
+**must** have an off-bottom life-loss — via a check *outside* `FUN_1001386c`
+(main loop / dispatcher, **not yet traced**). The port models that as "die at
+`Y>=0x1be`", which is therefore a **reasonable approximation of a real (untraced)
+off-bottom death — NOT a pure fabrication**. The one thing that IS a confirmed,
+port-missing mechanic is the **jump-arc vertical wrap at `0x1ca`** (a rare edge
+case: only a jumping arc that overshoots Y=458 triggers it).
+
+**Why NOT changed here (needs a decision + oracle):**
+1. **Gate dependency** — the `--shot`/`--play`/`--demo` harness deliberately
+   walks P1 off a ledge *to die* (`user-video-feedback.md` records the resulting
+   `--shot` hang when the death-draw + `await frame_post_draw` collided). Removing
+   fall-death changes what the capture frame shows and could re-introduce/alter a
+   hang; the godot screenshot stage must be re-validated.
+2. **Untraced higher-level trigger** — the two locomotion fns have no fall-death,
+   but whether a fell-off-the-bottom player is killed by a check in the main loop
+   / dispatcher (outside `FUN_1001386c`/`FUN_10013404`) is **not yet traced**. If
+   such a check exists, "no fall-death" would be wrong.
+3. **Video oracle** — this is gameplay-visible (fall off a high ledge → wrap to
+   the top, or die?). The reference video must confirm the behavior before flipping
+   it across 152 boards.
+4. Winnability is safe *either* way (solver never falls into a pit; removing death
+   only ever makes boards more survivable → 152/152 holds).
+
+**Confidence / verdict (refined 2026-07-08):** HIGH that the *jump* vertical-wraps
+at `0x1ca`. But since board_401 proves off-bottom falls are reachable, the port's
+fall/jump **die-at-446 is likely FAITHFUL** to an untraced off-bottom life-loss —
+so this is **not a clear bug**, and the earlier "fabricated pit-death" framing was
+too strong. The only confirmed gap is the rare **jump wrap** (`0x1ca`), which
+can't be added without first removing the die-at-446 (446 < 458 fires first), and
+removing it would regress the `--shot` harness (walks P1 into the X=12 pit to die)
++ needs a video oracle. Net: **leave as-is; documented**. Revisit only if the
+reference video shows a jumping player wrapping top↔bottom, or the off-bottom
+death path is traced.

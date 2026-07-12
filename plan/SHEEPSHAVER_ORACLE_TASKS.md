@@ -169,6 +169,45 @@ Collect a **Clock** and note how much the Bonus jumps up.
 
 ---
 
+## P3 — Precise mechanic measurements  (pin down specific code approximations)
+
+**Why:** a few mechanics are *implemented* but with approximated geometry/timing (marked
+`TODO(oracle)` in the C core). Each needs just **one careful observation** to confirm or
+correct. Go slowly — a screen recording or burst screenshots help a lot.
+
+**Do this — one observation each:**
+
+1. **Player <-> enemy contact: how much overlap kills you?**
+   Walk Ted slowly toward a *non-shooting* nasty (e.g. an Ant) on flat ground and note the
+   exact instant he dies: when their sprites *first touch at the edges*, when they
+   *substantially overlap* (about half a body), or only when *centered* on each other? Try
+   it both ways (Ted walking in, and the nasty walking into a standing Ted).
+   *(The port only registers a hit when both occupy the same 32px grid cell, so a partial
+   overlap straddling a cell boundary is currently missed — I need the real touch tolerance.)*
+
+2. **Wheelie: how does it navigate?**
+   Watch one Wheelie ~15s in an open area with a few blocks. Does it (a) **follow walls**
+   (hug the perimeter / go around obstacles), (b) **bounce off diagonally** like a DVD logo,
+   or (c) **home in on Ted**? At a corner does it consistently turn the same way
+   (always clockwise / counter-clockwise)? Note roughly how fast it moves.
+
+3. **Hammer: the rise/smash cycle timing.**
+   Watch a Hammer nasty and time (roughly, in seconds) how long it **rises**, how long it
+   **hangs at the top**, and how long the **smash-down** takes before it repeats.
+
+4. **Creeper (the moving block-layer): step cadence.**
+   Watch a Creeper. How often does it **advance one cell / lay a block** — about once a
+   second, faster, slower? Does horizontal vs vertical differ?
+
+5. **(confirm) Build on a nasty.** Try to **create a block on a cell a nasty is standing on.**
+   Does the block *refuse to appear* (nothing happens), or does it build (and does the nasty
+   die)? *(I just changed the port to refuse the build; this confirms it.)*
+
+**Write down** (§Precise): a short line per item — rough seconds / overlap are fine;
+approximate is far better than nothing.
+
+---
+
 ## P4 — (Optional, advanced) thrown-badguy mapping on Challenge boards
 
 On a Challenge board the Gargoyle throws enemies. The board data has a
@@ -240,6 +279,13 @@ now, the behavioral observations above are enough.
 - Countdown feel (per second?):
 - At 0:
 - Clock adds:
+
+## Precise mechanic measurements
+- Contact overlap that kills Ted: <edge-touch / ~half-overlap / centered>
+- Wheelie navigation: <wall-follow / diagonal-bounce / seek>; corner turn: <cw / ccw>; speed: <slow/med/fast>
+- Hammer cycle: rise <~s>, hang <~s>, smash <~s>
+- Creeper step cadence: <~s per cell>; horizontal vs vertical differ? <>
+- Build a block on a nasty: <refuses / builds (+ nasty dies?)>
 
 ## Anything surprising
 -

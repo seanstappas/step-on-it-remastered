@@ -45,10 +45,15 @@ typedef struct {
     uint8_t  input_prev;  /* previous frame's input (for edge-triggered actions) */
     int16_t  lives;
     int32_t  score;
-    int32_t  bonus_time;  /* per-player starting bonus (BORD 0x16, default 5000) */
+    int32_t  bonus_time;  /* per-player starting bonus (BORD 0x0E, default 5000) */
     int16_t  mult;        /* score multiplier (goody 0x0C-0x0F -> asm +0x44 via FUN_10011428);
                            * default 1; multiplies the end-of-level bonus (mult x bonus_time,
                            * tallied in FUN_10029264). Reset to 1 each level (FUN_1002b174). */
+    int16_t  no_weapons_reward;  /* "No Weapons Reward" (BORD 0x16 -> asm FUN_1002b448): loaded to
+                           * 5000 each board (the field is the 0x3A20 sentinel or 0, both -> 5000; no
+                           * board ships a custom value). Zeroed the instant the player fires a
+                           * ball/arrow (FUN_10010d30/100110b4). Added ONCE to the score at completion
+                           * if still >0 (FUN_10015714). Reset per board. */
     int16_t  shield;
     int16_t  arrows;
     int16_t  balls;       /* Magic Ball ammo (+0x4a; separate from arrows +0x4c) */
@@ -139,8 +144,6 @@ int      soi_cell_y(int row);
 int      soi_in_bounds(int col, int row);
 uint32_t soi_get_cell(const SoiWorld *w, int col, int row);
 void     soi_set_cell(SoiWorld *w, int col, int row, uint32_t v);
-/* create-or-destroy toggle at (col,row) for player p (FUN_1002d04c). */
-void     soi_block_action(SoiWorld *w, int col, int row, int player);
 
 /* ---- physics / players (soi_physics.c) ---- */
 void     soi_player_update(SoiWorld *w, int player);
