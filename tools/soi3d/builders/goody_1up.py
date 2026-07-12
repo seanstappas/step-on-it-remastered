@@ -1,0 +1,52 @@
+"""soi3d.builders.goody_1up -- the extra-life '1UP' pickup (goody_sprites f17).
+
+A raised SILVER bevelled frame (four proud border bars) around a recessed RED field carrying gold
+Times-Bold '1UP'. Static prop. Colours sampled from source: silver border (~178 grey); red field
+(156,0,0); gold text (173,140,0).
+"""
+import os
+
+import bpy
+
+from .. import common as C
+from .. import register
+
+
+def build_1up():
+    """A silver-framed red plaque with gold '1UP' (source f17)."""
+    C._clear()
+    silver = C._mat("up_silver", C._srgb(182, 182, 188), rough=0.34, metal=0.0, spec=0.32, coat=0.25)
+    red = C._mat("up_red", C._srgb(156, 0, 0), rough=0.6, spec=0.1, coat=0.0)
+    rb = red.node_tree.nodes.get("Principled BSDF")
+    ec = rb.inputs.get("Emission Color")
+    es = rb.inputs.get("Emission Strength")
+    if ec is not None:
+        ec.default_value = C._srgb(58, 0, 0)
+    if es is not None:
+        es.default_value = 0.05
+    gold = C._mat("up_gold", C._srgb(173, 140, 0), rough=0.34, metal=0.0, spec=0.3, coat=0.3)
+
+    # full bevelled SILVER plate = the frame; a proud RED panel in the centre leaves a silver border
+    C._box("plate", (0, 0, 0.0), (1.84, 1.84, 0.34), silver, bevel=0.06, seg=3)
+    C._box("field", (0, 0, 0.11), (1.28, 1.28, 0.14), red, bevel=0.03)
+
+    # big gold '1UP' nearly filling the red field like the source (thick, little bare red left)
+    font = C.DEFAULT_SIGN_FONT if os.path.exists(C.DEFAULT_SIGN_FONT) else None
+    glyph = C._text("1UP", z=0.20, mat=gold, extrude=0.05, size=1.04, font=font)
+    glyph.name = "up_text"
+
+    bpy.ops.object.light_add(type='POINT', location=(-2.7, 3.3, 2.8))
+    gl = bpy.context.active_object
+    gl.name = "up_glint"
+    gl.data.energy = 300
+    gl.data.shadow_soft_size = 0.5
+
+
+@register("goody_1up")
+def render(args):
+    # goody_1up <out.png> [px]
+    out = args[0]
+    px = int(args[1]) if len(args) > 1 else 256
+    build_1up()
+    C.setup_scene(px, world_strength=0.19, fill_energy=0.17)
+    return out

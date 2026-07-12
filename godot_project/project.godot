@@ -14,6 +14,11 @@ Audio="*res://scenes/audio.gd"
 [display]
 window/size/viewport_width=640
 window/size/viewport_height=480
+; Render the 640x480 logical canvas, scaled to the window keeping 4:3. A no-op at the
+; native 640x480 (the gate/SD default is unchanged), but at a larger window it renders the
+; 2D at the window's resolution so the opt-in --hd assets (sprites_hd/pict_hd) show detail.
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
 
 [rendering]
 textures/canvas_textures/default_texture_filter=0  ; nearest — crisp retro pixels

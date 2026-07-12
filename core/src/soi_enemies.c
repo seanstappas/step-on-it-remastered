@@ -259,7 +259,10 @@ static void enemy_fly_bounce(SoiWorld *w, SoiEnemy *e)
     static const int DXP[4]  = {  0,  2,  0, -2 };
     static const int DYP[4]  = { -2,  0,  2,  0 };
     int idx = (e->dir == 8) ? 0 : (e->dir == 2) ? 1 : (e->dir == 9) ? 2 : 3;
-    if (e->state != 4) e->state = 3;                 /* 3 = turn CCW at walls, 4 = CW */
+    /* Per-wheelie turn HANDEDNESS (asm mode +0x6e): alternate CCW/CW by slot so a group of
+     * flyers FANS OUT across the board instead of all wall-following the same way and
+     * funnelling into one channel. Even slot = CCW (3), odd = CW (4). Deterministic. */
+    e->state = (uint8_t)((((int)(e - w->enemies)) & 1) ? 4 : 3);
     if (((e->x - SOI_ORIGIN_X) % SOI_CELL_PX) == 0 &&
         ((e->y - SOI_ORIGIN_Y) % SOI_CELL_PX) == 0) {  /* re-steer only at a cell centre */
         int col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
@@ -773,7 +776,7 @@ static void enemy_walker_fire(SoiWorld *w, SoiEnemy *e)
         if (dy < 0x20) { aligned = 1; break; }   /* a player is on the Walker's row */
     }
     if (!aligned) return;
-    e->fire_cd = 50;                              /* reload before the next bolt */
+    e->fire_cd = (e->fire_period > 0) ? e->fire_period : 96;   /* reload = StartDelay*4 (asm +0x6e), else slow */
     dc = (e->dir == 2) ? 1 : -1;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -782,7 +785,7 @@ static void enemy_walker_fire(SoiWorld *w, SoiEnemy *e)
         pr->src_type = (uint8_t)SOI_ENEMY_WALKER; pr->kind = 0; pr->pierce = 0; pr->age = 0;
         pr->x = e->x + dc * 0x20; pr->y = e->y;
         pr->vx = (int16_t)(dc * 4); pr->vy = 0;    /* 4 px/frame (asm 0x68 UltraBuster FUN_1000e3c0: +0x10 +/- 4) */
-        soi_sfx_emit(w, SOI_SFX_CANNON_FIRE);     /* placeholder: asm plays evt 0x13; TODO(oracle) the exact snd */
+        soi_sfx_emit(w, SOI_SFX_WALKER_FIRE);      /* asm event 0x13 -> snd 2689 "Strings" (NOT the cannon Flens) */
         return;
     }
 }
@@ -824,24 +827,41 @@ void soi_enemies_update(SoiWorld *w)
             if (!p->active || !p->alive || e->type == SOI_ENEMY_CREEPER) continue;
             if ((p->x - SOI_ORIGIN_X) / SOI_CELL_PX == (e->x - SOI_ORIGIN_X) / SOI_CELL_PX &&
                 (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX == (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX) {
-                soi_player_hit(w, pj);
-                /* TODO(oracle): death sequence, respawn. */
+                soi_player_hit(w, pj);   /* -> death-throw somersault; life-loss + respawn
+                                          * commit in air_step (VERIFIED complete, not a TODO) */
             }
         }
     }
 }
 
+/* The asm gives each player a SINGLE projectile slot (player +0x4e = the live
+ * arrow/ball X, 0 = none). Both fire handlers -- FUN_10010d30 (arrow) and
+ * FUN_100110b4 (ball) -- gate on "+0x4e == 0", so a player cannot fire again
+ * until their previous shot has despawned, and the arrow and ball SHARE the one
+ * slot. There is NO frame cooldown in the original: this one-shot-in-flight gate
+ * IS the throttle. (The weapon-audit's guessed fire_cd=15 is now retired.) */
+static int player_has_projectile(const SoiWorld *w, int player)
+{
+    int i;
+    for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
+        const SoiProjectile *pr = &w->projectiles[i];
+        if (pr->active && !pr->hostile && pr->owner == (uint8_t)player) return 1;
+    }
+    return 0;
+}
+
 /* Fire a Magic Arrow in the player's facing direction (CONFIRMED: the Arrow
- * travels in a straight line and kills nasties). Consumes one arrow and starts
- * a throttle so a held FIRE doesn't dump the whole stock at once.
- * TODO(oracle): arrow speed, wall interaction, and the Magic Ball (rolls). */
+ * travels in a straight line, then RICOCHETS off blocks, and kills nasties).
+ * Consumes one arrow. The asm allows only ONE live projectile per player at a
+ * time (player_has_projectile). Speed = 2 px/frame (VERIFIED asm FUN_1000fd5c
+ * ricochet state +0x54==2/3: x +/-= 2 each frame). */
 void soi_projectile_fire(SoiWorld *w, int player)
 {
     SoiPlayer *p;
     int i, dc;
     if (player < 0 || player >= SOI_MAX_PLAYERS) return;
     p = &w->players[player];
-    if (p->arrows <= 0 || p->fire_cd > 0) return;
+    if (p->arrows <= 0 || player_has_projectile(w, player)) return;
     dc = (p->facing >= 0) ? 1 : -1;   /* Magic Arrow: fired horizontally, then ricochets */
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -856,7 +876,7 @@ void soi_projectile_fire(SoiWorld *w, int player)
         pr->vx = (int16_t)(dc * 2);   /* 2 px/frame (asm); it ricochets off blocks */
         pr->vy = 0;
         p->arrows--;
-        p->fire_cd = 15;
+        p->no_weapons_reward = 0;   /* firing forfeits the board's No-Weapons Reward (asm FUN_10010d30 clears +0x42) */
         soi_sfx_emit(w, SOI_SFX_FIRE);
         return;
     }
@@ -866,17 +886,16 @@ void soi_projectile_fire(SoiWorld *w, int player)
  * fire + FUN_1000fd5c mover, +0x54==1): the ball rolls HORIZONTALLY at a fixed
  * height (no gravity), kills any nasty it rolls over, and STOPS DEAD at the first
  * solid block (it does NOT smash blocks like the Arrow does). Uses a separate ball
- * ammo pool (+0x4a). We roll it at 4 px/frame -- FASTER than our 2 px/frame Arrow, not
- * slower (the old "8 px/frame Arrow" note was stale/wrong). Exact speeds are TODO(oracle):
- * the FUN_1000fd5c mover uses per-state steps (0x4 and 0xa appear in asm); 2/4 are
- * first-draft feel values. */
+ * ammo pool (+0x4a). Speed = 4 px/frame (VERIFIED asm FUN_1000fd5c state +0x54==1: x += 4
+ * each frame) -- FASTER than the 2 px/frame Arrow. (The "0xa" near this code in the asm is a
+ * FUN_100043a0 draw-LAYER arg, not a step; ball 4 / arrow 2 are the real asm speeds.) */
 void soi_ball_fire(SoiWorld *w, int player)
 {
     SoiPlayer *p;
     int i, dc;
     if (player < 0 || player >= SOI_MAX_PLAYERS) return;
     p = &w->players[player];
-    if (p->balls <= 0 || p->fire_cd > 0) return;
+    if (p->balls <= 0 || player_has_projectile(w, player)) return;
     dc = (p->facing >= 0) ? 1 : -1;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -891,7 +910,7 @@ void soi_ball_fire(SoiWorld *w, int player)
         pr->vx = (int16_t)(dc * 4);   /* 4 px/frame horizontal roll (asm) */
         pr->vy = 0;                   /* no gravity: fixed Y */
         p->balls--;
-        p->fire_cd = 15;
+        p->no_weapons_reward = 0;   /* firing forfeits the board's No-Weapons Reward (asm FUN_100110b4 clears +0x42) */
         soi_sfx_emit(w, SOI_SFX_BALL);
         return;
     }
@@ -941,8 +960,13 @@ void soi_projectiles_update(SoiWorld *w)
             nc = soi_get_cell(w, ncol, nrow);
             if (!soi_in_bounds(ncol, nrow) || (nc & SOI_CELL_PERMANENT) ||
                 ((nc & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(nc) != 0)) {
-                /* wall ahead: turn 90 deg. Prefer CCW (wall-follow), then CW,
-                 * then reverse; if every side is boxed in, fizzle. */
+                /* wall ahead: turn 90 deg. VERIFIED vs asm FUN_1000fd5c (ricochet states
+                 * 0x52 1=L/2=U/3=R/4=D): the original turns PRIMARY (x,y)->(y,-x) then, at a
+                 * corner, SECONDARY (x,y)->(-y,x). cand[0]={vy,-vx} and cand[1]={-vy,vx} below
+                 * ARE those two transforms exactly (checked all 4 dirs: L->D/U, R->U/D, U->L/R,
+                 * D->R/L). cand[2]=reverse is a port-only fallback for a fully-boxed corner (the
+                 * asm cannot box itself in); fizzle only if even that is blocked. The single
+                 * next-cell probe below simplifies the asm's multi-corner turn-vs-continue test. */
                 int ov = pr->vx, ow = pr->vy, t;
                 int cand[3][2] = { { ow, -ov }, { -ow, ov }, { -ov, -ow } };
                 int acol = (cx - SOI_ORIGIN_X) / SOI_CELL_PX;   /* arrow's own cell */

@@ -1,0 +1,26 @@
+{
+  "class": "B",
+  "mode": "mblock",
+  "motion": "collapse (6 stacked bars peel bottom-up into rolling balls -> single top bar)",
+  "source": "extracted/sprites/bigger_mblock",
+  "stills": ["mblock.png"],
+  "model": "mblock.glb",
+  "model_status": "pending-P1",
+  "spin_dps": 0,
+  "tilt_deg": 0,
+  "anim": {
+    "kind": "collapse",
+    "param": "phase",
+    "range": [0.0, 1.0],
+    "frames": 13,
+    "fps": 10,
+    "loop": "restart"
+  },
+  "px": 256,
+  "note": "CREEPER enemy (sssf 1016, enemy #16): body = 6 full-width horizontal rounded bars, top->bottom RED,BLUE,RED,BLUE,RED,BLUE; source f02..f14 is the build/collapse cycle.",
+  "baseline": {
+    "source": "extracted/sprites/bigger_mblock/f02_32x32.png",
+    "still": "mblock.png",
+    "flags": []
+  }
+}

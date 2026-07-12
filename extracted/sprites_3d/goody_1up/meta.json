@@ -1,0 +1,16 @@
+{
+  "class": "B",
+  "mode": "goody_1up",
+  "motion": "static",
+  "source": "extracted/sprites/goody_sprites",
+  "stills": ["1up.png"],
+  "model": "goody_1up.glb",
+  "model_status": "pending-P1",
+  "px": 256,
+  "effect": "extra life",
+  "baseline": {
+    "source": "extracted/sprites/goody_sprites/f17_32x32.png",
+    "still": "1up.png",
+    "flags": ["--frac", "red"]
+  }
+}

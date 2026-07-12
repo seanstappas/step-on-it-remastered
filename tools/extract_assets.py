@@ -46,10 +46,23 @@ def bord_to_json(board_id: int, d: bytes) -> dict:
     if len(d) < 0x1A:
         return {"name": "Board %d" % board_id, "error": "too short"}
 
-    bonus = be16(d, 0x16)
-    if bonus == 0 or bonus == 0x3A20:
+    # per-board Bonus is at 0x0E (0x16 is the No-Weapons Reward). Match the core loader
+    # (soi_state.c) so the metadata reflects the values the game actually uses.
+    bonus = be16(d, 0x0E)
+    if bonus <= 0:
         bonus = 5000
+    reward = be16(d, 0x16)                  # No-Weapons Reward: 0x3A20 sentinel or 0 -> 5000
+    if reward == 0x3A20 or reward < 1:
+        reward = 5000
+    # challenge params: the loader clamps out-of-range to 0 (asm FUN_1002b448) + links thrown<->pct
+    pct_ultra = be16(d, 0x10)
     thrown = be16(d, 0x12)
+    pct_badguy = be16(d, 0x14)
+    if not (0 <= pct_ultra <= 100): pct_ultra = 0
+    if not (0 <= thrown <= 20):     thrown = 0
+    if not (0 <= pct_badguy <= 100): pct_badguy = 0
+    if thrown == 0:     pct_badguy = 0
+    if pct_badguy == 0: thrown = 0
     thrown_name = BESTIARY[thrown] if 0 <= thrown < len(BESTIARY) else str(thrown)
 
     # grid: fill from tile records (type stored per cell). row-major [row][col].
@@ -81,15 +94,16 @@ def bord_to_json(board_id: int, d: bytes) -> dict:
     return {
         "name": "Board %d" % board_id,
         "bonus_time": bonus,
+        "no_weapons_reward": reward,
         "grid": {"w": GRID_COLS, "h": GRID_ROWS, "cells": grid_cells},
         "player_starts": [
             {"player": 1, "x": be16(d, 0x06), "y": be16(d, 0x08)},
             {"player": 2, "x": be16(d, 0x0A), "y": be16(d, 0x0C)},
         ],
         "challenge": {
-            "percent_ultrabuster": be16(d, 0x10),
+            "percent_ultrabuster": pct_ultra,
             "thrown_badguy": thrown_name,
-            "percent_badguy": be16(d, 0x14),
+            "percent_badguy": pct_badguy,
         },
         # spawns are procedural in the original (no explicit records) — the core
         # generates them from `challenge` + RNG. (docs runtime-structures §4.)

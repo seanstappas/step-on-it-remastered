@@ -1,0 +1,26 @@
+{
+  "class": "B",
+  "mode": "transporter",
+  "motion": "orbit (red energy rings edge-on X -> open orbit -> X, one ring-rotation cycle)",
+  "source": "extracted/sprites/transporter",
+  "stills": ["transporter.png"],
+  "model": "transporter.glb",
+  "model_status": "pending-P1",
+  "spin_dps": 0,
+  "tilt_deg": 0,
+  "anim": {
+    "kind": "orbit",
+    "param": "phase",
+    "range": [0.0, 1.0],
+    "frames": 13,
+    "fps": 8,
+    "loop": "restart"
+  },
+  "px": 256,
+  "note": "Teleport ZAP effect (NOT a floor pad): a player HEAD (bright beige face, brown hair, 2 blue eyes, red grin) wrapped by RED energy rings that orbit it. Source f02..f14 is one ring cycle: edge-on crossed 'X' (f02, sprite_facts 'red X over a face') -> open orbit (f08 hero) -> X (f14). Two fat emissive-red tori rolled +/-45deg; tilt 90->40deg drives X->open. IN vs OUT is NOT a colour variant -- the whole sheet is red; the decompile pairs IN/OUT by CELL PARITY (IN=even, OUT=odd, 5 pairs), not colour, and 'are pairs coloured?' was an unanswered oracle question. Only honest IN/OUT distinction = animation DIRECTION (OUT opens outward, IN closes inward). No post-glint: the rings have a smooth tube gradient, no view-locked sparkle to reproduce.",
+  "baseline": {
+    "source": "extracted/sprites/transporter/f08_40x31.png",
+    "still": "transporter.png",
+    "flags": []
+  }
+}

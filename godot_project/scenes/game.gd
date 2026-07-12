@@ -62,10 +62,18 @@ var _enemy_walk := {}      # slot -> float, accumulated movement distance
 var _proj_lastpos := {}    # projectile idx -> Vector2, to aim the arrow along travel
 var _grid_prev := {}       # cell key -> last-frame cell value (create/destroy detection)
 var _cell_fx := {}         # cell key -> { grow:bool, cell:int, t:float } grow/shrink pop
+# Stop/Go SWITCH flip (asm FUN_10016544/10016784): stepping onto a switch cell (low 0x24-0x2D)
+# flips its paired block group's sign (Stop octagon <-> Go circle) over an ~8-frame animation +
+# a click. Both states stay solid, so this is a purely COSMETIC front-end overlay (no core/sim).
+var _sg_toggled := [false, false, false, false, false]   # per group g=0..4: show the FLIPPED sign?
+var _sg_anim := [0.0, 0.0, 0.0, 0.0, 0.0]                # per group: flip animation timer (1 -> 0)
+var _sg_last := [-1, -1, -1, -1]                          # per player 1..3: last switch cell key (edge-detect)
 var _mode := 0   # display mode: 0 = Retro (faithful 1996 look), 1 = Remastered (glow + vignette)
 var _paused := false
 var _num_players := 2   # 2 = original co-op; 3 = remaster's extra RED co-op player (--players=3)
 var _mode_compete := false   # Session.mode: false = Cooperate (shared), true = Compete (first to exit wins)
+var _win_video: VideoStreamPlayer = null   # Compete victory animation (extracted/movies/*.ogv)
+var _win_clip := ""                          # currently-loaded win clip path ("" = none) -> avoid restarts
 var _level_bytes: PackedByteArray
 
 # Board-completed BONUS tally. Grounded: the "Board Completed" screen is FUN_100153d0
@@ -82,19 +90,38 @@ var _level_bytes: PackedByteArray
 # fire and never incremented (no writer in the decomp), so it is always 0; omitting it is
 # faithful. (NB: PICT 300/FUN_10016c90 is the separate "Challenge Round" screen, not this one.)
 const TALLY_FRAMES := 90.0
+# Board-clear "warp": the original zooms through a tunnel of nested R/G/B rectangles between the
+# cleared board and the tally (gameplay-neutral presentation; verified vs the original gameplay
+# video -- every board clear plays it before "Board Completed"). ~0.5-0.7s depending on Speed.
+const WARP_FRAMES := 72.0
 # Options -> Speed (About doc 8; plan 10 -- a LOCAL sim-rate option; Medium = the canonical
 # deterministic rate). This scales Godot's physics tick (which drives the core tick), NOT the
 # core logic, so determinism is unaffected. Rates are reasonable multiples (exact originals
 # undocumented).
 const SPEED_HZ := [90, 75, 60, 45]   # Really Fast / Fast / Medium / Slow
 var _tally_pre := {}        # idx -> score before the current tick (to size the bonus award)
-var _tally_bonus := {}      # idx -> bonus awarded at completion
+var _tally_bonus := {}      # idx -> total awarded at completion (bonus x mult + no-weapons reward)
 var _tally_final := {}      # idx -> final score at completion
+var _tally_reward := {}     # idx -> No-Weapons Reward awarded (BORD 0x16: 5000, or 0 if a weapon fired)
 var _tally_captured := false
 var _tally_anim := 0.0      # 0..1 count-up progress on the completed screen
 var _tally_prebonus := 0    # bonus_time() before the completing tick (to derive the multiplier)
 var _tally_award_max := 0   # largest per-player award (the exiting player's bonus)
 var _tally_mult := 1        # award / prebonus, clamped 1..5 = how many rising count-up notes
+var _warp_anim := 0.0       # 0..1 board-clear R/G/B tunnel wipe; plays BEFORE the tally count-up
+var _warp_vp := Vector2(320, 240)   # tunnel vanishing point = the exiting player's centre (the door)
+# Transporter WARP-SLIDE (asm FUN_1002b9bc): stepping onto an IN pad glides the player across the screen
+# -- as the spinning `transporter/` sprite -- to the paired OUT pad, as a BLOCKING cinematic (the sim
+# freezes). The original runs 211 steps at the 60Hz Mac TickCount => ~3.5s (VERIFIED: FUN_10015fe4 IS
+# TickCount). Front-end only: we spot the core's instant teleport (SOI_SFX_TELEPORT + a position jump),
+# freeze the tick, and glide the sprite. TRANSPORT_FRAMES is the faithful 211 -- tune down if too slow.
+const SFX_TELEPORT := 8             # SOI_SFX_TELEPORT (soi_core.h SoiSfx enum)
+const TRANSPORT_FRAMES := 211
+var _tp_frames := 0                 # >0 = a transporter slide is playing (the sim is frozen)
+var _tp_player := 1                 # the warping player
+var _tp_from := Vector2.ZERO        # slide start (IN pad, player top-left px)
+var _tp_to := Vector2.ZERO          # slide end (OUT pad)
+var _tp_pre := {}                   # idx -> pre-tick pixel pos (to spot the teleport jump)
 
 # Alternate mode (Session.mode == 2): two SEPARATE single-player games taking turns
 # (gameplay-and-design.md 1a). One player holds the seat at a time; a turn is one board
@@ -132,24 +159,38 @@ var _challenge_forfeited := false    # challenge boards: loot forfeited on game 
 
 # --- real sprite pipeline (decoded from the original sssf, tools/sssf_decode.py) ---
 const SPRITES_DIR := "res://../extracted/sprites"
+var _sprites_dir := SPRITES_DIR    # --hd repoints this at extracted/sprites_hd (4x AI-upscaled sheets)
+var _sprite_scale := 1             # loaded sprites are this many x the logical (SD 640x480) footprint
 # Player (Ted) animation frames into BP_sprites / GP_sprites (CONFIRMED: the sheet
 # has SEPARATE left/right blocks — idle 61 right / 52 left; run cycles follow each
 # idle; jump 133; land 26). Frames are directional, so run/idle are NOT flipped.
 # All BP/GP player art faces RIGHT; left is drawn by flipping. (Earlier notes
 # claimed 52-60 were a left-facing block -- they are NOT, they also face right.)
 const PLAYER_IDLE := 61          # standing pose
-const PLAYER_RUN := 25           # REAL run cycle f25-f36 (right-facing; flipped for left) -- asm FUN_10012bf4 0x19..0x24
+const PLAYER_RUN := 37            # RIGHT-facing run cycle f37-f48 (mirrored for left). The sheet's f25-f36
+                                 # run the body forward but with the HEAD turned BACK -- a facing scan
+                                 # calibrated on f61(R-idle)/f52(L-idle) shows f25-36 = skin-LEFT (head
+                                 # back) vs f37-48 = skin-RIGHT (head forward). The port used to start the
+                                 # rightward run at f25, so the head faced BACKWARD each stride = the
+                                 # "flip". f37-f48 keeps the head forward; mirror it for a leftward run.
 const PLAYER_RUN_CYCLE := 12
 const PLAYER_RUN_PX := 2.0       # asm advances the leg frame 1 per 2px moved (matches the 2px/tick run)
-const PLAYER_JUMP_FRAME := 133   # right-facing leap; flipped for left (asm FUN_10013404 +0x10 0x85..0x8D)
+# The JUMP is a somersault TUMBLE with DIRECTIONAL art (asm FUN_10013404 +0x10, chosen at launch from
+# facing): a RIGHT jump plays f133-141, a LEFT jump plays f127-133 -- the two HALVES of ONE continuous
+# tumble that rotates the SAME way (NOT mirrors; both show the head LEFT at the horizontal mid-tumble).
+# The jump art is the 32x31 block f127-141. NB: f118-126 are the LARGER 36x34 DEATH arm-flap frames --
+# f126 (arms fully up) is a DEATH pose, NOT a jump frame. An earlier version started the left jump at
+# f126, so a left jump briefly flashed the death arms-up pose; the tumble is f127+ only.
+const PLAYER_JUMP_FRAME := 133   # RIGHT somersault f133-141
 const PLAYER_JUMP_CYCLE := 9     # jump animates frames 133..141 while airborne
-# The DEATH throw (hit by a nasty / thrown off) is a SOMERSAULT: the asm (FUN_10011fcc,
-# gated on the dying flag) PING-PONGS the larger 36x34 frames 0x75..0x7D (117-125) -- it
-# counts UP 0x76->0x7d, snaps 0x7e->0x7c and reverses DOWN to 0x75, then snaps 0x74->0x76
-# and repeats. We approximate with a forward loop over 0x76..0x7D (118-125); the brief
-# 117 + the ping-pong wobble are a minor visual nuance (render-verified acceptable). This
-# is a DIFFERENT animation from the jump above -- do not use it for a plain jump.
-const PLAYER_DEATH_SPIN := [118, 119, 120, 121, 122, 123, 124, 125]
+const PLAYER_JUMP_FRAME_L := 127 # LEFT somersault f127-133 (32x31 tumble; f126 is the DEATH arms-up, excluded)
+const PLAYER_JUMP_CYCLE_L := 7
+# The DEATH throw (hit by a nasty / thrown off) is an ARM-FLAP, NOT a somersault: the character flails
+# both arms UP then DOWN (the larger 36x34 frames f118-126; f126 = arms fully up). The asm (FUN_10011fcc)
+# PING-PONGS 0x75..0x7e (117-126) -- up to the peak then back down, repeating. We ping-pong f118-126 so
+# the flap actually reaches the arms-up peak. This is a DIFFERENT animation from the jump TUMBLE
+# (f127-141) above -- the arms-up f126 belongs ONLY here, never in a jump.
+const PLAYER_DEATH_SPIN := [118, 119, 120, 121, 122, 123, 124, 125, 126, 125, 124, 123, 122, 121, 120, 119]
 const PLAYER_LAND_FRAME := 26
 # The standing pose is DIRECTIONAL, not a flip: idle (asm FUN_100128f8) and fall
 # (asm FUN_1001386c) both set frame 0x3D facing right / 0x34 facing left.
@@ -178,7 +219,7 @@ const ENEMY_ROLL := { 6: true }
 # Enemies that SPIN in place on a timer (rotate through their whole sheet): the
 # Spinner trap (etype 13, 14 frames) and the flying star-disk Wheelie (etype 5,
 # a green orb with a rotating red star, 22 frames). etype -> frame count.
-const ENEMY_SPIN := { 5: 22, 13: 14, 16: 3 }   # 16 = creeper: only bigger_mblock's OPAQUE full-block frames f02-04 (f05-14 shrink w/ transparency -> showed the white cell behind + looked glitchy)
+const ENEMY_SPIN := { 5: 22, 13: 14 }   # creeper (16) is NOT here -- it's a travel-gated moving block (handled in _draw_enemy) so it animates ONLY while stepping, never on a free-running timer
 # Stationary turrets that IDLE then CHARGE an energy orb as their reload nears 0
 # and RELEASE it at the shot (asm FUN_1000adc4 gargoyle=bord14 / FUN_1000c2e8 knight=bord13).
 #   etype: { idle:[start,count], charge:[start,count] }  (charge over the last 30 reload frames)
@@ -194,14 +235,14 @@ const ENEMY_SHOOTER := {
 # "flip" mirrors the run for left travel only when the sheet is a single symmetric
 # view (e.g. the top-down ant, whose left/right runs are the same frames).
 const ENEMY_WALK := {
-	1:  { "r": [2, 12],  "l": [2, 12],  "flip": false },   # ant: symmetric top-down, 12-frame cycle
+	1:  { "r": [34, 12], "l": [2, 12],  "flip": false },   # ant: VERIFIED f02-13 face LEFT, f34-45 face RIGHT (asm tables DAT_10034230 left / DAT_100341f0 right) -- was left-for-both = moonwalk
 	2:  { "r": [2, 12],  "l": [21, 12], "flip": false },   # ostrich: right f02-13, left f21-32
 	3:  { "r": [21, 12], "l": [2, 12],  "flip": false },   # hippo: right f21-32, left f02-13
 	4:  { "r": [21, 12], "l": [2, 8],   "flip": false },   # piggy: right f21-32, left f02-09
 	7:  { "r": [2, 10],  "l": [12, 10], "flip": false },   # hammer: run/hop right f02-11, left f12-21
 	8:  { "r": [66, 12], "l": [66, 12], "flip": true  },   # beanie: floating kid, propeller-cap body
 	9:  { "r": [38, 12], "l": [62, 12], "flip": false },   # robo: right-walk f38-49, left-walk f62-73
-	10: { "r": [2, 12],  "l": [26, 12], "flip": false },   # sheep/walker: right f02-13, left f26-37
+	10: { "r": [26, 12], "l": [2, 12],  "flip": false },   # sheep/walker: VERIFIED f02-13 face LEFT, f26-37 face RIGHT -> r(right travel)=f26-37, l=f02-13 (were swapped = moonwalk)
 	11: { "r": [2, 12],  "l": [2, 12],  "flip": true  },   # teeth: symmetric chomp cycle, mirror to face
 }
 var _sprite_index := {}   # folder -> { frame:int -> absolute path }
@@ -209,14 +250,18 @@ var _tex_cache := {}      # "folder/frame/flip" -> Texture2D (or null)
 var _p_lastx := {}        # player idx -> last x (run-animation motion tracking)
 var _p_runtimer := {}     # player idx -> frames of run animation left to play
 var _p_walkdist := {}     # player idx -> accumulated |travel| px (leg cadence)
+var _p_movedx := {}       # player idx -> last non-zero core x-step (30Hz->60fps run smoothing)
+var _p_holdc := {}        # player idx -> consecutive frames the core x has held (30Hz cadence)
 var _p_stuck := {}        # player idx -> frames held-but-not-moving (run-in-place at a wall)
+var _p_prevst := {}       # player idx -> ground_state last frame (to detect the jump start)
+var _p_jumptick := {}     # player idx -> core tick at the last jump start (somersault phase origin)
 
 ## Build (once) a frame->path map for a sprite folder by parsing "fNN_WxH.png".
 func _folder_index(folder: String) -> Dictionary:
 	if _sprite_index.has(folder):
 		return _sprite_index[folder]
 	var idx := {}
-	var dir := ProjectSettings.globalize_path("%s/%s" % [SPRITES_DIR, folder])
+	var dir := ProjectSettings.globalize_path("%s/%s" % [_sprites_dir, folder])
 	var da := DirAccess.open(dir)
 	if da:
 		for f in da.get_files():
@@ -258,14 +303,28 @@ func _redden(img: Image) -> void:
 			if c.a > 0.0 and c.b > c.r + 0.06:
 				img.set_pixel(x, y, Color(c.b, c.g * 0.45, c.r, c.a))
 
+## A sprite's LOGICAL (SD 640x480) size. In --hd the loaded texture is _sprite_scale x
+## bigger, so divide back to the footprint the cell/HUD layout math expects.
+func _texsize(tex: Texture2D) -> Vector2:
+	return tex.get_size() / float(_sprite_scale)
+
+## Draw a sprite-sheet texture at pos at its LOGICAL size. SD (_sprite_scale==1) is exactly
+## draw_texture; --hd draws the 4x texture into the logical footprint and the window's canvas
+## content-scale then renders it crisp at the higher resolution.
+func _dtex(tex: Texture2D, pos: Vector2) -> void:
+	if _sprite_scale == 1:
+		draw_texture(tex, pos)
+	else:
+		draw_texture_rect(tex, Rect2(pos, tex.get_size() / float(_sprite_scale)), false)
+
 ## Draw a sprite centered in a 32x32 cell at pos (nearest-neighbour, no scaling
 ## up beyond native). Returns true if a real sprite was drawn.
 func _blit(folder: String, frame: int, pos: Vector2) -> bool:
 	var tex := _sprite(folder, frame)
 	if tex == null:
 		return false
-	var s := tex.get_size()
-	draw_texture(tex, pos + (Vector2(CELL_PX, CELL_PX) - s) * 0.5)
+	var s := _texsize(tex)
+	_dtex(tex, pos + (Vector2(CELL_PX, CELL_PX) - s) * 0.5)
 	return true
 
 ## Draw the Magic Arrow (goody f19, a red arrow whose art points UP) rotated so
@@ -282,17 +341,19 @@ func _draw_arrow(i: int, c: Vector2, pp: Vector2) -> void:
 	if d.length() > 0.5:
 		ang = d.angle() + PI / 2.0           # f19 art points up (-Y); align it to velocity
 	draw_set_transform(c, ang, Vector2.ONE)
-	draw_texture(tex, -tex.get_size() * 0.5)
+	_dtex(tex, -_texsize(tex) * 0.5)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # --- decoded PICT full-screen art (tools/pict_decode.py) ---
 const PICT_DIR := "res://../extracted/pict"
+var _pict_dir := PICT_DIR       # --hd repoints this at extracted/pict_hd (4x AI-upscaled art)
+var _pict_scale := 1            # loaded PICTs are this many x the logical (SD 640x480) footprint
 var _pict_cache := {}
 func _pict(name_substr: String) -> Texture2D:
 	if _pict_cache.has(name_substr):
 		return _pict_cache[name_substr]
 	var tex: Texture2D = null
-	var dir := ProjectSettings.globalize_path(PICT_DIR)
+	var dir := ProjectSettings.globalize_path(_pict_dir)
 	var da := DirAccess.open(dir)
 	if da:
 		for f in da.get_files():
@@ -312,8 +373,22 @@ func _draw_pict_screen(name_substr: String, title: String, hint: String) -> void
 		_draw_banner(title, hint)
 		return
 	draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
-	draw_texture(t, ((Vector2(640, 480) - t.get_size()) * 0.5).floor())
-	draw_string(_font, Vector2(0, 452), hint, HORIZONTAL_ALIGNMENT_CENTER, 640, 15, Color(0.9, 0.9, 0.95))
+	_draw_pict(t, ((Vector2(640, 480) - _pict_size(t)) * 0.5).floor())
+	# No on-screen key hint: the original screens show ONLY the art (faithful look). The
+	# advance/back keys (Enter/Esc) still work; `hint` is kept for signature compatibility.
+
+## A PICT's LOGICAL (SD 640x480) size; in --hd the loaded texture is _pict_scale x larger.
+func _pict_size(t: Texture2D) -> Vector2:
+	return t.get_size() / float(_pict_scale)
+
+## Draw a PICT at pos at its LOGICAL size. SD (_pict_scale==1) is exactly draw_texture; --hd
+## downsamples the 4x art into the 640x480 footprint, which the CANVAS_ITEMS content-scale
+## then renders at the window's higher resolution.
+func _draw_pict(t: Texture2D, pos: Vector2) -> void:
+	if _pict_scale == 1:
+		draw_texture(t, pos)
+	else:
+		draw_texture_rect(t, Rect2(pos, t.get_size() / float(_pict_scale)), false)
 
 ## Play the board-completed count-up scale as the SCORE climbs -- grounded in FUN_10015714:
 ## snd 1100 "hut" on reveal, the rising notes 1102..1106 (one per score-multiplier step,
@@ -332,26 +407,151 @@ func _tally_dings(prev_anim: float, cur_anim: float) -> void:
 	if prev_anim < 1.0 and cur_anim >= 1.0:
 		Audio.play_snd(1101)                       # "huh" -- settle chime
 
-## Per-player BONUS -> SCORE tally drawn into the black centre of the "Board Completed"
-## frame (FUN_100153d0 / PICT 1000). Grounded in the animated count-up FUN_10015714 + the
-## confirmed exit award (soi_grid.c:87): the remaining BONUS counts down while the SCORE
-## counts up by the same amount, settling with the bonus fully drained into the score.
-## (We render the multiplier as "xN" text where the original drew an icon; the separate
-## second-reward column stays omitted -- it is vestigial/always-0 in this build.)
+## The "Board Completed" tally, drawn into the black centre of PICT 1000 (which is ONLY the
+## stone frame + red title). Grounded in the animated count-up FUN_10015714 + the confirmed
+## exit award (soi_grid.c:87). The single-player LAYOUT -- rows, colours, the idle player and
+## the divider bar -- is measured pixel-for-pixel from refs/images/board_completed.png:
+##       [idle player, PICT 1010]        Board#  <n>
+##       ------------------------        Bonus   <awarded>
+##       No Weapons Reward               Score   <climbs to final>
+## Blue labels (2,0,136) sit at x=212; red values (151,8,22) right-align to x=425. The Bonus
+## row shows the AWARDED bonus while the Score counts up to the post-bonus final (the resting
+## state matches the reference: Bonus 2513 / Score 4000).
 func _draw_complete_tally() -> void:
-	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5), Color(1.0, 0.45, 0.4)]
-	var names := ["BLUE", "GREEN", "RED"]
-	var y := 196.0
+	var label_col := Color8(2, 0, 136)
+	var value_col := Color8(151, 8, 22)
+	var bar_col := Color8(210, 207, 211)
+	var lx := 212.0
+	var vr := 425.0        # right edge the values right-align to
+	var fs := 17           # cap-height ~11px, matched to the reference labels ("No Weapons Reward" ~155px)
+	if _num_players <= 1:
+		# Faithful single-player tally (asm FUN_100159f4 + FUN_10015714): the LABELS
+		# ("Board#"/"Bonus"/"No Weapons Reward"/"Score") are the pre-rendered PICT 1020
+		# panel art (blue), and the VALUES are the HUD SPRITE DIGITS -- FUN_10015714 draws
+		# them via FUN_10015d94, which blits the SAME HUD digit bank (_DAT_1003ad28), NOT a
+		# system font. (We used to draw Times-Bold text, which the original never does.)
+		var panel := _pict("blue_tally")         # PICT 1020 (218x160): blue labels + bar
+		var px := 140.0
+		var py := 200.0
+		if panel != null:
+			_draw_pict(panel, Vector2(px, py))
+		var pl := _pict("blue_player")           # PICT 1010: the idle blue player, to the right
+		if pl != null:
+			_draw_pict(pl, Vector2(474.0, py + 44.0))
+		var delta := int(_tally_bonus.get(1, 0))                        # total awarded (bonus x mult + reward)
+		var raw_bonus := _tally_prebonus                                # raw remaining bonus (FUN_10015714 row 0x134)
+		var reward := int(_tally_reward.get(1, _core.player_no_weapons_reward(1)))
+		var final_score := int(_tally_final.get(1, _core.player_score(1)))
+		var shown := final_score - int(round(delta * (1.0 - _tally_anim)))   # SCORE climbs to final
+		var vx := px + 300.0                     # value column right edge (clear of the long labels)
+		_tally_digits(_board_number(), vx, py + 9.0)     # Board# row (panel y~10)
+		_tally_digits(raw_bonus, vx, py + 63.0)          # Bonus row (panel y~64 = asm 0x134)
+		_tally_digits(reward, vx, py + 98.0)             # No Weapons Reward row (panel y~99 = asm 0x158)
+		_tally_digits(shown, vx, py + 134.0)             # Score row (panel y~135 = asm 0x17c)
+		return
+	# Co-op (2-3 players) has no single-screen reference; show each player in the same colour
+	# scheme, stacked, sharing the one Board# header.
+	_tally_line(lx, vr, 250.0, fs, "Board#", str(_board_number()), label_col, value_col)
+	draw_rect(Rect2(lx, 263.0, vr - lx, 3.0), bar_col)
+	var names := ["", "BLUE", "GREEN", "RED"]
+	var pcol := [Color.WHITE, Color8(80, 130, 230), Color8(70, 200, 100), Color8(225, 80, 70)]
+	var y := 292.0
 	for idx in range(1, mini(_num_players, 3) + 1):
-		var bonus := int(_tally_bonus.get(idx, 0))
-		var final_score := int(_tally_final.get(idx, _core.player_score(idx)))
-		var remaining := int(round(bonus * (1.0 - _tally_anim)))   # bonus drains to 0
-		var shown_score := final_score - remaining                 # score rises to final
-		var m := int(_core.player_mult(idx))                       # score-multiplier (FUN_10015714 shows it)
-		var mtxt := ("  x%d" % m) if m > 1 else ""
-		var line := "%s    BONUS %d%s    SCORE %d" % [names[idx - 1], remaining, mtxt, shown_score]
-		draw_string(_font, Vector2(120, y), line, HORIZONTAL_ALIGNMENT_LEFT, 400, 20, cols[idx - 1])
-		y += 46.0
+		var delta := int(_tally_bonus.get(idx, 0))
+		var rw := int(_tally_reward.get(idx, 0))
+		var bonus_only := maxi(delta - rw, 0)
+		var f := int(_tally_final.get(idx, _core.player_score(idx)))
+		var s := f - int(round(delta * (1.0 - _tally_anim)))
+		draw_string(_font_hud, Vector2(lx, y), "%s   Bonus %d   Reward %d   Score %d" % [names[idx], bonus_only, rw, s], HORIZONTAL_ALIGNMENT_LEFT, 360, fs, pcol[idx])
+		y += 38.0
+
+## One tally row: a blue label at the left edge, a red value right-aligned to `vr`.
+func _tally_line(lx: float, vr: float, y: float, fs: int, label: String, value: String, lc: Color, vc: Color) -> void:
+	draw_string(_font_hud, Vector2(lx, y), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, lc)
+	draw_string(_font_hud, Vector2(lx, y), value, HORIZONTAL_ALIGNMENT_RIGHT, vr - lx, fs, vc)
+
+## Draw a number with its RIGHT edge at `right_x`, using the extra_s HUD digit sprites
+## (f06='0'..f15='9') -- the faithful tally digits (asm FUN_10015d94 blits the HUD bank
+## _DAT_1003ad28, frame = digit+5), so the tally numbers match the top score bar exactly.
+func _tally_digits(value: int, right_x: float, y: float) -> void:
+	var s := str(maxi(0, value))
+	var w := 0.0
+	for i in s.length():
+		var t := _sprite("extra_s", 6 + (s.unicode_at(i) - 48))
+		if t != null:
+			w += _texsize(t).x
+	var x := right_x - w
+	for i in s.length():
+		var t := _sprite("extra_s", 6 + (s.unicode_at(i) - 48))
+		if t != null:
+			_dtex(t, Vector2(round(x), round(y)))
+			x += _texsize(t).x
+
+## Board-clear WARP: the original's tunnel of nested R/B/G rectangles that GROWS out of the exit
+## door (`_warp_vp` = the vanishing point) over the still-visible cleared board, then fades to black
+## so the "Board Completed" tally rises from black. Colours flow outward (R -> B -> G) as it expands.
+## Matched to the original video. Drawn in the logical 640x480 space.
+func _draw_board_warp() -> void:
+	var cyc := [Color8(235, 30, 30), Color8(40, 40, 235), Color8(30, 200, 40)]  # R, B, G outward
+	var w := 640.0
+	var h := 480.0
+	var px: float = clampf(_warp_vp.x, 32.0, w - 32.0)   # tiny margin only -> the vanishing point stays
+	var py: float = clampf(_warp_vp.y, 32.0, h - 32.0)   # AT the exit door so the tunnel emerges FROM it
+	var ratio := 0.66
+	var zoom := _warp_anim * 6.0            # ~6 colour steps flow outward as the tunnel expands
+	var fr := zoom - floorf(zoom)
+	var base := int(floorf(zoom))
+	# The tunnel EMERGES from the door: its outer ring grows from a small rect at the vanishing
+	# point out to full-screen over the first 80% of the wipe (the cleared board stays visible
+	# around it -- NO opaque backdrop), then the whole frame fades to black for the tally.
+	var q_cap := lerpf(0.14, 1.7, clampf(_warp_anim / 0.8, 0.0, 1.0))
+	for i in range(0, 26):                  # i=0 outermost -> higher i = nearer the vanishing point
+		var q := pow(ratio, float(i) - fr)
+		if q < 0.01 or q > q_cap:            # skip rings that have not yet grown out of the door
+			continue
+		var col: Color = cyc[(i + base) % 3]
+		var x0 := px * (1.0 - q)
+		var y0 := py * (1.0 - q)
+		draw_rect(Rect2(x0, y0, (px + (w - px) * q) - x0, (py + (h - py) * q) - y0), col)
+		var qd := q * pow(ratio, 0.5)        # 2-tone bevel groove: a darker inner step
+		var xd := px * (1.0 - qd)
+		var yd := py * (1.0 - qd)
+		draw_rect(Rect2(xd, yd, (px + (w - px) * qd) - xd, (py + (h - py) * qd) - yd), Color(col.r * 0.55, col.g * 0.55, col.b * 0.55))
+	var fade := clampf((_warp_anim - 0.8) / 0.2, 0.0, 1.0)   # fade to black over the last stretch
+	if fade > 0.0:
+		draw_rect(Rect2(0, 0, w, h), Color(0, 0, 0, fade))
+
+## A transporter fired this tick (SOI_SFX_TELEPORT): the core already snapped the player to the OUT
+## pad, so start gliding the warp sprite from its pre-tick (IN) position to it. Picks the player whose
+## position jumped the most (co-op safe); a normal step is only a few px so 24px cleanly rules it out.
+func _start_transport_slide() -> void:
+	var best := 0
+	var best_d := 24.0
+	for idx in range(1, mini(_num_players, 3) + 1):
+		var np := Vector2(_core.player_x(idx), _core.player_y(idx))
+		var op: Vector2 = _tp_pre.get(idx, np)
+		var d := op.distance_to(np)
+		if d > best_d:
+			best_d = d
+			best = idx
+			_tp_from = op
+			_tp_to = np
+	if best > 0:
+		_tp_player = best
+		_tp_frames = TRANSPORT_FRAMES
+
+## Draw the transporter WARP-SLIDE: the spinning `transporter/` sprite gliding IN->OUT over
+## TRANSPORT_FRAMES (asm FUN_1002b9bc). Cosmetic; the sim is frozen while it plays.
+func _draw_transport() -> void:
+	var step := TRANSPORT_FRAMES - _tp_frames
+	var t := clampf(float(step) / float(TRANSPORT_FRAMES), 0.0, 1.0)
+	var pos := _tp_from.lerp(_tp_to, t)
+	var frame := 2 + (step % 13)             # cycle the transporter/ frames f02..f14 (fast spin)
+	var tex := _sprite("transporter", frame)
+	if tex == null:
+		return
+	var s := _texsize(tex)
+	_dtex(tex, (pos + Vector2(CELL_PX, CELL_PX) * 0.5 - s * 0.5).floor())   # centred on the cell
 
 ## Challenge-board completion ("Your Rewards", PICT 301): the LOOT kept = the score gained on
 ## this board (the survive-to-keep rule stated on PICT 300). REMASTER PRESENTATION for 1001-1050.
@@ -376,11 +576,60 @@ func _winner() -> int:
 	return 0
 
 func _draw_win_screen() -> void:
+	if _win_video != null and _win_video.visible:
+		# The extracted victory animation renders via _win_video (a child node);
+		# frame it with a caption + hint. (State managed in _update_win_video.)
+		draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
+		var w := _winner()
+		var title := "NO WINNER"
+		if w == 1: title = "BLUE WINS!"
+		elif w == 2: title = "GREEN WINS!"
+		draw_string(_font, Vector2(0, 72), title, HORIZONTAL_ALIGNMENT_CENTER, 640, 30, Color.WHITE)
+		return
 	match _winner():
 		1: _draw_pict_screen("blue_wins", "BLUE WINS!", "Enter: next board     Esc: menu")
 		2: _draw_pict_screen("green_wins", "GREEN WINS!", "Enter: next board     Esc: menu")
 		3: _draw_banner("RED WINS!", "Enter: next board     Esc: menu")
 		_: _draw_pict_screen("no_winner", "NO WINNER", "Enter: next board     Esc: menu")
+
+## Path to the extracted victory animation (.ogv) for a Compete winner, or "" if none
+## (P3/red has no original movie; also "" when the file is missing). tools/extract_win_movies.py.
+func _win_clip_path(w: int) -> String:
+	var clip := ""
+	match w:
+		1: clip = "blue_wins"
+		2: clip = "green_wins"
+		3: clip = ""              # P3 red: the original 2-player game has no movie for it
+		_: clip = "no_winner"
+	if clip == "":
+		return ""
+	# Prefer the AI-upscaled HD clip (extracted/movies_hd, tools/upscale_win_movies.py);
+	# fall back to the faithful SD extraction (extracted/movies).
+	for sub in ["movies_hd", "movies"]:
+		var p := ProjectSettings.globalize_path("res://../extracted/%s/%s.ogv" % [sub, clip])
+		if FileAccess.file_exists(p):
+			return p
+	return ""
+
+## Show/hide + (re)start the Compete victory animation, played on the results screen
+## exactly like the original (asm FUN_10014d70 -> FUN_10018e88 loads a transient movie).
+## It loops on the held results screen until the player continues.
+func _update_win_video() -> void:
+	if _win_video == null:
+		return
+	var want := _win_clip_path(_winner()) if (_mode_compete and _core.level_complete()) else ""
+	if want == _win_clip:
+		return
+	_win_clip = want
+	if want == "":
+		_win_video.stop()
+		_win_video.hide()
+	else:
+		var vs := VideoStreamTheora.new()
+		vs.set_file(want)
+		_win_video.stream = vs
+		_win_video.show()
+		_win_video.play()
 
 ## --- Alternate mode (two solo games taking turns) ---------------------------
 
@@ -532,6 +781,16 @@ func _ready() -> void:
 	sf.antialiasing = TextServer.FONT_ANTIALIASING_NONE
 	_font_hud = sf
 	_core = SoiCore.new()
+	# Compete victory-animation player (extracted/movies/*.ogv, decoded from the original
+	# QuickTime win movies by tools/extract_win_movies.py). Hidden until the win screen.
+	_win_video = VideoStreamPlayer.new()
+	_win_video.expand = true
+	_win_video.position = Vector2(100, 106)
+	_win_video.size = Vector2(440, 328)   # native 220x164, shown at 2x
+	_win_video.hide()
+	_win_video.finished.connect(func() -> void:
+		if _win_video.visible: _win_video.play())   # loop while the results screen is held
+	add_child(_win_video)
 	_level_bytes = _load_level_bytes()
 	if _level_bytes.is_empty():
 		push_warning("using built-in demo level")
@@ -540,6 +799,20 @@ func _ready() -> void:
 	# so _start() spawns the 3rd co-op player on board 1 too. Otherwise P3 was absent on the first
 	# board (only _next_board re-spawned it) and Resume wrote P3's stats to an unspawned player.
 	var ua := OS.get_cmdline_user_args()
+	if "--hd" in ua:                       # opt-in HD: load the 4x AI-upscaled sheets and render the 640x480
+		_sprites_dir = "res://../extracted/sprites_hd"   # canvas at the window's higher resolution so the extra
+		_sprite_scale = 4                  # detail shows. The SD default is byte-for-byte unchanged (gate = SD).
+		# Prefer the newest HD PICT set (pict_hd_v2), else pict_hd. Deleting the
+		# pict_hd_v2 folder reverts to the previous set (tools/upscale_picts.py --out).
+		for hd in ["pict_hd_v2", "pict_hd"]:
+			if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + hd)):
+				_pict_dir = "res://../extracted/" + hd   # 4x AI-upscaled PICT art (tools/upscale_picts.py)
+				_pict_scale = 4
+				break
+		var win := get_window()
+		win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+		win.content_scale_size = Vector2i(640, 480)
 	_num_players = Session.num_players if Session.num_players > 0 else 2
 	_mode_compete = Session.mode == 1
 	_alt = Session.mode == 2
@@ -547,6 +820,10 @@ func _ready() -> void:
 		if arg == "--mode=retro": _mode = 0
 		elif arg == "--mode=remastered": _mode = 1
 		elif arg == "--players=3": _num_players = 3
+	if ("--demo" in ua) or ("--fx" in ua):
+		_num_players = 1   # the showcase demos are single-player, so the faithful 1-player
+		                   # Board-Completed tally (PICT 1020 panel + sprite digits) shows
+		                   # instead of the co-op panel (the loader still parks P2; not drawn)
 	if _alt:
 		_num_players = 1
 		var s := maxi(Session.board_index, 0)
@@ -564,6 +841,17 @@ func _ready() -> void:
 				var st: Dictionary = Session.resume_stats[i - 1]
 				_core.set_player_stats(i, int(st.get("score", 0)), int(st.get("lives", 4)),
 					int(st.get("arrows", 1)), int(st.get("balls", 1)), int(st.get("shield", 2)))
+	elif not _alt:
+		# New-game starting stats (asm FUN_1002b060): every player's survival counter (+0x46)
+		# starts at 2 with 1 arrow + 1 ball; SINGLE-player alone bumps player 1 to 4 lives + 2
+		# arrows + 2 balls (P2 disabled). So co-op/compete with 2+ players starts 2 lives / 1+1
+		# ammo each; solo starts 4 lives / 2+2 ammo. VERIFIED vs refs/images: the 2-player HUD
+		# smiley reads 02 (not 04), arrows/balls 01. (soi_world_init sets the solo 4-life default.)
+		if _num_players == 1:
+			_core.set_player_stats(1, 0, 4, 2, 2, 2)
+		else:
+			for i in range(1, mini(_num_players, 3) + 1):
+				_core.set_player_stats(i, 0, 2, 1, 1, 2)
 	Session.resume_stats = []
 	_capture_board_start()   # snapshot this board's entry stats (with the correct player count)
 	if "--shot" in ua:
@@ -578,6 +866,11 @@ func _ready() -> void:
 		for seg in DEMO:
 			total += int(seg[1])
 		_demo_frames = total               # scripted play, then quit (for movie capture)
+	if "--fx" in ua:
+		# Recent-fixes demo: a straight walk-right board that hits a transporter (slide),
+		# then a key + its (key-opened) door -> the board-clear warp. Drive it with --play=N.
+		_level_bytes = _showcase_fx_level()
+		_start()
 	for arg in ua:
 		if arg.begins_with("--play="):
 			_play_frames = int(arg.substr(7))   # record the real board (no showcase override)
@@ -596,7 +889,9 @@ func _start() -> void:
 	_core.load_level(_level_bytes)
 	if _num_players >= 3:
 		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
+	_core.limit_players(_num_players)   # BORD always spawns P1+P2 -> turn P2/P3 off for a 1-player game
 	_reset_round_ui()
+	_update_board_music()
 
 ## Advance to the next board WITHOUT wiping the persistent stats -- score/lives/ammo/shield
 ## carry across boards (new-game-only per FUN_1002b060); only mult + per-board state reset.
@@ -604,28 +899,68 @@ func _next_board() -> void:
 	_core.next_level(_level_bytes)
 	if _num_players >= 3:
 		_core.spawn_player3()
+	_core.limit_players(_num_players)   # keep the extra BORD-spawned P2 off in a 1-player game
 	_reset_round_ui()
+	_update_board_music()
 
 ## Reset the per-round UI/animation state shared by _start and _next_board.
 func _reset_round_ui() -> void:
 	_paused = false
 	_tally_captured = false
 	_tally_anim = 0.0
+	_warp_anim = 0.0
+	_tp_frames = 0
 	_tally_bonus.clear()
 	_tally_final.clear()
+	_tally_reward.clear()
 	_tally_award_max = 0
 	_tally_mult = 1
 	_tally_prebonus = 0
 	_hs_checked = false
 	_hs_state = ""
 	_challenge_forfeited = false
+	_sg_toggled = [false, false, false, false, false]
+	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
+	_sg_last = [-1, -1, -1, -1]
 	_capture_board_start()
 
+## Stop/Go SWITCH flip (asm FUN_10016544): a player stepping onto a switch cell (low 0x24-0x2D,
+## 0x800 class) flips its paired block group's sign over an ~8-frame animation + a click (evt 0x2c
+## -> snd 1006). Purely COSMETIC -- both Stop and Go blocks stay solid, so the core/sim is untouched.
+func _update_stopgo() -> void:
+	for g in 5:
+		if _sg_anim[g] > 0.0:
+			_sg_anim[g] = maxf(_sg_anim[g] - 0.14, 0.0)
+	for idx in range(1, mini(_num_players, 3) + 1):
+		if not _core.player_alive(idx):
+			_sg_last[idx] = -1
+			continue
+		var col := int((_core.player_x(idx) + 0x0C - ORIGIN_X) / CELL_PX)
+		var row := int((_core.player_y(idx) + 0x10 - ORIGIN_Y) / CELL_PX)
+		if col < 0 or col >= GRID_COLS or row < 0 or row >= GRID_ROWS:
+			_sg_last[idx] = -1
+			continue
+		var cell := int(_core.grid_cell(col, row))
+		var t := cell & 0xFF
+		if (cell & CELL_DOOR) and t >= 0x24 and t <= 0x2D:
+			var key := row * GRID_COLS + col
+			if _sg_last[idx] != key:
+				var g := (t - 0x24) / 2
+				_sg_toggled[g] = not _sg_toggled[g]
+				_sg_anim[g] = 1.0
+				Audio.play_snd(1006)   # switch click (evt 0x2c; sequential after clock 0x2B -> 1005)
+				_sg_last[idx] = key
+		else:
+			_sg_last[idx] = -1
+
 func _physics_process(_delta: float) -> void:
-	if not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0:
+	if _tp_frames > 0:
+		_tp_frames -= 1              # transporter slide in progress: FREEZE the sim (skip the core tick)
+	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0:
 		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
 		for idx in range(1, mini(_num_players, 3) + 1):
 			_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
+			_tp_pre[idx] = Vector2(_core.player_x(idx), _core.player_y(idx))   # pre-tick pos (teleport detect)
 		var p1 := _read_input(0)
 		if _demo_frames > 0:
 			p1 = _demo_input()         # scripted play for the --demo movie / capture
@@ -634,9 +969,17 @@ func _physics_process(_delta: float) -> void:
 		elif _shot_countdown > 0:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
 		var p3 := _read_input(2) if _num_players >= 3 else 0
-		_core.tick3(p1, _read_input(1), p3)
+		var p2 := _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
+		_core.tick3(p1, p2, p3)
+		var teleported := false
 		for i in _core.sfx_count():
-			Audio.play(_core.sfx_get(i))
+			var ev := _core.sfx_get(i)
+			Audio.play(ev)
+			if ev == SFX_TELEPORT:
+				teleported = true
+		if teleported:
+			_start_transport_slide()   # a transporter fired -> glide the player to the OUT pad
+		_update_stopgo()
 		if _alt:
 			if _alt_prev_alive and not _core.player_alive(1):
 				_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
@@ -645,22 +988,47 @@ func _physics_process(_delta: float) -> void:
 			for idx in range(1, mini(_num_players, 3) + 1):
 				var fin := int(_core.player_score(idx))
 				_tally_final[idx] = fin
-				var aw := maxi(fin - int(_tally_pre.get(idx, fin)), 0)   # bonus drained into score this tick
+				var rw := int(_core.player_no_weapons_reward(idx))   # No-Weapons Reward awarded (5000 or 0)
+				_tally_reward[idx] = rw
+				var aw := maxi(fin - int(_tally_pre.get(idx, fin)), 0)   # total drained into score this tick
 				_tally_bonus[idx] = aw
-				_tally_award_max = maxi(_tally_award_max, aw)
-			# rising-note count = award / remaining-bonus = the score multiplier (1..5),
-			# matching FUN_10015714's per-multiplier count-up loop.
+				_tally_award_max = maxi(_tally_award_max, maxi(aw - rw, 0))   # bonus-only (reward isn't x mult)
+			# rising-note count = bonus-award / remaining-bonus = the score multiplier (1..5),
+			# matching FUN_10015714's per-multiplier count-up loop. The No-Weapons Reward is added
+			# ONCE (not multiplied), so it is excluded from the multiplier estimate above.
 			_tally_mult = clampi(int(round(float(_tally_award_max) / float(maxi(_tally_prebonus, 1)))), 1, 5)
+			# Board-clear warp: the R/G/B tunnel converges on the exiting player's centre (the door
+			# they left). The original's exact vanishing-point drift is unverified -> this is a faithful
+			# approximation (gameplay-neutral, the score/tally values are unaffected).
+			var ex := 1
+			for idx2 in range(1, mini(_num_players, 3) + 1):
+				if _core.player_has_key(idx2) == 2:
+					ex = idx2
+					break
+			_warp_vp = Vector2(float(_core.player_x(ex)) + 16.0, float(_core.player_y(ex)) + 16.0)
 			_tally_captured = true
-	if _core.level_complete() and _tally_anim < 1.0:
-		var prev_anim := _tally_anim
-		_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)   # count-up progress (also gates HS-on-win)
-		# The count-up scale belongs to the VISIBLE coop "Board Completed" tally (FUN_10015714 /
-		# PICT 1000) only -- not the Compete wins screens (blue_wins/green_wins), the Challenge
-		# rewards (PICT 301), or Alternate's hand-off. Advance the anim in every mode (HS-on-win
-		# needs it) but ring the dings only where the tally is actually drawn.
-		if not _alt and not _mode_compete and not _is_challenge_board():
-			_tally_dings(prev_anim, _tally_anim)
+			# Board-clear warp "whoosh": asm event 0x1f -> snd 16969 "Lore" (FUN_10028a0c /
+			# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). Coop/single warp only.
+			if not _alt and not _mode_compete and not _is_challenge_board():
+				Audio.play_snd(16969)
+			# Beat the whole campaign -> switch to the ending tune (Angel Pie, FUN_1001768c).
+			# Co-op/single only; Alternate + Compete have their own end screens.
+			if not _alt and not _mode_compete and not _has_next_board():
+				Audio.play_ending_music()
+	if _core.level_complete():
+		# The board-clear WARP plays first (standard coop/single clear only); the tally count-up
+		# waits until the tunnel finishes. Compete/Alternate/Challenge have no warp -> tally at once.
+		if not _alt and not _mode_compete and not _is_challenge_board() and _warp_anim < 1.0:
+			_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
+		elif _tally_anim < 1.0:
+			var prev_anim := _tally_anim
+			_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)   # count-up progress (also gates HS-on-win)
+			# The count-up scale belongs to the VISIBLE coop "Board Completed" tally (FUN_10015714 /
+			# PICT 1000) only -- not the Compete wins screens (blue_wins/green_wins), the Challenge
+			# rewards (PICT 301), or Alternate's hand-off. Advance the anim in every mode (HS-on-win
+			# needs it) but ring the dings only where the tally is actually drawn.
+			if not _alt and not _mode_compete and not _is_challenge_board():
+				_tally_dings(prev_anim, _tally_anim)
 	if not _alt and _is_challenge_board() and _core.game_over() and not _challenge_forfeited:
 		_challenge_forfeited = true   # challenge rule (PICT 300): lose the board's loot if you don't survive
 		for i in range(1, mini(_num_players, 3) + 1):
@@ -677,6 +1045,7 @@ func _physics_process(_delta: float) -> void:
 		_save_flash -= 1
 	if _challenge_intro > 0:
 		_challenge_intro -= 1
+	_update_win_video()
 	queue_redraw()
 	if _demo_frames > 0:
 		_demo_frames -= 1
@@ -811,9 +1180,13 @@ func _draw() -> void:
 			var prev: int = _grid_prev.get(key, 0)
 			_grid_prev[key] = cell
 			var pos := Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX)
-			if (cell & CELL_SUPPORTIVE) and not (prev & CELL_SUPPORTIVE):
+			# The block build/break POP (grow/shrink) is only for REAL blocks (non-zero low byte). A
+			# moving CREEPER (etype 16) stamps a plain 0x300 wall (low byte 0) each step; the pop FX
+			# drew that via the white _draw_block fallback SCALED, and the shrink-FX on the cell it
+			# just LEFT (no sprite over it) flashed white. Skip the FX for low-byte-0 cells.
+			if (cell & CELL_SUPPORTIVE) and not (prev & CELL_SUPPORTIVE) and (cell & 0xff) != 0:
 				_cell_fx[key] = { "grow": true, "cell": cell, "t": 0.0 }
-			elif (prev & CELL_SUPPORTIVE) and not (cell & CELL_SUPPORTIVE):
+			elif (prev & CELL_SUPPORTIVE) and not (cell & CELL_SUPPORTIVE) and (prev & 0xff) != 0:
 				_cell_fx[key] = { "grow": false, "cell": prev, "t": 0.0 }
 			if _cell_fx.has(key):
 				var fx: Dictionary = _cell_fx[key]
@@ -851,10 +1224,10 @@ func _draw() -> void:
 					var bf := 4 + (int(_core.tick_count() / 2) % 18)
 					if not _blit("cannon_sprites", bf, pp):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
-				elif _core.projectile_src_type(i) == 14:  # Gargoyle: a short-range PUFF (breath), not a bolt
-					draw_circle(c, 8.0, Color(0.85, 0.5, 0.25, 0.30))
-					draw_circle(c + Vector2(-3, -2), 4.5, Color(0.95, 0.65, 0.35, 0.55))
-					draw_circle(c + Vector2(3, 2), 4.0, Color(0.90, 0.55, 0.30, 0.50))
+				elif _core.projectile_src_type(i) == 14:  # Gargoyle: the charged RED energy ball it releases
+					draw_circle(c, 9.0, Color(0.9, 0.25, 0.2, 0.55))
+					draw_circle(c, 6.0, Color(1.0, 0.4, 0.2, 0.95))
+					draw_circle(c + Vector2(-2, -2), 3.0, Color(1.0, 0.85, 0.5, 0.95))
 				elif _core.projectile_src_type(i) == 10:  # Walker: its own small RED bolt
 					# The walker fires a horizontal block-smashing bolt (asm type 0x68,
 					# FUN_1000e3c0) that animates frames 0x31..0x40 -- the small 20x19
@@ -899,6 +1272,8 @@ func _draw() -> void:
 	_draw_player(1, Color(0.15, 0.25, 0.85))
 	_draw_player(2, Color(0.15, 0.6, 0.2))
 	_draw_player(3, Color(0.85, 0.2, 0.15))   # remaster's RED co-op player (drawn only when active)
+	if _tp_frames > 0:
+		_draw_transport()                     # transporter warp-slide (over the frozen board)
 	_post_fx()
 
 	_draw_hud()
@@ -916,6 +1291,8 @@ func _draw() -> void:
 			_draw_win_screen()
 		elif not _alt and _is_challenge_board():
 			_draw_challenge_rewards()
+		elif _warp_anim < 1.0:
+			_draw_board_warp()          # R/G/B tunnel wipe from the cleared board into the tally
 		else:
 			_draw_pict_screen("board_completed", "LEVEL CLEAR!", "Enter: next board     Esc: menu")
 			_draw_complete_tally()
@@ -931,7 +1308,7 @@ func _draw() -> void:
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))
 	draw_string(_font, Vector2(0, 245), title, HORIZONTAL_ALIGNMENT_CENTER, 640, 32, Color.WHITE)
-	draw_string(_font, Vector2(0, 275), hint, HORIZONTAL_ALIGNMENT_CENTER, 640, 16, Color(0.85, 0.85, 0.85))
+	# No key-hint line (faithful look); `hint` kept for signature compatibility.
 
 ## Soft glow behind an entity (Remastered only).
 func _glow(center: Vector2, radius: float, color: Color) -> void:
@@ -962,8 +1339,8 @@ func _draw_powerup_overlay(idx: int, pos: Vector2) -> void:
 	var frame := 2 + (int(_core.tick_count() / 2) % n)
 	var tex := _sprite("spin_ind_sprite_family", frame, false)
 	if tex != null:
-		var s := tex.get_size()
-		draw_texture(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5))
+		var s := _texsize(tex)
+		_dtex(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5))
 
 
 # Magnifying-glass reveal marker: a pulsing gold diamond over a hidden-treasure cell.
@@ -1001,6 +1378,8 @@ func _draw_gift_sparkle(c: Vector2) -> void:
 func _draw_player(idx: int, shirt: Color) -> void:
 	if not _core.player_alive(idx):
 		return
+	if _tp_frames > 0 and idx == _tp_player:
+		return                                   # drawn as the warp sprite by _draw_transport() instead
 	# flash while invulnerable (post-hit / spawn grace): blink at ~8 Hz
 	if _core.player_invuln(idx) > 0 and (int(_core.tick_count()) / 4) % 2 == 0:
 		return
@@ -1010,13 +1389,25 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	var st := int(_core.player_state(idx))
 	var pose := int(_core.player_pose(idx))
 	# The core's ground_state flickers idle<->run between grid steps, so keep the run
-	# alive briefly off actual horizontal motion. Advance the leg cycle by DISTANCE
-	# travelled (not the wall clock) so the feet stay planted to the ground.
-	var dx: float = pos.x - float(_p_lastx.get(idx, pos.x))
-	_p_lastx[idx] = pos.x
-	if absf(dx) > 0.5:                            # MOVING -> advance the legs by TRAVEL so the feet stay
-		_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + absf(dx)   # PLANTED (the 30Hz/60fps stutter
-		_p_runtimer[idx] = 6                       # gives dx=2,0,2,0 -- must NOT double the leg cadence)
+	# alive briefly off actual horizontal motion.
+	var real_x := pos.x
+	var real_dx: float = real_x - float(_p_lastx.get(idx, real_x))
+	_p_lastx[idx] = real_x
+	# Jump-start detection: when the core enters the JUMP state, latch the tick so the somersault phase
+	# begins at the LAUNCH pose (the asm resets the jump frame at jump_t==0) instead of advancing off the
+	# free-running global tick (which dropped the player into the middle of a spin).
+	if st == 2 and int(_p_prevst.get(idx, -1)) != 2:
+		_p_jumptick[idx] = int(_core.tick_count())
+	_p_prevst[idx] = st
+	# FAITHFUL run rendering (asm FUN_1001166c): draw the player at the core's exact 30 Hz position and
+	# advance the leg cycle by REAL horizontal travel -- 2px per 30 Hz step => one leg frame per step,
+	# EVEN and in lockstep with the body so the feet stay PLANTED. (My old remaster hacks -- a position
+	# lerp that advanced the legs by the *smoothed* per-frame travel (~0.8/1.2px alternating = an uneven
+	# leg stutter) plus a per-frame _run_align anchor shift -- were what ADDED the perceived "twitch".
+	# The original simply steps the body and steps the legs together.)
+	if absf(real_dx) > 0.5:                       # the core took a 30 Hz step this frame
+		_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + absf(real_dx)
+		_p_runtimer[idx] = 6
 		_p_stuck[idx] = 0
 	elif st == 1:                                # held but not moving THIS frame
 		_p_runtimer[idx] = 6
@@ -1025,32 +1416,53 @@ func _draw_player(idx: int, shirt: Color) -> void:
 			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX
 	elif _p_runtimer.get(idx, 0) > 0:
 		_p_runtimer[idx] = int(_p_runtimer[idx]) - 1
-	# idle/fall default: a static DIRECTIONAL pose (asm idle FUN_100128f8 + fall
-	# FUN_1001386c both set frame 0x3D right / 0x34 left -- distinct left/right art).
-	# Jump / death / run below use right-facing art flipped for left.
+	# idle/fall default: the static stand pose is DIRECTIONAL art (asm FUN_100128f8 idle /
+	# FUN_1001386c fall set frame 0x3D=61 facing RIGHT, 0x34=52 facing LEFT). Verified at 22x vs
+	# f61: f52 IS the native LEFT-facing idle, NOT right-facing -- so use the matching frame per
+	# direction with NO mirror (same directional scheme as the run f37/f25 pair + the fire pose).
+	# (An earlier comment wrongly claimed f52 faces right and mirrored f61 for the left idle.)
 	var frame := PLAYER_STAND_R if right else PLAYER_STAND_L
 	var flip := false
-	if st == 2:                                  # JUMP -> the leap frames (asm FUN_10013404 +0x10 0x85..0x8D)
-		frame = PLAYER_JUMP_FRAME + (int(_core.tick_count() / 2) % PLAYER_JUMP_CYCLE)
-		flip = not right
+	if st == 2:                                  # JUMP -> the somersault tumble; DIRECTIONAL art (asm
+		# FUN_10013404 +0x10): RIGHT plays f133-141, LEFT plays its OWN f126-133 -- NOT a mirror (the two sets
+		# are halves of one same-direction tumble, so mirroring the right set spun the left jump backwards).
+		# Phase counts from the jump's launch tick (_p_jumptick) so the tumble STARTS at the launch pose.
+		var jp := (int(_core.tick_count()) - int(_p_jumptick.get(idx, 0))) / 2
+		if right:
+			frame = PLAYER_JUMP_FRAME + (jp % PLAYER_JUMP_CYCLE)
+		else:
+			frame = PLAYER_JUMP_FRAME_L + (jp % PLAYER_JUMP_CYCLE_L)
+		flip = false                             # native directional art -- no mirror
 	elif st == 3:                                # FALL -> the static directional pose (same as idle)
 		pass
-	elif st == 12:                               # death-throw -> somersault spin (asm 0x75..0x7E)
+	elif st == 12:                               # death-throw -> somersault spin. NON-directional: the asm
+		# FUN_10011fcc ping-pongs ONE frame range (0x75..0x7e) with NO facing branch, and the sheet has no
+		# separate left-death block -> the tumble is drawn the SAME way regardless of facing. Mirroring it
+		# for a left-facing death (the old `flip = not right`) spun the throw backwards, like the jump bug.
 		frame = PLAYER_DEATH_SPIN[int(_core.tick_count() / 2) % PLAYER_DEATH_SPIN.size()]
-		flip = not right
-	elif int(_p_runtimer.get(idx, 0)) > 0:       # running
-		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
-		flip = not right
-	elif pose > 0:                               # fire/build arm-extension swing (asm FUN_1001166c step tables)
+		flip = false
+	elif pose > 0:                               # fire/build arm-extension swing -- PRIORITY over run.
+		# The asm action animation (FUN_1001166c, active-flag +0x25) plays its 7 DIRECTIONAL frames and
+		# OVERRIDES the run/idle frame while it runs (it is gated only by jump/fall/death above, via +0x28).
+		# Checking it BEFORE the run branch stops a residual run-timer (still counting down right after you
+		# stop moving) from bleeding a run frame into the build/fire pose -- that one-frame run frame is the
+		# "flip" seen when acting immediately after running.
 		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
 		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
 		flip = false                             # frames are directional -- no mirror
+	elif int(_p_runtimer.get(idx, 0)) > 0:       # running
+		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
+		flip = not right                         # right = f37-48 (head forward); left = the same, mirrored
 	var folder := "GP_sprites" if idx == 2 else "BP_sprites"   # P2 = green art; P1/P3 = blue art
+	# Draw the run frame at a FIXED anchor with NO per-frame offset -- exactly as the original does (the
+	# body bob is authored into the frame art). (The old _run_align centroid-shift was a remaster hack
+	# that slid the anchor every frame and slipped the planted foot = part of the "twitch"; removed.)
+	var draw_dx := 0.0
 	var tex := _sprite(folder, frame, flip, idx == 3)   # P3 = the blue art recoloured RED (_redden)
 	if tex != null:
-		var s := tex.get_size()
+		var s := _texsize(tex)
 		# bottom-align the character to the cell (feet at pos.y + CELL_PX)
-		draw_texture(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y + CELL_PX - s.y))
+		_dtex(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5 + draw_dx, pos.y + CELL_PX - s.y))
 		_draw_powerup_overlay(idx, pos)
 		return
 	# procedural fallback
@@ -1087,11 +1499,16 @@ func _draw_hud() -> void:
 	x = _ex(2, x + 22, y)                        # "Bonus"
 	x = _ex_num(_core.bonus_time(), 5, x + 4, y)
 	x = _ex(16, x + 26, iy)                      # face = LIVES (asm FUN_1000fb18 draws +0x46 = lives)
-	x = _ex_num(_core.player_lives(1), 2, x + 3, y)
-	x = _ex(17, x + 14, iy)                      # rocket (arrows)
-	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
-	x = _ex(18, x + 14, iy)                      # potion (Magic Ball ammo; asm draws +0x4a at x=0x184)
+	x = _ex_num(maxi(int(_core.player_lives(1)), 0), 2, x + 3, y)   # clamp <0 -> 0 (asm FUN_1000fb18: an
+	                                             # eliminated player's -1 shows as 0, never a "-1")
+	# The original HUD (asm FUN_1000fb18) pairs the ROCKET icon (bank frame 0x10 -> f17) with the
+	# BALL count (+0x4a, drawn at x=0x184) and the POTION icon (0x11 -> f18) with the ARROW count
+	# (+0x4c, x=0x1d4) -- the same art!=effect quirk as the goodies (balls carry the arrow-shaped
+	# art, arrows the potion art). We had the two counts swapped.
+	x = _ex(17, x + 14, iy)                      # rocket icon -> Magic BALL count (asm frame 0x10 @ x=0x184)
 	x = _ex_num(_core.player_balls(1), 2, x + 3, y)
+	x = _ex(18, x + 14, iy)                      # potion icon -> Magic ARROW count (asm frame 0x11 @ x=0x1d4)
+	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(28, x + 28, y)                       # "Board#"
 	_ex_num(_board_number(), 3, x + 2, y)
 	if _core.player_has_key(1) >= 1:
@@ -1104,8 +1521,8 @@ func _ex(frame: int, x: float, y: float) -> float:
 	var tex := _sprite("extra_s", frame)
 	if tex == null:
 		return x
-	draw_texture(tex, Vector2(round(x), round(y)))
-	return x + tex.get_size().x
+	_dtex(tex, Vector2(round(x), round(y)))
+	return x + _texsize(tex).x
 
 ## Blit a zero-padded number using the red digit sprites (f06='0' … f15='9').
 func _ex_num(value: int, ndigits: int, x: float, y: float) -> float:
@@ -1115,21 +1532,42 @@ func _ex_num(value: int, ndigits: int, x: float, y: float) -> float:
 	for i in s.length():
 		var tex := _sprite("extra_s", 6 + (s.unicode_at(i) - 48))
 		if tex != null:
-			draw_texture(tex, Vector2(round(x), round(y)))
-			x += tex.get_size().x
+			_dtex(tex, Vector2(round(x), round(y)))
+			x += _texsize(tex).x
 	return x
 
 func _board_number() -> int:
 	# The original campaign's Board#N is the extracted file board_(400+N): the main
 	# set 401..500 = Board 1..100 (verified vs the reference montage: board_401 is
-	# the 3-column Board#001). board_301 and board_1000+ are extras, not the #1.
+	# the 3-column Board#001). The Challenge set 1001..1050 is numbered Challenge
+	# 1..50 (matches menu.gd _board_label). board_301 and board_501 are unnumbered
+	# extras (reachable only via level-select) -> they use the play-order index.
 	if Session.board_path != "":
 		var num := Session.board_path.get_file().get_basename().replace("board_", "").to_int()
 		if num >= 401 and num <= 500:
 			return num - 400
+		if num >= 1001 and num <= 1050:
+			return num - 1000       # Challenge 1..50 (was the raw full-list sort index)
 	if Session.board_index >= 0:
 		return Session.board_index + 1
 	return 1
+
+## RE-grounded background music for the current board (FUN_10018c88 + FUN_10017a70).
+## The original rotates three tunes by (level % 3) + 1, but a board holding a Knight or
+## Gargoyle plays "spooky" instead. Called on every (re)load; the Audio autoload skips
+## work when the tune is unchanged, so a seamless loop carries across same-tune boards.
+func _update_board_music() -> void:
+	Audio.play_level_music(_board_number(), _board_has_special_enemy())
+
+## True if the loaded board contains a Knight or Gargoyle (dispatcher types 13/14 =
+## SoiEnemyType 15/14). These turrets are placed, so they exist right after load --
+## matching the original's live-enemy scan in FUN_10017a70.
+func _board_has_special_enemy() -> bool:
+	for i in _core.enemy_count():
+		var t := int(_core.enemy_type(i))
+		if t == 14 or t == 15:   # SOI_ENEMY_GARGOYLE / SOI_ENEMY_KNIGHT
+			return true
+	return false
 
 # --- HUD icons ---------------------------------------------------------------
 func _hud_face(p: Vector2) -> void:
@@ -1180,10 +1618,25 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 		if t >= 0x9D and t <= 0xD3:
 			var ds := t - 0x9D          # Stop block = 0x9d + 12*pair
 			var dg := t - 0xA3          # Go block   = 0xa3 + 12*pair
+			var g := -1
+			var loaded_stop := false
 			if ds % 12 == 0 and ds < 60:
-				sgf = [2, 10, 18, 26, 34][ds / 12]
+				g = ds / 12; loaded_stop = true
 			elif dg >= 0 and dg % 12 == 0 and dg < 60:
-				sgf = [9, 17, 25, 33, 39][dg / 12]
+				g = dg / 12
+			if g >= 0:
+				# a stepped SWITCH flips the displayed sign; animate across the group's frame run
+				# (Stop 2/10/18/26/34 <-> Go 9/17/25/33/39; group 4 is a shorter run).
+				var stop_f: int = [2, 10, 18, 26, 34][g]
+				var go_f: int = [9, 17, 25, 33, 39][g]
+				var disp_stop: bool = loaded_stop != _sg_toggled[g]
+				var new_f := stop_f if disp_stop else go_f
+				var a: float = _sg_anim[g]
+				if a > 0.0:
+					var old_f := go_f if disp_stop else stop_f
+					sgf = int(round(float(new_f) + float(old_f - new_f) * a))
+				else:
+					sgf = new_f
 		if sgf >= 0 and _blit("Stop_Go_sprite_family", sgf, pos):
 			if cell & CELL_CRACKED:
 				_draw_crack(pos)
@@ -1206,6 +1659,10 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 		else:
 			_draw_coin(pos, t == 0x17 or t == 0x19)
 		return
+	if (cell & CELL_PERMANENT) and t != 0:       # permanent DECORATIVE block (0x100, not standable):
+		if not _blit("block_sprites", t + 1, pos):   # e.g. the 0x197 cross-hatch NET/mesh = block_sprites
+			_draw_block(pos, Color(0.55, 0.55, 0.6))  # f152. The asm draws these from the block bank by
+		return                                       # low byte like any block; the port dropped them (bg).
 	# background / decorative cell: nothing to draw over the black field
 
 ## Draw a grid cell scaled about its centre (for the block build/break pop).
@@ -1233,7 +1690,6 @@ func _draw_block(pos: Vector2, base: Color) -> void:
 	draw_rect(Rect2(pos + Vector2(1, 1), Vector2(3, s - 2)), base.lightened(0.45))   # left hi
 	draw_rect(Rect2(pos + Vector2(1, s - 4), Vector2(s - 2, 3)), base.darkened(0.4)) # bottom sh
 	draw_rect(Rect2(pos + Vector2(s - 4, 1), Vector2(3, s - 2)), base.darkened(0.4)) # right sh
-	draw_rect(Rect2(pos + Vector2(5, 5), Vector2(9, 5)), base.lightened(0.7))        # gloss
 
 ## A shaded red sphere (the ball tile at structure corners).
 func _draw_ball(pos: Vector2, base: Color) -> void:
@@ -1280,7 +1736,13 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 	# block and NOT a stuck-looking nasty. Render the red marker. VERIFIED vs
 	# refs/images/board_3.png (2026-07-06).
 	if _core.enemy_is_spawner(slot):
-		_draw_block(e, Color(0.85, 0.16, 0.16))
+		_draw_block(e, Color(0.85, 0.16, 0.16))       # the red nest cell (asm stamps a solid marker),
+		var nf: String = ENEMY_FOLDER.get(etype, "")  # then the emitted child stands on it -- etype IS
+		if nf != "":                                   # the child's type (ref board_3: an ant on red).
+			var it := _sprite(nf, 2, false)
+			if it != null:
+				var isz := _texsize(it)
+				_dtex(it, Vector2(e.x + (CELL_PX - isz.x) * 0.5, e.y + CELL_PX - isz.y))
 		return
 	# travel-synced walk cycle: a moving nasty animates; a stationary one
 	# (turret / spawner / Spinner) holds its frame instead of walking in place.
@@ -1291,6 +1753,17 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		walk += moved
 	_enemy_walk[slot] = walk
 	_enemy_lastpos[slot] = e
+	if etype == 16:                       # CREEPER: a moving SOLID "pulsing block" (sssf 1016). Its own cell
+		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)   # is a plain 0x300 (white fallback) -> cover it
+		# PULSE through the 13-frame morph (f02 full block <-> f14 ball), ping-ponged on a per-creeper
+		# timer so the platform visibly animates even while it WAITS between its (instant) grid steps.
+		var ph := int((int(_core.tick_count()) + slot * 5) / 4) % 24
+		var cf := 2 + (ph if ph <= 12 else 24 - ph)
+		var ct := _sprite("bigger_mblock", cf, false)
+		if ct != null:
+			var cs := _texsize(ct)
+			_dtex(ct, Vector2(e.x + (CELL_PX - cs.x) * 0.5, e.y + CELL_PX - cs.y))
+		return
 	var folder: String = ENEMY_FOLDER.get(etype, "")
 	if folder != "":
 		var frame: int
@@ -1305,12 +1778,15 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		elif ENEMY_SHOOTER.has(etype):           # Gargoyle/Knight turret: idle, then CHARGE an orb
 			var sh: Dictionary = ENEMY_SHOOTER[etype]        # and RELEASE at the shot, driven by the
 			var fcd: int = _core.enemy_fire_cd(slot)         # reload counter exposed by the core
-			if fcd >= 0 and fcd <= 30:
+			var idl: Array = sh["idle"]
+			if fcd >= 0 and fcd <= 30:               # CHARGE: the energy orb grows to the shot (last 30)
 				var ch: Array = sh["charge"]
 				frame = int(ch[0]) + clampi(int((30 - fcd) * (int(ch[1]) - 1) / 30.0), 0, int(ch[1]) - 1)
-			else:
-				var idl: Array = sh["idle"]
-				frame = int(idl[0]) + (int(_core.tick_count() / 8) % int(idl[1]))
+			elif fcd >= 0 and fcd <= 30 + 40:        # WIND-UP: unfold the wings ONCE, synced to THIS
+				var t := 70 - fcd                     # turret's own reload -- NOT the shared global clock
+				frame = int(idl[0]) + clampi(int(t * (int(idl[1]) - 1) / 40.0), 0, int(idl[1]) - 1)
+			else:                                    # waiting: hold the folded rest pose (stable, no flap
+				frame = int(idl[0])                   # loop -- the old tick/8 loop snapped f20->f12 = twitch)
 			flip = false
 		elif ENEMY_ROLL.has(etype):              # face-ball: a ball that ROLLS along the ground
 			var nframes: int = max(1, _folder_index(folder).size())
@@ -1323,17 +1799,17 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 			var pfcd: int = _core.enemy_fire_cd(slot)        # forward to smash a breakable block
 			frame = 17 + clampi(16 - pfcd, 0, 15)            # (asm +0x6e swing f17-f32; ball hits
 			flip = face_left                                 # ~f25) -- right swing, mirror for left
-		elif ENEMY_WALK.has(etype):              # dedicated directional walk cycle
-			var cfg: Dictionary = ENEMY_WALK[etype]
-			var seg: Array = cfg["l"] if face_left else cfg["r"]
-			frame = int(seg[0]) + (int(walk / 8.0) % int(seg[1]))
+		elif ENEMY_WALK.has(etype):              # dedicated directional walk cycle. The asm plants the leg
+			var cfg: Dictionary = ENEMY_WALK[etype]  # frame to POSITION (frame = table[x mod 32], ~16px/cycle,
+			var seg: Array = cfg["l"] if face_left else cfg["r"]   # FUN_1000dd4c). walk/8 was ~6x too slow ->
+			frame = int(seg[0]) + (int(walk / 3.0) % int(seg[1]))  # legs glided = "moonwalk"; walk/3 ~= per-cell.
 			flip = bool(cfg["flip"]) and face_left   # mirror only symmetric single-view sheets
 		else:
 			frame = 2 + (int(walk / 8.0) % 4)    # travel-synced walk cycle (fallback: 4 frames + flip)
 		var tex := _sprite(folder, frame, flip)
 		if tex != null:
-			var s := tex.get_size()
-			draw_texture(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
+			var s := _texsize(tex)
+			_dtex(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
 			return
 	var c := e + Vector2(16, 16)
 	var body := _enemy_color(etype)
@@ -1379,7 +1855,7 @@ func _demo_level() -> PackedByteArray:
 	b[0x09] = 11         # P1 row = 11 (on the floor)
 	b[0x0B] = 9          # P2 col = 9
 	b[0x0D] = 11         # P2 row = 11
-	b[0x16] = 0x13; b[0x17] = 0x88   # bonus = 5000
+	b[0x0E] = 0x13; b[0x0F] = 0x88   # bonus (BORD 0x0E) = 5000
 	var n := 0x18
 	# record 1: permanent floor (0x300) across the bottom row 12, all 19 columns
 	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x03; b[n + 3] = 0x00; n += 4
@@ -1407,13 +1883,13 @@ func _showcase_level() -> PackedByteArray:
 	b[0x09] = 11         # P1 row = 11 (stands on the floor at row 12)
 	b[0x0B] = 17         # P2 parked at the right edge (loader always places P2)
 	b[0x0D] = 11         # P2 row
-	b[0x16] = 0x27; b[0x17] = 0x10   # bonus = 10000
+	b[0x0E] = 0x27; b[0x0F] = 0x10   # bonus (BORD 0x0E) = 10000
 	# no procedural nasties: keep the showcase clean + deterministic
 	b[0x12] = 0x00; b[0x13] = 0x00   # thrown_badguy = 0
 	b[0x14] = 0x00; b[0x15] = 0x00   # pct_badguy = 0
 	var n := 0x18
 	# permanent floor along the bottom row (row 12), every column
-	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x03; b[n + 3] = 0x00; n += 4
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x03; b[n + 3] = 0x07; n += 4   # 0x0307 = white block (f08, flat) + PERMANENT|SUPPORTIVE
 	for c in range(GRID_COLS):
 		b[n] = c; b[n + 1] = 12; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
@@ -1444,6 +1920,50 @@ func _showcase_level() -> PackedByteArray:
 	b[n] = 12; b[n + 1] = 6; n += 2
 	b[n] = 13; b[n + 1] = 6; n += 2
 	b[n] = 14; b[n + 1] = 6; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# terminator record (tile_type 0)
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x00; n += 4
+	b.resize(n)
+	return b
+
+## Demo board for the recent TRANSPORTER-SLIDE + BOARD-CLEAR-WARP fixes: one floor row
+## with a transporter IN->OUT, then a key, then the key's locked door, all in a line so a
+## plain walk-right (--play) triggers each in turn. Loaded by the --fx flag.
+func _showcase_fx_level() -> PackedByteArray:
+	var b := PackedByteArray()
+	b.resize(512)
+	b.fill(0)
+	b[0x07] = 2          # P1 col (walks right along row 11)
+	b[0x09] = 11         # P1 row (stands on the floor at row 12)
+	b[0x0B] = 18         # P2 parked at the far right edge
+	b[0x0D] = 11
+	b[0x0E] = 0x27; b[0x0F] = 0x10   # bonus = 10000
+	var n := 0x18
+	# permanent floor along the bottom row (row 12)
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x03; b[n + 3] = 0x07; n += 4   # 0x0307 = white block (f08, flat) + PERMANENT|SUPPORTIVE
+	for c in range(GRID_COLS):
+		b[n] = c; b[n + 1] = 12; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# transporter IN (0x081A, even) at (5,11) -> paired OUT (0x081B) at (8,11)
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x08; b[n + 3] = 0x1A; n += 4
+	b[n] = 5; b[n + 1] = 11; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x08; b[n + 3] = 0x1B; n += 4
+	b[n] = 8; b[n + 1] = 11; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# universal key (0x0907) at (11,11) -- collecting it opens the low-4 lock
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x09; b[n + 3] = 0x07; n += 4
+	b[n] = 11; b[n + 1] = 11; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# locked door (0x0904 -> opened to 0x0901 by key 7) at (14,11) = the exit warp
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x09; b[n + 3] = 0x04; n += 4
+	b[n] = 14; b[n + 1] = 11; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# gold coins (0x17) floating overhead for colour
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x17; n += 4
+	b[n] = 4; b[n + 1] = 6; n += 2
+	b[n] = 9; b[n + 1] = 6; n += 2
+	b[n] = 13; b[n + 1] = 6; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
 	# terminator record (tile_type 0)
 	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x00; n += 4

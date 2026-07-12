@@ -70,6 +70,37 @@ int main(void)
     CHECK(soi_enemy_count(w) == 0, "arrow: enemy killed by the arrow");
     CHECK(soi_player_score(w, 1) == 50, "arrow: ant score (50) awarded to firer");
 
+    /* ---- 1b. ONE projectile per player at a time. The asm arrow/ball fire
+     * handlers (FUN_10010d30 / FUN_100110b4) both gate on the SINGLE per-player
+     * slot (player +0x4e == 0), which the arrow and ball SHARE. There is no frame
+     * cooldown -- you simply cannot fire until your live shot is gone. ---- */
+    soi_world_init(w, 1);
+    w->level_loaded = 1;
+    w->pct_badguy = 0;
+    reset_player(w, 1, 3, 9);
+    ground_player(w, 3, 9);
+    w->players[1].arrows = 3;
+    w->players[1].balls  = 3;
+    w->players[1].facing = 1;
+    soi_tick(w, SOI_IN_ARROW, 0);              /* fire an arrow */
+    CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
+          "one-shot: first arrow fires (1 in flight, ammo 3->2)");
+    soi_tick(w, SOI_IN_ARROW, 0);              /* try to fire again while it flies */
+    CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
+          "one-shot: a 2nd arrow is BLOCKED while the 1st is live (no timer needed)");
+    soi_tick(w, SOI_IN_BALL, 0);               /* a ball SHARES the slot -> also blocked */
+    CHECK(soi_projectile_count(w) == 1 && w->players[1].balls == 3,
+          "one-shot: a ball is BLOCKED too (arrow+ball share the one slot)");
+    {
+        int t;                                 /* let the live arrow fizzle (age 500) */
+        for (t = 0; t < 560 && soi_projectile_count(w) > 0; t++)
+            soi_tick(w, 0, 0);
+    }
+    CHECK(soi_projectile_count(w) == 0, "one-shot: the live arrow eventually despawns");
+    soi_tick(w, SOI_IN_ARROW, 0);
+    CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 1,
+          "one-shot: once the slot is free, firing works again (ammo 2->1)");
+
     /* ---- 2. An unprotected enemy contact is FATAL -- the original has NO shield-count
      * hit-absorber (asm FUN_10012228 launches the death/respawn directly). Only TIMED
      * invuln (the 0x30 potion + ~90f respawn grace) blocks a hit. ---- */
@@ -175,6 +206,22 @@ int main(void)
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
           "block-high: a second press at the same cell removes it");
 
+    /* ---- 3c. BUILD GATE (asm FUN_1002d04c -> FUN_100047e8): the original only builds
+     * where the target cell is visually UNOBSTRUCTED, so a block-press over a nasty does
+     * NOTHING -- no block is built and the nasty is NOT squashed (nasties are defeated by
+     * weapons or the thunderballs/shoes goody, not by a built block). */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+    w->players[1].facing = 1;                   /* block-high targets the front cell (6,9) */
+    int gate_ei = soi_enemy_spawn(w, SOI_ENEMY_ANT, 6, 9);   /* nasty on the front build cell */
+    CHECK(gate_ei >= 0, "build-gate: test nasty spawned on the front cell");
+    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
+          "build-gate: no block is built on a nasty-occupied cell");
+    CHECK(gate_ei >= 0 && w->enemies[gate_ei].active,
+          "build-gate: the nasty is NOT squashed by the build (weapons/goody defeat it)");
+
     /* action poses are a DISPLAY hint (asm FUN_1001166c busy-state); ours sets pose on
      * fire/build with NO input lock, so behavior is unchanged (soi_player_pose>0 only
      * for the brief pose window). */
@@ -188,6 +235,36 @@ int main(void)
     w->players[1].facing = 1; w->players[1].balls = 3;
     soi_tick(w, SOI_IN_BALL, 0); soi_tick(w, SOI_IN_BALL, 0);
     CHECK(soi_player_pose(w, 1) == 1, "pose: firing a ball sets the FIRE pose (display)");
+
+    /* ---- 3d. A cliff-fall is PURELY VERTICAL (asm FUN_1001386c calls ONLY the
+     * wall-rebound FUN_10012554, never an input-steer -- unlike the jump FUN_10013404).
+     * Holding a direction while falling off a ledge must NOT drift the player sideways:
+     * only y changes. Regression for the fall wrongly sharing the jump's air_drift(),
+     * which read the input and added a +/-2px x-steer -> a diagonal "angled" fall. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);                    /* open space, no walls -> no rebound either */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    {
+        int fx0 = w->players[1].x, fy0 = w->players[1].y, t;
+        for (t = 0; t < 8; t++) soi_tick(w, SOI_IN_RIGHT, 0);   /* HOLD right the whole fall */
+        CHECK(w->players[1].x == fx0, "fall: holding a direction does NOT steer a cliff-fall (x stays fixed)");
+        CHECK(w->players[1].y > fy0, "fall: the player still descends straight down (y increases)");
+    }
+
+    /* ---- 3e. AIRBORNE build/destroy: you can build or dig a block while jumping or falling.
+     * The asm runs the action animation (FUN_1001166c) EVERY frame gated ONLY by the death flag
+     * +0x28 -- not by air state -- and the build/fire fires from that animation. The port used to
+     * `return` on in_air BEFORE the block actions, so mid-air building did nothing; the airborne
+     * branch now handles block/arrow/ball (but not a new jump) before the air physics. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9);
+    w->players[1].facing = 1;                         /* face right -> block-high targets (6,9) */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_JUMP;   /* mid-jump */
+    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
+          "airborne: can BUILD a block in front while jumping (mid-air)");
+    CHECK(w->players[1].in_air == 1, "airborne: building mid-air does NOT cancel the jump");
 
     /* ---- 4. Thunderballs (goody 0x31, asm FUN_1000543c) defeats every nasty: it
      * CLAIMS each one for the collecting player, and a claimed nasty is cleared on
@@ -237,6 +314,54 @@ int main(void)
     soi_set_cell(w, 4, 9, 0x15);
     soi_pickup_check(w, 1);
     CHECK(w->players[1].bonus_time == 8500, "time bonus 0x15 (x3) adds 7500 to that player's bonus");
+
+    /* ---- 5a. Loader reads the per-board Bonus from header 0x0E (NOT 0x16). Regression for the
+     * 0x16->0x0E fix: 0x16 is a 0/0x3A20 flag, so before, EVERY board wrongly defaulted to 5000.
+     * VERIFIED vs refs/images: board_1 0x0E=3000 (HUD 02968), board_2 0x0E=6000 (05995). ---- */
+    {
+        uint8_t bord[0x1C];
+        memset(bord, 0, sizeof(bord));
+        bord[0x0E] = 0x17; bord[0x0F] = 0x70;   /* 0x1770 = 6000 = the real per-board Bonus @0x0E */
+        bord[0x16] = 0x3A; bord[0x17] = 0x20;   /* 0x3A20 = the OLD-offset flag -> must be IGNORED */
+        /* body @0x18: a 0 tile terminates the section immediately (empty board) */
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(w->players[1].bonus_time == 6000,
+              "loader: per-board Bonus comes from header 0x0E, not the 0x16 flag");
+        CHECK(w->players[1].no_weapons_reward == 5000,
+              "loader: No-Weapons Reward (0x16 sentinel 0x3A20) defaults to 5000");
+    }
+
+    /* ---- 5c. Header validation (asm FUN_1002b448): pct_ultrabuster (0x10), thrown_badguy (0x12),
+     * pct_badguy (0x14) are clamped -- any out-of-range value -> 0. Guards the 5 garbage boards
+     * (301/428/446/498 hold ASCII "DATA" in these bytes; board_440 has thrown=25). Without this the
+     * port read pct_ultrabuster=8224 raw and made EVERY Gargoyle shot an UltraBuster (always-pierce). */
+    {
+        uint8_t bord[0x1C];
+        memset(bord, 0, sizeof(bord));
+        bord[0x10] = 0x20; bord[0x11] = 0x20;   /* 0x2020 = 8224 (the "DATA" boards' 0x10) -> 0 */
+        bord[0x12] = 0x44; bord[0x13] = 0x41;   /* 0x4441 = 17473 (> 20)  -> 0 */
+        bord[0x14] = 0x54; bord[0x15] = 0x41;   /* 0x5441 = 21569 (> 100) -> 0 */
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(w->pct_ultrabuster == 0, "loader: garbage pct_ultrabuster (0x10 > 100) clamps to 0");
+        CHECK(w->thrown_badguy == 0 && w->pct_badguy == 0,
+              "loader: garbage thrown/pct (0x12/0x14 out of range) clamp to 0");
+    }
+
+    /* ---- 5d. Header validation cross-constraint (asm FUN_1002b448): thrown_badguy and pct_badguy
+     * are LINKED -- if either is 0 the other is zeroed too. A valid pct_ultrabuster is kept. ---- */
+    {
+        uint8_t bord[0x1C];
+        memset(bord, 0, sizeof(bord));
+        bord[0x11] = 0x32;                       /* pct_ultrabuster = 50 (valid) -> kept */
+        bord[0x15] = 0x32;                       /* pct_badguy = 50 (valid) but thrown = 0 -> both 0 */
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(w->pct_ultrabuster == 50, "loader: a valid pct_ultrabuster (0..100) is kept");
+        CHECK(w->thrown_badguy == 0 && w->pct_badguy == 0,
+              "loader: pct_badguy zeroed when thrown_badguy is 0 (the fields are linked)");
+    }
 
     /* ---- 5b. Goody 0x10 is a 1UP: +1 LIFE (asm FUN_1002bc64 -> FUN_1000e9c8(p,+1); +0x46 =
      * lives, confirmed by the bonus-expiry FUN_1000e9c8(p,-1)). It grants a LIFE, NOT a
@@ -936,15 +1061,25 @@ int main(void)
     CHECK(soi_player_alive(w, 1) == 1 &&
           w->players[1].x == soi_cell_x(5) && w->players[1].y == soi_cell_y(9),
           "respawn: player revives at the spawn cell");
-    /* burn the last life -> elimination -> game over (one more death-throw) */
-    w->players[1].lives = 1; w->players[1].invuln = 0;
-    soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+    /* Burn the last life. FAITHFUL count (asm FUN_1000e9c8 allows lives=-1; FUN_1001f4f8 games
+     * over at lives<0; the HUD clamps <0 to display 0): the killing blow eliminates ONLY when it
+     * drops the count BELOW 0, so the displayed "0 lives" is still a PLAYABLE last life -- dying
+     * at lives=1 respawns at 0, and only the death AT 0 lives is game over. */
     {
-        int t;
-        for (t = 0; t < 200 && !soi_game_over(w); t++)
-            soi_tick(w, 0, 0);
+        int e, t;
+        for (e = 0; e < SOI_MAX_ENEMIES; e++) w->enemies[e].active = 0;   /* clear the arena */
+        w->players[1].lives = 1; w->players[1].invuln = 0;
+        soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+        for (t = 0; t < 200 && soi_player_alive(w, 1); t++) soi_tick(w, 0, 0);
+        CHECK(soi_game_over(w) == 0 && w->players[1].lives == 0,
+              "gameover: dying at lives=1 drops to a PLAYABLE 0 -- NOT game over (asm: out at lives<0)");
+        for (t = 0; t < 120 && !soi_player_alive(w, 1); t++) soi_tick(w, 0, 0);   /* respawn */
+        for (e = 0; e < SOI_MAX_ENEMIES; e++) w->enemies[e].active = 0;
+        w->players[1].invuln = 0;
+        soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+        for (t = 0; t < 200 && !soi_game_over(w); t++) soi_tick(w, 0, 0);
     }
-    CHECK(soi_game_over(w) == 1, "gameover: all active players eliminated");
+    CHECK(soi_game_over(w) == 1, "gameover: the death AT 0 lives (-> -1) finally eliminates all players");
 
     /* ---- 11. Level complete = collect the KEY then exit through the DOOR ---- */
     {
@@ -1059,7 +1194,7 @@ int main(void)
         memset(bord, 0, sizeof(bord));
         bord[0x07] = 3; bord[0x09] = 9;                 /* P1 col 3 row 9 */
         bord[0x0B] = 9; bord[0x0D] = 9;                 /* P2 */
-        bord[0x16] = 0x13; bord[0x17] = 0x88;           /* bonus 5000 */
+        bord[0x0E] = 0x13; bord[0x0F] = 0x88;           /* Bonus (BORD 0x0E) = 5000 */
         soi_world_init(w, 1);
         soi_load_level(w, bord, sizeof(bord));
         /* simulate a played board: banked score, a spent life, used ammo, mult + key held */
@@ -1077,8 +1212,46 @@ int main(void)
         CHECK(w->players[1].bonus_time == 5000, "nextlevel: bonus reseeded from the new board");
     }
 
-    /* ---- 12. The player's Magic Arrow RICOCHETS off a solid block (asm
-     * FUN_1000fd5c +0x54==2/3): it turns 90 deg and keeps flying rather than
+    /* ---- 11f. NO-WEAPONS REWARD (BORD 0x16 -> asm FUN_1002b448 init / FUN_10010d30 +
+     * FUN_100110b4 zero-on-fire / FUN_10015714 award): each board grants a 5000 reward,
+     * added ONCE to the score at completion UNLESS the player fired a ball/arrow this
+     * board. VERIFIED vs the original gameplay video (the tally reads "No Weapons Reward
+     * 5000" every board; the port's score was too low by 5000/board before this fix). ---- */
+    {
+        /* (a) completing WITHOUT firing adds the reward on top of the bonus */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        w->players[1].no_weapons_reward = 5000;         /* as the loader seeds it */
+        soi_set_cell(w, 4, 9, SOI_TILE_KEY);
+        soi_pickup_check(w, 1);
+        soi_set_cell(w, 10, 9, SOI_CELL_DOOR | 0x01u);
+        w->players[1].x = soi_cell_x(10); w->players[1].y = soi_cell_y(9);
+        w->players[1].score = 0; w->players[1].bonus_time = 1000; w->players[1].mult = 1;
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].score == 6000,
+              "noweap: no fire -> bonus (1000) + No-Weapons Reward (5000) = 6000");
+
+        /* (b) firing a weapon this board forfeits the reward */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        w->players[1].no_weapons_reward = 5000;
+        w->players[1].arrows = 1; w->players[1].fire_cd = 0; w->players[1].facing = 1;
+        soi_projectile_fire(w, 1);
+        CHECK(w->players[1].no_weapons_reward == 0,
+              "noweap: firing an arrow zeroes the No-Weapons Reward");
+        soi_set_cell(w, 4, 9, SOI_TILE_KEY);
+        soi_pickup_check(w, 1);
+        soi_set_cell(w, 10, 9, SOI_CELL_DOOR | 0x01u);
+        w->players[1].x = soi_cell_x(10); w->players[1].y = soi_cell_y(9);
+        w->players[1].score = 0; w->players[1].bonus_time = 1000; w->players[1].mult = 1;
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].score == 1000,
+              "noweap: after firing, completion awards only the bonus (no 5000 reward)");
+    }
+
+    /* ---- 12. The player's Magic Arrow RICOCHETS off a solid block (asm     * FUN_1000fd5c +0x54==2/3): it turns 90 deg and keeps flying rather than
      * smashing the block. Contrast the Ball (stops) and hostile shots (smash). */
     soi_world_init(w, 1);
     w->level_loaded = 1; w->pct_badguy = 0;

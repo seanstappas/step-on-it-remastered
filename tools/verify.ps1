@@ -10,7 +10,7 @@ Stages:
   3. core: fixture-replay selftest       (tools/fixture_replay.py vs board_401)
   4. bridge: GDExtension build           (bridge/build_zig.ps1)
   5. godot: import clean                 (headless editor import, no script errors)
-  6. godot: run + screenshot             (windowed --shot -> soi_shot.png)
+  6. godot: run + screenshot             (--shot render, off-screen -> media/screenshots/; no popup)
 
 Godot stages are skipped automatically if the editor isn't present (or -SkipGodot).
 
@@ -82,7 +82,7 @@ if (-not $SkipGodot -and (Test-Path $Godot)) {
         -not [bool]($out -match 'SCRIPT ERROR|Compilation failed')
     }
     Stage 'godot: run + screenshot' {
-        & $Godot --path godot_project --resolution 640x480 -- --shot 2>&1 | Out-Null
+        & $Godot --path godot_project --resolution 640x480 --position 9000,9000 -- --shot 2>&1 | Out-Null
         # success = the --shot harness archived a fresh screenshot
         $latest = Get-ChildItem 'media/screenshots/*.png' -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1

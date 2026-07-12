@@ -1,0 +1,18 @@
+{
+  "class": "A",
+  "mode": "disk",
+  "motion": "spin",
+  "source": "extracted/sprites/disk_sprites",
+  "stills": ["disk.png"],
+  "model": "disk.glb",
+  "model_status": "pending-P1",
+  "spin_dps": 90,
+  "spin_dir": "cw",
+  "tilt_deg": 0,
+  "px": 128,
+  "baseline": {
+    "source": "extracted/sprites/disk_sprites/f02_32x30.png",
+    "still": "disk.png",
+    "flags": ["--frac", "red"]
+  }
+}

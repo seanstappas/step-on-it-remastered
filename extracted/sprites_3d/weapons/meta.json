@@ -1,0 +1,14 @@
+{
+  "class": "B",
+  "mode": "spiral",
+  "motion": "spin (peppermint swirl)",
+  "source": "extracted/sprites/weapons",
+  "stills": ["spiral.png"],
+  "extra_assets": ["spiral_texture.png"],
+  "model": "spiral.glb",
+  "model_status": "pending-P1",
+  "spin_dps": 90,
+  "spin_dir": "cw",
+  "tilt_deg": 0,
+  "px": 128
+}
