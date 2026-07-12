@@ -1,17 +1,22 @@
 /* soi_enemies.c — enemy entities: the bestiary point table (partly CONFIRMED — see
  * soi_enemy_points), spawn,
- * a first-draft walk-and-turn update (the CONFIRMED baseline for the simple
- * types), and kill->score. Per-type AI (Hammer jump, Beanie split, Robo
- * multi-state, Wheelie/Walker seek) and exact tuning are TODO(oracle).
+ * a walk-and-turn update (the CONFIRMED baseline for the simple types), and
+ * kill->score. Per-type AI is ported and asm-verified: Hammer jump-smash
+ * (FUN_10007998), Beanie split (parent<->child bookkeeping), Robo/Walker
+ * multi-state incl. edge-turner fall-death (FUN_1000a780/FUN_1000dd4c), and
+ * Wheelie 8-dir wall-follow (FUN_10009e98, player-INDEPENDENT — no seek).
+ * Remaining gaps are cosmetic/tuning only (see plan/REMAINING_WORK.md §C/§D2).
  * (docs runtime-structures §3/§11.)
  */
 #include "soi_internal.h"
 
 static int enemy_speed(int type);   /* per-type base speed (defined below) */
 
-/* Frames between Cannon shots. The asm (FUN_100071a0) reloads to SpawnDelay*6
- * (the per-block delay byte, ~20 -> ~120); we use a fixed cadence pending the
- * per-enemy delay plumbing. TODO(oracle): store the spawn-block delay byte. */
+/* Fallback cadence (frames) for a Cannon/spawner placed WITHOUT a per-block delay
+ * byte (procedural/test spawns). Boards carry a SpawnDelay byte that the loader
+ * (soi_state.c) turns into e->fire_period = SpawnDelay*6 -- the asm FUN_100071a0
+ * reload -- which every shooter/spawner below prefers over this constant. So this
+ * only applies when fire_period == 0 (no board byte). */
 #define SOI_CANNON_RELOAD 120
 
 /* Cannon/Spinner/Knight/Gargoyle and the block-laying Creeper are HAZARDS, not
@@ -140,6 +145,18 @@ int soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row)
     return -1;
 }
 
+/* Beanie bookkeeping (asm FUN_10006d44:40 / FUN_10006f6c:40,56): when a bud LEAVES
+ * -- its transient life expires OR a player defeats it -- the parent's one-bud slot
+ * (+0x7a) is cleared so the parent may bud again. There is NO cascade: defeating a
+ * beanie never kills its parent or child (verified -- none of FUN_10006378/10006840/
+ * FUN_10006d44/FUN_10006f6c touch another enemy's active flag on removal). */
+static void beanie_orphan(SoiWorld *w, int slot)
+{
+    int p;
+    for (p = 0; p < SOI_MAX_ENEMIES; p++)
+        if (w->enemies[p].child == (uint8_t)(slot + 1)) { w->enemies[p].child = 0; break; }
+}
+
 void soi_enemy_kill(SoiWorld *w, int idx, int by_player)
 {
     SoiEnemy *e;
@@ -149,6 +166,7 @@ void soi_enemy_kill(SoiWorld *w, int idx, int by_player)
     if (by_player >= 0 && by_player < SOI_MAX_PLAYERS)
         w->players[by_player].score += e->points;   /* award (+0x42 -> +0x3c) */
     e->active = 0;
+    if (e->type == SOI_ENEMY_BEANIE) beanie_orphan(w, idx);  /* free the parent's bud slot */
     /* Per-enemy kill sound: in the asm each nasty's behaviour plays its own event
      * on channel 5 (mapped via the child-type dispatch FUN_1000503c). Ids are from
      * the binary event->snd table; the four turret/hazard types have no kill sound. */
@@ -170,7 +188,15 @@ void soi_enemy_kill(SoiWorld *w, int idx, int by_player)
         }
         soi_sfx_emit(w, s);
     }
-    /* TODO(oracle): death animation, chain reactions, Beanie-child cleanup. */
+    /* Death "pop": the asm plays a flying death sprite on every kill (FUN_10028014 ->
+     * FUN_100278bc: vy=-80 up-pop, vx=+40 drift, gravity 0.5/frame^2) that arcs up ~64px
+     * and off the screen. It is cosmetic and rendered by the Godot layer, fed by this
+     * transient per-tick queue. A lifespan despawn never reaches here, so it never pops
+     * (matching the asm, which erases those without a death effect). Snapshot the dying
+     * nasty's pixel pos + type + facing now, while they're still intact. */
+    soi_death_emit(w, e->x, e->y, e->type, e->dir);
+    /* No score/chain bookkeeping remains here: the asm has NO cascade kill, and a beanie
+     * bud frees its parent's slot via beanie_orphan (above). */
 }
 
 /* Damage a player: TIMED invuln (the 0x30 potion + ~90f respawn grace) blocks a hit;
@@ -238,49 +264,98 @@ static int enemy_speed(int type)
     }
 }
 
-/* The Wheelie (bord 2/3, asm FUN_10009e98) is a gravity-free FLYER that navigates by
- * WALL COLLISION: it moves in its heading and turns when a wall blocks it. VERIFIED
- * 2026-07-06: FUN_10009e98 never reads the player-position globals (0x3be0-6) -- it does
- * NOT home on the player (the old "chase" was a docs HYPOTHESIS, now contradicted by the
- * asm). The real nav is an intricate 8-direction collision state machine (~30 FUN_1000554c
- * probes); we approximate with a gravity-free diagonal BOUNCE at ~2 px/frame (the asm's
- * common r30=2 step), reversing whichever axis meets a solid (0x200) cell or an edge. This
- * is player-INDEPENDENT (no homing). Exact 8-dir wall-follow steering = TODO(oracle). */
+/* Pixel-level solid probe (asm FUN_1000554c): does the cell under pixel (px,py) carry
+ * the SUPPORTIVE bit (0x200)? Off the field reads as solid (soi_get_cell -> SOI_WALL) so
+ * the flyer turns at the border. The asm's col/row converters (FUN_1002e6cc/6f8) number
+ * columns one higher than the port's zero-based grid, but that +1 cancels against the
+ * port's grid origin (both resolve the SAME physical cell for a given pixel), so the
+ * asm's pixel probe offsets below transfer verbatim. */
+static int wheelie_solid(const SoiWorld *w, int px, int py)
+{
+    int cx = px - SOI_ORIGIN_X, cy = py - SOI_ORIGIN_Y;
+    int col = (cx >= 0) ? cx / SOI_CELL_PX : -1;
+    int row = (cy >= 0) ? cy / SOI_CELL_PX : -1;
+    return (soi_get_cell(w, col, row) & SOI_CELL_SUPPORTIVE) != 0;
+}
+
+/* The Wheelie (bord 2/3, asm FUN_10009e98) is a gravity-free FLYER that WALL-FOLLOWS:
+ * it rolls in one cardinal heading (dir 1=left, 2=right, 8=up, 9=down) and, probing its
+ * leading edge plus the trailing corner every step, either advances or TURNS 90 deg to
+ * hug the wall -- so it rounds obstacle perimeters rather than bouncing off. VERIFIED
+ * 2026-07-06: FUN_10009e98 never reads the player-position globals (0x3be0-6): it is
+ * player-INDEPENDENT (no homing). Turn HANDEDNESS (asm mode +0x6e) is LOCKED once to the
+ * spawn heading (asm sets +0x6e = initial +0x4c): a right-spawned wheelie follows walls
+ * one way (mode 2), a left-spawned one mirrors it (mode 1) -- so a board's placement bits
+ * (loader: 0x100 -> left) fan the flock out naturally. Speed is 2 px/step (the asm
+ * bord-type-2 wheelie; the slower type-3 0.5 px variant is folded into this one type).
+ * On a turn frame the asm only rewrites the heading (it advances next frame); we mirror
+ * that, which paces the wall-hugging exactly. e->state caches the locked mode (1/2);
+ * e->under is the once-only "mode initialised" sentinel (0 at spawn). */
 static void enemy_fly_bounce(SoiWorld *w, SoiEnemy *e)
 {
-    /* WALL-FOLLOWER (asm FUN_10009e98, re-verified): the Wheelie ROLLS in one cardinal
-     * direction and, when a wall blocks it AHEAD, TURNS 90 deg (cw or ccw per its mode)
-     * to the first open direction -- so it rolls ALONG walls / AROUND obstacles rather
-     * than bouncing off diagonally. Gravity-free, player-INDEPENDENT. 2 px/frame; it
-     * only re-steers when cell-aligned so it tracks the grid cleanly, and it turns at the
-     * field edge (an out-of-bounds probe reads as blocked). idx: 0=up,1=right,2=down,3=left. */
-    static const int DCOL[4] = {  0,  1,  0, -1 };
-    static const int DROW[4] = { -1,  0,  1,  0 };
-    static const int DXP[4]  = {  0,  2,  0, -2 };
-    static const int DYP[4]  = { -2,  0,  2,  0 };
-    int idx = (e->dir == 8) ? 0 : (e->dir == 2) ? 1 : (e->dir == 9) ? 2 : 3;
-    /* Per-wheelie turn HANDEDNESS (asm mode +0x6e): alternate CCW/CW by slot so a group of
-     * flyers FANS OUT across the board instead of all wall-following the same way and
-     * funnelling into one channel. Even slot = CCW (3), odd = CW (4). Deterministic. */
-    e->state = (uint8_t)((((int)(e - w->enemies)) & 1) ? 4 : 3);
-    if (((e->x - SOI_ORIGIN_X) % SOI_CELL_PX) == 0 &&
-        ((e->y - SOI_ORIGIN_Y) % SOI_CELL_PX) == 0) {  /* re-steer only at a cell centre */
-        int col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
-        int row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
-        int cc = col + DCOL[idx], cr = row + DROW[idx];
-        if (!soi_in_bounds(cc, cr) || (soi_get_cell(w, cc, cr) & SOI_CELL_SUPPORTIVE)) {
-            int turn = (e->state == 4) ? 1 : 3, t, found = 0;
-            for (t = 0; t < 4; t++) {                 /* rotate to the first open direction */
-                idx = (idx + turn) & 3;
-                cc = col + DCOL[idx]; cr = row + DROW[idx];
-                if (soi_in_bounds(cc, cr) && !(soi_get_cell(w, cc, cr) & SOI_CELL_SUPPORTIVE)) { found = 1; break; }
-            }
-            e->dir = (uint8_t)((idx == 0) ? 8 : (idx == 1) ? 2 : (idx == 2) ? 9 : 1);
-            if (!found) return;                       /* fully walled in: hold position */
+    const int s = 2;
+    int mode;
+    if (!e->under) {                       /* lock handedness after the loader picks dir */
+        e->state = (uint8_t)((e->dir == 1 || e->dir == 8) ? 1 : 2);
+        e->under = 1;
+    }
+    mode = e->state;
+
+    if (mode == 2) {
+        switch (e->dir) {
+        case 1: /* LEFT */
+            if (wheelie_solid(w, e->x - 1, e->y + 0x10)) { e->dir = 9; return; }
+            if (!wheelie_solid(w, e->x + 0x1d, e->y - 1) &&
+                !wheelie_solid(w, e->x - 1,    e->y - 1) &&
+                 wheelie_solid(w, e->x + 0x1e, e->y - 1)) { e->dir = 8; return; }
+            e->x -= s; break;
+        case 8: /* UP */
+            if (wheelie_solid(w, e->x + 0x10, e->y - 1)) { e->dir = 1; return; }
+            if (!wheelie_solid(w, e->x + 0x1e, e->y + 0x1d) &&
+                !wheelie_solid(w, e->x + 0x1e, e->y - 1) &&
+                 wheelie_solid(w, e->x + 0x1e, e->y + 0x1e)) { e->dir = 2; return; }
+            e->y -= s; break;
+        case 2: /* RIGHT */
+            if (wheelie_solid(w, e->x + 0x1e, e->y + 0x10)) { e->dir = 8; return; }
+            if (!wheelie_solid(w, e->x,       e->y + 0x1e) &&
+                !wheelie_solid(w, e->x + 0x1e, e->y + 0x1e) &&
+                 wheelie_solid(w, e->x - 1,    e->y + 0x1e)) { e->dir = 9; return; }
+            e->x += s; break;
+        default: /* 9 DOWN */
+            if (wheelie_solid(w, e->x + 0x10, e->y + 0x1e)) { e->dir = 2; return; }
+            if (!wheelie_solid(w, e->x - 1, e->y) &&
+                !wheelie_solid(w, e->x - 1, e->y + 0x1e) &&
+                 wheelie_solid(w, e->x - 1, e->y - 1)) { e->dir = 1; return; }
+            e->y += s; break;
+        }
+    } else {                                /* mode 1: the mirror handedness */
+        switch (e->dir) {
+        case 1: /* LEFT */
+            if (wheelie_solid(w, e->x - 1, e->y + 0x10)) { e->dir = 8; return; }
+            if (!wheelie_solid(w, e->x + 0x1d, e->y + 0x1e) &&
+                !wheelie_solid(w, e->x - 1,    e->y + 0x1e) &&
+                 wheelie_solid(w, e->x + 0x1e, e->y + 0x1e)) { e->dir = 9; return; }
+            e->x -= s; break;
+        case 8: /* UP */
+            if (wheelie_solid(w, e->x + 0x10, e->y - 1)) { e->dir = 2; return; }
+            if (!wheelie_solid(w, e->x - 1, e->y + 0x1d) &&
+                !wheelie_solid(w, e->x - 1, e->y - 1) &&
+                 wheelie_solid(w, e->x - 1, e->y + 0x1e)) { e->dir = 1; return; }
+            e->y -= s; break;
+        case 2: /* RIGHT */
+            if (wheelie_solid(w, e->x + 0x1e, e->y + 0x10)) { e->dir = 9; return; }
+            if (!wheelie_solid(w, e->x,       e->y - 1) &&
+                !wheelie_solid(w, e->x + 0x1e, e->y - 1) &&
+                 wheelie_solid(w, e->x - 1,    e->y - 1)) { e->dir = 8; return; }
+            e->x += s; break;
+        default: /* 9 DOWN */
+            if (wheelie_solid(w, e->x + 0xc, e->y + 0x1e)) { e->dir = 1; return; }
+            if (!wheelie_solid(w, e->x + 0x1e, e->y) &&
+                !wheelie_solid(w, e->x + 0x1e, e->y + 0x1e) &&
+                 wheelie_solid(w, e->x + 0x1e, e->y - 1)) { e->dir = 2; return; }
+            e->y += s; break;
         }
     }
-    e->x = (int16_t)(e->x + DXP[idx]);
-    e->y = (int16_t)(e->y + DYP[idx]);
 }
 
 /* Hammer (bord 6 direct / spawner->child 0x6a, asm FUN_10007998): a WALKER that FALLS
@@ -288,26 +363,38 @@ static void enemy_fly_bounce(SoiWorld *w, SoiEnemy *e)
  * (FUN_10027aec at X+0x1a,Y+0xa + sound event 0x11) and hops, then walks on through the
  * gap; it TURNS at a permanent wall (FUN_100056d4). VERIFIED 2026-07-06 by full asm read:
  * it does NOT hop continuously (the old ballistic-hopper port was WRONG) -- when there is
- * no wall it walks FLAT (2 px/frame, asm +0x10 += 2). We approximate the rise/hold/smash/
- * drop choreography with a short vertical hop that clears the wall on launch. */
+ * no wall it walks FLAT (2 px/frame, asm +0x10 += 2).
+ *
+ * The jump-smash is a FIXED-LIFT choreography, not a ballistic arc (asm smash counter
+ * +0x6e): on meeting a breakable wall the Hammer rises a fixed 0xb (11) px in one step,
+ * HOLDS that height for 16 update-steps (frames 0x41..0x50 right / 0x31..0x40 left),
+ * SMASHES the wall on the 11th held step (frame 0x4b/0x3b -> FUN_10027aec + sound 0x11),
+ * then DROPS the 11 px back to the floor and resumes walking through the gap. fire_cd
+ * (idle for a Hammer otherwise, 0 on spawn) carries the phase counter: 0 = walking. */
 static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
 {
     int col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
     int row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
     int ahead;
-    if (e->vy != 0) {                                    /* airborne: the vertical jump arc */
-        e->y  = (int32_t)(e->y + e->vy);
-        e->vy = (int16_t)(e->vy + 3);                    /* hop gravity */
-        row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
-        if (e->vy > 0 && (soi_get_cell(w, col, row + 1) & SOI_CELL_SUPPORTIVE)) {
-            e->y = soi_cell_y(row);                      /* land back on the floor */
-            e->vy = 0;
-            e->fire_cd = 12;                             /* brief pause after the smash */
+    if (e->fire_cd != 0) {                               /* mid jump-smash: hold, strike, drop */
+        int brow = (e->y + 11 - SOI_ORIGIN_Y) / SOI_CELL_PX;   /* body row (un-lift the 11px hop) */
+        int a = (e->dir == 2) ? col + 1 : col - 1;
+        e->fire_cd++;
+        if (e->fire_cd == 11) {                          /* asm strike frame 0x4b/0x3b */
+            uint32_t fc = soi_get_cell(w, a, brow);
+            if (soi_in_bounds(a, brow) && (fc & SOI_CELL_SUPPORTIVE) &&
+                !(fc & SOI_CELL_PERMANENT) && SOI_CELL_TYPE(fc) != 0) {
+                soi_set_cell(w, a, brow, (fc & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(fc) : 0u);
+                soi_sfx_emit(w, SOI_SFX_ROBO_PUNCH);     /* asm sound event 0x11 (Metal) */
+            }
         }
-        return;
+        if (e->fire_cd > 16) {                           /* asm +0x6e wraps past 0x50/0x40 */
+            e->y = (int16_t)(e->y + 11);                 /* drop back down (asm +0x5a += 0xb) */
+            e->fire_cd = 0;                              /* resume walking */
+        }
+        return;                                          /* hold x through the swing */
     }
     if (!(soi_get_cell(w, col, row + 1) & SOI_CELL_SUPPORTIVE)) { e->y += 4; return; }  /* fall off a ledge */
-    if (e->fire_cd > 0) { e->fire_cd--; return; }        /* grounded pause */
     ahead = (e->dir == 2) ? col + 1 : col - 1;
     if (!soi_in_bounds(ahead, row)) {
         e->dir = (uint8_t)((e->dir == 2) ? 1 : 2);       /* turn at the edge */
@@ -322,10 +409,9 @@ static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
                 e->vx  = (int16_t)-e->vx;
                 return;
             }
-            if (SOI_CELL_TYPE(fc) != 0) {                /* breakable wall -> JUMP-SMASH it */
-                soi_set_cell(w, ahead, row, (fc & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(fc) : 0u);
-                soi_sfx_emit(w, SOI_SFX_ROBO_PUNCH);     /* asm sound event 0x11 (Metal) */
-                e->vy = -11;                             /* the rise (asm +0x12 -= 0xb) */
+            if (SOI_CELL_TYPE(fc) != 0) {                /* breakable wall -> begin the jump-smash */
+                e->y = (int16_t)(e->y - 11);             /* the rise (asm +0x5a -= 0xb) */
+                e->fire_cd = 1;                          /* enter the hold/strike/drop phase */
                 return;
             }
         }
@@ -343,14 +429,31 @@ static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
  * it exactly on leaving, so nothing is erased; it never steps onto a player.
  * fire_cd = step countdown, fire_period = interval (board StartDelay byte; the asm's
  * exact multi-counter cadence at +0x24/+0x26 is approximated here as a single timer).
- * SIMPLIFICATION (CONFIRMED vs asm FUN_10008618/8b18): the ORIGINAL does not merely
- * move ONE block -- when the cell ahead is passable (FUN_10009030) it SPAWNS A CHILD
- * creeper (FUN_10005948) one cell ahead (x+0x20) and grows a chain, with a grow/shrink
- * counter (+0x56, cap 0xf) that then restores covered cells -- so a real Creeper fills
- * space up to the 32-enemy cap. We model it as ONE moving solid block that restores
- * what it covers, which is winnability-SAFE (it never permanently seals a path). The
- * full grow-chain is deferred (RISKY: a growing solid chain can seal the key/door
- * route, so it needs winnability care before shipping). */
+ *
+ * FAITHFULNESS (fully decoded vs asm FUN_10008618 horizontal / FUN_10008b18 vertical):
+ * the original is NOT one persistent block -- each segment carries a grow timer
+ * +0x6e (= StartDelay*3) and a sprite grow/shrink counter +0x56 (cap 0xf). When the
+ * grow timer expires the segment probes the cell ahead (FUN_1000554c solid? +
+ * FUN_10004650 / FUN_10009030 passable?) and, if clear, SPAWNS ONE CHILD one cell
+ * ahead (FUN_10005948, x/y +0x20) then enters a shrink phase that RESTORES its covered
+ * tile (+0x70 via FUN_10005630) and self-removes; if blocked it just reverses
+ * (state/dir flips: h 1<->2, v 8<->9). So a Creeper is a TRANSIENT forward-creeping
+ * BAND whose tail dissolves (restoring tiles) as the head advances -- it never
+ * permanently seals a route. Its band WIDTH depends on StartDelay (small delay =>
+ * child spawns before parent dissolves => a few overlapping cells).
+ *
+ * PORT MODEL -- ONE moving solid block that restores what it covers. This reproduces
+ * the creeper's observable solid-footprint MOTION (a solid that creeps forward and
+ * frees the tile behind it, reversing when blocked) and is provably leak-free: every
+ * move restores the old cell before solidifying the new one. It is winnability-SAFE.
+ * The full child-spawn band is deliberately NOT ported, for two concrete reasons:
+ *   1. The winnable harness (tools/verify_winnable.c) is a STATIC key->door topology
+ *      check that never steps enemies, so it CANNOT validate any creeper behavior --
+ *      shipping the multi-segment chain would keep the gate green with zero assurance.
+ *   2. A multi-segment chain (per-segment slot alloc + restore-on-remove) adds real
+ *      risk of a tile-restore bug that PERMANENTLY solidifies a cell -> an unwinnable
+ *      board that no gate would catch. The only unshipped gap is cosmetic: the band's
+ *      1-2 cell visual width and the sprite grow/shrink animation. */
 static void enemy_creeper(SoiWorld *w, SoiEnemy *e)
 {
     int col, row, ac, ar, pj, blocked;
@@ -380,6 +483,36 @@ static void enemy_creeper(SoiWorld *w, SoiEnemy *e)
     e->x = soi_cell_x(ac);
     e->y = soi_cell_y(ar);
     soi_set_cell(w, ac, ar, SOI_WALL);                   /* temp-solidify (covered by the sprite) */
+}
+
+/* Edge-TURNERS: the two AIs (Robo FUN_1000a780, Walker FUN_1000dd4c) that probe
+ * the ground AHEAD and reverse at a ledge, so they patrol a platform and never
+ * walk off it of their own accord. They are also the ONLY nasties whose asm fall
+ * branch KILLS them on landing: both capture the credit player (FUN_1000581c) as
+ * the fall begins, then award the kill when the ground re-probe (FUN_10005750)
+ * finds a block under their feet again. Every other walker (Ant/Ostrich/Hippo/
+ * Piggy/Smiley/Teeth) walks off ledges by design and its fall branch just resettles
+ * it -- so those survive the drop. */
+static int enemy_dies_on_fall(int type)
+{
+    return type == SOI_ENEMY_ROBO || type == SOI_ENEMY_WALKER;
+}
+
+/* Nearest in-play player to a pixel point, by squared distance -- the asm's
+ * FUN_1000581c picks the closer of the two player slots to credit a fall kill.
+ * Returns a 1-based player index, or -1 when no player is in play. */
+static int nearest_player(const SoiWorld *w, int x, int y)
+{
+    int pj, best = -1, bestd = 1 << 30;
+    for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
+        const SoiPlayer *p = &w->players[pj];
+        int dx, dy, d;
+        if (!p->active || p->eliminated) continue;
+        dx = p->x - x; dy = p->y - y;
+        d = dx * dx + dy * dy;
+        if (d < bestd) { bestd = d; best = pj; }
+    }
+    return best;
 }
 
 static void enemy_step(SoiWorld *w, SoiEnemy *e)
@@ -414,8 +547,17 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
             e->y += 4;                                   /* fall speed (px/frame) */
             row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
             if ((soi_get_cell(w, lc, row + 1) & SOI_CELL_SUPPORTIVE) ||
-                (soi_get_cell(w, rc, row + 1) & SOI_CELL_SUPPORTIVE))
+                (soi_get_cell(w, rc, row + 1) & SOI_CELL_SUPPORTIVE)) {
                 e->y = soi_cell_y(row);                  /* land: rest on the block top */
+                /* An edge-TURNER (Robo/Walker) DIES the instant it lands from a
+                 * fall: pulling the block out from under a patrolling Robo drops it
+                 * straight down onto the next block and kills it there (asm fall
+                 * branch -> kill sound + score + death flag), crediting the nearest
+                 * player. Edge-walkers fall harmlessly and are exempt (above). */
+                if (enemy_dies_on_fall(e->type))
+                    soi_enemy_kill(w, (int)(e - w->enemies),
+                                   nearest_player(w, e->x, e->y));
+            }
             return;
         }
     }
@@ -807,8 +949,13 @@ void soi_enemies_update(SoiWorld *w)
             if (!enemy_is_hazard(e->type)) { soi_enemy_kill(w, i, e->claimed); continue; }
             e->claimed = 0;
         }
-        if (e->life > 0 && --e->life == 0) { e->active = 0; continue; }  /* transient child expired */
+        if (e->life > 0 && --e->life == 0) {             /* transient child expired */
+            e->active = 0;
+            if (e->type == SOI_ENEMY_BEANIE) beanie_orphan(w, i);  /* free the parent's bud slot */
+            continue;
+        }
         enemy_step(w, e);
+        if (!e->active) continue;   /* enemy_step may kill it (edge-turner fall death); skip the rest */
         if (e->type == SOI_ENEMY_CANNON)
             enemy_cannon_fire(w, e);                /* stationary shooter (FUN_100071a0) */
         if (e->type == SOI_ENEMY_GARGOYLE)

@@ -728,6 +728,82 @@ int main(void)
         CHECK(minc >= 3 && maxc <= 6, "robo: turns at the platform edges (foot patrols cols 4-6)");
     }
 
+    /* ---- 8g3b. BUG #3 (fall-death): pulling the block DIRECTLY UNDER a patrolling
+     * edge-turner (Robo/Walker) drops it STRAIGHT DOWN and KILLS it the instant it
+     * lands on the next block -- the asm fall branch (FUN_1000a780 / FUN_1000dd4c)
+     * awards the kill (per-enemy "ding" + score) to the nearest player. This is the
+     * reported regression: the Robo used to survive the drop and keep walking. */
+    {
+        int ri, t, y0, score0, killed, fell, has_ding, k, yb;
+        soi_world_init(w, 2);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 2, 8);                        /* a player to credit the fall-kill */
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 8);
+        w->enemies[ri].vx = 0;                           /* isolate the vertical drop */
+        w->enemies[ri].dir = 2;
+        w->enemies[ri].y = soi_cell_y(8);
+        soi_set_cell(w, 5, 9, SOI_CELL_SUPPORTIVE);      /* the block DIRECTLY UNDER the robo */
+        soi_set_cell(w, 5, 12, SOI_CELL_SUPPORTIVE);     /* the "next block under" it will land on */
+        y0 = w->enemies[ri].y;
+        soi_enemies_update(w);                           /* one frame while still supported */
+        CHECK(w->enemies[ri].active && w->enemies[ri].y == y0,
+              "bug3: robo rests on its support block (not falling yet)");
+        score0 = w->players[1].score;
+        soi_set_cell(w, 5, 9, 0);                        /* pull the block out from under it */
+        fell = killed = 0;
+        for (t = 0; t < 80; t++) {
+            yb = w->enemies[ri].y;
+            soi_enemies_update(w);
+            if (w->enemies[ri].y > yb) fell = 1;
+            if (!w->enemies[ri].active) { killed = 1; break; }
+        }
+        CHECK(fell, "bug3: robo FALLS when its support is destroyed");
+        CHECK(w->enemies[ri].x == soi_cell_x(5),
+              "bug3: the fall is STRAIGHT DOWN (x unchanged -- no drift)");
+        CHECK(killed, "bug3: robo DIES on landing (edge-turner fall-death; was: survived)");
+        CHECK(w->players[1].score > score0,
+              "bug3: the fall-kill awards the robo's points to the nearest player");
+        has_ding = 0;
+        for (k = 0; k < soi_sfx_count(w); k++)
+            if (soi_sfx_get(w, k) == SOI_SFX_KILL_ROBO) has_ding = 1;
+        CHECK(has_ding, "bug3: the fall-kill plays the robo kill 'ding' (SOI_SFX_KILL_ROBO)");
+        /* The kill also enqueues one cosmetic death "pop" (asm FUN_10028014 flying
+         * death sprite) for the renderer -- position/type/facing snapshot, transient
+         * (not serialized, so it never perturbs the determinism hash). */
+        CHECK(soi_death_count(w) == 1,
+              "bug3: the fall-kill enqueues one death-pop effect (asm FUN_10028014)");
+        CHECK(soi_death_type(w, 0) == SOI_ENEMY_ROBO,
+              "bug3: the queued death-pop is the ROBO (type snapshot for the renderer)");
+        CHECK(soi_death_x(w, 0) == soi_cell_x(5),
+              "bug3: the death-pop x matches the robo's column (no drift at spawn)");
+    }
+
+    /* ---- 8g3c. CONTRAST (answers the user's "verify this"): an edge-WALKER that
+     * walks off ledges BY DESIGN (Ant/Ostrich/Hippo/Piggy/Smiley/Teeth) does NOT die
+     * from a drop -- only the two edge-TURNERS (Robo/Walker) do. Pull the block out
+     * from under an Ant and it falls, then simply resettles on the block below,
+     * still alive (asm: only the Robo/Walker fall branches carry the kill). */
+    {
+        int ai, t, killed;
+        soi_world_init(w, 2);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 2, 8);
+        ai = soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 8);
+        w->enemies[ai].vx = 0;
+        w->enemies[ai].y = soi_cell_y(8);
+        soi_set_cell(w, 5, 9, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 5, 12, SOI_CELL_SUPPORTIVE);
+        soi_enemies_update(w);
+        soi_set_cell(w, 5, 9, 0);                        /* same drop as the robo above */
+        killed = 0;
+        for (t = 0; t < 80; t++) {
+            soi_enemies_update(w);
+            if (!w->enemies[ai].active) { killed = 1; break; }
+        }
+        CHECK(!killed && w->enemies[ai].active,
+              "bug3-contrast: an edge-WALKER (Ant) SURVIVES the same drop (resettles, no kill)");
+    }
+
     /* ---- 8g4. The Clock goody (0x2E, asm FUN_1002bc64 -> _DAT_1003b294 = 600)
      * SLOWS every nasty to half speed for ~10s: the enemy dispatcher runs every
      * OTHER frame while the counter is up, so a nasty travels ~half as far. */
@@ -979,7 +1055,10 @@ int main(void)
      * makes it TURN instead (wall intact). ---- */
     {
         int hi;
-        /* (a) breakable wall ahead -> smashed + the hammer goes airborne */
+        /* (a) breakable wall ahead -> the hammer RISES a fixed 11px, HOLDS that height
+         * for 16 update-steps, SMASHES the wall mid-swing (asm strike frame 0x4b), then
+         * DROPS the 11px back to the floor. This is the asm FUN_10007998 fixed-lift
+         * choreography, not the old instant-smash + ballistic hop. */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
         hi = soi_enemy_spawn(w, SOI_ENEMY_HAMMER, 5, 9);
@@ -987,9 +1066,20 @@ int main(void)
         soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
         soi_set_cell(w, 6, 9, 0x207u);                  /* breakable wall directly ahead */
         w->enemies[hi].dir = 2; w->enemies[hi].vx = 2;
-        soi_enemies_update(w);
-        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0, "hammer: jump-smashes the breakable wall ahead");
-        CHECK(w->enemies[hi].vy < 0, "hammer: hops (goes airborne) as it smashes");
+        {
+            int y0 = w->enemies[hi].y, minY, t, smashed = 0;
+            soi_enemies_update(w);                      /* step 1: begin the jump-smash (rise) */
+            minY = w->enemies[hi].y;
+            CHECK(w->enemies[hi].y == y0 - 11, "hammer: rises a fixed 11px as it begins the smash");
+            for (t = 0; t < 20 && w->enemies[hi].fire_cd != 0; t++) {
+                soi_enemies_update(w);
+                if (w->enemies[hi].y < minY) minY = w->enemies[hi].y;
+                if (SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0) smashed = 1;
+            }
+            CHECK(smashed, "hammer: jump-smashes the breakable wall ahead (mid-swing)");
+            CHECK(y0 - minY == 11, "hammer: holds a fixed 11px lift through the swing");
+            CHECK(w->enemies[hi].y == y0, "hammer: drops back to the floor after the smash");
+        }
         /* (b) permanent wall ahead -> the hammer turns, the wall survives */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;

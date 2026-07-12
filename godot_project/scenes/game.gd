@@ -35,6 +35,16 @@ const DEMO := [
 	[IN_BLOCK_HIGH, 6], [0, 55],   # knock it back out
 ]
 
+# Bug #3 proof reel: walk up to a Robo perched on a single breakable block, pull the
+# block out from under it, and watch it drop STRAIGHT DOWN onto the floor and die (the
+# kill "ding"). Edge-turners (Robo/Walker) die the instant they land from a fall.
+const DEMO_BUG3 := [
+	[0, 45],                       # settle on the floor (P1 starts at col 6)
+	[IN_RIGHT, 135], [0, 30],      # walk right, stop against the Robo's block (col 9)
+	[IN_BLOCK_HIGH, 6],            # destroy the block DIRECTLY UNDER the Robo
+	[0, 175],                      # HOLD: the Robo falls straight down and dies on landing
+]
+
 # --- grid geometry (matches core constants) ---
 const GRID_COLS := 19
 const GRID_ROWS := 13
@@ -56,12 +66,14 @@ var _font: Font
 var _font_hud: Font   # bold serif (original HUD font = Mac "New York" bold)
 var _shot_countdown := -1
 var _demo_frames := -1
+var _demo_script: Array = DEMO   # which scripted timeline --demo/--bug3 plays
 var _play_frames := -1   # --play=N: play the loaded (real) board for N frames, then quit
 var _enemy_lastpos := {}   # slot -> Vector2, for travel-synced enemy animation
 var _enemy_walk := {}      # slot -> float, accumulated movement distance
 var _proj_lastpos := {}    # projectile idx -> Vector2, to aim the arrow along travel
 var _grid_prev := {}       # cell key -> last-frame cell value (create/destroy detection)
 var _cell_fx := {}         # cell key -> { grow:bool, cell:int, t:float } grow/shrink pop
+var _death_pops := []      # active enemy death "pops" (asm FUN_10028014 flying death sprite): { folder,frame,flip,x0,y0,t,px,py }
 # Stop/Go SWITCH flip (asm FUN_10016544/10016784): stepping onto a switch cell (low 0x24-0x2D)
 # flips its paired block group's sign (Stop octagon <-> Go circle) over an ~8-frame animation +
 # a click. Both states stay solid, so this is a purely COSMETIC front-end overlay (no core/sim).
@@ -196,12 +208,23 @@ const PLAYER_LAND_FRAME := 26
 # (asm FUN_1001386c) both set frame 0x3D facing right / 0x34 facing left.
 const PLAYER_STAND_R := 61
 const PLAYER_STAND_L := 52
-# Action pose (DISPLAY hint): fire + build share the same arm-extension swing. Byte-exact
-# frames recovered from the PEF step tables (asm FUN_1001166c): right = mode-3 table
-# @0x100346ec, left = mode-1 table @0x100346fa. DIRECTIONAL art (no mirror).
-# Recover with tools/dump_pose_tables.py.
-const PLAYER_ACT_R := [102, 104, 106, 106, 104, 102]
-const PLAYER_ACT_L := [97, 99, 101, 101, 99, 97]
+# Action pose (DISPLAY hint): fire + build share the same arm-extension swing. Frame
+# sequences recovered from the PEF step tables (asm FUN_1001166c): facing==right selects
+# the mode-3 table @0x100346ec [102,104,106,106,104,102]; facing==left selects the mode-1
+# table @0x100346fa [97,99,101,101,99,97]. DIRECTIONAL art (no mirror). Recover with
+# tools/dump_pose_tables.py.
+#
+# NOTE: our BP_sprites PNG extraction is offset +1 from the asm's internal frame numbering
+# for this action block, so the raw asm numbers must be shifted +1 to hit the correct PNGs.
+# Verified visually at 22x zoom: PNG f97-f102 face LEFT, f103-f108 face RIGHT, and f97 is a
+# raised-leg WALK frame (not part of the swing). The neutral "arm-down, feet planted" build
+# frame is f98 (left) / f103 (right). Applying +1: asm right [102,104,106]->PNG [103,105,107]
+# (all right-facing) and asm left [97,99,101]->PNG [98,100,102] (all left-facing). Without the
+# shift, the right swing's first/last frame (asm 102 -> PNG 102) rendered LEFT-facing during a
+# right-facing build (the reported "wrong way for 2 frames" bug), and the left swing started on
+# the stray raised-leg frame f97.
+const PLAYER_ACT_R := [103, 105, 107, 107, 105, 103]
+const PLAYER_ACT_L := [98, 100, 102, 102, 100, 98]
 const PLAYER_POSE_MAX := 12
 # Core enemy enum (soi_core.h) -> decoded sssf sprite folder.
 const ENEMY_FOLDER := {
@@ -630,6 +653,7 @@ func _update_win_video() -> void:
 		_win_video.stream = vs
 		_win_video.show()
 		_win_video.play()
+		Audio.play_snd(1502)   # competition-winner jingle (asm event 0x37 -> snd 1502, FUN_10014d70)
 
 ## --- Alternate mode (two solo games taking turns) ---------------------------
 
@@ -820,7 +844,7 @@ func _ready() -> void:
 		if arg == "--mode=retro": _mode = 0
 		elif arg == "--mode=remastered": _mode = 1
 		elif arg == "--players=3": _num_players = 3
-	if ("--demo" in ua) or ("--fx" in ua):
+	if ("--demo" in ua) or ("--fx" in ua) or ("--bug3" in ua):
 		_num_players = 1   # the showcase demos are single-player, so the faithful 1-player
 		                   # Board-Completed tally (PICT 1020 panel + sprite digits) shows
 		                   # instead of the co-op panel (the loader still parks P2; not drawn)
@@ -866,6 +890,16 @@ func _ready() -> void:
 		for seg in DEMO:
 			total += int(seg[1])
 		_demo_frames = total               # scripted play, then quit (for movie capture)
+	if "--bug3" in ua:
+		# Bug #3 proof: a Robo perched on one breakable block; the scripted player pulls
+		# the block out from under it and it falls straight down and dies on landing.
+		_demo_script = DEMO_BUG3
+		_level_bytes = _showcase_bug3_level()
+		_start()
+		var total := 40
+		for seg in DEMO_BUG3:
+			total += int(seg[1])
+		_demo_frames = total
 	if "--fx" in ua:
 		# Recent-fixes demo: a straight walk-right board that hits a transporter (slide),
 		# then a key + its (key-opened) door -> the board-clear warp. Drive it with --play=N.
@@ -876,10 +910,11 @@ func _ready() -> void:
 			_play_frames = int(arg.substr(7))   # record the real board (no showcase override)
 	var _harness := false
 	for a in ua:
-		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play"):
+		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play") or a.begins_with("--bug3"):
 			_harness = true
 	if not _alt and not _harness and _is_challenge_board():
 		_challenge_intro = 150   # brief "Challenge Round" intro before a challenge board
+		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
 	Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]   # Options->Speed (local)
 	set_physics_process(true)
 
@@ -922,6 +957,7 @@ func _reset_round_ui() -> void:
 	_sg_toggled = [false, false, false, false, false]
 	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
 	_sg_last = [-1, -1, -1, -1]
+	_death_pops.clear()
 	_capture_board_start()
 
 ## Stop/Go SWITCH flip (asm FUN_10016544): a player stepping onto a switch cell (low 0x24-0x2D,
@@ -979,6 +1015,10 @@ func _physics_process(_delta: float) -> void:
 				teleported = true
 		if teleported:
 			_start_transport_slide()   # a transporter fired -> glide the player to the OUT pad
+		for di in _core.death_count():   # every enemy killed this tick -> spawn its cosmetic death "pop"
+			_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
+				int(_core.death_type(di)), int(_core.death_dir(di)))
+		_step_death_pops()   # advance/cull the pops in lock-step with the sim (frozen when paused)
 		_update_stopgo()
 		if _alt:
 			if _alt_prev_alive and not _core.player_alive(1):
@@ -1041,6 +1081,7 @@ func _physics_process(_delta: float) -> void:
 		var sc := _hs_final_score()
 		if Session.qualifies(sc):
 			_hs_score = sc; _hs_name = ""; _hs_state = "entry"   # NEW HIGH SCORE -> take initials
+			Audio.play_snd(1501)   # high-score entry jingle (asm event 0x36 -> snd 1501, FUN_10022dfc)
 	if _save_flash > 0:
 		_save_flash -= 1
 	if _challenge_intro > 0:
@@ -1081,7 +1122,7 @@ func _play_input() -> int:
 func _demo_input() -> int:
 	var t := int(_core.tick_count())
 	var acc := 0
-	for seg in DEMO:
+	for seg in _demo_script:
 		acc += int(seg[1])
 		if t < acc:
 			return int(seg[0])
@@ -1267,6 +1308,7 @@ func _draw() -> void:
 		if _core.enemy_active(i):
 			_draw_enemy(i, Vector2(_core.enemy_x(i), _core.enemy_y(i)),
 				int(_core.enemy_type(i)), int(_core.enemy_dir(i)))
+	_draw_death_pops()   # flying death sprites arcing off after a kill (drawn above the nasties)
 
 	# players
 	_draw_player(1, Color(0.15, 0.25, 0.85))
@@ -1820,6 +1862,53 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 	draw_circle(c + Vector2(-3.5, -3), 1.0, Color.BLACK)
 	draw_circle(c + Vector2(3.5, -3), 1.0, Color.BLACK)
 
+## Enemy death "pop" (asm FUN_10028014 -> FUN_100278bc/FUN_10028060): every KILL enqueues one
+## flying death sprite that pops UP ~64px and arcs off the screen. The core feeds us the dying
+## nasty's pixel pos + type + facing via the transient soi_death_* queue; we replay the exact asm
+## arc here as a pure front-end effect (not serialized/hashed, so determinism is untouched).
+func _spawn_death_pop(x0: int, y0: int, etype: int, dir: int) -> void:
+	var folder: String = ENEMY_FOLDER.get(etype, "")
+	if folder == "":
+		return   # no sprite sheet for this type -> nothing to pop (fallback circles don't get a corpse)
+	var face_left := (dir == 1)   # enemy dir: 1 = left, 2 = right (soi_core.h)
+	var frame := 2
+	var flip := face_left
+	if ENEMY_WALK.has(etype):   # freeze on the correct-facing walk frame (asm keeps the last live frame)
+		var cfg: Dictionary = ENEMY_WALK[etype]
+		var seg: Array = cfg["l"] if face_left else cfg["r"]
+		frame = int(seg[0])
+		flip = bool(cfg["flip"]) and face_left
+	_death_pops.append({
+		"folder": folder, "frame": frame, "flip": flip,
+		"x0": float(x0), "y0": float(y0), "t": 0.0,
+		"px": float(x0), "py": float(y0),
+	})
+
+## Advance every death pop one frame along the asm arc and cull those that leave the playfield
+## (or exceed a safety cap). Called once per ticked sim frame, so pops are sim-synced and freeze
+## when paused. asm (FUN_10028060, flag=1): x(t)=x0+4t, y(t)=y0-8t+t^2/4, clamped to the top rail.
+func _step_death_pops() -> void:
+	const BOTTOM := ORIGIN_Y + GRID_ROWS * CELL_PX   # 464: below-play cull line
+	const LEFT := ORIGIN_X - CELL_PX                 # off-left cull line
+	const RIGHT := ORIGIN_X + GRID_COLS * CELL_PX    # 624: off-right cull line
+	var keep := []
+	for d in _death_pops:
+		var t: float = d["t"] + 1.0
+		d["t"] = t
+		d["px"] = d["x0"] + 4.0 * t
+		d["py"] = maxf(d["y0"] - 8.0 * t + t * t * 0.25, float(ORIGIN_Y))
+		if d["py"] < float(BOTTOM) and d["px"] > float(LEFT) and d["px"] < float(RIGHT) and t < 150.0:
+			keep.append(d)
+	_death_pops = keep
+
+## Draw the active death pops, bottom-aligned & h-centred in the 32x32 cell (matching _draw_enemy).
+func _draw_death_pops() -> void:
+	for d in _death_pops:
+		var tex := _sprite(d["folder"], int(d["frame"]), bool(d["flip"]))
+		if tex != null:
+			var s := _texsize(tex)
+			_dtex(tex, Vector2(d["px"] + (CELL_PX - s.x) * 0.5, d["py"] + CELL_PX - s.y))
+
 func _enemy_color(etype: int) -> Color:
 	# distinct hue per bestiary index (1..11) until real sprites land
 	var h := fposmod(float(etype) * 0.13, 1.0)
@@ -1920,6 +2009,41 @@ func _showcase_level() -> PackedByteArray:
 	b[n] = 12; b[n + 1] = 6; n += 2
 	b[n] = 13; b[n + 1] = 6; n += 2
 	b[n] = 14; b[n + 1] = 6; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# terminator record (tile_type 0)
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x00; n += 4
+	b.resize(n)
+	return b
+
+## Bug #3 proof board: a permanent floor, a Robo (placement type 15) perched on a SINGLE
+## breakable block at (10,11), and the player starting to its left. The scripted player
+## (DEMO_BUG3) walks up, destroys the block DIRECTLY UNDER the Robo, and it drops straight
+## down onto the floor and dies (edge-turner fall-death). Loaded by the --bug3 flag.
+func _showcase_bug3_level() -> PackedByteArray:
+	var b := PackedByteArray()
+	b.resize(512)
+	b.fill(0)
+	b[0x07] = 6          # P1 col = 6 (walks right along row 11)
+	b[0x09] = 11         # P1 row = 11 (stands on the floor at row 12)
+	b[0x0B] = 17         # P2 parked at the right edge (loader always places P2; not drawn solo)
+	b[0x0D] = 11
+	b[0x0E] = 0x27; b[0x0F] = 0x10   # bonus = 10000
+	b[0x12] = 0x00; b[0x13] = 0x00   # thrown_badguy = 0 (no procedural spawns)
+	b[0x14] = 0x00; b[0x15] = 0x00   # pct_badguy = 0
+	var n := 0x18
+	# permanent floor along the bottom row (row 12) -- the Robo's landing surface
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x03; b[n + 3] = 0x07; n += 4   # 0x0307 = PERMANENT|SUPPORTIVE
+	for c in range(GRID_COLS):
+		b[n] = c; b[n + 1] = 12; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# a SINGLE breakable block at (10,11) -- the Robo's perch, one cell above the floor
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x02; b[n + 3] = 0x07; n += 4   # 0x0207 = block + SUPPORTIVE
+	b[n] = 10; b[n + 1] = 11; n += 2
+	b[n] = 100; b[n + 1] = 100; n += 2
+	# the Robo (badguy placement type 15, right-facing) standing on that block at (10,10).
+	# A badguy spawn block sets bit 0x400 (byte2 = 0x04) with the placement type in the low byte.
+	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x04; b[n + 3] = 0x0F; n += 4
+	b[n] = 10; b[n + 1] = 10; n += 2
 	b[n] = 100; b[n + 1] = 100; n += 2
 	# terminator record (tile_type 0)
 	b[n] = 0x00; b[n + 1] = 0x00; b[n + 2] = 0x00; b[n + 3] = 0x00; n += 4

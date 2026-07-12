@@ -131,6 +131,16 @@ struct SoiWorld {
     /* transient per-tick sound-event queue (NOT serialized/hashed) */
     uint8_t  sfx_queue[SOI_SFX_QUEUE_MAX];
     uint8_t  sfx_count;
+
+    /* transient per-tick enemy-death effect queue (NOT serialized/hashed): every KILL
+     * (soi_enemy_kill) snapshots the dying nasty's position/type/facing so the Godot
+     * layer can render the cosmetic death "pop" (asm FUN_10028014). Lifespan despawns
+     * never enqueue (they just vanish, matching the asm's FUN_10004cb0 erase). */
+    int16_t  death_x[SOI_DEATH_QUEUE_MAX];
+    int16_t  death_y[SOI_DEATH_QUEUE_MAX];
+    uint8_t  death_type[SOI_DEATH_QUEUE_MAX];
+    uint8_t  death_dir[SOI_DEATH_QUEUE_MAX];
+    uint8_t  death_count;
 };
 
 /* ---- rng (soi_rng.c) ---- */
@@ -170,5 +180,6 @@ void     soi_pickup_check(SoiWorld *w, int player);
 
 /* ---- sound events (soi_state.c) ---- */
 void     soi_sfx_emit(SoiWorld *w, int id);   /* push one SoiSfx onto the tick queue */
+void     soi_death_emit(SoiWorld *w, int x, int y, int type, int dir); /* push one death-pop onto the tick queue */
 
 #endif /* SOI_INTERNAL_H */

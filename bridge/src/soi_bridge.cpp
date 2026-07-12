@@ -87,6 +87,12 @@ int64_t SoiCore::grid_cell(int64_t c, int64_t r) const { return (int64_t)soi_gri
 int64_t SoiCore::sfx_count() const             { return soi_sfx_count(w()); }
 int64_t SoiCore::sfx_get(int64_t i) const      { return soi_sfx_get(w(), (int)i); }
 
+int64_t SoiCore::death_count() const           { return soi_death_count(w()); }
+int64_t SoiCore::death_x(int64_t i) const      { return soi_death_x(w(), (int)i); }
+int64_t SoiCore::death_y(int64_t i) const      { return soi_death_y(w(), (int)i); }
+int64_t SoiCore::death_type(int64_t i) const   { return soi_death_type(w(), (int)i); }
+int64_t SoiCore::death_dir(int64_t i) const    { return soi_death_dir(w(), (int)i); }
+
 bool    SoiCore::enemy_active(int64_t i) const { return soi_enemy_active(w(), (int)i) != 0; }
 int64_t SoiCore::enemy_type(int64_t i) const   { return soi_enemy_type(w(), (int)i); }
 int64_t SoiCore::enemy_x(int64_t i) const      { return soi_enemy_x(w(), (int)i); }
@@ -159,6 +165,11 @@ void SoiCore::_bind_methods()
 
     ClassDB::bind_method(D_METHOD("sfx_count"), &SoiCore::sfx_count);
     ClassDB::bind_method(D_METHOD("sfx_get", "i"), &SoiCore::sfx_get);
+    ClassDB::bind_method(D_METHOD("death_count"), &SoiCore::death_count);
+    ClassDB::bind_method(D_METHOD("death_x", "i"), &SoiCore::death_x);
+    ClassDB::bind_method(D_METHOD("death_y", "i"), &SoiCore::death_y);
+    ClassDB::bind_method(D_METHOD("death_type", "i"), &SoiCore::death_type);
+    ClassDB::bind_method(D_METHOD("death_dir", "i"), &SoiCore::death_dir);
 
     ClassDB::bind_method(D_METHOD("enemy_active", "i"), &SoiCore::enemy_active);
     ClassDB::bind_method(D_METHOD("enemy_type", "i"), &SoiCore::enemy_type);

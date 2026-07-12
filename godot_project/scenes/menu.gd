@@ -32,8 +32,10 @@ func _ready() -> void:
 	for a in ua:
 		if a.begins_with("--play"):   # --play=N carries a value, so match by prefix
 			want_play = true
-	if "--shot" in ua or "--demo" in ua or want_play:
-		# --board=<file> overrides; else --demo uses a challenge board (has nasties)
+	if "--shot" in ua or "--demo" in ua or "--bug3" in ua or want_play:
+		# --board=<file> overrides; else --demo uses a challenge board (has nasties).
+		# --bug3 builds its OWN board in game.gd (_showcase_bug3_level), so the picked
+		# board here is just a placeholder that game.gd immediately overrides.
 		var target := ""
 		for arg in ua:
 			if arg.begins_with("--board="):

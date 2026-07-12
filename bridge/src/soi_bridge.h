@@ -79,6 +79,13 @@ public:
     int64_t sfx_count() const;
     int64_t sfx_get(int64_t i) const;
 
+    /* enemy-death effects queued during the last tick (drives the cosmetic death "pop") */
+    int64_t death_count() const;
+    int64_t death_x(int64_t i) const;
+    int64_t death_y(int64_t i) const;
+    int64_t death_type(int64_t i) const;
+    int64_t death_dir(int64_t i) const;
+
     /* per-entity read accessors (index into the pools; for rendering) */
     bool    enemy_active(int64_t i) const;
     int64_t enemy_type(int64_t i) const;

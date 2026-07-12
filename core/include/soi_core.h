@@ -125,6 +125,7 @@ typedef enum {
 } SoiSfx;
 
 #define SOI_SFX_QUEUE_MAX 32   /* per-tick sound-event capacity */
+#define SOI_DEATH_QUEUE_MAX 32 /* per-tick enemy-death effect capacity (== SOI_MAX_ENEMIES) */
 
 /* Opaque world state. Allocate soi_world_size() bytes; the core never mallocs. */
 typedef struct SoiWorld SoiWorld;
@@ -194,6 +195,17 @@ int      soi_projectile_count(const SoiWorld *w);
 /* ---- sound events queued during the last soi_tick (drain each frame) ---- */
 int      soi_sfx_count(const SoiWorld *w);
 int      soi_sfx_get(const SoiWorld *w, int i);   /* SoiSfx id, or 0 if OOB */
+
+/* ---- enemy-death effects queued during the last soi_tick (drain each frame) ----
+ *      Every enemy KILL (weapon, fall-death, Shoes claim) enqueues one entry so the
+ *      renderer can play the cosmetic death "pop" (the asm FUN_10028014 flying sprite
+ *      that pops up and arcs off). A transient child that despawns on lifespan does
+ *      NOT enqueue (the asm erases it without a death effect). NOT serialized/hashed. */
+int      soi_death_count(const SoiWorld *w);
+int      soi_death_x(const SoiWorld *w, int i);   /* pixel x at death, or 0 if OOB */
+int      soi_death_y(const SoiWorld *w, int i);   /* pixel y at death, or 0 if OOB */
+int      soi_death_type(const SoiWorld *w, int i);/* SoiEnemyType, or 0 if OOB */
+int      soi_death_dir(const SoiWorld *w, int i); /* 1 = left, 2 = right, or 0 if OOB */
 
 /* ---- per-entity read accessors (index into the fixed pools; for rendering).
  *      soi_*_active returns 0 for an empty slot; the other fields are then

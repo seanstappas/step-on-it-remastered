@@ -306,6 +306,7 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
     w->tick++;
     w->frame_parity ^= 1u;
     w->sfx_count = 0;   /* drop last frame's sound events; this tick refills */
+    w->death_count = 0; /* drop last frame's death-pop events; this tick refills */
 
     /* Input is sampled every 2 frames and so is the PLAYER state machine: the asm
      * main loop (FUN_10028a0c) gates {input FUN_1002d440 + locomotion FUN_1001166c
@@ -506,6 +507,23 @@ int soi_sfx_get(const SoiWorld *w, int i)
 {
     return (i >= 0 && i < w->sfx_count) ? w->sfx_queue[i] : 0;
 }
+
+/* ---- enemy-death effect queue (transient; drives the cosmetic Godot death "pop") ---- */
+void soi_death_emit(SoiWorld *w, int x, int y, int type, int dir)
+{
+    if (w->death_count < SOI_DEATH_QUEUE_MAX) {
+        int k = w->death_count++;
+        w->death_x[k]    = (int16_t)x;
+        w->death_y[k]    = (int16_t)y;
+        w->death_type[k] = (uint8_t)type;
+        w->death_dir[k]  = (uint8_t)dir;
+    }
+}
+int soi_death_count(const SoiWorld *w) { return w->death_count; }
+int soi_death_x(const SoiWorld *w, int i)    { return (i >= 0 && i < w->death_count) ? w->death_x[i]    : 0; }
+int soi_death_y(const SoiWorld *w, int i)    { return (i >= 0 && i < w->death_count) ? w->death_y[i]    : 0; }
+int soi_death_type(const SoiWorld *w, int i) { return (i >= 0 && i < w->death_count) ? w->death_type[i] : 0; }
+int soi_death_dir(const SoiWorld *w, int i)  { return (i >= 0 && i < w->death_count) ? w->death_dir[i]  : 0; }
 
 /* per-entity accessors (bounds-checked; inactive/OOB slots read as 0). */
 static const SoiEnemy *eget(const SoiWorld *w, int i)
