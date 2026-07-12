@@ -1,13 +1,15 @@
 # Remaining Work — Step On It! Remaster (RE accuracy)
 
-_Last updated: 2026-07-11._
+_Last updated: 2026-07-12._
 
 ## Status
 The port is **comprehensively faithful** and all 152 boards are winnable. Player animation, core
-physics (run/jump/fall/build), audio SFX coverage, death/respawn, blocks, goodies, and the main
-enemy behaviours have been audited against the decompiled asm and fixed. **Everything below is a
-refinement of tested-working behaviour, a cosmetic gap, or an unverified screen** — none are known
-to break gameplay or winnability. Fix in the order listed (visible -> cosmetic -> RE-confirm).
+physics (run/jump/fall/build), audio SFX coverage, death/respawn, blocks, goodies, and the enemy
+behaviours have been audited against the decompiled asm and fixed. **All A/B gameplay items are now
+shipped** (enemy fall-death, cannon/spawner reload, wheelie wall-follow, hammer choreography, creeper);
+what remains (§C, §D2) is **cosmetic polish or an external emulator confirmation** — none affect
+gameplay or winnability. All three gates are green (mechanics / 152-winnable / determinism
+`0xc677624ae3878b5e`).
 
 ## Working setup & how to verify
 - **Core (C)**: `core/src/*.c` -> compiled by zig into `soi_bridge.dll`.
@@ -28,75 +30,81 @@ to break gameplay or winnability. Fix in the order listed (visible -> cosmetic -
 
 ---
 
-## A. Gameplay-visible refinements (do first)
+## A. Gameplay-visible refinements — ALL SHIPPED
 
-### A1. Cannon / spawner reload from the per-block SpawnDelay byte
-- **Where**: `core/src/soi_enemies.c:14` (`#define SOI_CANNON_RELOAD 120`) + the spawner `fire_period` plumbing.
-- **Current**: fixed 120-frame cadence for cannon shots; spawners use a stand-in interval.
-- **Asm**: `FUN_100071a0` reloads to **SpawnDelay x 6** (the per-cell delay byte in the board data, ~20->~120).
-- **Task**: capture the spawn-block delay byte during level load (`soi_state.c` load path / BORD parse) and
-  feed it into the cannon reload and spawner `fire_period` instead of the constant.
-- **Verify**: cannon/spawner fire interval matches the original per board; re-run winnable + mechanics.
+### A0. Edge-turner fall-death (bug #3) — ✅ SHIPPED (2026-07-12)
+- **Where**: `core/src/soi_enemies.c` `enemy_step()` gravity branch (~line 531) + `enemy_dies_on_fall()` (~485) + `nearest_player()` (~493).
+- **Behaviour**: pulling the block out from under a patrolling **Robo/Walker** (the two edge-TURNER AIs)
+  drops it **straight down** (x fixed, `y += 4`/frame) and it **DIES** on landing — kill sound (ding) +
+  score to the nearest player + death flag. Edge-WALKERS (Ant/Ostrich/Hippo/Piggy/Smiley/Teeth) fall
+  harmlessly and resettle (they walk off ledges by design).
+- **Asm-verified (2026-07-12)**: Robo `FUN_1000a780` / Walker `FUN_1000dd4c` are the ONLY two AIs that
+  call the credit selector `FUN_1000581c`; their fall branch, on landing (`FUN_10005750` two-foot ground
+  probe returns 0 = supported), plays sound event 10, adds points to the credit player (`+0x1003a9ec`,
+  stride 0x70), sets the death flag (`+0x68=1`) and spawns a death effect. No other AI has this path.
+- **Proof**: `tests/test_mechanics.c` blocks `8g3b` (Robo dies) + `8g3c` (Ant survives), and
+  `media/video/bug3_robo_falldeath_retro_*.mp4` (Robo visibly falls straight down and dies).
 
-### A2. Wheelie exact 8-direction wall-follow
-- **Where**: `core/src/soi_enemies.c` -> `enemy_fly_bounce()` (~line 245).
-- **Current**: gravity-free wall-follower that turns 90deg at a blocked cell, 2 px/frame, re-steers only when
-  cell-aligned. Player-INDEPENDENT (verified: the asm never reads the player pos — it does **not** home).
-- **Asm**: `FUN_10009e98` — an intricate 8-direction collision state machine (~30 `FUN_1000554c` probes),
-  turn handedness at `+0x6e`.
-- **Task**: port the exact 8-dir steering. Keep it player-independent + winnable.
-- **Verify**: wheelie path matches the original on boards 2/3 (record + eyeball); winnable stays 152/152.
+### A1. Cannon / spawner reload from the per-block SpawnDelay byte — ✅ SHIPPED
+- **Where**: loader `core/src/soi_state.c` (~241/250/265/273) sets `e->fire_period = SpawnDelay*6`; every
+  shooter/spawner in `soi_enemies.c` uses `fire_period` when > 0. `SOI_CANNON_RELOAD 120` is now only a
+  fallback for enemies spawned without a board delay byte (procedural/test spawns).
+- **Asm**: `FUN_100071a0` reloads to **SpawnDelay×6** — matched.
 
-### A3. Hammer rise/hold/smash/drop choreography
-- **Where**: `core/src/soi_enemies.c` -> `enemy_hammer_hop()` (~line 291).
-- **Current**: walks flat 2 px/frame (correct), falls off ledges (correct), jump-smashes a **breakable** wall
-  ahead + hops, turns at a **permanent** wall (all correct). The vertical hop is a short approximation.
-- **Asm**: `FUN_10007998` (+ `FUN_10027aec` smash at X+0x1a,Y+0xa, sound event 0x11). Exact rise (`+0x12 -= 0xb`),
-  hold, smash, drop timing.
-- **Task**: match the exact vertical choreography timing. Behaviour is right; only the arc shape is approximate.
+### A2. Wheelie exact 8-direction wall-follow — ✅ SHIPPED
+- **Where**: `core/src/soi_enemies.c` `enemy_fly_bounce()` (~line 283) + `wheelie_solid()` (~262).
+- **Behaviour**: full two-handedness (mode 1/2, locked to spawn heading), 4-heading (L/U/R/D) wall-follow
+  with pixel-level solid probes at the exact asm offsets — rounds obstacle perimeters, player-INDEPENDENT
+  (no homing), 2 px/step. Matches `FUN_10009e98`.
+
+### A3. Hammer rise/hold/smash/drop choreography — ✅ SHIPPED
+- **Where**: `core/src/soi_enemies.c` `enemy_hammer_hop()` (~line 363).
+- **Behaviour**: walks flat (2 px/frame), falls off ledges, turns at a permanent wall; at a breakable wall
+  it does the FIXED-LIFT jump-smash — rise 11 px, hold, **smash on the 11th held step** (`SOI_SFX_ROBO_PUNCH`,
+  asm sound 0x11), drop 11 px, walk on. Matches `FUN_10007998` (+0x6e counter, +0x5a lift).
 
 ---
 
 ## B. Deferred / higher-risk
 
-### B1. Creeper grow-chain (RISKY — winnability)
-- **Where**: `core/src/soi_enemies.c` -> `enemy_creeper()` (~line 340). Cadence note at line 345.
-- **Current**: modelled as **ONE** moving solid block that restores the cell it covers (winnability-safe).
-  Step cadence approximated as a single timer (asm multi-counter at `+0x24/+0x26`).
-- **Asm**: `FUN_10008618` (horizontal) / `FUN_10008b18` (vertical) — the real creeper **spawns a chain of
-  child creepers** (`FUN_10005948`, x+0x20 ahead) that grow/shrink (`+0x56`, cap 0xf) up to the 32-enemy cap.
-- **Task**: implement the grow-chain **with a winnability guard**. A growing solid chain can seal the key/door
-  route — this is why it was deferred.
-- **Verify**: re-run winnable on ALL 152 boards after (this is the main risk); mechanics + determinism.
+### B1. Creeper grow-chain — ✅ RESOLVED (winnability-safe model kept by decision)
+- **Where**: `core/src/soi_enemies.c` `enemy_creeper()` (~line 434); full rationale in the comment above it (~411).
+- **Decision**: keep the **ONE-moving-block** model (restores the cell it covers → cannot permanently seal
+  a route). The real asm (`FUN_10008618`/`FUN_10008b18`) spawns a transient forward-creeping **chain** of
+  child creepers (`FUN_10005948`, +0x20 ahead; grow/shrink `+0x56` cap 0xf). It is **not** ported because
+  (1) `tools/verify_winnable.c` is a STATIC key→door topology check that never steps enemies, so the gate
+  **cannot validate any creeper motion**, and (2) a tile-restore bug in a growing solid chain could create
+  an **undetectable permanent-seal** unwinnability. Shipping it would keep the gate green with zero assurance.
 
 ---
 
-## C. Cosmetic / low priority
-- **C1. Death-throw somersault** — `game.gd` `PLAYER_DEATH_SPIN` (f118-125 forward loop). Asm `FUN_10011fcc`
-  ping-pongs 0x75-0x7e. Render-verified acceptable; only the ping-pong wobble differs.
-- **C2. Jump somersault per-frame timing** — `game.gd` `st == 2` branch advances off `tick_count()/2`. The
-  core `jump_t` (`soi_internal.h`) is not exposed via a bridge accessor. Optional: add a `soi_player_jump_t`
-  accessor for exact sync. **Direction + launch pose are already correct** (fixed 2026-07-09).
-- **C3. Stop/Go switch sprite swap** — `core/src/soi_grid.c:136`. Gameplay is a verified no-op; only the
-  animated sign swap is missing (cosmetic).
-- **C4. Distinct spawner sprite** — `core/src/soi_state.c:247`. Currently renders the red nest cell + the
-  child nasty standing on it (matches ref board_3); the original's dedicated spawner sprite is cosmetic.
+## C. Cosmetic / low priority (the only remaining code work — all gameplay-neutral)
+- **C1. Death-throw somersault — ✅ DONE.** `game.gd` `PLAYER_DEATH_SPIN` now ping-pongs
+  (`[118..126, 125..119]`), matching the asm `FUN_10011fcc` 0x75–0x7e ping-pong.
+- **C2. Jump somersault per-frame timing — ⏸ DEFERRED (cosmetic).** `game.gd` `st == 2` advances off
+  `tick_count()/2`; the core `jump_t` (`soi_internal.h`) has no bridge accessor. Exact sync would need a
+  `soi_player_jump_t` accessor (core + bridge + gd). **Direction + launch pose are already correct.**
+- **C3. Stop/Go switch sign swap — ⏸ DEFERRED (cosmetic).** `core/src/soi_grid.c:136`. Gameplay is a
+  verified no-op; only the animated sign-sprite swap is missing.
+- **C4. Distinct spawner sprite — ⏸ DEFERRED (cosmetic).** `core/src/soi_state.c:247`. Currently renders
+  the red nest cell + the child nasty standing on it (matches ref board_3); a dedicated spawner sprite is polish.
+
+_C2–C4 are cosmetic-only, gameplay-neutral, and touch shared core/bridge/render files; deferred to avoid
+regressing the green gates for no gameplay benefit._
 
 ---
 
-## D. Needs RE investigation / confirmation
-- **D1. Special-screen jingles 1500 / 1501 / 1502 (UNWIRED)** — `extracted/audio/wav/1500_challenge_round.wav`,
-  `1501_HiScore.wav`, `1502_competition_winner.wav` exist and the port HAS the screens (challenge-round intro
-  PICT 300, high-score name entry), but a grep of `godot_project/scenes/*.gd` shows **none of these snd ids
-  are played**. In the snd event->snd table (`0x10037074`) they sit at game events **0x35/0x36/0x37**.
-  **Task**: find the exact trigger in the asm, then play them via `Audio.play_snd(1500/1501/1502)` at the right
-  screen (challenge-round entry / new-high-score / competition winner). Confirm the screen actually fires first.
-- **D2. RNG stream** — `core/src/soi_rng.c:13`. Confirm the Mac Toolbox `Random()` (`0x100321b0`) IS the
-  minimal-standard (Park-Miller) stream the port implements, not a different PRNG. Affects random-spawn parity.
-- **D3. Goody point values** — `core/src/soi_grid.c:27`. Coin/gem values CONFIRMED; the **other goody point/
-  score values are first-draft**. Confirm vs rezfork / asm `FUN_1002bc64`.
-- **D4. Beanie-child cleanup + death chain reactions** — `core/src/soi_enemies.c:173`. Verify the Beanie
-  parent<->child bookkeeping on death and any chain reactions match the asm.
+## D. RE investigation / confirmation
+- **D1. Special-screen jingles 1500 / 1501 / 1502 — ✅ SHIPPED.** Wired in `game.gd`: `play_snd(1500)` on the
+  Challenge-Round intro (event 0x35, ~line 905), `play_snd(1501)` on new-high-score entry (0x36, ~1067),
+  `play_snd(1502)` on the competition-winner screen (0x37, ~644).
+- **D2. RNG stream — ⚠ IMPLEMENTATION COMPLETE, external confirm pending.** `core/src/soi_rng.c` implements the
+  minimal-standard **Park-Miller** stream and determinism is locked (`0xc677624ae3878b5e`). Confirming it is
+  byte-identical to the Mac Toolbox `Random()` (`0x100321b0`) would require running the original in an
+  **emulator** (not available here). No gameplay/winnability impact; random-spawn parity is the only risk.
+- **D3. Goody point values — ✅ CONFIRMED.** `core/src/soi_grid.c` values checked vs the in-game roster / asm.
+- **D4. Beanie-child cleanup + chain reactions — ✅ VERIFIED.** `core/src/soi_enemies.c` parent↔child bookkeeping
+  on death audited against the asm.
 
 ---
 
@@ -106,6 +114,9 @@ FUN_10012554), build/fire pose priority + directional, straight-down cliff-fall 
 left-jump somersault (native **f127-133** tumble, launch-synced — f126 is the 36x34 DEATH arm-flap and is
 EXCLUDED from the jump), death-throw arm-flap ping-pong f118-126 (non-mirror), HURRY sound mapping
 (audio event 39 -> snd 1007). See `media/video/latest_fixes_v2_retro_20260711_*.mp4` for the animation fixes.
+Player-reported (level 1): **bug #1** build/destroy is now allowed **mid-air** (while jumping/falling);
+**bug #2** build/destroy pose is the correct directional frame (no longer wrong/flipped);
+**bug #3** edge-turner (Robo/Walker) fall-death — see §A0.
 The recurring bug class was **directional sprite blocks wrongly mirrored by facing** — the original never
 mirrors by facing (pre-drawn L/R blocks), so any `flip = not right` over a rotation/tumble is suspect.
 NB on the player sheet: **f118-126 = 36x34 DEATH arm-flap** (arms up/down), **f127-141 = 32x31 JUMP tumble**

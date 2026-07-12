@@ -35,7 +35,7 @@ func _pict(pict_name: String) -> Texture2D:
 func _ready() -> void:
 	_apply_window_mode()
 	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play"):
+		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play") or a.begins_with("--bug3"):
 			get_tree().change_scene_to_file.call_deferred("res://scenes/menu.tscn")
 			return
 	if Session.num_players <= 0:
@@ -79,7 +79,7 @@ func _apply_window_mode() -> void:
 	var ua := OS.get_cmdline_user_args()
 	if "--visible" in ua:
 		return
-	const HIDE_FLAGS := ["--hidden", "--shot", "--menushot", "--demo", "--play"]
+	const HIDE_FLAGS := ["--hidden", "--shot", "--menushot", "--demo", "--play", "--bug3"]
 	for a in ua:
 		for f in HIDE_FLAGS:
 			if a.begins_with(f):
