@@ -1792,6 +1792,313 @@ int main(void)
               "procspawn: valid params throw the configured badguy (no ANT fallback)");
     }
 
+    /* ---- 25. Enemy touch is an AABB HURTBOX overlap, not coarse grid-cell equality
+     * (asm FUN_100299b4 player box [x+0xd,x+0x12]x[y+4,y+0x1d] vs enemy box
+     * [x+9,x+0x19]x[y+6,y+0x1e], FUN_100030d4 overlap). The old code killed the player
+     * whenever an enemy merely shared his grid CELL -- so a Robo FALLING through the
+     * player's column briefly "occupied" his cell (bottom-of-cell) and killed him even
+     * though the sprites never touched (the user's "he killed me while falling even
+     * though I was on another block"). A falling enemy in the SAME cell but a row-lower
+     * hurtbox must now pass by harmlessly. ---- */
+    {
+        int ei;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        ground_player(w, 5, 9);
+        ei = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);
+        /* Drop the Robo's hurtbox to the bottom of the shared cell. It starts at
+         * cell_y(9)+24, but enemy_step's fall (+4 px/frame -- there is no floor at row 10)
+         * runs BEFORE the contact check, so at the check its box top is cell_y(9)+34: a 5px
+         * gap BELOW the player box bottom (cell_y(9)+0x1d = +29), widening every tick as it
+         * sinks. Its top-left still reads grid row 9 (a coarse cell-equality test WOULD fire),
+         * yet the two inset AABBs never overlap -- so the pass-by is safe across the tick. */
+        w->enemies[ei].y = soi_cell_y(9) + 24;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD && soi_player_alive(w, 1),
+              "collision: a falling enemy sharing the player's grid CELL but not his "
+              "hurtbox does NOT kill (asm AABB, not cell-equality)");
+    }
+
+    /* ---- 25b. The Robo's fall check uses INSET feet (asm FUN_10005750 probes x+6 and
+     * x+0x1a -- a ~20px stance inside the 32px tile), not the full-cell edges (x+0/x+31).
+     * With the old wide probe a Robo hanging over a gap still "caught" the next block with
+     * a corner pixel, so you had to shove it almost fully off the ledge before it dropped
+     * (the user's "has to be right on the opposite edge"). Inset feet drop it as soon as
+     * its stance clears the block -- more lenient. Here the Robo's inset feet are over a
+     * GAP while its far corner (x+31) still overlaps the next floor block: the old wide
+     * probe would hold it up, the inset probe drops it. ---- */
+    {
+        int ri, t, fell = 0, y0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 9);
+        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);      /* floor only under the NEXT cell */
+        soi_set_cell(w, 5, 12, SOI_CELL_SUPPORTIVE);      /* a lower catch floor to land on (in-bounds: rows 0..12) */
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);
+        w->enemies[ri].vx = 0;
+        w->enemies[ri].x = soi_cell_x(5) + 2;             /* inset feet (x+6..x+26) over the col-5
+                                                           * gap; far corner (x+31) catches col-6 */
+        y0 = w->enemies[ri].y;
+        for (t = 0; t < 40 && !fell; t++) {
+            soi_enemies_update(w);
+            if (w->enemies[ri].y > y0) fell = 1;
+        }
+        CHECK(fell,
+              "breakunder: a Robo whose INSET feet clear the block drops even while a far "
+              "corner still overlaps the next block (lenient inset-foot probe, asm FUN_10005750)");
+    }
+
+    /* ---- 25c. Walk-over pickup runs EVERY player tick (asm FUN_1002a308 calls the goody
+     * check for each live player unconditionally), so a coin is grabbed the instant the
+     * body overlaps its cell -- even standing still. The old port only ran the check inside
+     * run_step, so an IDLE player parked on a coin never took it (the user's "have to be
+     * right on top of coin"). Pickup runs at the TOP of the player update (before the fall
+     * branch), so a stationary player collects on a plain no-input tick. ---- */
+    {
+        int score0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        /* GROUND the player for real: a supportive floor one row BELOW plus a small
+         * pixel drop so the support probe (y+0x1f) reads the floor at row 10 while the
+         * pickup probe (y+0x10) still reads the coin at row 9. (A grid-aligned player
+         * shares one cell for both probes, and a SUPPORTIVE cell can't also hold a
+         * collectible, so the two must be separated -- otherwise the player just falls.) */
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);      /* the floor the player stands ON */
+        w->players[1].y = soi_cell_y(9) + 4;   /* support probe -> row 10, pickup probe -> row 9 (x,y are int32_t) */
+        score0 = w->players[1].score;
+        soi_set_cell(w, 5, 9, 0x0A);                      /* silver coin on the body cell (non-supportive) */
+        soi_tick(w, 0, 0);                                /* NO input -> the player stands idle */
+        CHECK(w->players[1].ground_state == SOI_ST_IDLE,
+              "coinpickup: the player stands idle on the pickup tick (grounded, no direction)");
+        CHECK(w->players[1].score > score0,
+              "coinpickup: an IDLE grounded player standing on a coin collects it (pickup every tick, asm FUN_1002a308)");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 5, 9)) == 0,
+              "coinpickup: the collected coin cell is cleared");
+    }
+
+    /* ---- 26. The build/fire arm-swing FREEZES horizontal movement. The asm gates the
+     * whole run/idle dispatch on the action-active flag (FUN_1001166c +0x25), so run is
+     * frozen for the ~12-frame pose. Holding a direction while repeatedly firing used to
+     * slide ("glide") the player across the floor; he must now stutter to a stop until
+     * the swing ends, then run again. (Fire, not build, so no block walls the run.) ---- */
+    {
+        int x0, t, moved_during_pose = 0, ran_during_pose = 0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        ground_player(w, 5, 9);
+        w->players[1].facing = 1; w->players[1].arrows = 5;
+        soi_tick(w, SOI_IN_ARROW, 0);               /* fire -> action pose starts (pose_t=12) */
+        CHECK(w->players[1].pose_t > 0, "glide: firing a weapon starts the action pose");
+        x0 = w->players[1].x;
+        for (t = 0; t < 5; t++) {                   /* hold RIGHT while the pose still swings */
+            soi_tick(w, SOI_IN_RIGHT, 0);
+            if (w->players[1].x != x0) moved_during_pose = 1;
+            if (w->players[1].ground_state == SOI_ST_RUN) ran_during_pose = 1;
+        }
+        CHECK(!moved_during_pose,
+              "glide: holding a direction during the action pose does NOT advance x (no glide)");
+        CHECK(!ran_during_pose,
+              "glide: the run DISPATCH is frozen during the pose (stutter-stop, not just x-clamped)");
+        for (t = 0; t < 12; t++) soi_tick(w, 0, 0); /* let the pose fully drain */
+        CHECK(w->players[1].pose_t == 0, "glide: the action pose drains after ~12 frames");
+        soi_tick(w, SOI_IN_RIGHT, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_RUN,
+              "glide: once the pose ends, holding a direction runs the player again");
+    }
+
+    /* ---- 27. A Bonus-timer runout kills with the SAME death as an enemy hit: the
+     * airborne death-throw (SOI_ST_DEAD) + the hit cry (asm FUN_1000f500 routes a
+     * timed-out player through FUN_10012228 == soi_player_hit). The old code silently
+     * set alive=0 -- no animation, no sound, a mute "RESPAWNING" pop. ---- */
+    {
+        int k, cried = 0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        ground_player(w, 5, 9);
+        w->players[1].invuln = 0;
+        w->players[1].bonus_time = 1;               /* one decrement from expiry */
+        w->bonus_div = 1;                           /* force the ~20Hz bonus tick next frame */
+        soi_tick(w, 0, 0);                          /* bonus 1 -> 0 -> fatal */
+        CHECK(w->players[1].ground_state == SOI_ST_DEAD,
+              "timerdeath: a bonus runout plays the death-throw (SOI_ST_DEAD), not a silent alive=0");
+        for (k = 0; k < soi_sfx_count(w); k++)
+            if (soi_sfx_get(w, k) == SOI_SFX_PLAYER_HIT) cried = 1;
+        CHECK(cried, "timerdeath: a bonus runout plays the player hit cry (SOI_SFX_PLAYER_HIT)");
+    }
+
+    /* ---- 28. A Knight gift flies STRAIGHT to its drop cell (asm FUN_1000c544 adds a
+     * sqrt-normalized velocity each frame). The port holds the flight on the exact
+     * launch->target line, interpolating the minor axis from the launch point it stashed in
+     * pr->vx/pr->vy. Uses a SHALLOW 528:32 delta -- the exact case the earlier "step both axes
+     * by d*6/amax" mover broke: the minor step 32*6/528 truncated to 0, so the gift ran flat
+     * and bowed ~19px (> half a tile) off the launch line before snapping at the very end.
+     * Asserts the perpendicular deviation stays <= 4px (1/8 tile) for EVERY frame, via an
+     * integer cross-product (no float). ---- */
+    {
+        int tcol = 17, trow = 6;
+        int tx = soi_cell_x(tcol), ty = soi_cell_y(trow);
+        int X0 = tx - 528, Y0 = ty - 32;            /* shallow 528:32 launch delta (minor axis truncates) */
+        long long vx = (long long)(tx - X0), vy = (long long)(ty - Y0);
+        long long L2 = vx * vx + vy * vy;           /* squared line length */
+        long long worst2 = 0;                       /* max (cross)^2 seen in flight */
+        SoiProjectile *pr;
+        int k;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        pr = &w->projectiles[0];
+        memset(pr, 0, sizeof(*pr));
+        pr->active = 1; pr->kind = 2; pr->src_type = (uint8_t)SOI_ENEMY_KNIGHT;
+        pr->tcol = (int16_t)tcol; pr->trow = (int16_t)trow;
+        pr->gtype = 0x0A; pr->x = X0; pr->y = Y0;
+        pr->vx = (int16_t)X0; pr->vy = (int16_t)Y0;   /* the gift remembers its launch point */
+        for (k = 1; k <= 150 && pr->active; k++) {
+            long long cross;
+            soi_projectiles_update(w);
+            /* perpendicular distance to the launch->target line = |cross| / |v|;
+             * compare squared so it stays exact integer math: dist <= 4  <=>  cross^2 <= 16*L2 */
+            cross = vx * (long long)(pr->y - Y0) - vy * (long long)(pr->x - X0);
+            if (cross * cross > worst2) worst2 = cross * cross;
+        }
+        CHECK(pr->active == 0, "gift: the gift reaches its drop cell and lands");
+        CHECK(worst2 <= 16 * L2,
+              "gift: a Knight gift holds a straight heading on a SHALLOW shot -- stays within "
+              "1/8 tile of the launch->target line every frame (no mid-flight bow; asm FUN_1000c544)");
+    }
+
+    /* ---- 29. A player in the DEATH-THROW collects NOTHING. The asm gates the goody
+     * check FUN_1002bc64 on the dying flag (+0x1003a9d8 == 0, i.e. NOT mid-death), so a
+     * somersaulting dead player whose pickup point sweeps over coins/keys grabs none of
+     * them (and cannot door-win while dead). soi_pickup_check runs at the TOP of the
+     * player update, so it must be skipped while ground_state == SOI_ST_DEAD -- note
+     * `alive` stays 1 for the whole throw (it clears only when the arc commits the life
+     * loss), so the guard has to key off SOI_ST_DEAD, not alive. ---- */
+    {
+        int score0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        soi_player_hit(w, 1);                             /* enter the death-throw: DEAD, in_air, alive still 1 */
+        score0 = w->players[1].score;
+        soi_set_cell(w, 5, 9, 0x0A);                      /* a silver coin under the (launch) pickup cell */
+        soi_player_update(w, 1);                          /* one dying-animation frame */
+        CHECK(w->players[1].ground_state == SOI_ST_DEAD,
+              "deathpickup: the player is still mid death-throw on this tick");
+        CHECK(w->players[1].score == score0,
+              "deathpickup: a dying player collects NO coins (asm gates pickup on the dying flag)");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 5, 9)) == 0x0A,
+              "deathpickup: the coin under a dying player is left in place");
+    }
+
+    /* ---- 29b. Walk-over pickup fires while AIRBORNE too. The asm goody check runs on
+     * every LIVE player tick regardless of motion state (only the dying flag gates it),
+     * so a player whose body sweeps a coin mid-JUMP grabs it -- not just while grounded.
+     * The pickup runs at the TOP of the update, before the in_air branch, so a jumping
+     * player over a coin cell collects on the same frame. (Guards the move-to-top pickup
+     * change: it must reach airborne players, but NOT dead ones -- see 29.) ---- */
+    {
+        int score0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        w->players[1].in_air = 1;
+        w->players[1].ground_state = SOI_ST_JUMP;         /* mid-jump, not grounded */
+        score0 = w->players[1].score;
+        soi_set_cell(w, 5, 9, 0x0A);                      /* silver coin on the body cell */
+        soi_player_update(w, 1);                          /* one airborne frame */
+        CHECK(w->players[1].score > score0,
+              "airpickup: a JUMPING player sweeping a coin collects it (pickup every tick, not ground-only)");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 5, 9)) == 0,
+              "airpickup: the collected coin cell is cleared");
+    }
+
+    /* ---- 30. A bonus-timeout death is NOT dodgeable with i-frames. Enemy contact is
+     * gated by invuln (spawn grace / potion), but the timer is not: asm FUN_1000f500
+     * calls the death launcher FUN_10012228 directly, with NO invuln check. So a player
+     * who lets the clock hit 0 while still invulnerable STILL dies -- you cannot cheese
+     * the timer by timing the runout to land inside your grace window. Routing the
+     * timeout through soi_player_hit must therefore clear invuln first. ---- */
+    {
+        int k, cried = 0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        ground_player(w, 5, 9);
+        w->players[1].invuln = 90;                        /* fresh spawn grace / potion i-frames */
+        w->players[1].bonus_time = 1;                     /* one decrement from expiry */
+        w->bonus_div = 1;                                 /* force the bonus tick next frame */
+        soi_tick(w, 0, 0);                                /* bonus 1 -> 0 while invulnerable */
+        CHECK(w->players[1].ground_state == SOI_ST_DEAD,
+              "timerdeath-iframes: a bonus runout kills even an INVULNERABLE player (asm FUN_10012228, no invuln gate)");
+        for (k = 0; k < soi_sfx_count(w); k++)
+            if (soi_sfx_get(w, k) == SOI_SFX_PLAYER_HIT) cried = 1;
+        CHECK(cried, "timerdeath-iframes: the death cry still plays");
+    }
+
+    /* ---- 30b. The shared "hurry up" music tempo (soi_music_hurry). The original speeds the
+     * ONE background QuickTime-Music movie to 1.25x while ANY player's Bonus is in the low
+     * (0,1000] zone and restores 1.0x otherwise (asm FUN_10018b24 / FUN_10018ac4). We mirror
+     * that as a read-only predicate. This locks the multiplayer regression the blind review
+     * flagged: a P1-only reset (`bonus_time() > 1000`) cancelled a hurry that a P2/P3 timer
+     * had triggered, because bonus_time() reports P1 only. ---- */
+    {
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        reset_player(w, 2, 6, 9);
+        w->players[1].bonus_time = 3000; w->players[2].bonus_time = 3000;
+        CHECK(soi_music_hurry(w) == 0, "hurry-music: OFF when every player's Bonus is above 1000");
+        w->players[1].bonus_time = 1000;
+        CHECK(soi_music_hurry(w) == 1, "hurry-music: ON the moment a Bonus reaches 1000 (zone is 0 < t <= 1000)");
+        w->players[1].bonus_time = 1;
+        CHECK(soi_music_hurry(w) == 1, "hurry-music: stays ON as the Bonus drains toward 0");
+        w->players[1].bonus_time = 0;
+        CHECK(soi_music_hurry(w) == 0, "hurry-music: a fully-drained (dead) player does not count (>0 guard)");
+        /* The regression itself: ONLY the non-P1 player is hurrying. */
+        w->players[1].bonus_time = 3000; w->players[2].bonus_time = 800;
+        CHECK(soi_music_hurry(w) == 1, "hurry-music: ON when ONLY a non-P1 player is in the zone (per-player timers, shared movie)");
+        w->players[2].eliminated = 1;
+        CHECK(soi_music_hurry(w) == 0, "hurry-music: an eliminated player in the zone does NOT hold it ON");
+    }
+
+    /* ---- 31. A Gargoyle's puff spawns in its OWN tile, not one cell toward the aim.
+     * The caged board_410 Gargoyle sits with a wall directly in its aim direction; the
+     * old "e->x + sx*0x20" muzzle launched the puff straight into that wall, where the
+     * projectile wall-check killed it on tick 1 and it never appeared ("Gargoyle doesn't
+     * shoot out the dangerous projectile"). Spawning at the Gargoyle's own cell (asm
+     * FUN_1000adc4 muzzle inside the tile) keeps the puff visible; regressing the muzzle
+     * back one cell would move the spawn cell onto the wall. ---- */
+    {
+        int gi, i, gh = -1;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 8, 9);                         /* player to the right -> aims rightward */
+        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 3, 9);
+        soi_set_cell(w, 3, 10, SOI_CELL_SUPPORTIVE);      /* floor so it stands */
+        soi_set_cell(w, 4, 9, SOI_CELL_PERMANENT | SOI_CELL_SUPPORTIVE);  /* a SOLID cage wall one cell toward the aim */
+        w->enemies[gi].fire_cd = 0;
+        soi_enemies_update(w);
+        for (i = 0; i < SOI_MAX_PROJECTILES; i++)
+            if (w->projectiles[i].active && w->projectiles[i].hostile) { gh = i; break; }
+        CHECK(gh >= 0 && (w->projectiles[gh].x - SOI_ORIGIN_X) / SOI_CELL_PX == 3,
+              "gargoyle-muzzle: the puff spawns in the Gargoyle's OWN cell (col 3), not the wall cell (col 4)");
+        soi_projectiles_update(w);                        /* advance one frame past the wall boundary */
+        CHECK(gh >= 0 && w->projectiles[gh].active,
+              "gargoyle-muzzle: the puff SURVIVES that frame -- it did not spawn INSIDE the solid "
+              "wall (the old e->x+sx*0x20 muzzle died on tick 1; asm FUN_1000adc4)");
+    }
+
+    /* ---- 32. soi_gift_cell_ok keeps Knight gifts out of the shooters' cages. A cell is a
+     * legal gift target only if it is in bounds, empty, and NOT inside the 3x3 halo of a
+     * KNIGHT or GARGOYLE. bug-6 ("knight shot goody into his own area") was the old code
+     * testing SPINNER instead of KNIGHT, so nothing guarded the caged shooters and goodies
+     * piled up inside the cage. Only Knight/Gargoyle exclude -- other enemies do not. ---- */
+    {
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        soi_enemy_spawn(w, SOI_ENEMY_KNIGHT, 5, 5);
+        soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 10, 5);
+        soi_enemy_spawn(w, SOI_ENEMY_ROBO, 2, 8);
+        CHECK(soi_gift_cell_ok(w, 5, 5) == 0, "gift-exclusion: a Knight's own cell is not a gift target");
+        CHECK(soi_gift_cell_ok(w, 6, 6) == 0, "gift-exclusion: a cell diagonally adjacent to a Knight is excluded");
+        CHECK(soi_gift_cell_ok(w, 11, 5) == 0, "gift-exclusion: a cell adjacent to a Gargoyle is excluded");
+        CHECK(soi_gift_cell_ok(w, 2, 8) == 1, "gift-exclusion: a Robo does NOT block a gift (only Knight/Gargoyle do)");
+        CHECK(soi_gift_cell_ok(w, 8, 3) == 1, "gift-exclusion: a far empty cell IS a legal gift target");
+        soi_set_cell(w, 9, 3, SOI_CELL_SUPPORTIVE);
+        CHECK(soi_gift_cell_ok(w, 9, 3) == 0, "gift-exclusion: a non-empty cell is never a gift target");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");

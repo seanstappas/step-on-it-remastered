@@ -104,9 +104,12 @@ void soi_pickup_check(SoiWorld *w, int player)
      * infrastructure — handled before the permanent guard and never consumed.
      * Pairing CONFIRMED (decompiled FUN_1002bc64: five hardcoded blocks scan the
      * whole grid for code IN+1 and teleport to the FIRST match; even = IN, the next
-     * odd = OUT; OUT tiles are inert; no row constraint. The asm also gates on the
-     * player being fully within one column before firing — our pickup only runs
-     * when the player is cell-aligned, so that gate is already satisfied). */
+     * odd = OUT; OUT tiles are inert; no row constraint. This transporter check
+     * runs from soi_pickup_check, which now fires every tick (not only when the
+     * player is cell-aligned); the player's occupied cell is resolved by the same
+     * (x+0xc, y+0x10) probe the asm uses, so a mid-stride step onto an IN marker
+     * teleports exactly as the original does. OUT tiles being inert prevents any
+     * teleport loop, so this stays determinism-safe. */
     if (t >= 0x1Au && t <= 0x23u) {
         if ((t & 1u) == 0u) {                 /* even = IN: seek the paired OUT */
             unsigned out_type = t + 1u;

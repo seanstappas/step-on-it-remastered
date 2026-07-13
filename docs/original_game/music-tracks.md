@@ -133,6 +133,53 @@ The original loads a background-music QuickTime movie via `FUN_10018414(selector
 
 ---
 
+## Low-bonus "hurry up" speedup (CONFIRMED from RE)
+
+When a player's **Bonus timer ticks past 1000**, the original does **two** things at once
+(`FUN_10018b24`, reached from the bonus countdown `FUN_1000f500`):
+
+```c
+void FUN_10018b24(void) {              /* the "hurry up" trigger */
+  FUN_1002b020(0x2d, 100);             /* (1) play the "hurry up" sound  (evt 0x2d -> snd 1007) */
+  if (music_on && movie_valid)
+    SetMovieRate(_DAT_10039054, 0x14000);  /* (2) speed the looping music movie */
+}
+```
+
+QuickTime movie rate is **16.16 fixed-point**, so `0x14000 / 0x10000 = `**`1.25×`**. It drops
+back to normal (`SetMovieRate(movie, 0x10000)` = 1.0×) via `FUN_10018ac4`, called from
+`FUN_1000f3f0` when a **time award lifts the last "hurrying" player back above 1000** (its
+`bonus < 0x3e9` guard), and every **new board restarts the movie at 1.0×** (`FUN_1001882c`).
+
+Because QTMA is **note-sequenced** (§ Source format), rate 1.25× speeds the **tempo only —
+every note's pitch is unchanged** (the sequencer clock runs faster; the sampler still plays
+each note at its own pitch). It is *not* a resample.
+
+### How the port implements it
+
+The port pre-renders a **tempo-only 1.25× variant of each in-play tune** rather than
+resampling at runtime (which would also raise pitch):
+
+| Piece | Where | What |
+|---|---|---|
+| Variants | `extracted/music/<track>_hurry.ogg` | `ffmpeg atempo=1.25` (WSOLA time-stretch: faster, **pitch preserved**) of each in-play `<track>.ogg` (selectors 1–4 + their `_thin`). Built by **`tools/render_music_hurry.ps1`**. Stretching the *shipped* OGG (not a re-synth) makes the hurry timbre identical to the normal track, so the swap is seamless. |
+| Swap | `audio.gd` `set_music_hurry(on)` | Swaps the looping stream to `<track>_hurry` (carrying the playback position across, `pos ÷ 1.25`) and back. Falls back to `pitch_scale` only if a variant is missing, so the cue is never silent. A track change resets to 1.0× in `play_music` (mirrors `FUN_1001882c`); the board-clear tally, pause, and game-over also release to 1.0× via the per-tick recompute. |
+| Trigger | `game.gd` tick loop | Recomputed **every tick** from the core predicate `_core.music_hurry()` — 1.25× while ANY in-play player's Bonus is in `(0, 1000]`, 1.0× otherwise (the original re-rates one shared movie, so any player in the zone speeds it). `set_music_hurry` is idempotent, so it only swaps on an actual state change. A **transporter slide keeps 1.25×** — the movie rate only resets on an above-1000 time award or a new board, never for the slide, so the frozen sub-1000 Bonus stays hurried (no dip, no reseat). The `SOI_SFX_HURRY` event (evt id 39) is drained in the same loop but only plays the warning **cue** — it does not drive the tempo. |
+
+Neither the ending (`Angel_Pie`) nor the menu ever runs a Bonus countdown, so neither ever
+triggers the speedup. `Angel_Pie` has no `_hurry` variant at all; the menu reuses `6lilt`
+(in-play selector 1), so a `6lilt_hurry` file does exist but the menu never plays it. The
+`_hurry` files are **auto-generated** — you don't supply them for the
+*Original* soundtrack; re-run `tools/render_music_hurry.ps1` after dropping new tracks in.
+
+**Proof (`tools/verify_music_hurry.py`):** each of the eight in-play hurry variants (the four
+tunes × Full/Light) measures **duration ratio 0.80**
+(tempo +25%) with a **matched dominant-peak frequency ratio of 1.0000** (pitch unchanged; a
+semitone would be 1.059, a resample ≈1.25) — objective confirmation of the faithful
+tempo-only speedup.
+
+---
+
 ## Source format — QuickTime Music (QTMA)  (from RE)
 
 The tunes are **not** baked audio. Each is a **QuickTime Music Architecture (QTMA)**

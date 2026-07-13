@@ -70,6 +70,7 @@ public:
     int64_t goodies_left() const;
     int64_t reveal_timer() const;
     int64_t bonus_time() const;
+    bool music_hurry() const;
     int64_t tick_count() const;
     int64_t enemy_count() const;
     int64_t projectile_count() const;

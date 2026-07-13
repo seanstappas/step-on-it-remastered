@@ -475,3 +475,38 @@ removing it would regress the `--shot` harness (walks P1 into the X=12 pit to di
 + needs a video oracle. Net: **leave as-is; documented**. Revisit only if the
 reference video shows a jumping player wrapping top↔bottom, or the off-bottom
 death path is traced.
+
+## 9. Level 1 & 10 bugfix batch — asm grounding (2026-07-12)
+
+A batch of gameplay bugs found play-testing **board_401** (Level 1) and **board_410**
+(Level 10). Every fix is grounded in the cited asm fn (decomp under
+`analysis/decomp/all/FUN_<hex>_*.c`) and locked by a white-box assert in
+[`tests/test_mechanics.c`](../../tests/test_mechanics.c) (tests 25/25b/25c/26/27/28).
+The determinism hash is **unchanged** (`0xc677624ae3878b5e`): the harness scenario
+(P1 walks right, no enemies) never exercises these paths, and the death-pop uses an
+**unserialized** transient queue.
+
+| # | symptom | asm fn(s) | port location | mechanism / fix |
+|---|---|---|---|---|
+| 1a | break-under too strict (Robo had to be on the far edge) | `FUN_10005750` | [soi_enemies.c](../../core/src/soi_enemies.c) 536–549 | enemy foot support probe uses an **INSET** column range `col(x+6)`..`col(x+0x1a)` at `row+1`; a block broken under a leg that clears the inset **drops** the enemy even if a far corner still overlaps the next block. |
+| 1b | coin pickup too strict (had to be right on top) | `soi_pickup_check` | [soi_grid.c](../../core/src/soi_grid.c) 28–38, [soi_physics.c](../../core/src/soi_physics.c) 311 | pickup runs **every tick** at the TOP of the player update; probe is the body-centre cell `(x+0xC, y+0x10)` — any body overlap collects. |
+| 1c | a falling enemy killed the player on a *different* block | `FUN_100299b4` → `FUN_100030d4` | [soi_enemies.c](../../core/src/soi_enemies.c) 993 | player↔enemy fatal contact is an **AABB hurtbox overlap**, NOT cell-equality; an enemy sharing the player's grid cell but not its box does not kill. |
+| 2 | walk + repeated block-ability → glide | pose gate `pose_t` | [soi_physics.c](../../core/src/soi_physics.c) 350 | build/fire sets `pose_t=12`; while `pose_t>0` the player update **returns early**, so held movement can't advance `x` (stutter, not glide). |
+| 3 | block-ability while jumping showed no anim | render order | [game.gd](../../godot_project/scenes/game.gd) `_draw_player` | draw priority reordered **death→pose→jump→fall→run** so a mid-air build/fire pose out-ranks the jump frame. |
+| 4 | timer-runout death: no anim/sound | `FUN_1000f500` → `FUN_10012228` | [soi_state.c](../../core/src/soi_state.c) 374–390 | bonus-zero routes the player through `soi_player_hit` (the `+0x28=1` death throw + `SOI_SFX_PLAYER_HIT`), identical to enemy contact. |
+| 5 | knight projectile "looks wrong" | `FUN_1000c2e8` / `FUN_1000c544` | [soi_enemies.c](../../core/src/soi_enemies.c) 761–769 | subsumed by 6+8: the Knight **LOBS a goody** (`0x71`), not a "shot"; render now shows the gift-lob pose. |
+| 6 | knight gifts land in its own / gargoyle cage | `gift_cell_ok` (port helper) | [soi_enemies.c](../../core/src/soi_enemies.c) | the gift target cell is **rejected** if it lands inside a shooter/gargoyle cage; another cell is chosen. |
+| 7 | gargoyle glitched, no dangerous projectile | `FUN_1000adc4` → `FUN_1000b44c` | [soi_enemies.c](../../core/src/soi_enemies.c) 691–761 | the Gargoyle is a stationary 3-phase turret; its puff (`0x72`) now spawns at a muzzle offset **inside its own tile**, aimed (normalized velocity) at the nearest live player, fired **silently**. |
+| 8 | knight gift **curves** | `FUN_1000c544` → `FUN_1000c680` | [soi_enemies.c](../../core/src/soi_enemies.c) 1112–1133 | **proportional** straight-line stepping `amax=max(|dx|,|dy|); x+=dx*6/amax; y+=dy*6/amax` (old per-axis ±6 clamp bent 45°-then-straight). |
+| 9 | black screen eventually | downstream of 4/6/8 | — | **not an independent bug**: caused by the timer-death hang (4) + off-screen gifts (6/8). With those fixed, board_410 runs the full **180 s** cleanly — capture `media/video/l10_fixed_*.mp4`, frames t150/t179 render a full board (bonus hits 0, a life is lost, play continues). |
+| 10 | "ObjectDB instances leaked at exit" | — | [game.gd](../../godot_project/scenes/game.gd) `_exit_tree` | `SoiCore` is `RefCounted`; nulling `_core` in `_exit_tree` frees it at shutdown. |
+
+**Enemy death-bounce ("pop").** A separate, related feature (see plan/checkpoint 006–007):
+every kill spawns the generic flying death sprite `FUN_10028014` → `FUN_100278bc`
+(vx=+40, vy=−80), updated by the closed-form arc in `FUN_10028060`. It is **purely
+cosmetic** (own debris list; never touches enemy/player/grid/RNG), so the port renders
+it in the Godot layer via an **unserialized** death-event queue — determinism-safe.
+
+**Cross-ref:** this batch also corrected the `soi_bord_badguy_type` table in
+[`bord-level-format.md` §4b](bord-level-format.md) (13=Knight, 14=Gargoyle, 16/17=Creeper
+H/V — the earlier table had 13/14=Cannon/Hammer and 16/17=Gargoyle/Knight).
