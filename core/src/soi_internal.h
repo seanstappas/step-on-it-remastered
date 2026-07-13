@@ -64,7 +64,13 @@ typedef struct {
     int16_t  fast;                  /* speed-shoes timer (goody 0x32 -> asm +0x5c/+0x6e);
                                      * >0 = 2x speed (player runs at 60Hz, not 30Hz) */
     uint8_t  pose;                  /* action pose for DISPLAY: 0 none, 1 fire, 2 build */
-    int16_t  pose_t;                /* action-pose countdown (frames); display-only, no lock */
+    int16_t  pose_t;                /* action-pose countdown (frames). Drives DISPLAY (the
+                                     * fire/build pose out-ranks run in the renderer) AND gates
+                                     * the ground run dispatch: while >0 the player is frozen in
+                                     * the ~12-frame swing (the anti-"glide" stutter-stop, asm
+                                     * FUN_1001166c +0x25). It self-releases because soi_state.c
+                                     * decrements it UNCONDITIONALLY every frame -- keep that
+                                     * drain ungated or the freeze becomes permanent. */
 } SoiPlayer;
 
 typedef struct {
@@ -164,6 +170,9 @@ int      soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row);
 SoiEnemyType soi_bord_badguy_type(uint8_t bord_type);
 int      soi_bord_is_spawner(uint8_t bord_type);
 void     soi_enemies_update(SoiWorld *w);
+/* true if (col,row) is a legal Knight-gift target: in bounds, empty, and not within
+ * the 3x3 neighborhood of a Knight or Gargoyle (keeps gifts out of the shooters' cages). */
+int      soi_gift_cell_ok(SoiWorld *w, int col, int row);
 void     soi_enemy_kill(SoiWorld *w, int idx, int by_player);
 int      soi_enemy_at(const SoiWorld *w, int col, int row); /* -1 if none */
 /* apply one point of damage to a player, spending a shield if held. */

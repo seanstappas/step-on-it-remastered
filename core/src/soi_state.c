@@ -352,7 +352,9 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
     }
     for (i = 1; i < SOI_MAX_PLAYERS; i++)
         if (w->players[i].fast > 0) w->players[i].fast--;
-    /* action pose (fire/build) is a brief DISPLAY hint -- count it down (no input lock). */
+    /* Action pose (fire/build): count it down. This also RELEASES the run-dispatch
+     * freeze that soi_player_update holds while pose_t > 0 (the anti-glide stutter-stop),
+     * so the decrement MUST stay unconditional -- gating it would freeze the player. */
     for (i = 1; i < SOI_MAX_PLAYERS; i++)
         if (w->players[i].pose_t > 0 && --w->players[i].pose_t == 0) w->players[i].pose = 0;
     /* Clock power-up (goody 0x2E): halves the enemy update rate for ~10s. The asm
@@ -380,9 +382,19 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
                 p->bonus_time--;
                 if (p->bonus_time == 1000) soi_sfx_emit(w, SOI_SFX_HURRY);
                 if (p->bonus_time == 0) {
-                    p->alive = 0;
-                    if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (asm) */
-                    else p->respawn_timer = 90;
+                    /* Bonus expiry is FATAL and plays the SAME death as an enemy hit:
+                     * asm FUN_1000f500 routes a timed-out player through FUN_10012228
+                     * (== soi_player_hit) -- the airborne death-throw somersault + the
+                     * hit cry (SOI_SFX_PLAYER_HIT), with the life-loss + respawn committed
+                     * in air_step. The old code silently set alive=0 (no animation, no
+                     * sound), which read as a mute "RESPAWNING" pop when the clock ran out.
+                     * UNLIKE enemy contact, the timeout is NOT gated by i-frames: the asm
+                     * launcher FUN_10012228 has no invuln check, so a player still in spawn
+                     * grace / potion invuln who lets the clock hit 0 STILL dies (you can't
+                     * cheese the timer by timing the runout into your grace window). Clear
+                     * invuln first so soi_player_hit doesn't early-return on it. */
+                    p->invuln = 0;
+                    soi_player_hit(w, i);
                 }
             }
         }
@@ -482,6 +494,22 @@ int soi_count_treasure(const SoiWorld *w)
     return n;
 }
 int      soi_bonus_time(const SoiWorld *w)          { return w->players[1].bonus_time; }
+/* Shared "hurry up" music state: 1 if ANY in-play player's bonus timer is in the
+ * low zone (0 < bonus_time <= 1000). The asm speeds the single background movie to
+ * 1.25x (FUN_10018b24 SetMovieRate 0x14000) as a player's timer passes 1000, and
+ * restores 1.0x (FUN_10018ac4) once lifted back above 1000 / on a new board. Because
+ * the movie is shared, the sped-up state reflects ANY player being in the zone --
+ * a read-only predicate (does not mutate state or emit events; hash-neutral). */
+int      soi_music_hurry(const SoiWorld *w) {
+    int i;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        const SoiPlayer *p = &w->players[i];
+        if (p->active && p->alive && !p->eliminated &&
+            p->bonus_time > 0 && p->bonus_time <= 1000)
+            return 1;
+    }
+    return 0;
+}
 uint32_t soi_tick_count(const SoiWorld *w)          { return w->tick; }
 uint32_t soi_grid_cell(const SoiWorld *w, int c, int r) { return soi_get_cell(w, c, r); }
 int      soi_enemy_count(const SoiWorld *w)

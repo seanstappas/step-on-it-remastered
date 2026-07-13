@@ -280,7 +280,8 @@ static void air_step(SoiWorld *w, int player)
 /* One continuous run step (asm FUN_10012bf4, ground-state 1): advance 2 px in dir
  * if the cell ahead is clear -- the shared dual-row wall test move_clear() (x+0x14 right /
  * x+0x0a left, the 0x200 solid bit, FUN_100127e0 / FUN_100126c8) -- else run in place.
- * Collect any goodie on the current cell (asm FUN_1002bc64, checked every player tick). */
+ * (Goodie pickup is NOT done here: the asm collects on EVERY player tick, not only while
+ * running -- see the soi_pickup_check call in soi_player_update below.) */
 static void run_step(SoiWorld *w, int player, int dir)
 {
     SoiPlayer *p = &w->players[player];
@@ -288,7 +289,6 @@ static void run_step(SoiWorld *w, int player, int dir)
     p->ground_state = SOI_ST_RUN;
     if (move_clear(w, p, dir))
         p->x += dir * 2;
-    soi_pickup_check(w, player);
 }
 
 void soi_player_update(SoiWorld *w, int player)
@@ -302,6 +302,18 @@ void soi_player_update(SoiWorld *w, int player)
     p->input_prev = in;
 
     if (!p->active || p->eliminated || !p->alive) return;
+
+    /* Walk-over goodie pickup runs EVERY LIVE player tick (asm FUN_1002a308 calls
+     * FUN_1002bc64 for each player, not just while running), so a coin/gem is
+     * collected the instant any part of the body overlaps its cell -- standing on
+     * it, landing on it, or brushing it mid-jump -- not only once you run fully onto
+     * it. But the asm GATES that call on the dying flag (+0x1003a9d8 == 0): a player
+     * mid death-throw collects NOTHING -- no coins, no key, and it cannot door-win
+     * while dead. `alive` stays 1 for the whole somersault (it clears only when the
+     * arc commits the life-loss), so the guard keys off SOI_ST_DEAD, not alive. A
+     * live player falling off a ledge (FALL, not DEAD) still picks up, as in the asm. */
+    if (p->ground_state != SOI_ST_DEAD)
+        soi_pickup_check(w, player);
 
     if (p->in_air) {
         /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
@@ -333,6 +345,14 @@ void soi_player_update(SoiWorld *w, int player)
     if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
     if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
     if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+    /* Action swing in progress: freeze only the CONTINUOUS run/idle dispatch during the
+     * ~12-frame build/fire pose (asm action active-flag FUN_1001166c +0x25). Without this,
+     * holding a direction while repeatedly building slides ("glides") the player across the
+     * floor under the arm-swing; freezing the run here makes him stutter to a stop until the
+     * pose finishes. The edge-triggered actions ABOVE (jump/build/fire) and gravity (the fall
+     * check above) deliberately stay live -- the player can still act mid-swing -- and the
+     * render still shows the build/fire pose (it out-ranks run in _draw_player). */
+    if (p->pose_t > 0) return;
     if (in & SOI_IN_LEFT)       { run_step(w, player, -1); return; }
     if (in & SOI_IN_RIGHT)      { run_step(w, player, +1); return; }
     /* no direction held: settle to rest -- snap X to a 4 px boundary (asm idle

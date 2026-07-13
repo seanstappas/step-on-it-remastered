@@ -187,6 +187,7 @@ int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected *
 int      soi_count_treasure(const SoiWorld *w);  /* treasure cells now in the grid (objective count) */
 int      soi_reveal_timer(const SoiWorld *w);    /* magnifying-glass reveal (goody 0x2F); >0 = hidden treasures shown */
 int      soi_bonus_time(const SoiWorld *w);
+int      soi_music_hurry(const SoiWorld *w);     /* 1 if ANY in-play player is in the low-bonus "hurry" zone (shared 1.25x music) */
 uint32_t soi_tick_count(const SoiWorld *w);
 uint32_t soi_grid_cell(const SoiWorld *w, int col, int row);
 int      soi_enemy_count(const SoiWorld *w);

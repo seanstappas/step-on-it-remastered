@@ -812,8 +812,7 @@ func _ready() -> void:
 	_win_video.position = Vector2(100, 106)
 	_win_video.size = Vector2(440, 328)   # native 220x164, shown at 2x
 	_win_video.hide()
-	_win_video.finished.connect(func() -> void:
-		if _win_video.visible: _win_video.play())   # loop while the results screen is held
+	_win_video.finished.connect(_on_win_video_finished)
 	add_child(_win_video)
 	_level_bytes = _load_level_bytes()
 	if _level_bytes.is_empty():
@@ -918,6 +917,27 @@ func _ready() -> void:
 	Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]   # Options->Speed (local)
 	set_physics_process(true)
 
+
+func _on_win_video_finished() -> void:
+	if is_instance_valid(_win_video) and _win_video.visible:
+		_win_video.play()                  # loop while the results screen is held
+
+
+func _exit_tree() -> void:
+	# Stop stepping the core before we drop its refs, so no queued physics frame can
+	# touch a half-freed scene while the tree is being torn down (window close).
+	set_physics_process(false)
+	# Release scene-owned refs to reduce the "ObjectDB instances leaked at exit" warning on window close.
+	if _win_video != null and is_instance_valid(_win_video):
+		if _win_video.finished.is_connected(_on_win_video_finished):
+			_win_video.finished.disconnect(_on_win_video_finished)
+		_win_video.queue_free()
+	_win_video = null
+	_tex_cache.clear()
+	_pict_cache.clear()
+	_core = null
+
+
 ## (re)start the current board from a clean core state.
 func _start() -> void:
 	_core.init(1)
@@ -1010,7 +1030,7 @@ func _physics_process(_delta: float) -> void:
 		var teleported := false
 		for i in _core.sfx_count():
 			var ev := _core.sfx_get(i)
-			Audio.play(ev)
+			Audio.play(ev)                 # SOI_SFX_HURRY (39) plays its warning cue here too
 			if ev == SFX_TELEPORT:
 				teleported = true
 		if teleported:
@@ -1086,6 +1106,21 @@ func _physics_process(_delta: float) -> void:
 		_save_flash -= 1
 	if _challenge_intro > 0:
 		_challenge_intro -= 1
+	# Music "hurry-up" tempo is an ACTIVE-PLAY property. The original re-rates the one shared
+	# background movie to 1.25x when a Bonus passes 1000 and only resets it to 1.0x on a time
+	# award lifting the last hurrying player back above 1000, or on a NEW BOARD -- so the rate
+	# PERSISTS through a blocking transporter slide (the sim is frozen but the sub-1000 bonus is
+	# unchanged, so it stays fast rather than dipping to 1.0x and re-seating the loop twice).
+	# Recompute every frame: 1.25x iff any in-play player's Bonus is in (0, 1000]
+	# (_core.music_hurry(), read-only, valid whether or not the sim ticked) AND we are not in a
+	# state that resets the movie -- pause, the board-clear tally / game-over / level-complete
+	# (caught the same tick tick3 flips them, since these terms are re-read post-tick), an
+	# alternating-players turn change, or a challenge intro. A transporter slide is NOT such a
+	# state, so hurry rides through it unbroken (set_music_hurry is idempotent -> no reseat seam).
+	# play_music resets to 1.0x on a track change; set_music_variant preserves the rate on a swap.
+	var hurry_ok := not _paused and not _core.game_over() and not _core.level_complete() \
+		and not (_alt and _alt_state != "play") and _challenge_intro == 0
+	Audio.set_music_hurry(hurry_ok and _core.music_hurry())
 	_update_win_video()
 	queue_redraw()
 	if _demo_frames > 0:
@@ -1465,7 +1500,24 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	# (An earlier comment wrongly claimed f52 faces right and mirrored f61 for the left idle.)
 	var frame := PLAYER_STAND_R if right else PLAYER_STAND_L
 	var flip := false
-	if st == 2:                                  # JUMP -> the somersault tumble; DIRECTIONAL art (asm
+	# ASM runs FUN_1001166c every frame gated only by death: action pose overrides jump/fall/run; death overrides all.
+	if st == 12:                                # death-throw -> somersault spin. NON-directional: the asm
+		# FUN_10011fcc ping-pongs ONE frame range (0x75..0x7e) with NO facing branch, and the sheet has no
+		# separate left-death block -> the tumble is drawn the SAME way regardless of facing. Mirroring it
+		# for a left-facing death (the old `flip = not right`) spun the throw backwards, like the jump bug.
+		frame = PLAYER_DEATH_SPIN[int(_core.tick_count() / 2) % PLAYER_DEATH_SPIN.size()]
+		flip = false
+	elif pose > 0:                               # fire/build arm-extension swing -- PRIORITY over jump/fall/run.
+		# The asm action animation (FUN_1001166c, active-flag +0x25) plays its 7 DIRECTIONAL frames and
+		# OVERRIDES the jump-tumble / fall / run-idle frame while it runs (gated only by the death-throw
+		# above; +0x28). Ranking it ABOVE the jump (st==2) branch is exactly what makes a mid-air build/fire
+		# show its swing instead of the jump art. Checking it BEFORE the run branch also stops a residual
+		# run-timer (still counting down right after you stop moving) from bleeding a run frame into the
+		# build/fire pose -- that one-frame run frame is the "flip" seen when acting immediately after running.
+		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
+		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
+		flip = false                             # frames are directional -- no mirror
+	elif st == 2:                                # JUMP -> the somersault tumble; DIRECTIONAL art (asm
 		# FUN_10013404 +0x10): RIGHT plays f133-141, LEFT plays its OWN f126-133 -- NOT a mirror (the two sets
 		# are halves of one same-direction tumble, so mirroring the right set spun the left jump backwards).
 		# Phase counts from the jump's launch tick (_p_jumptick) so the tumble STARTS at the launch pose.
@@ -1477,21 +1529,6 @@ func _draw_player(idx: int, shirt: Color) -> void:
 		flip = false                             # native directional art -- no mirror
 	elif st == 3:                                # FALL -> the static directional pose (same as idle)
 		pass
-	elif st == 12:                               # death-throw -> somersault spin. NON-directional: the asm
-		# FUN_10011fcc ping-pongs ONE frame range (0x75..0x7e) with NO facing branch, and the sheet has no
-		# separate left-death block -> the tumble is drawn the SAME way regardless of facing. Mirroring it
-		# for a left-facing death (the old `flip = not right`) spun the throw backwards, like the jump bug.
-		frame = PLAYER_DEATH_SPIN[int(_core.tick_count() / 2) % PLAYER_DEATH_SPIN.size()]
-		flip = false
-	elif pose > 0:                               # fire/build arm-extension swing -- PRIORITY over run.
-		# The asm action animation (FUN_1001166c, active-flag +0x25) plays its 7 DIRECTIONAL frames and
-		# OVERRIDES the run/idle frame while it runs (it is gated only by jump/fall/death above, via +0x28).
-		# Checking it BEFORE the run branch stops a residual run-timer (still counting down right after you
-		# stop moving) from bleeding a run frame into the build/fire pose -- that one-frame run frame is the
-		# "flip" seen when acting immediately after running.
-		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
-		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
-		flip = false                             # frames are directional -- no mirror
 	elif int(_p_runtimer.get(idx, 0)) > 0:       # running
 		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
 		flip = not right                         # right = f37-48 (head forward); left = the same, mirrored

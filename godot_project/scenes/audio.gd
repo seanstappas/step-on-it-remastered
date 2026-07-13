@@ -85,6 +85,17 @@ var _music_light := false           # Sound->Music Full(false)/Light(true): Ligh
 var _current_selector := 0          # FUN_10018414 current-movie cache -> skip reloading the same selector (seamless loop)
 const DEFAULT_MUSIC := "6lilt"
 
+# "Hurry up" tempo: when a player's Bonus timer ticks past 1000 the original speeds the
+# looping music via SetMovieRate(movie, 0x14000) -- 16.16 fixed-point, so 0x14000/0x10000 =
+# 1.25x (asm FUN_10018b24, alongside the 0x2d "hurry up" sound). It resets to 1.0x when a
+# time award lifts the last hurrying player back above 1000 (FUN_1000f3f0 -> FUN_10018ac4),
+# and every new board restarts the movie at 1.0x (FUN_1001882c). QTMA is note-sequenced, so
+# the speedup is TEMPO ONLY (pitch constant): we play a pre-rendered atempo=1.25 variant
+# ("<track>_hurry.ogg", tools/render_music_hurry.ps1) rather than resampling, which would
+# also shift pitch. See docs/original_game/music-tracks.md.
+const HURRY_RATE := 1.25
+var _music_hurry := false           # is the low-bonus tempo speedup currently engaged?
+
 func _ready() -> void:
 	var ov := _sfx_variant_override()
 	if ov != "":
@@ -147,6 +158,14 @@ func _music_path(track: String) -> String:
 		var op := _music_dir.path_join("original").path_join(track + ".ogg")
 		if FileAccess.file_exists(op):
 			return op
+		# A "_hurry" request whose ORIGINAL base recording exists but has no pre-rendered
+		# original hurry: do NOT cross to the remaster (that jumps timbre mid-track). Return the
+		# (absent) original path so _load_music yields null and set_music_hurry degrades via
+		# pitch_scale on the SAME original recording. If the base itself is absent (the user
+		# never supplied this tune) we fall through to the remaster below, as usual.
+		if track.ends_with("_hurry") and FileAccess.file_exists(
+				_music_dir.path_join("original").path_join(track.trim_suffix("_hurry") + ".ogg")):
+			return op
 	return _music_dir.path_join(track + ".ogg")
 
 ## Load a looping OGG track by base name (no extension). Cached per variant.
@@ -172,7 +191,12 @@ func play_music(track: String) -> void:
 	if s == null:
 		return
 	_current_track = track
+	_music_hurry = false                 # a track change starts at 1.0x (asm FUN_1001882c)
+	_music_player.pitch_scale = 1.0
 	_music_player.stream = s
+	_load_music(track + "_hurry")        # pre-warm the hurry variant into cache, off the per-tick
+	                                     # hot path, so the first hurry engagement never disk-loads
+	                                     # during a physics tick (no frame hitch)
 	if _music_enabled:
 		_music_player.play()
 
@@ -184,11 +208,20 @@ func set_music_variant(v: String) -> void:
 	_music_variant = v
 	if _music_player != null:
 		var was_playing := _music_player.playing
-		var s := _load_music(_current_track)
+		# Honor an active "hurry" speedup across the soundtrack swap (the asm re-rates the one
+		# shared movie regardless of which recording is loaded): prefer this track's pre-rendered
+		# "_hurry" variant; if the chosen soundtrack has none, fall back to base + pitch_scale.
+		var s: AudioStream = _load_music(_current_track + "_hurry") if _music_hurry else null
+		if s != null:
+			_music_player.pitch_scale = 1.0
+		else:
+			s = _load_music(_current_track)
+			_music_player.pitch_scale = HURRY_RATE if _music_hurry else 1.0
 		if s != null:
 			_music_player.stream = s
 			if was_playing and _music_enabled:
 				_music_player.play()
+		_load_music(_current_track + "_hurry")   # pre-warm the new soundtrack's hurry variant (as play_music does) so the first hurry after a swap never disk-loads mid-tick
 
 func get_music_variant() -> String:
 	return _music_variant
@@ -208,6 +241,41 @@ func set_music_enabled(on: bool) -> void:
 
 func is_music_enabled() -> bool:
 	return _music_enabled
+
+## "Hurry up" tempo control (asm FUN_10018b24 / FUN_10018ac4). Engage (on=true) when a
+## player's Bonus timer passes 1000; release (on=false) when it is lifted back above 1000
+## or a new board starts. Faithful behaviour is TEMPO ONLY (pitch constant), so we swap the
+## looping stream to the pre-rendered "<track>_hurry.ogg" (atempo=1.25) and carry the
+## playback position across so timbre and position stay close. (Unlike the original's in-place
+## SetMovieRate, this restarts the loop at the mapped offset, so the seam is a sub-buffer
+## approximation, not sample-exact.) If no pre-rendered variant exists we degrade gracefully to
+## pitch_scale (tempo AND pitch rise) so the urgency cue is never silent.
+func set_music_hurry(on: bool) -> void:
+	if on == _music_hurry:
+		return
+	if _music_player == null:
+		return                               # not initialised yet; the per-tick recompute re-engages once playing
+	_music_hurry = on
+	var was_playing := _music_player.playing
+	var pos := _music_player.get_playback_position() if was_playing else 0.0
+	var want := (_current_track + "_hurry") if on else _current_track
+	var s := _load_music(want)
+	if s == null:
+		# No pre-rendered variant for this track -> resample in place (less faithful: this
+		# raises pitch too), so the speedup still fires rather than doing nothing.
+		_music_player.pitch_scale = HURRY_RATE if on else 1.0
+		return
+	_music_player.pitch_scale = 1.0
+	if _music_player.stream == s:
+		return
+	# Map the position onto the re-timed stream: base->hurry compresses time by 1/1.25,
+	# hurry->base expands it by 1.25. Wrap into the loop so play() never seeks past the end.
+	var np: float = pos * ((1.0 / HURRY_RATE) if on else HURRY_RATE)
+	_music_player.stream = s
+	if was_playing and _music_enabled:
+		var slen := s.get_length()
+		np = fmod(np, slen) if slen > 0.0 else 0.0
+		_music_player.play(np)
 
 # --- RE-grounded per-screen music selection -----------------------------------
 ## The original chooses the looping background-music QuickTime movie via

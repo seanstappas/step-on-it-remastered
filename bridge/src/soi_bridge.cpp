@@ -79,6 +79,7 @@ int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); 
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
 int64_t SoiCore::reveal_timer() const          { return soi_reveal_timer(w()); }
 int64_t SoiCore::bonus_time() const            { return soi_bonus_time(w()); }
+bool    SoiCore::music_hurry() const           { return soi_music_hurry(w()) != 0; }
 int64_t SoiCore::tick_count() const            { return (int64_t)soi_tick_count(w()); }
 int64_t SoiCore::enemy_count() const           { return soi_enemy_count(w()); }
 int64_t SoiCore::projectile_count() const      { return soi_projectile_count(w()); }
@@ -158,6 +159,7 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("goodies_left"), &SoiCore::goodies_left);
     ClassDB::bind_method(D_METHOD("reveal_timer"), &SoiCore::reveal_timer);
     ClassDB::bind_method(D_METHOD("bonus_time"), &SoiCore::bonus_time);
+    ClassDB::bind_method(D_METHOD("music_hurry"), &SoiCore::music_hurry);
     ClassDB::bind_method(D_METHOD("tick_count"), &SoiCore::tick_count);
     ClassDB::bind_method(D_METHOD("enemy_count"), &SoiCore::enemy_count);
     ClassDB::bind_method(D_METHOD("projectile_count"), &SoiCore::projectile_count);

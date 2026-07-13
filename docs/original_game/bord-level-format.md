@@ -132,14 +132,18 @@ are **stationary spawners** that emit a base nasty (child struct type = `index +
 
 | type | enemy | type | enemy | type | enemy | type | enemy |
 |---|---|---|---|---|---|---|---|
-| 1 | Cannon* | 6 | Hammer‡ | 11 | Smiley‡ | 16 | Gargoyle* |
-| 2 | Wheelie | 7 | Beanie | 12 | Ant‡ | 17 | Knight* |
-| 3 | Wheelie | 8 | Beanie(child) | 13 | Cannon* | 18 | Ostrich‡ |
-| 4 | Walker | 9 | Spinner | 14 | Hammer | 19 | Piggy‡ |
+| 1 | Cannon* | 6 | Hammer‡ | 11 | Smiley‡ | 16 | Creeper (H) |
+| 2 | Wheelie | 7 | Beanie | 12 | Ant‡ | 17 | Creeper (V) |
+| 3 | Wheelie | 8 | Beanie(child) | 13 | Knight* | 18 | Ostrich‡ |
+| 4 | Walker | 9 | Spinner | 14 | Gargoyle* | 19 | Piggy‡ |
 | 5 | Hippo‡ | 10 | Teeth‡ | 15 | **Robo** | | |
 
-CONFIRMED: 2, 4, 7, 8, 15 (behaviour fns). ‡ = spawner→emitted-nasty (HIGH). \* = shooter (Cannon fires
-`0x65`/`0x71`; Gargoyle/Knight fire at anim frame `0xf`) — MEDIUM. *(This is a SEPARATE index space from
+CONFIRMED: 2, 4, 7, 8, 15 (behaviour fns); **13/14/16/17 corrected 2026-07-12** against the port's
+`soi_bord_badguy_type()` map + the `map:` gate tests (the earlier table had 13/14 = Cannon/Hammer and
+16/17 = Gargoyle/Knight — WRONG). ‡ = spawner→emitted-nasty (HIGH). \* = shooter: **Cannon (1)** fires
+`0x65`; **Knight (13)** lobs a gift `0x71` to a random cell (`FUN_1000c2e8`); **Gargoyle (14)** fires a
+block-breaking puff `0x72` toward a player (`FUN_1000adc4`). **Creeper (16 H / 17 V)** is a self-propelled
+block-layer (`FUN_10008618`/`FUN_10008b18`), never a shooter. *(This badguy index is a SEPARATE space from
 the Gargoyle-thrown badguy: header `0x12`, dispatched by `FUN_1000b7dc` as `selector-5`, struct type =
 `selector+0x64`.)* Port: `soi_bord_badguy_type()` + the `tile & 0x400` branch in `soi_load_level`.
 

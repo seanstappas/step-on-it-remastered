@@ -533,15 +533,18 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
 
     /* Gravity: a nasty is supported while EITHER foot rests on a SOLID block
      * (0x200) in the cell below; only over open air (BOTH feet clear) does it
-     * FALL -- and not walk -- until it lands. This two-foot probe matches the asm
-     * (FUN_10005750 tests both footprint edges), so a nasty walks fully off a
-     * ledge before dropping and can straddle a one-cell gap. It reverses only at
-     * a body-height WALL (below), never at a ledge. OOB reads solid (0x300).
-     * The Beanie is EXEMPT: it is a gravity-free FLOATER (asm FUN_10006378 only
+     * FALL -- and not walk -- until it lands. The asm FUN_10005750 probes the two
+     * INSET feet at x+6 and x+0x1a (a ~20 px stance inside the 32 px tile), NOT the
+     * full-cell edges: so a nasty tips the instant those inset feet clear the block
+     * under it, instead of clinging until its whole body is past the edge. This is
+     * why pulling the block out from under a patrolling Robo now reliably drops it
+     * (bug: break-under used to demand the Robo be dead-on the far cell edge). It
+     * reverses only at a body-height WALL (below), never at a ledge. OOB reads solid
+     * (0x300). The Beanie is EXEMPT: a gravity-free FLOATER (asm FUN_10006378 only
      * ever changes x, never applying a fall), so it hovers at its spawn height. */
     if (e->type != SOI_ENEMY_BEANIE) {
-        int lc = col;                                                   /* left-foot column  */
-        int rc = (e->x + SOI_CELL_PX - 1 - SOI_ORIGIN_X) / SOI_CELL_PX;  /* right-foot column */
+        int lc = (e->x + 6 - SOI_ORIGIN_X) / SOI_CELL_PX;               /* left foot  (asm inset +6)      */
+        int rc = (e->x + 0x1a - SOI_ORIGIN_X) / SOI_CELL_PX;            /* right foot (asm inset +0x1a=26) */
         if (!(soi_get_cell(w, lc, row + 1) & SOI_CELL_SUPPORTIVE) &&
             !(soi_get_cell(w, rc, row + 1) & SOI_CELL_SUPPORTIVE)) {
             e->y += 4;                                   /* fall speed (px/frame) */
@@ -736,8 +739,19 @@ static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e)
                       soi_rand_range(w, 100) <= w->pct_ultrabuster) ? 1 : 0;
                                            /* UltraBuster (asm FUN_1000bf54): pct_ultrabuster%% of shots */
         pr->age = 0;
-        pr->x = e->x + sx * 0x20;
-        pr->y = e->y + sy * 0x20;
+        /* Spawn the puff at the Gargoyle's OWN top-left (e->x, e->y), NOT one cell toward the
+         * aim. The asm FUN_1000adc4 hands FUN_1000b44c a sub-tile muzzle (gx+0x1e, gy-8) that
+         * still resolves to the Gargoyle's own cell; the port uses the tile origin instead
+         * because it lands in the SAME collision cell yet avoids gy-8 straying up into the row
+         * ABOVE (also a wall for the caged board_410 Gargoyle). The old "e->x + sx*0x20"
+         * launched the puff a full cell in the aim direction -- for that caged Gargoyle that is
+         * straight INTO the adjacent wall, so the puff was killed on its first tick
+         * (soi_projectiles_update wall check) and never appeared ("Gargoyle doesn't shoot out
+         * the dangerous projectile"). From its own open tile the puff is visible and tracks the
+         * player. (The Cannon/Walker keep their one-cell-ahead muzzle: they are OPEN turrets on
+         * every shipped board, never caged, so their forward muzzle never fires into a wall.) */
+        pr->x = e->x;
+        pr->y = e->y;
         pr->vx = (int16_t)vx;
         pr->vy = (int16_t)vy;
         /* The Gargoyle fires SILENTLY (asm FUN_1000adc4 -- no SFX trigger, unlike the
@@ -777,16 +791,21 @@ static uint8_t gift_goody(SoiWorld *w)
                                           * at 0x3f), so 0x32 (shoes) is never dropped by this table. */
 }
 
-/* A gift target must be EMPTY and not adjacent to a Spinner/Gargoyle (asm FUN_1000cc50
- * rejects cells next to the entity markers 0x40d/0x40e). */
-static int gift_cell_ok(SoiWorld *w, int col, int row)
+/* A gift target must be EMPTY and not adjacent to a Knight or Gargoyle (asm FUN_1000cc50
+ * rejects any cell whose neighbourhood holds the entity markers 0x40d = Knight (0x400|13)
+ * or 0x40e = Gargoyle (0x400|14)). The port scans a symmetric 3x3 of live-enemy positions,
+ * which is at least as strict as the asm's 8-cell (sides + the two rows below) mask. This
+ * is what stops the Knight from raining its OWN gifts into its (and the caged Gargoyle's)
+ * area -- the old code checked SPINNER instead of KNIGHT, so nothing guarded the shooters'
+ * own tiles and the board filled with goodies up to and inside the cage. */
+int soi_gift_cell_ok(SoiWorld *w, int col, int row)
 {
     int dc, dr;
     if (!soi_in_bounds(col, row) || soi_get_cell(w, col, row) != 0) return 0;
     for (dr = -1; dr <= 1; dr++)
         for (dc = -1; dc <= 1; dc++) {
             int a = soi_enemy_at(w, col + dc, row + dr);
-            if (a >= 0 && (w->enemies[a].type == SOI_ENEMY_SPINNER ||
+            if (a >= 0 && (w->enemies[a].type == SOI_ENEMY_KNIGHT ||
                            w->enemies[a].type == SOI_ENEMY_GARGOYLE))
                 return 0;
         }
@@ -814,7 +833,7 @@ static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)
     for (tries = 0; tries < 10 && tcol < 0; tries++) {
         int c = soi_rand_range(w, SOI_GRID_COLS) - 1;
         int r = soi_rand_range(w, SOI_GRID_ROWS) - 1;
-        if (gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
+        if (soi_gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
     }
     if (tcol < 0) {                                  /* board walled in -> aim at a player */
         int bestd = 1 << 30, pj;
@@ -836,7 +855,11 @@ static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)
         pr->src_type = (uint8_t)SOI_ENEMY_KNIGHT; pr->pierce = 0;
         pr->gtype = gift_goody(w);
         pr->tcol = (int16_t)tcol; pr->trow = (int16_t)trow;
-        pr->x = e->x; pr->y = e->y; pr->vx = 0; pr->vy = 0; pr->age = 0;
+        pr->x = e->x; pr->y = e->y;
+        pr->vx = (int16_t)e->x; pr->vy = (int16_t)e->y;  /* a gift reuses vx/vy to remember its
+                                                          * LAUNCH pixel position (kind-2 has no
+                                                          * velocity of its own -- see the mover) */
+        pr->age = 0;
         return;
     }
 }
@@ -971,9 +994,25 @@ void soi_enemies_update(SoiWorld *w)
          * hazard, so it is exempt. */
         for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
             SoiPlayer *p = &w->players[pj];
+            int pl, pt, prt, pb, el, et, er, eb;
             if (!p->active || !p->alive || e->type == SOI_ENEMY_CREEPER) continue;
-            if ((p->x - SOI_ORIGIN_X) / SOI_CELL_PX == (e->x - SOI_ORIGIN_X) / SOI_CELL_PX &&
-                (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX == (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX) {
+            /* Real player<->enemy contact is an AABB overlap of two INSET hurtboxes
+             * (asm FUN_100299b4 -> FUN_100030d4), NOT a coarse "same grid cell" test.
+             * The player box is a narrow central strip [x+0xd, x+0x12] x [y+4, y+(0x19
+             * while JUMPING else 0x1d)]; the enemy box is [x+9, x+0x19] x [y+6, y+0x1e]
+             * (Robo's, asm FUN_1000a780 +0x82/0x84/0x80/0x7e -- reused for every type as
+             * a faithful representative, and far tighter than a whole cell). The short
+             * 0x19 box is JUMP-only: asm FUN_100299b4 picks it solely when the motion
+             * state field == 2 (JUMP per FUN_10013404); FALL (state 3) and grounded both
+             * use the tall 0x1d box, so only a rising jump gets the shorter hurtbox.
+             * Cell-equality wrongly killed a player who was safely on a DIFFERENT block
+             * while a nasty fell THROUGH his column (bug: "he killed me while falling
+             * even though I was on another block"). */
+            pl = p->x + 0x0d; prt = p->x + 0x12;
+            pt = p->y + 0x04; pb = p->y + (p->ground_state == SOI_ST_JUMP ? 0x19 : 0x1d);
+            el = e->x + 0x09; er = e->x + 0x19;
+            et = e->y + 0x06; eb = e->y + 0x1e;
+            if (pl <= er && el <= prt && pt <= eb && et <= pb) {
                 soi_player_hit(w, pj);   /* -> death-throw somersault; life-loss + respawn
                                           * commit in air_step (VERIFIED complete, not a TODO) */
             }
@@ -1083,10 +1122,31 @@ void soi_projectiles_update(SoiWorld *w)
         /* ---- Knight gift (kind 2, asm FUN_1000c544): steps to its target cell and
          * drops the goody there (empty -> collectible, blocked -> gift-block). ---- */
         if (pr->kind == 2) {
-            int tx = soi_cell_x((int)pr->tcol), ty = soi_cell_y((int)pr->trow), dx, dy;
-            dx = tx - pr->x; dy = ty - pr->y;
-            pr->x += (dx > 6) ? 6 : (dx < -6) ? -6 : dx;
-            pr->y += (dy > 6) ? 6 : (dy < -6) ? -6 : dy;
+            /* Fly STRAIGHT to the target cell (asm FUN_1000c8bc launches the gift with a
+             * sqrt-normalized velocity, FUN_1000c544 adds it each frame -> a straight line).
+             * The port keeps the flight on the exact LAUNCH->target line: step 6 px along the
+             * dominant axis and derive the minor axis by interpolating from the stored launch
+             * point (pr->vx/pr->vy hold the launch pixel position -- a kind-2 gift has no
+             * velocity of its own). The earlier "step both axes by d*6/amax" version TRUNCATED
+             * the minor step to 0 whenever |minor|*6 < |dominant| (a shallow shot), so the gift
+             * ran flat and only snapped at the very end -- a visible bow of up to ~0.8 tile
+             * (measured 26 px on a 640:50 delta). Interpolating from the launch line removes
+             * that drift: the path never leaves the line by more than a rounding pixel. */
+            int lx = pr->vx, ly = pr->vy;                    /* launch pixel position */
+            int tx = soi_cell_x((int)pr->tcol), ty = soi_cell_y((int)pr->trow);
+            int tdx = tx - lx, tdy = ty - ly;                /* total launch->target delta */
+            int atdx = (tdx < 0) ? -tdx : tdx, atdy = (tdy < 0) ? -tdy : tdy;
+            int rdx = tx - pr->x, rdy = ty - pr->y;          /* remaining to target */
+            int ardx = (rdx < 0) ? -rdx : rdx, ardy = (rdy < 0) ? -rdy : rdy;
+            if ((ardx <= 6 && ardy <= 6) || (atdx == 0 && atdy == 0)) {
+                pr->x = tx; pr->y = ty;                       /* final approach: snap onto the cell */
+            } else if (atdx >= atdy) {                        /* x-dominant (tdx != 0 here) */
+                pr->x += (rdx < 0) ? -6 : 6;
+                pr->y = ly + (int)(((int64_t)(pr->x - lx) * tdy) / tdx);
+            } else {                                          /* y-dominant (tdy != 0 here) */
+                pr->y += (rdy < 0) ? -6 : 6;
+                pr->x = lx + (int)(((int64_t)(pr->y - ly) * tdx) / tdy);
+            }
             if ((pr->x == tx && pr->y == ty) || ++pr->age > 200) {
                 soi_gift_land(w, (int)pr->tcol, (int)pr->trow, pr->gtype);
                 pr->active = 0;
@@ -1207,7 +1267,13 @@ void soi_projectiles_update(SoiWorld *w)
             }
         }
         if (pr->hostile) {
-            /* enemy shot (Cannon): damage a player sharing the cell. */
+            /* enemy shot (Cannon/Gargoyle): damage a player sharing the projectile's
+             * grid cell. This is a CELL-equality test on purpose — the original uses a
+             * grid-cell comparison for player-vs-thing goody/damage checks (e.g. the
+             * pickup/goody probe FUN_1002bc64), NOT the pixel AABB primitive
+             * (FUN_100030d4) it uses for enemy-BODY contact above. The two models
+             * legitimately differ in the original, so this must NOT be "unified" with
+             * the contact AABB. */
             int pj;
             for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
                 SoiPlayer *p = &w->players[pj];
