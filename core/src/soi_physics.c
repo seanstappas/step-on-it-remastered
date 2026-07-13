@@ -121,31 +121,58 @@ static int move_clear(SoiWorld *w, SoiPlayer *p, int dir)
     return 1;
 }
 
-/* Airborne horizontal steer: +/-2 px/frame toward the held run key, gated on the
- * target cell being clear (asm FUN_10013404 uses FUN_100126c8 / FUN_100127e0, the
- * 0x200 solid-bit wall tests). Same speed + same clearance test as a grounded run step. */
-/* Auto wall-rebound (asm FUN_10012554, called every airborne frame by BOTH the jump
- * FUN_10013404 and the fall FUN_1001386c, INDEPENDENT of input): if a solid (0x200)
- * cell sits against the player's left column (x+0x0a) at either body row (y+7 upper /
- * y+0x1e lower) push +2 px RIGHT; if it sits against the right column (x+0x14) push
- * -2 px LEFT. Nudges an airborne player out of / away from a wall. Same columns/rows
- * as move_clear, so a normal open-air jump never triggers it. */
+/* Airborne horizontal steer (asm FUN_10013404 air-steer, jump only): +/-2 px/frame
+ * toward the held run key, gated on the target cell being clear (FUN_100126c8 /
+ * FUN_100127e0, the 0x200 solid-bit wall tests). Same speed + same clearance test as
+ * a grounded run step. The fall (FUN_1001386c) does NOT air-steer -- only the jump. */
+/* Auto wall-rebound (asm FUN_10012554): if a solid (0x200) cell sits against the
+ * player's left column (x+0x0a) at either body row (y+7 upper / y+0x1e lower) push
+ * +2 px RIGHT; if it sits against the right column (x+0x14) push -2 px LEFT. Nudges
+ * an airborne player away from a wall, INDEPENDENT of input. Called by the fall every
+ * frame (FUN_1001386c) and by the jump only past the rise (FUN_10013404, jump_t>=8 --
+ * during the rise the jump runs the headroom check instead). Same columns/rows as
+ * move_clear, so a normal open-air jump/fall never triggers it. */
 static void wall_rebound(SoiWorld *w, SoiPlayer *p)
 {
+    int orig_x = p->x;                              /* asm FUN_10012554 snapshots x at entry (iVar4)
+                                                     * and uses it for BOTH side probes -- the right
+                                                     * probe must NOT see a +2 already applied by the
+                                                     * left probe, or a one-wall wedge drifts sideways. */
     int rowU = px_row1(p->y + 7);
     int rowL = px_row1(p->y + 0x1e);
-    if ((cell1(w, px_col1(p->x + 0x0a), rowU) & SOI_CELL_SUPPORTIVE) ||
-        (cell1(w, px_col1(p->x + 0x0a), rowL) & SOI_CELL_SUPPORTIVE))
+    if ((cell1(w, px_col1(orig_x + 0x0a), rowU) & SOI_CELL_SUPPORTIVE) ||
+        (cell1(w, px_col1(orig_x + 0x0a), rowL) & SOI_CELL_SUPPORTIVE))
         p->x += 2;                                  /* left side blocked -> push right */
-    if ((cell1(w, px_col1(p->x + 0x14), rowU) & SOI_CELL_SUPPORTIVE) ||
-        (cell1(w, px_col1(p->x + 0x14), rowL) & SOI_CELL_SUPPORTIVE))
+    if ((cell1(w, px_col1(orig_x + 0x14), rowU) & SOI_CELL_SUPPORTIVE) ||
+        (cell1(w, px_col1(orig_x + 0x14), rowL) & SOI_CELL_SUPPORTIVE))
         p->x -= 2;                                  /* right side blocked -> push left */
 }
 
+/* Head-clearance test (asm FUN_10012444): the two upper-body columns (x+0x10 &
+ * x+0x0e) at the row two px above the head (y-2) must BOTH be clear of the 0x200
+ * solid bit, and that row must sit at/below the top wall (y-2 >= 0x20; in practice
+ * the row-0 border wall already floors this via the OOB=solid probe). Clear -> 1,
+ * blocked -> 0. In the ASM this SAME FUN_10012444 runs both at the launch frame
+ * (FUN_10013404 jump_t==0) and every rising frame (jump_t<8). The PORT instead gives
+ * start_jump its own SIMPLIFIED single-column launch probe (px_col1(x+0x10) at
+ * px_row1(y)-1 -- a different row than this px_row1(y-2)); that divergence is a port
+ * choice, not two different asm functions, so the launch and the rise can disagree for
+ * non-cell-aligned y. This function is the per-frame re-check the RISING jump runs. */
+static int headroom_clear(const SoiWorld *w, const SoiPlayer *p)
+{
+    int yTop = p->y - 2;
+    int row  = px_row1(yTop);
+    if (cell1(w, px_col1(p->x + 0x10), row) & SOI_CELL_SUPPORTIVE) return 0;
+    if (cell1(w, px_col1(p->x + 0x0e), row) & SOI_CELL_SUPPORTIVE) return 0;
+    if (yTop < 0x20) return 0;
+    return 1;
+}
+
+/* Airborne horizontal steer (jump only): move +/-2 px toward the held run key if the
+ * cell ahead is clear. Called after the arc y-step in jump_step; the fall never steers. */
 static void air_drift(SoiWorld *w, SoiPlayer *p)
 {
     int dir = 0;
-    wall_rebound(w, p);                             /* asm FUN_10012554: push out of walls first */
     if (p->input & SOI_IN_RIGHT)      dir = 1;
     else if (p->input & SOI_IN_LEFT)  dir = -1;
     if (dir == 0) return;
@@ -192,6 +219,18 @@ static void jump_step(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
     int y;
+    /* asm FUN_10013404 order: BEFORE the jump_t increment (line 33) and the arc y-step
+     * (line 38-40), the early-rise phase (jump_t<8) re-checks headroom (FUN_10012444)
+     * every frame and stalls the leap to the apex (jump_t=0xc) if a solid cell now sits
+     * overhead -- e.g. a block you built while rising, or one that appeared above you.
+     * From jump_t>=8 onward (the late rise + hang + fall) it instead runs the auto
+     * wall-rebound (FUN_10012554 @ line 31, so on the PRE-step Y, matching the fall).
+     * The two are mutually exclusive on the PRE-increment jump_t: the asm's < 8 / else. */
+    if (p->jump_t < 8) {
+        if (!headroom_clear(w, p)) p->jump_t = 0xc;
+    } else {
+        wall_rebound(w, p);
+    }
     p->jump_t++;
     if (p->jump_t > 17) p->jump_t = 17;          /* clamp t, then step (asm order) */
     y = p->y + JUMP_DY[p->jump_t];
@@ -208,7 +247,7 @@ static void jump_step(SoiWorld *w, int player)
     }
     if (y < IN_AIR_TOP_Y) y = IN_AIR_TOP_Y;
     p->y = (int16_t)y;
-    air_drift(w, p);
+    air_drift(w, p);                              /* input air-steer only (wall-rebound handled above) */
     if (p->jump_t > 12 && supported(w, p)) {      /* past the apex + ground -> land */
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
@@ -225,7 +264,18 @@ static void jump_step(SoiWorld *w, int player)
 static void fall_step(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
-    int y = p->y + 4;
+    int y;
+    wall_rebound(w, p);                           /* asm FUN_1001386c: rebound (line 9) runs on EVERY
+                                                   * fall frame, on the PRE-step Y, BEFORE the y += 4 at
+                                                   * line 19 (rebound-only, no steer). The asm fall has NO
+                                                   * pit-death of its own, so rebound genuinely runs
+                                                   * unconditionally-first here; the y>=446 pit-death below
+                                                   * is a PORT addition. On a pit-death frame that nudge is
+                                                   * harmless: a surviving death respawns (x reset), and an
+                                                   * eliminated player is removed from play so its x is never
+                                                   * read again. Mirrors the jump path (rebound before its
+                                                   * own pit-death check). */
+    y = p->y + 4;
     if (y >= IN_AIR_DEATH_Y) {
         p->in_air = 0;
         p->alive = 0;
@@ -235,7 +285,6 @@ static void fall_step(SoiWorld *w, int player)
         return;
     }
     p->y = (int16_t)y;
-    wall_rebound(w, p);                           /* asm FUN_1001386c: rebound ONLY, no input-steer */
     if (supported(w, p)) {
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
@@ -263,8 +312,6 @@ static void death_step(SoiWorld *w, int player)
         return;
     }
     p->y = (int16_t)y;
-    if ((p->jump_t % 3) == 0)
-        p->x += (p->facing >= 0) ? 1 : -1;
 }
 
 /* Airborne dispatch by ground_state: table-driven jump, flat gravity fall, or the
@@ -303,25 +350,40 @@ void soi_player_update(SoiWorld *w, int player)
 
     if (!p->active || p->eliminated || !p->alive) return;
 
+    /* A player mid death-throw does ONLY the somersault. In the asm, TWO gates on the
+     * SAME per-player death flag enforce this: FUN_1001166c line 13 gates the build/fire
+     * action AND the movement state machine (the case-switch); and, separately, the caller
+     * FUN_1002a308 (line 89) gates the walk-over pickup FUN_1002bc64 on that same flag.
+     * When the flag is SET, the action/movement handler runs only the throw FUN_10011fcc
+     * and the pickup call is skipped. The PORT folds the pickup and the action/movement
+     * into this one per-player update, so a SINGLE top-level short-circuit reproduces both
+     * asm gates. `alive` stays 1 for the whole arc (it clears only when the throw commits
+     * the life-loss at the bottom), so key this short-circuit off SOI_ST_DEAD. This is WHY
+     * neither the pickup nor the build/fire below needs its own death guard -- a dying
+     * player never reaches them, regardless of its in_air state. (death_step is the port's
+     * FUN_10011fcc: advance the parabola, then commit the life-loss + respawn once the arc
+     * passes the death line.) */
+    if (p->ground_state == SOI_ST_DEAD) {
+        death_step(w, player);
+        return;
+    }
+
     /* Walk-over goodie pickup runs EVERY LIVE player tick (asm FUN_1002a308 calls
-     * FUN_1002bc64 for each player, not just while running), so a coin/gem is
-     * collected the instant any part of the body overlaps its cell -- standing on
-     * it, landing on it, or brushing it mid-jump -- not only once you run fully onto
-     * it. But the asm GATES that call on the dying flag (+0x1003a9d8 == 0): a player
-     * mid death-throw collects NOTHING -- no coins, no key, and it cannot door-win
-     * while dead. `alive` stays 1 for the whole somersault (it clears only when the
-     * arc commits the life-loss), so the guard keys off SOI_ST_DEAD, not alive. A
-     * live player falling off a ledge (FALL, not DEAD) still picks up, as in the asm. */
-    if (p->ground_state != SOI_ST_DEAD)
-        soi_pickup_check(w, player);
+     * FUN_1002bc64 for each player, not just while running), so a coin/gem is collected
+     * the instant any part of the body overlaps its cell -- standing on it, landing on
+     * it, or brushing it mid-jump -- not only once you run fully onto it. A live player
+     * falling off a ledge (FALL, not DEAD) still picks up, as in the asm; only the
+     * death-throw (short-circuited above) collects nothing. */
+    soi_pickup_check(w, player);
 
     if (p->in_air) {
         /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
-         * animation (FUN_1001166c) EVERY frame, gated ONLY by the death flag +0x28; jump/fall never gate
-         * it, and the build/fire actually fires from that animation (FUN_1002d04c / FUN_100110b4 / etc.)
-         * regardless of air state. A NEW jump is not allowed while already airborne. Same edge-triggered,
-         * one-action-per-frame dispatch as on the ground; do_block/fire target the front cell at the
-         * player's CURRENT (mid-air) x/y, exactly as the asm does. */
+         * animation (FUN_1001166c) EVERY frame; jump/fall never gate it, and the build/fire actually
+         * fires from that animation (FUN_1002d04c / FUN_100110b4 / etc.) regardless of air state. A NEW
+         * jump is not allowed while already airborne. Same edge-triggered, one-action-per-frame dispatch
+         * as on the ground; do_block/fire target the front cell at the player's CURRENT (mid-air) x/y,
+         * exactly as the asm does. (A dying player never reaches here -- gated at the top on SOI_ST_DEAD,
+         * matching asm FUN_1001166c line 13 where a set death flag routes to the throw and nothing else.) */
         if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
         else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
         else if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }

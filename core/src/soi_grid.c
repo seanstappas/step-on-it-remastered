@@ -114,6 +114,18 @@ void soi_pickup_check(SoiWorld *w, int player)
         if ((t & 1u) == 0u) {                 /* even = IN: seek the paired OUT */
             unsigned out_type = t + 1u;
             int r, col;
+            /* STRADDLE GUARD (asm FUN_1002bc64:44-49): for types 0x1a-0x22 the teleport
+             * fires only when the collision box sits in ONE column -- if col(x+0x12) !=
+             * the pickup-reference col(x+0xc)=pcol the box straddles two cells and the IN
+             * does NOT trigger. Both sides use the same truncating /32 as pcol. For the
+             * reachable range (the left border wall pins the player at x>=16, so both
+             * dividends x-4 and x+2 are >= 0) this /32 equals the asm's FUN_1002e6cc(x+0xc)
+             * vs FUN_1002e6cc(x+0x12) equality: the +1 cell-offset cancels. (The raw math
+             * only diverges for x in [0,3], where x+0xc-16 is negative and truncation
+             * clamps to 0 while the asm also returns 0 for the LEFT probe but 1 for the
+             * right -- a window the wall makes unreachable.) Stops a half-stride step onto
+             * an edge-of-cell IN from zapping before the player is over it. */
+            if ((p->x + 0x12 - SOI_ORIGIN_X) / SOI_CELL_PX != pcol) return;
             for (r = 0; r < SOI_GRID_ROWS; r++)
                 for (col = 0; col < SOI_GRID_COLS; col++)
                     if (SOI_CELL_TYPE(w->cell[r][col]) == out_type &&
