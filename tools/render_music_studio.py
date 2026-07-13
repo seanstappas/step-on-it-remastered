@@ -63,6 +63,8 @@ def family(program, channel=None):
     return dict(gain=-1.0, pan=0.0, hp=100, lp=14000)
 
 def font_for(program, channel=None):
+    if FONTSET == "gugs":
+        return GUGS                                   # thin/basic GM everywhere (closest to the retro QTMA synth)
     if FONTSET == "legacy":
         # reproduce the pre-premium palette (MuseScore sustained, GeneralUser else)
         if 16 <= program <= 23: return MUSE
@@ -119,6 +121,32 @@ OVERRIDES = {
     # a rattly shaker (GM Maracas 70) instead of a dull piano note (user: "rattly instrument").
     "6lilt": {
         5: {"drum": True, "drum_note": 70, "gain": 1.0},
+    },
+    # spooky: the tune header's real instruments are String Ensemble (ch0), Aah Choir (ch1),
+    # SITAR (ch2, GM104), REVERSE CYMBAL (ch3, GM119) and AGOGO (ch4, GM113) -- "Sitar/
+    # Reverse Cymbal/Agogo" weren't in qtma_to_midi's GM name table so they FELL BACK to
+    # grand piano (the "wrong instruments" root cause; fixed the table + re-extracted).
+    # BUT spooky has 10 note-parts and only 5 note-requests (each polyphony 1 = parts 0-4);
+    # parts 5-9 have NO instrument in the QTMA data and default to piano. Half the track --
+    # incl. ch9, the main 114-note low melody -- was piano. RECONSTRUCTED parts 5-9 by role
+    # (the single-pitch ticks ch5/ch6/ch8 = more sitar/agogo like their siblings; the
+    # melodic ch7/ch9 = strings like ch0). ch0/ch9 hp=30 keeps the deep sub the real game has.
+    "spooky": {
+        0: {"gain": 3.0, "hp": 30},                 # strings bed (48) -> louder background + deep sub
+        1: {"gain": 3.0},                           # choir -> louder background
+        2: {"gain": -1.0, "lp": 2800},              # SITAR -> DARK (lp keeps it from cutting through), present
+        3: {"gain": -8.0, "lp": 2500},              # REVERSE CYMBAL (noise swell) -> well down + dark
+        4: {"gain": 3.0, "lp": 4000},               # agogo -> up (the warm prominent percussive) + darken
+        5: {"prog": 104, "gain": -1.0, "lp": 2800}, # part5 tick -> Sitar (dark)
+        6: {"prog": 104, "gain": -1.0, "lp": 2800}, # part6 tick -> Sitar (dark)
+        7: {"prog": 48, "gain": 2.0},               # part7 melody -> Strings
+        8: {"prog": 113, "gain": 3.0, "lp": 4000},  # part8 -> Agogo (up + dark)
+        9: {"prog": 48, "gain": 2.0, "hp": 30},     # part9 low melody -> Strings, keep deep sub
+    },
+    # spooky_thin: same instrument fix via re-extraction (String Ensemble + Sitar/Reverse
+    # Cymbal/Agogo now correct); reconstruct the unrequested parts' melodic line as strings.
+    "spooky_thin": {
+        0: {"hp": 30},   # low bed -> keep the deep sub
     },
     # AMT MIDI extensions (tools/midi_extend.py) follow GM: channel 9 = drums. The QTMA
     # tracks never use ch9 as drums, so this override is scoped to the *_ext names.
@@ -523,7 +551,7 @@ def render_stem(mid_path, font, wav_path, chorus=False):
          "-o", "synth.polyphony=256", "-R", "0", *cx, font, mid_path])
     return os.path.exists(wav_path) and os.path.getsize(wav_path) > 1024
 
-def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0):
+def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0, refmatch=False):
     """stems_info: list of (wav_path, family_dict). Build ffmpeg mix + master."""
     premix = os.path.join(tmp, "premix.wav")
     inputs, filt, labels = [], [], []
@@ -554,7 +582,16 @@ def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0):
     # loud level (matches the composer's heavily-compressed originals).
     trim = ("silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05,"
             "areverse,silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05,areverse")
+    # --refmatch: EQ measured from the real-game gameplay recording (LTAS ref-vs-our) --
+    # the original QTMA "Best Synthesizer" is BRIGHTER (presence 2-8kHz), less muddy
+    # (low-mids ~400Hz) and has MORE low-end weight than our warmer soundfont voices;
+    # this closes that tonal gap (re-derived 2026-07-12 from the corrected full refs).
+    refeq = ("bass=g=2.5:f=65,"
+             "equalizer=f=400:width_type=q:w=1.0:g=-2.5,"
+             "equalizer=f=3000:width_type=q:w=1.2:g=2.0,"
+             "equalizer=f=5500:width_type=q:w=1.2:g=3.5,") if refmatch else ""
     filt.append("[bus]bass=g=1.5:f=90,treble=g=1.5:f=10000,"
+                f"{refeq}"
                 "volume=1.5dB,asoftclip=type=tanh,volume=-1.5dB,"
                 f"extrastereo=m=1.08,{trim}[pol]")
     # dynaudnorm's gaussian window ramps its gain over the first ~3s (an audible fade-in);
@@ -614,8 +651,13 @@ def main():
     organ_mode = "--organ" in sys.argv           # organ-led variant (PROG_ORGAN_OVERRIDES, Zimmer church organ)
     organ2_mode = "--organ2" in sys.argv         # CATHEDRAL: organ + sub-octave pedal, biggest reverb, hottest
     prog4_mode = "--prog4" in sys.argv           # SYMPHONIC epic: full orchestra (strings/brass/choir/organ/timpani)
+    refmatch_mode = "--refmatch" in sys.argv     # tonal-match the real-game QTMA reference (brighter, less muddy)
     if "--legacy-fonts" in sys.argv:
         globals()["FONTSET"] = "legacy"          # reproduce the pre-premium MuseScore/GeneralUser palette
+    if "--gugs" in sys.argv:
+        globals()["FONTSET"] = "gugs"            # thin/basic GM everywhere (retro-synth test, e.g. spooky)
+    _solo_env = os.environ.get("SOI_SOLO")        # e.g. SOI_SOLO="2,5,6" -> render only those channels (mute rest)
+    _SOLO = set(int(x) for x in _solo_env.split(",")) if _solo_env else None
     ov_source = (PROG_ORGAN2_OVERRIDES if organ2_mode else PROG4_OVERRIDES if prog4_mode
                  else PROG_ORGAN_OVERRIDES if organ_mode else PROG3_OVERRIDES if prog3_mode
                  else PROG2_OVERRIDES if prog2_mode else PROG_OVERRIDES if prog_mode else OVERRIDES)
@@ -673,6 +715,8 @@ def main():
                     for k in ("gain", "pan", "hp", "lp"):
                         if k in v:
                             fam[k] = v[k]
+                if _SOLO is not None and ch not in _SOLO:
+                    fam["gain"] = -80.0          # SOI_SOLO: mute all but the soloed channels
                 smp = os.path.join(tmp, f"ch{ch}.mid"); smid.save(smp)
                 swav = os.path.join(tmp, f"ch{ch}.wav")
                 if render_stem(smp, GUGS if is_drum else font_for(prog), swav,
@@ -688,7 +732,7 @@ def main():
             if not info:
                 raise RuntimeError("no stems")
             out_ogg = os.path.join(out_dir, base + ".ogg")
-            mix_and_master(info, ir, out_ogg, tmp, reverb=reverb_wet, lufs=lufs_target)
+            mix_and_master(info, ir, out_ogg, tmp, reverb=reverb_wet, lufs=lufs_target, refmatch=refmatch_mode)
             dur = subprocess.run([FP, "-v", "error", "-show_entries", "format=duration",
                                   "-of", "csv=p=0", out_ogg], stdout=subprocess.PIPE).stdout.decode().strip()
             print(f"  {base:24s} stems={len(info):2d} -> {float(dur):6.1f}s")

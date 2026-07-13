@@ -91,6 +91,15 @@ GM = {
     "bass lead": 87, "fantasy": 88, "new age": 88, "warm pad": 89, "polysynth": 90,
     "poly synth": 90, "choir pad": 91, "bowed glass": 92, "metallic pad": 93,
     "halo pad": 94, "sweep pad": 95,
+    # 96-127: FX pads, ethnic, percussive, sound-effects (were falling back to piano)
+    "fx rain": 96, "rain": 96, "soundtrack": 97, "crystal": 98, "atmosphere": 99,
+    "brightness": 100, "goblins": 101, "echoes": 102, "sci-fi": 103, "sitar": 104,
+    "banjo": 105, "shamisen": 106, "koto": 107, "kalimba": 108, "bagpipe": 109,
+    "fiddle": 110, "shanai": 111, "tinkle bell": 112, "tinkle bells": 112, "agogo": 113,
+    "steel drums": 114, "steel drum": 114, "woodblock": 115, "wood block": 115,
+    "taiko drum": 116, "taiko": 116, "melodic tom": 117, "synth drum": 118,
+    "reverse cymbal": 119, "guitar fret noise": 120, "breath noise": 121, "seashore": 122,
+    "bird tweet": 123, "telephone ring": 124, "helicopter": 125, "applause": 126, "gunshot": 127,
 }
 
 
