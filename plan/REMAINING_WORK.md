@@ -1,6 +1,6 @@
 # Remaining Work — Step On It! Remaster (RE accuracy)
 
-_Last updated: 2026-07-12._
+_Last updated: 2026-07-13._
 
 ## Status
 The port is **comprehensively faithful** and all 152 boards are winnable. Player animation, core
@@ -105,6 +105,62 @@ regressing the green gates for no gameplay benefit._
 - **D3. Goody point values — ✅ CONFIRMED.** `core/src/soi_grid.c` values checked vs the in-game roster / asm.
 - **D4. Beanie-child cleanup + chain reactions — ✅ VERIFIED.** `core/src/soi_enemies.c` parent↔child bookkeeping
   on death audited against the asm.
+
+---
+
+## E. Physics-divergence audit (2026-07-13) — 6 SHIPPED, 4 DEFERRED
+A line-by-line re-audit of the player physics core vs the decomp surfaced 8 real divergences; a subsequent
+blind precommit review (5 rounds, `eg-goldfish-reviewer`) surfaced 2 more (E9, E10). Each was verified
+personally against the asm (per the method warning). The 6 low-risk, player-observable ones are **fixed with
+failing-test-first coverage** (tests 31–40 in `tests/test_mechanics.c`); all gates stay green and the harness
+hash is unchanged (`0xc677624ae3878b5e` — the walk-on-floor scenario exercises none of them).
+
+**Shipped fixes:**
+- **E1. Death-throw was drifting X — ✅ FIXED.** `soi_physics.c` `death_step` added a phantom `p->x += ±1`
+  every 3rd frame; asm `FUN_10011fcc` writes **only Y** (the parabola) + the animation ping-pong facing,
+  never X. Removed the drift — the somersault is now purely vertical. Most player-visible. (test 31)
+- **E2. Transporter fired mid-straddle — ✅ FIXED.** `soi_grid.c` transporter-IN branch had no straddle
+  guard; asm `FUN_1002bc64:44-49` suppresses the teleport for types 0x1a-0x22 when `col(x+0x12) != col(x+0xc)`
+  (the box spans two columns). Added the guard so an IN only fires once the box is truly over one cell. (test 32)
+- **E3. Wall-rebound used post-push X — ✅ FIXED.** `soi_physics.c` `wall_rebound` used the already-pushed
+  `p->x` for the right-side probe; asm `FUN_10012554` snapshots `iVar4=x` at entry and uses it for **both**
+  side checks. Snapshotted `orig_x` — a one-wall wedge now nets zero X instead of drifting +2. (test 33)
+- **E4. Rising jump never re-checked headroom / rebounded every frame — ✅ FIXED.** `soi_physics.c` called
+  `wall_rebound` unconditionally each air frame (via `air_drift`) and never re-tested headroom mid-rise. Asm
+  `FUN_10013404:24-32`: during the rise (`jump_t<8`) it re-runs the headroom check (`FUN_10012444`) and stalls
+  the leap to the apex (`jump_t=0xc`) if a solid cell now sits overhead — e.g. a block you built while rising;
+  past the rise (`jump_t>=8`) it runs wall-rebound **instead**. Added `headroom_clear()` + the pre-increment
+  branch; moved wall-rebound out of `air_drift` into the jump/fall steps. (test 34)
+- **E9. Wall-rebound ran on the POST-step Y — ✅ FIXED.** After E4 moved wall-rebound into the jump/fall steps,
+  both the jump's rebound (past the rise, `jump_t>=8`) and the gravity fall's rebound still ran **after** the
+  y-step, probing rows ~4 px too low. Asm runs each on the **PRE-step** Y: `FUN_10013404` line 31 (before the
+  line 38 arc-step) and `FUN_1001386c` line 9 (before the line 19 `y+=4`). Reordered both so rebound reads the
+  pre-step Y; `fall_step` now runs rebound unconditionally-first (the asm fall has no pit-death of its own — the
+  port's `y>=446` death is a port addition). (tests 35, 36; tests 37/38/33b further pin the headroom two-column
+  probe and the rise-skips-rebound split.)
+- **E10. A dead player could still build/fire mid-air — ✅ FIXED.** The port gated the walk-over pickup on the
+  death state but NOT the airborne build/fire dispatch, so a player mid death-throw could still drop blocks /
+  fire. Asm `FUN_1001166c` line 13 gates the **entire** per-player update — the build/fire action **and** the
+  movement state machine — on the death flag; the caller `FUN_1002a308` line 89 gates the pickup `FUN_1002bc64`
+  on that **same** flag. Restructured `soi_player_update` to a single top-level `SOI_ST_DEAD` short-circuit
+  (`death_step; return;`) that reproduces both asm gates and no longer relies on the `DEAD ⇒ in_air` invariant.
+  (tests 39, 40)
+
+**Deferred (higher-risk or determinism-sensitive — documented, not changed):**
+- **E5. Door exit has an extra `has_key==1` gate — ⏸ DEFERRED.** `soi_grid.c:55` gates the door-win on a held
+  key; asm `FUN_1002bc64:51-59` door-exit checks only door-bit + type≤3 + player-match (no key check — the
+  key/lock system is the separate colored-key sweep). **Co-op-only** behavioural impact; the single-player win
+  path is well-tested and shipping. Risk of regressing a green, winnable path outweighs the co-op edge case.
+- **E6. Door exit missing row-alignment — ⏸ DEFERRED (bundled with E5).** Asm `FUN_1002bc64:53-54` also requires
+  `row(y) == row(y+0x10)` (box not straddling two rows) before the door-win. Same door path as E5.
+- **E7. Bonus-timer death fires one tick early — ⏸ DEFERRED.** `soi_state.c:384` triggers death at
+  `bonus_time==0`; asm `FUN_1000f500:17-27` decrements, clamps to 0, then dies when it goes **<0** (survives the
+  0 tick). BUT existing asm-cited test #27 encodes death-at-0 **and** respawn doesn't reset `bonus_time`, so
+  flipping to `<0` risks a respawn death-loop. Needs the respawn-reset interaction resolved first (not derivable
+  from `FUN_1000f500` alone).
+- **E8. Speed-shoes input latch — ⏸ DEFERRED.** Port latches input on odd ticks only, always; asm
+  `FUN_10028a0c:73-74` sets the input/locomotion divider to 1 (full 60 Hz) while the player's fast flag is set.
+  Architectural (~16 ms cadence), determinism-sensitive — would move the golden hash. Low observability.
 
 ---
 

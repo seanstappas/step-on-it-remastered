@@ -2099,6 +2099,231 @@ int main(void)
         CHECK(soi_gift_cell_ok(w, 9, 3) == 0, "gift-exclusion: a non-empty cell is never a gift target");
     }
 
+    /* ---- 31. The DEATH-THROW somersault is PURELY VERTICAL (asm FUN_10011fcc writes
+     * only Y (the parabola) + the ping-pong animation facing; it NEVER writes x). The
+     * port used to nudge x by +/-1 every 3rd frame KEYED OFF p->facing -- a phantom
+     * sideways drift with no asm basis. The player faces right, so that old drift would
+     * push x +1; asserting x never moves (movedX==0) catches it directly. We also assert
+     * the arc DOES advance in Y (proving death_step actually runs, not a no-op). Holding
+     * a direction is belt-and-suspenders -- death_step reads no input, so this also rules
+     * out any future input-steer creeping into the throw. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);                     /* open space (reset_player faces right) */
+    soi_player_hit(w, 1);                          /* launch the somersault */
+    CHECK(w->players[1].ground_state == SOI_ST_DEAD,
+          "deaththrow: soi_player_hit starts the airborne somersault");
+    {
+        int dx0 = w->players[1].x, dy0 = w->players[1].y, movedX = 0, movedY = 0, t;
+        for (t = 0; t < 60 && w->players[1].ground_state == SOI_ST_DEAD; t++) {
+            soi_tick(w, SOI_IN_RIGHT, 0);          /* HOLD right: the death arc must ignore it */
+            if (w->players[1].x != dx0) movedX = 1;
+            if (w->players[1].y != dy0) movedY = 1;
+        }
+        CHECK(!movedX && movedY,
+              "deaththrow: the somersault advances in Y but never drifts x (asm FUN_10011fcc = Y-only)");
+    }
+
+    /* ---- 32. Transporter STRADDLE guard (asm FUN_1002bc64): a transporter IN fires
+     * only when the collision box sits in ONE column. If the box straddles two columns
+     * (col(x+0xc) != col(x+0x12)) the teleport is SUPPRESSED. The cell-aligned player
+     * (test 6 above) still teleports; a half-cell-straddling player must not. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 2, 2);
+    w->players[1].x = (int16_t)(soi_cell_x(2) + 16);   /* straddle cols 2/3: col(x+0xc)=2, col(x+0x12)=3 */
+    soi_set_cell(w, 2, 2, 0x1A);                        /* IN marker at the box-centre cell (2,2) */
+    soi_set_cell(w, 10, 10, 0x1B);                      /* paired OUT */
+    {
+        int sx = w->players[1].x, sy = w->players[1].y;
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].x == sx && w->players[1].y == sy,
+              "transporter: a player straddling two columns is NOT teleported (asm straddle guard)");
+    }
+
+    /* ---- 33. Auto wall-rebound reads the PRE-push x for BOTH side checks (asm
+     * FUN_10012554 snapshots iVar4=x at entry and uses it for the left (+2) AND right
+     * (-2) probes). The port used the already-pushed x for the right probe, so a player
+     * wedged against a single wall column drifted +2 instead of jittering in place. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = (int16_t)(soi_cell_x(5) + 11);   /* box occupies 1-based col6; x+0x14=207 is col6's right-edge px, so both rebound probes read col6 */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    soi_set_cell(w, 5, 5, SOI_CELL_SUPPORTIVE);        /* wall at 0-based (5,5) = 1-based (col6,row6): the player's own column, seen by both probes */
+    {
+        int wx0 = w->players[1].x;
+        soi_tick(w, 0, 0);                              /* one fall frame -> wall_rebound */
+        CHECK(w->players[1].x == wx0,
+              "wall-rebound: a wedged player nets zero x (orig-x used for both probes, asm FUN_10012554)");
+    }
+
+    /* ---- 33b. Asymmetric variant closes the net-zero blind spot above: a hypothetical
+     * NO-OP wall_rebound would ALSO pass the x==wx0 check. Here a wall sits in ONLY the
+     * RIGHT probe column (disjoint from the left), so the right probe must fire ALONE and
+     * net -2 -- a no-op rebound would leave x unchanged and FAIL. At x=36 the left probe
+     * px_col1(x+0x0a)=col1 while the right probe px_col1(x+0x14)=col2; the wall is only in
+     * col2, so the left probe stays clear. (Tests 35/36 already prove the LEFT probe fires
+     * +2; this pins the RIGHT probe firing -2.) */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = 36; w->players[1].y = 104;       /* left probe col(x+0x0a)=1, right col(x+0x14)=2 */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    soi_set_cell(w, 1, 1, SOI_CELL_SUPPORTIVE);        /* wall at 0-based (1,1) = 1-based (col2,row2): ONLY the right probe column */
+    {
+        int wx0 = w->players[1].x;
+        soi_tick(w, 0, 0);                              /* one fall frame -> right probe fires -2 */
+        CHECK(w->players[1].x == wx0 - 2,
+              "wall-rebound: a wall in ONLY the right column pushes -2 (right probe fires, closes the no-op blind spot)");
+    }
+
+    /* ---- 34. Building a block over a RISING jumper caps the leap at the apex (asm
+     * FUN_10013404: while jump_t < 8 the headroom check FUN_10012444 is re-run every
+     * frame; a solid cell overhead snaps jump_t to 0xc). The auto wall-rebound
+     * (FUN_10012554) runs ONLY past the rise (jump_t >= 8), never during it. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 6, 9);
+    ground_player(w, 6, 9);                        /* clear headroom -> the leap launches */
+    soi_tick(w, SOI_IN_JUMP, 0);                   /* edge-trigger the jump */
+    CHECK(w->players[1].ground_state == SOI_ST_JUMP && w->players[1].in_air == 1,
+          "jumpstall: the leap launches with clear headroom");
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0); soi_tick(w, 0, 0);   /* rise: player logic is 30Hz (odd tick only), so exactly ONE of these advances the arc -> jump_t reaches 1 (still <8) */
+    CHECK(w->players[1].ground_state == SOI_ST_JUMP && w->players[1].jump_t < 8,
+          "jumpstall: still in the rising phase (jump_t < 8)");
+    {
+        int px = w->players[1].x, py = w->players[1].y;
+        int hc  = (px + 0x10 - SOI_ORIGIN_X) >> 5;     /* 0-based headroom probe columns */
+        int hc2 = (px + 0x0e - SOI_ORIGIN_X) >> 5;
+        int hr  = (py - 2 - SOI_ORIGIN_Y) >> 5;        /* 0-based headroom probe row */
+        soi_set_cell(w, hc, hr, SOI_CELL_SUPPORTIVE);
+        if (hc2 != hc) soi_set_cell(w, hc2, hr, SOI_CELL_SUPPORTIVE);
+        soi_tick(w, 0, 0);                             /* next frame re-checks headroom -> stall */
+        CHECK(w->players[1].jump_t == 0xd,
+              "jumpstall: a block built overhead mid-rise snaps the jump to the apex (asm sets 0xc, then the unconditional ++ persists 0xd)");
+    }
+
+    /* ---- 35. The jump's auto wall-rebound else-branch (asm FUN_10013404: jump_t >= 8
+     * runs FUN_10012554, NOT the headroom stall) fires on the PRE-step Y -- the rebound
+     * is at asm line 31, BEFORE the jump_t increment (line 33) and the arc y-step (line
+     * 38-40). At jump_t = 16 the next step is JUMP_DY[17] = +4, so the pre-step upper
+     * probe (row2 at y=104) reaches the wall while the post-step probe (y=108) drops to
+     * row3 and misses. The rebound fires (+2) iff the order is pre-step -- the old
+     * post-step ordering (rebound inside air_drift, after p->y) would leave x unmoved.
+     * This also covers the jump_t >= 8 branch that test 34 (jump_t < 8 stall) does not. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = 160; w->players[1].y = 104;      /* left probe col(x+0x0a)=5, right col(x+0x14)=6 */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_JUMP; w->players[1].jump_t = 16;
+    soi_set_cell(w, 4, 1, SOI_CELL_SUPPORTIVE);        /* wall at 1-based (col5,row2): only the pre-step probe */
+    {
+        int jx0 = w->players[1].x;
+        soi_tick(w, 0, 0);                              /* jump frame, jump_t>=8 -> pre-step wall_rebound else-branch */
+        CHECK(w->players[1].x == jx0 + 2,
+              "jump-rebound: a jumper (jump_t>=8) rebounds on the PRE-step Y (asm FUN_10013404 line 31 before line 38)");
+    }
+
+    /* ---- 36. The gravity FALL runs its auto wall-rebound on the PRE-step Y (asm
+     * FUN_1001386c calls FUN_10012554 at line 9, BEFORE the y+=4 at line 19). The port
+     * used to rebound AFTER applying p->y (post-step Y), probing rows 4px too low. With
+     * a wall placed so ONLY the pre-step upper probe (row2 at y=104) reaches it -- the
+     * post-step probes (y=108) fall to row3 and miss -- the rebound fires iff the order
+     * is correct. Same wall layout as test 35 but in the FALL state. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = 160; w->players[1].y = 104;
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    soi_set_cell(w, 4, 1, SOI_CELL_SUPPORTIVE);        /* wall at 1-based (col5,row2) */
+    {
+        int fx0 = w->players[1].x;
+        soi_tick(w, 0, 0);                              /* one fall frame -> pre-step wall_rebound */
+        CHECK(w->players[1].x == fx0 + 2,
+              "fall-rebound: the fall rebounds on the PRE-step Y (asm FUN_1001386c line 9 before line 19)");
+    }
+
+    /* ---- 37. headroom_clear probes BOTH upper-body columns (asm FUN_10012444: x+0x10
+     * AND x+0x0e). At a non-cell-aligned x the two land in different columns; a wall in
+     * ONLY the x+0x0e column must still stall the rise. Guards against dropping the
+     * second probe (with only x+0x10 checked, the empty x+0x10 column would read as
+     * clear and the leap would not cap). x=32 -> x+0x0e=46=col1, x+0x10=48=col2. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = 32; w->players[1].y = 104;
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_JUMP; w->players[1].jump_t = 3;
+    soi_set_cell(w, 0, 1, SOI_CELL_SUPPORTIVE);        /* wall at 1-based (col1,row2): ONLY the x+0x0e probe */
+    soi_tick(w, 0, 0);                                  /* rising frame (jump_t<8) -> headroom re-check */
+    CHECK(w->players[1].jump_t == 0xd,
+          "headroom-2col: a wall in ONLY the x+0x0e column stalls the rise (both columns probed, asm FUN_10012444)");
+
+    /* ---- 38. The RISE (jump_t<8) runs headroom, NOT wall_rebound -- the two are
+     * mutually exclusive (asm FUN_10013404: if jump_t<8 headroom else rebound). A side
+     * wall placed ONLY in the rebound-LEFT column (which WOULD push +2 if rebound ran)
+     * must be ignored while rising. The x is chosen so that column is DISJOINT from both
+     * headroom columns, so the wall cannot merely stall the rise instead: at x=162 the
+     * rebound-LEFT probe px_col1(x+0x0a)=col5, while BOTH headroom probes px_col1(x+0x10)
+     * and px_col1(x+0x0e)=col6 -- the wall in col5 is invisible to headroom. Correct code
+     * therefore skips rebound AND finds headroom clear, so the rise advances (jump_t 3->4)
+     * with x unchanged. (At x=160 the rebound-LEFT and x+0x0e headroom columns COLLIDE in
+     * col5, so the wall would stall the rise and the test would pass for the wrong reason.)
+     * If rebound wrongly ran during the rise, x would jump +2 to 164. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 5);
+    w->players[1].x = 162; w->players[1].y = 104;
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_JUMP; w->players[1].jump_t = 3;
+    soi_set_cell(w, 4, 1, SOI_CELL_SUPPORTIVE);        /* wall at 1-based (col5,row2): ONLY the rebound-LEFT probe */
+    {
+        int rx0 = w->players[1].x;
+        soi_tick(w, 0, 0);                              /* rising frame -> rebound must NOT fire, headroom clear */
+        CHECK(w->players[1].x == rx0,
+              "rise-no-rebound: a rising jumper (jump_t<8) ignores the side wall (asm FUN_10013404 if/else)");
+        CHECK(w->players[1].jump_t == 4,
+              "rise-no-rebound: the rise still advances (headroom clear, no stall) -- proves the wall did not cap it");
+    }
+
+    /* ---- 39. A player mid DEATH-THROW cannot BUILD or FIRE. asm FUN_1001166c line 13
+     * gates the ENTIRE per-player update -- the build (FUN_1002d04c/cf08/d190), the
+     * projectile/ball (FUN_100110b4 / FUN_10010d30), AND the movement state machine
+     * (the case switch) -- on the death flag +0x28 == 0; when that flag is SET, ONLY
+     * the death throw FUN_10011fcc runs. The port already gates the walk-over pickup the
+     * same way (test 29); this proves the airborne build/fire dispatch is gated too. A
+     * dying player pressing BLOCK must drop NOTHING, yet the death arc must still run. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);                          /* open space, facing right */
+    soi_player_hit(w, 1);                              /* launch the somersault (ground_state=DEAD, in_air) */
+    CHECK(SOI_CELL_TYPE(soi_get_cell(w, 9, 3)) == SOI_CELL_EMPTY,
+          "deadbuild: the front build cell (col10,row4) starts empty");
+    w->players[1].input = SOI_IN_BLOCK_HIGH;           /* press the high-block key while dying */
+    w->players[1].input_prev = 0;                      /* rising edge -> would fire the action */
+    {
+        int jt0 = w->players[1].jump_t;
+        soi_player_update(w, 1);
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 9, 3)) == SOI_CELL_EMPTY,
+              "deadbuild: a dying player's BLOCK press builds NOTHING (asm FUN_1001166c death-flag gate)");
+        CHECK(w->players[1].jump_t != jt0,
+              "deadbuild: the death throw still advances while build is gated (death_step ran)");
+    }
+
+    /* ---- 40. A DEAD player runs ONLY the death throw, even if in_air is somehow 0.
+     * The top-level SOI_ST_DEAD short-circuit in soi_player_update (asm FUN_1001166c
+     * line 13) runs death_step and returns BEFORE the grounded !supported->FALL branch
+     * and before any build/fire -- so a death-throw can never be converted into a FALL
+     * or fire an action, independent of the in_air flag (the port does not lean on the
+     * DEAD=>in_air invariant). Force in_air=0 (an off-nominal state) and confirm: the
+     * state stays DEAD, the parabola advances (death_step ran), the player did NOT switch
+     * to SOI_ST_FALL, and a pressed BLOCK builds nothing. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);
+    soi_player_hit(w, 1);                              /* ground_state=DEAD, in_air=1 */
+    w->players[1].in_air = 0;                          /* force the off-nominal DEAD && !in_air */
+    w->players[1].input = SOI_IN_BLOCK_HIGH;
+    w->players[1].input_prev = 0;                      /* rising edge -> would build if not gated */
+    {
+        int jt0 = w->players[1].jump_t;
+        soi_player_update(w, 1);
+        CHECK(w->players[1].ground_state == SOI_ST_DEAD,
+              "dead-not-fall: a DEAD player with in_air=0 stays in the death throw (top-level DEAD gate)");
+        CHECK(w->players[1].jump_t != jt0,
+              "dead-not-fall: death_step still ran (parabola advanced), not the FALL/idle path");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 9, 3)) == SOI_CELL_EMPTY,
+              "dead-not-fall: the pressed BLOCK built nothing (gated at the top before build)");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");
