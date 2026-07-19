@@ -10,7 +10,8 @@ family each. Follow it end‑to‑end, publish to *your* family's paths, and don
 Companion docs: the validation method [SPRITE_FIDELITY_VALIDATION.md](SPRITE_FIDELITY_VALIDATION.md);
 the runtime/classification plan [3D_ANIMATED_REMASTER_PLAN.md](3D_ANIMATED_REMASTER_PLAN.md); the live
 claim board [SPRITE_REMASTER_STATUS.md](SPRITE_REMASTER_STATUS.md); ready‑to‑dispatch parallel prompts
-[SPRITE_REMASTER_AGENT_PROMPTS.md](SPRITE_REMASTER_AGENT_PROMPTS.md).
+[SPRITE_REMASTER_AGENT_PROMPTS.md](SPRITE_REMASTER_AGENT_PROMPTS.md); the **motion categories & Policy A
+(faithful) handling** [SPRITE_CATEGORIES.md](SPRITE_CATEGORIES.md).
 
 ---
 

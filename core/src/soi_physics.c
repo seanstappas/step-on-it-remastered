@@ -196,8 +196,12 @@ static void start_jump(SoiWorld *w, int player)
      * FUN_10014524 -> FUN_1002ca5c): a TWO-STAGE destroy. The first bonk CRACKS
      * the block (sets 0x4000, sfx 0x23); a second bonk BREAKS the cracked block
      * (reveals any 0x1000 payload, sfx 0x24). Permanent (0x100) and door (0x800)
-     * blocks are immune -- they stop the jump but never break. */
-    if (SOI_CELL_TYPE(a) != 0) {
+     * blocks are immune -- they stop the jump but never break. Headroom is blocked
+     * by the SUPPORTIVE bit ALONE (asm FUN_10012444 probes (cell & 0x200) only, as
+     * headroom_clear above already does), so a non-solid goodie/coin overhead (0x9xx,
+     * no 0x200) is NOT a bonk -- the player leaps up INTO it (fixes "cannot jump into
+     * coins/3x above"). */
+    if (a & SOI_CELL_SUPPORTIVE) {
         if (!(a & (SOI_CELL_PERMANENT | SOI_CELL_DOOR))) {
             if (!(a & SOI_CELL_CRACKED)) {
                 set_cell1(w, aCol, aRow, a | SOI_CELL_CRACKED);
