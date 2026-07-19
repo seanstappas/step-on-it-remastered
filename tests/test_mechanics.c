@@ -157,7 +157,7 @@ int main(void)
     soi_tick(w, SOI_IN_JUMP, 0);
     CHECK(soi_get_cell(w, 6, 8) == SOI_WALL, "jump: permanent block is untouched");
 
-    /* ---- 3b. A clear-headroom jump leaps the table-driven arc (~37px peak, asm
+    /* ---- 3a. A clear-headroom jump leaps the table-driven arc (~37px peak, asm
      * FUN_10013404 + DAT_1003474c) and lands back on the ground, breaking nothing. */
     soi_world_init(w, 1);
     w->level_loaded = 1; w->pct_badguy = 0;
@@ -182,7 +182,7 @@ int main(void)
               "jump: a clear-headroom leap breaks no block");
     }
 
-    /* ---- 3c. A GOODIE directly overhead is NOT a head-bonk: the player leaps up
+    /* ---- 3b. A GOODIE directly overhead is NOT a head-bonk: the player leaps up
      * INTO it (and can then collect it), instead of being stopped dead. Headroom is
      * blocked only by the SUPPORTIVE bit (asm FUN_10012444 tests (cell & 0x200)),
      * and treasure goodies (0x9xx, e.g. a 3x-multiplier / coin) carry no 0x200. The
@@ -200,14 +200,7 @@ int main(void)
           "jumpgoody: leaping up does not crack/break the goodie (it is not a solid block)");
 
 
-    /* ---- 3b. Block create/destroy TOGGLE: two block-high presses at the same
-     * front cell build then remove the block (the core build/dig mechanic; an
-     * earlier demo looked out of sync, so this pins the behaviour down). ---- */
-    soi_world_init(w, 1);
-    w->level_loaded = 1; w->pct_badguy = 0;
-    reset_player(w, 1, 5, 9);
-    ground_player(w, 5, 9);
-    /* ---- 3b. Block create/destroy TOGGLE: two block-high presses at the same
+    /* ---- 3c. Block create/destroy TOGGLE: two block-high presses at the same
      * front cell build then remove the block (the core build/dig mechanic; an
      * earlier demo looked out of sync, so this pins the behaviour down). Input is
      * latched every 2 frames (odd ticks), so each press/release is held 2 ticks. */
@@ -221,14 +214,19 @@ int main(void)
     CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) &&
           SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
           "block-high: first press builds a block in front");
-    soi_tick(w, 0, 0);                          /* release (must latch a 0 on an odd tick) */
-    soi_tick(w, 0, 0);
+    {   /* the build pose gates a NEW action (asm FUN_1001166c line 14: a verb starts only when
+         * the action-active flag is clear), so a second press registers only once the pose
+         * drains -- release and let it run out, then press again to remove the block. */
+        int guard = 0;
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);   /* release (must latch a 0 on an odd tick) */
+        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);
+    }
     soi_tick(w, SOI_IN_BLOCK_HIGH, 0);          /* press again: remove the same block */
     soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
           "block-high: a second press at the same cell removes it");
 
-    /* ---- 3c. BUILD GATE (asm FUN_1002d04c -> FUN_100047e8): the original only builds
+    /* ---- 3d. BUILD GATE (asm FUN_1002d04c -> FUN_100047e8): the original only builds
      * where the target cell is visually UNOBSTRUCTED, so a block-press over a nasty does
      * NOTHING -- no block is built and the nasty is NOT squashed (nasties are defeated by
      * weapons or the thunderballs/shoes goody, not by a built block). */
@@ -258,7 +256,7 @@ int main(void)
     soi_tick(w, SOI_IN_BALL, 0); soi_tick(w, SOI_IN_BALL, 0);
     CHECK(soi_player_pose(w, 1) == 1, "pose: firing a ball sets the FIRE pose (display)");
 
-    /* ---- 3d. A cliff-fall is PURELY VERTICAL (asm FUN_1001386c calls ONLY the
+    /* ---- 3e. A cliff-fall is PURELY VERTICAL (asm FUN_1001386c calls ONLY the
      * wall-rebound FUN_10012554, never an input-steer -- unlike the jump FUN_10013404).
      * Holding a direction while falling off a ledge must NOT drift the player sideways:
      * only y changes. Regression for the fall wrongly sharing the jump's air_drift(),
@@ -273,7 +271,71 @@ int main(void)
         CHECK(w->players[1].y > fy0, "fall: the player still descends straight down (y increases)");
     }
 
-    /* ---- 3e. AIRBORNE build/destroy: you can build or dig a block while jumping or falling.
+    /* ---- 3f. MID-AIR BUILD FREEZE: a build/fire mid-air must FREEZE the player for the
+     * pose (asm FUN_1001166c line 160 gates the whole movement switch -- the jump arc
+     * (case 2) AND the fall (case 3) -- on the action-active flag, so the descent halts
+     * while the build/fire animation plays and only resumes when it finishes). Regression
+     * for the port sliding/falling through its own mid-air build. ---- */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);                    /* open space, no walls -> no rebound */
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    w->players[1].facing = 1;
+    {
+        int y0, ypose, guard;
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);    /* fall a frame first */
+        CHECK(w->players[1].in_air == 1 && w->players[1].ground_state == SOI_ST_FALL,
+              "midair-freeze: the player is airborne (falling) before the build");
+        y0 = w->players[1].y;
+        soi_tick(w, SOI_IN_BLOCK_HIGH, 0); soi_tick(w, SOI_IN_BLOCK_HIGH, 0);   /* build while falling */
+        CHECK(w->players[1].pose_t > 0, "midair-freeze: the build pose is active");
+        CHECK(w->players[1].y == y0, "midair-freeze: the fall is frozen while the build pose plays");
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].y == y0, "midair-freeze: still frozen partway through the pose");
+        guard = 0;
+        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);      /* run the pose out */
+        ypose = w->players[1].y;
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].y > ypose, "midair-freeze: the descent resumes once the pose ends");
+    }
+
+    /* ---- 3g. BUILD BEATS A SAME-FRAME JUMP, and a jump pressed DURING the build pose is
+     * DROPPED (never an "airborne but frozen at ground height" state): the asm evaluates the
+     * action phase (build/fire, FUN_1001166c lines 14-68) BEFORE the movement switch and then
+     * FREEZES that switch on the action-active flag (the line-160 gate), so the idle/run handler
+     * that STARTS a jump cannot run until the pose clears -- the player stays GROUNDED through the
+     * pose, then a still-pressed jump leaps and actually arcs upward. Regressions for (a) the jump
+     * swallowing a same-tick build and (b) a mid-pose jump popping the player airborne-but-frozen. ---- */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+    w->players[1].facing = 1;
+    soi_tick(w, (uint8_t)(SOI_IN_BLOCK_HIGH | SOI_IN_JUMP), 0);
+    soi_tick(w, (uint8_t)(SOI_IN_BLOCK_HIGH | SOI_IN_JUMP), 0);
+    CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
+          "jump-build: a same-frame build+jump performs the BUILD (block created)");
+    CHECK(w->players[1].in_air == 0,
+          "jump-build: the same-frame jump does NOT swallow the build (player stays grounded)");
+    /* release, then a jump pressed WHILE the pose is still active -> dropped, stays grounded (HIGH-1) */
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+    CHECK(w->players[1].pose_t > 0, "jump-build: the build pose is still active");
+    soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);
+    CHECK(w->players[1].in_air == 0 && w->players[1].pose_t > 0,
+          "jump-build: a jump pressed DURING the pose is dropped (no airborne-frozen state)");
+    /* drain the pose fully, THEN a jump leaps AND actually arcs upward (y decreases) */
+    {
+        int guard = 0, yj;
+        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);
+        CHECK(w->players[1].in_air == 0,
+              "jump-build: player is still grounded after the pose drains");
+        yj = w->players[1].y;
+        soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);
+        CHECK(w->players[1].in_air == 1,
+              "jump-build: a jump pressed after the pose still leaps");
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].y < yj,
+              "jump-build: the leap actually arcs upward (y decreases), not airborne-frozen");
+    }
+
+    /* ---- 3h. AIRBORNE build/destroy: you can build or dig a block while jumping or falling.
      * The asm runs the action animation (FUN_1001166c) EVERY frame gated ONLY by the death flag
      * +0x28 -- not by air state -- and the build/fire fires from that animation. The port used to
      * `return` on in_air BEFORE the block actions, so mid-air building did nothing; the airborne
@@ -1572,6 +1634,61 @@ int main(void)
         CHECK(soi_enemy_y(w, gi) == gy0, "turret: the Gargoyle does NOT fall over open air");
         CHECK(soi_enemy_y(w, ki) == ky0, "turret: the Knight does NOT fall over open air");
         CHECK(soi_enemy_y(w, si) >  sy0, "spinner: DOES fall over open air (still obeys gravity)");
+    }
+
+    /* ---- 14e. PLOW-GROUP block-break is SILENT, and the SMILEY (faceball) REVERSES.
+     * The asm plow-clear FUN_100279c4 -> FUN_1002754c emits NO sound; each plow nasty's
+     * only FUN_1002b020 call is its DEATH cry, gated on the +0x88 "claimed" field
+     * (FUN_100081f8/9a78/d130/d8c4). So a Piggy breaking a block is silent (bord 67).
+     * The Smiley (bord 36, asm FUN_1000d130) does NOT plow: at a breakable block it
+     * breaks it, then REVERSES immediately (+0x4c := opposite). The Teeth (FUN_1000d8c4)
+     * is the one true plow-through: it breaks and KEEPS its heading. ---- */
+    {
+        int pi, sdir, mi, tdir, k, piggy_sound;
+        /* (a) Piggy breaks a breakable block WITHOUT the block-destroy sound. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        pi = soi_enemy_spawn(w, SOI_ENEMY_PIGGY, 5, 9);
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);          /* floor */
+        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 1);       /* breakable block ahead */
+        w->enemies[pi].dir = 2; w->enemies[pi].vx = 2;
+        w->sfx_count = 0;
+        soi_enemies_update(w);
+        piggy_sound = 0;
+        for (k = 0; k < soi_sfx_count(w); k++)
+            if (soi_sfx_get(w, k) == SOI_SFX_BLOCK_DESTROY) piggy_sound = 1;
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0, "plow-silent: the Piggy broke the block ahead");
+        CHECK(!piggy_sound, "plow-silent: breaking the block emits NO block-destroy sound (asm FUN_100279c4)");
+
+        /* (b) Smiley breaks a breakable block, then REVERSES (does not plow through). */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        mi = soi_enemy_spawn(w, SOI_ENEMY_SMILEY, 5, 9);
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 1);       /* breakable block ahead */
+        w->enemies[mi].dir = 2; w->enemies[mi].vx = 2;
+        soi_enemies_update(w);
+        sdir = w->enemies[mi].dir;
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0, "faceball: the Smiley broke the block ahead");
+        CHECK(sdir == 1, "faceball: the Smiley REVERSES after breaking (dir 2 -> 1), does not plow through");
+
+        /* (c) Teeth is the true plow: it breaks a block and KEEPS its heading. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        mi = soi_enemy_spawn(w, SOI_ENEMY_TEETH, 5, 9);
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 1);
+        w->enemies[mi].dir = 2; w->enemies[mi].vx = 2;
+        soi_enemies_update(w);
+        tdir = w->enemies[mi].dir;
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0, "teeth-plow: the Teeth broke the block ahead");
+        CHECK(tdir == 2, "teeth-plow: the Teeth KEEPS its heading (plows through, does not reverse)");
     }
 
     /* ---- 15. Magic Ball: a distinct weapon (asm fire FUN_100110b4, mover

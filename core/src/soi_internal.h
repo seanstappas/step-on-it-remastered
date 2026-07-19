@@ -69,12 +69,17 @@ typedef struct {
                                      * >0 = 2x speed (player runs at 60Hz, not 30Hz) */
     uint8_t  pose;                  /* action pose for DISPLAY: 0 none, 1 fire, 2 build */
     int16_t  pose_t;                /* action-pose countdown (frames). Drives DISPLAY (the
-                                     * fire/build pose out-ranks run in the renderer) AND gates
-                                     * the ground run dispatch: while >0 the player is frozen in
-                                     * the ~12-frame swing (the anti-"glide" stutter-stop, asm
-                                     * FUN_1001166c +0x25). It self-releases because soi_state.c
-                                     * decrements it UNCONDITIONALLY every frame -- keep that
-                                     * drain ungated or the freeze becomes permanent. */
+                                     * fire/build pose out-ranks run in the renderer) AND, as the
+                                     * port's stand-in for the asm action-active flag (FUN_1001166c
+                                     * +0x25), gates the ENTIRE movement dispatch while >0: the
+                                     * ground gravity/run/idle AND jump-start, and the airborne
+                                     * arc/fall (air_step) alike are all frozen for the ~12-frame
+                                     * swing (asm line-160 gate), and no new action starts (asm line
+                                     * 14). So a jump pressed DURING a pose is dropped, never started
+                                     * -- reproducing the asm, which keeps the player grounded through
+                                     * the pose rather than emitting an airborne-but-frozen state. It
+                                     * self-releases because soi_state.c decrements it UNCONDITIONALLY
+                                     * every frame -- keep that drain ungated or the freeze is permanent. */
 } SoiPlayer;
 
 typedef struct {

@@ -382,49 +382,61 @@ void soi_player_update(SoiWorld *w, int player)
 
     if (p->in_air) {
         /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
-         * animation (FUN_1001166c) EVERY frame; jump/fall never gate it, and the build/fire actually
-         * fires from that animation (FUN_1002d04c / FUN_100110b4 / etc.) regardless of air state. A NEW
-         * jump is not allowed while already airborne. Same edge-triggered, one-action-per-frame dispatch
-         * as on the ground; do_block/fire target the front cell at the player's CURRENT (mid-air) x/y,
-         * exactly as the asm does. (A dying player never reaches here -- gated at the top on SOI_ST_DEAD,
-         * matching asm FUN_1001166c line 13 where a set death flag routes to the throw and nothing else.) */
-        if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
-        else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
-        else if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
-        else if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
-        air_step(w, player);
+         * animation (FUN_1001166c) every frame and the build/fire fires from that animation
+         * (FUN_1002d04c / FUN_100110b4 / etc.) regardless of air state. But an ACTIVE action FREEZES
+         * the movement: the asm's line-160 gate runs the jump-arc (case 2) / fall (case 3) switch ONLY
+         * while the action-active flag is clear, so a mid-air build/fire hangs the player in place for
+         * the pose -- and because wall-rebound (FUN_10012554) and pit-death (FUN_10012348) live INSIDE
+         * the fall handler FUN_1001386c, those freeze with it, which is faithful. A NEW action only
+         * starts when none is active (asm line 14), so gate the WHOLE block on pose_t==0: while a pose
+         * runs there is no re-trigger and no arc (one finite freeze, never an indefinite hover), and on
+         * the frame an action starts the arc is skipped (asm skips the movement switch that frame). A
+         * new jump is never started while airborne. do_block/fire target the front cell at the player's
+         * CURRENT mid-air x/y, exactly as the asm does. (A dying player never reaches here -- gated at
+         * the top on SOI_ST_DEAD, matching asm FUN_1001166c line 13.) */
+        if (p->pose_t == 0) {
+            if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
+            else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
+            else if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
+            else if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
+            else                               air_step(w, player);
+        }
         return;
     }
 
-    /* gravity: fall if unsupported (asm state 3 = flat 4 px/frame; see fall_step). */
-    if (!supported(w, p)) {
-        p->in_air = 1;
-        p->ground_state = SOI_ST_FALL;
-        return;
-    }
-
-    /* mid run-step no longer exists: the run is continuous (run_step below). */
-
-    /* idle: the 7 real actions (Configure-Keys order) */
-    if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
-    if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; return; }
-    if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
-    if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
-    if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
-    /* Action swing in progress: freeze only the CONTINUOUS run/idle dispatch during the
-     * ~12-frame build/fire pose (asm action active-flag FUN_1001166c +0x25). Without this,
-     * holding a direction while repeatedly building slides ("glides") the player across the
-     * floor under the arm-swing; freezing the run here makes him stutter to a stop until the
-     * pose finishes. The edge-triggered actions ABOVE (jump/build/fire) and gravity (the fall
-     * check above) deliberately stay live -- the player can still act mid-swing -- and the
-     * render still shows the build/fire pose (it out-ranks run in _draw_player). */
-    if (p->pose_t > 0) return;
-    if (in & SOI_IN_LEFT)       { run_step(w, player, -1); return; }
-    if (in & SOI_IN_RIGHT)      { run_step(w, player, +1); return; }
-    /* no direction held: settle to rest -- snap X to a 4 px boundary (asm idle
-     * FUN_100128f8) and drop to idle. */
-    if (p->ground_state == SOI_ST_RUN) {
-        p->x &= ~3;
-        p->ground_state = SOI_ST_IDLE;
+    /* Action phase + movement are BOTH gated on "no pose active", matching asm FUN_1001166c:
+     * a new action verb starts only when the action-active flag is clear (line 14), and the
+     * movement state machine -- gravity/fall (case 3), the idle/run handlers that START a jump
+     * (cases 0/1), and the run itself -- runs only when it is clear (the line-160 gate). So for
+     * the whole ~12-frame build/fire pose the player starts no new action, does not fall, does
+     * not move, and CANNOT start a jump: he is frozen in place, then a still-pressed jump leaps
+     * once the pose clears. A single pose_t==0 gate reproduces that WITHOUT ever emitting the
+     * asm-impossible "airborne but frozen at ground height" state (a jump pressed DURING a pose
+     * is dropped, not started). */
+    if (p->pose_t == 0) {
+        /* gravity: fall if unsupported (asm state 3 = flat 4 px/frame; see fall_step). */
+        if (!supported(w, p)) {
+            p->in_air = 1;
+            p->ground_state = SOI_ST_FALL;
+            return;
+        }
+        /* The build/fire ACTION is evaluated BEFORE the jump so a build queued on the SAME tick
+         * as a jump performs the BUILD, not the jump (the asm runs its action phase, lines 14-68,
+         * before the movement switch that starts the jump). Fixes "sometimes I can't create a
+         * block and jump at the same time". Each build/fire starts a pose that then freezes
+         * everything below -- including a later same-window jump -- until it drains. */
+        if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; return; }
+        if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
+        if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+        if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+        if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
+        if (in & SOI_IN_LEFT)         { run_step(w, player, -1); return; }
+        if (in & SOI_IN_RIGHT)        { run_step(w, player, +1); return; }
+        /* no direction held: settle to rest -- snap X to a 4 px boundary (asm idle
+         * FUN_100128f8) and drop to idle. */
+        if (p->ground_state == SOI_ST_RUN) {
+            p->x &= ~3;
+            p->ground_state = SOI_ST_IDLE;
+        }
     }
 }
