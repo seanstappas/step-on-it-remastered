@@ -350,6 +350,34 @@ func _blit(folder: String, frame: int, pos: Vector2) -> bool:
 	_dtex(tex, pos + (Vector2(CELL_PX, CELL_PX) - s) * 0.5)
 	return true
 
+## Like _blit, but CLIPS the sprite to a rect (the playfield). The original blits every
+## sprite into a fixed playfield GWorld, so a projectile at a border cell is chopped at the
+## frame edge instead of bleeding its body into the grey border / score bar. The core already
+## keeps projectiles in-bounds (soi_in_bounds), so this only trims the sprite's overhang past
+## the frame during travel / spawn. Returns true if a real sprite was resolved.
+## Playfield-SPACE clip: call with NO active draw_set_transform (the projectile loop draws
+## untransformed). `vis` is dst intersect clip, so vis is a subset of dst and its offset from
+## dpos is >= 0 -- that is what keeps the source region inside the texture (SD and --hd alike).
+func _blit_clip(folder: String, frame: int, pos: Vector2, clip: Rect2) -> bool:
+	var tex := _sprite(folder, frame)
+	if tex == null:
+		return false
+	var s := _texsize(tex)
+	var dpos := pos + (Vector2(CELL_PX, CELL_PX) - s) * 0.5
+	var dst := Rect2(dpos, s)
+	if clip.encloses(dst):
+		_dtex(tex, dpos)                       # fully inside: normal path (keeps --hd handling)
+		return true
+	var vis := dst.intersection(clip)
+	if not vis.has_area():
+		return true                            # fully off the playfield: draw nothing
+	var sc := float(_sprite_scale)             # texture is sc x the logical footprint (--hd)
+	# vis is a subset of dst, so (vis.position - dpos) >= 0 and (offset + size) * sc stays
+	# within tex.get_size() == _texsize(tex) * _sprite_scale -- src never runs off the sheet.
+	var src := Rect2((vis.position - dpos) * sc, vis.size * sc)
+	draw_texture_rect_region(tex, vis, src)
+	return true
+
 ## Draw the Magic Arrow (goody f19, a red arrow whose art points UP) rotated so
 ## it aims along its travel direction, inferred from frame-to-frame movement (the
 ## core exposes no velocity). Falls back to a red dart if the sprite is missing.
@@ -1298,7 +1326,7 @@ func _draw() -> void:
 			if _core.projectile_hostile(i):
 				if _core.projectile_src_type(i) == 12:    # Cannon: its spinning beach ball (f04-21)
 					var bf := 4 + (int(_core.tick_count() / 2) % 18)
-					if not _blit("cannon_sprites", bf, pp):
+					if not _blit_clip("cannon_sprites", bf, pp, pf):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
 				elif _core.projectile_src_type(i) == 14:  # Gargoyle: the charged RED energy ball it releases
 					draw_circle(c, 9.0, Color(0.9, 0.25, 0.2, 0.55))
@@ -1310,7 +1338,7 @@ func _draw() -> void:
 					# red-bolt frames on the walker sheet (f50..f63). Render THAT, not a
 					# made-up green blob.
 					var kf := 50 + (int(_core.tick_count() / 2) % 14)
-					if not _blit("walker_sprites", kf, pp):
+					if not _blit_clip("walker_sprites", kf, pp, pf):
 						draw_circle(c, 4.5, Color(0.85, 0.15, 0.12))
 				else:                                     # other hostile shot: a generic energy bolt
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
@@ -1326,7 +1354,7 @@ func _draw() -> void:
 				# the higher of the sheet's top pair when moving right; only the ARROW cycles
 				# the swirl). The weapons sheet is f02..f09; use its top pair 9/8. No glow.
 				var bl: float = pp.x - float(_proj_lastpos.get(i, pp).x)
-				if not _blit("weapons", 9 if bl >= 0.0 else 8, pp):
+				if not _blit_clip("weapons", 9 if bl >= 0.0 else 8, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			else:
 				# Magic ARROW: the SAME weapons swirl but CYCLING (it spins as it flies) --
@@ -1334,7 +1362,7 @@ func _draw() -> void:
 				# swirl; they differ only in BEHAVIOUR (ball rolls / arrow bounces). The pointed
 				# red arrow goody f19 is the ball-AMMO PICKUP icon, NOT a projectile. No glow.
 				var af := 2 + (int(_core.tick_count() / 2) % 8)
-				if not _blit("weapons", af, pp):
+				if not _blit_clip("weapons", af, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			_proj_lastpos[i] = pp
 
