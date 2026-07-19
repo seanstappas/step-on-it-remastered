@@ -1771,15 +1771,19 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 			if cell & CELL_CRACKED:
 				_draw_crack(pos)
 			return
-		if not _blit("block_sprites", t + 1, pos):
+		# asm FUN_1002cc10: a CRACKED (0x4000, head-bonked once) block draws the sheet's
+		# NEXT frame -- the game's own dedicated cracked sprite (e.g. white 0x07 f8->f9,
+		# red 0x0D f14->f15) -- NOT the whole block plus a drawn-on fracture.
+		var bframe: int = (t + 2) if (cell & CELL_CRACKED) else (t + 1)
+		if not _blit("block_sprites", bframe, pos):
 			if t == 0x2B:
 				_draw_ball(pos, Color(0.85, 0.13, 0.13))
 			elif t == 0x0D or t == 0x13:
 				_draw_block(pos, Color(0.85, 0.16, 0.16))
 			else:                               # plain solid (incl. low-0 permanent floor/border walls)
 				_draw_block(pos, Color(0.87, 0.87, 0.90))
-		if cell & CELL_CRACKED:                 # head-bonked once: show the fracture
-			_draw_crack(pos)
+			if cell & CELL_CRACKED:             # procedural fracture only when the real cracked sprite is absent
+				_draw_crack(pos)
 		return
 	if (cell & CELL_DOOR) or t == 0x0A or t == 0x17 or t == 0x18 or t == 0x19:
 		if _blit("goody_sprites", t + 1, pos):
@@ -1921,8 +1925,12 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		elif ENEMY_ROLL.has(etype):              # face-ball: a ball that ROLLS along the ground
 			var nframes: int = max(1, _folder_index(folder).size())
 			var step := int(walk / 3.0)          # ~one frame per 3px of travel
-			if face_left:
-				step = -step                     # roll backward when moving left
+			# asm FUN_1000d130 spins the ball via its anim index +0x56: heading RIGHT
+			# DECREMENTS it (line 43), heading LEFT INCREMENTS it (line 68). The port's
+			# `walk` only ever grows, so negate it heading RIGHT to roll the correct way
+			# (it was negated heading LEFT -> the ball spun backwards in both directions).
+			if not face_left:
+				step = -step                     # moving right -> frame decrements (asm +0x56 --)
 			frame = 2 + posmod(step, nframes)    # cycle the whole sheet; no flip (symmetric ball)
 			flip = false
 		elif etype == 9 and _core.enemy_fire_cd(slot) > 0:   # Robo PUNCH: it bounces its ball
