@@ -633,18 +633,36 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
      * changes x/y). A breakable block ahead winds up the punch (which lands
      * mid-swing above); a permanent wall or a ledge turns it. */
     if ((e->type == SOI_ENEMY_HIPPO || e->type == SOI_ENEMY_PIGGY ||
-         e->type == SOI_ENEMY_SMILEY || e->type == SOI_ENEMY_TEETH) &&
+         e->type == SOI_ENEMY_TEETH) &&
         soi_in_bounds(ahead, row) &&
         (soi_get_cell(w, ahead, row) & SOI_CELL_SUPPORTIVE) &&
         !(soi_get_cell(w, ahead, row) & SOI_CELL_PERMANENT) &&
         SOI_CELL_TYPE(soi_get_cell(w, ahead, row)) != 0) {
-        /* Hippo/Piggy/Smiley/Teeth PLOW through a breakable block (asm FUN_100279c4,
-         * confirmed in FUN_100081f8/9a78/d130/d8c4): clear it (revealing any 0x1000
+        /* Hippo/Piggy/Teeth PLOW through a breakable block (asm FUN_100279c4,
+         * confirmed in FUN_100081f8/9a78/d8c4): clear it (revealing any 0x1000
          * payload) and keep walking -- they do NOT turn at a destructible block the
-         * way ant/ostrich do. A permanent wall still turns them (below). */
+         * way ant/ostrich do. A permanent wall still turns them (below). The break is
+         * SILENT: the asm plow-clear FUN_100279c4 -> FUN_1002754c emits NO sound; each
+         * plow nasty's only FUN_1002b020 call is its DEATH cry, gated on the +0x88
+         * "claimed" field. (bord 67: pigs break blocks silently.) NOTE: Hippo/Piggy
+         * actually CHOMP-then-REVERSE in the asm (states +0x4c 5/6); the faithful
+         * chomp delay is tracked separately -- for now they plow like Teeth. */
         uint32_t bc = soi_get_cell(w, ahead, row);
         soi_set_cell(w, ahead, row, (bc & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(bc) : 0u);
-        soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
+    } else if (e->type == SOI_ENEMY_SMILEY &&
+        soi_in_bounds(ahead, row) &&
+        (soi_get_cell(w, ahead, row) & SOI_CELL_SUPPORTIVE) &&
+        !(soi_get_cell(w, ahead, row) & SOI_CELL_PERMANENT) &&
+        SOI_CELL_TYPE(soi_get_cell(w, ahead, row)) != 0) {
+        /* Smiley (faceball, bord 36, asm FUN_1000d130): does NOT plow. At a breakable
+         * block it breaks it SILENTLY (FUN_100279c4), then REVERSES IMMEDIATELY (the
+         * asm sets +0x4c to the opposite heading -- no chomp state). A permanent wall
+         * reverses it via the generic turn below. (bord 36: faceballs flip to the
+         * other side when they hit/break a block, and make no sound.) */
+        uint32_t bc = soi_get_cell(w, ahead, row);
+        soi_set_cell(w, ahead, row, (bc & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(bc) : 0u);
+        e->dir = (uint8_t)((e->dir == 2) ? 1 : 2);
+        e->vx  = (int16_t)-e->vx;
     } else if (e->type == SOI_ENEMY_ROBO && soi_in_bounds(ahead, row) &&
         (soi_get_cell(w, ahead, row) & SOI_CELL_SUPPORTIVE) &&
         !(soi_get_cell(w, ahead, row) & SOI_CELL_PERMANENT) &&
