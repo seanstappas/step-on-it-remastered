@@ -530,6 +530,17 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
     if (e->type == SOI_ENEMY_HAMMER && e->spawn_child == 0) { enemy_hammer_hop(w, e); return; }
     /* Creeper: self-propelled block that steps cell-to-cell; gravity-free. */
     if (e->type == SOI_ENEMY_CREEPER) { enemy_creeper(w, e); return; }
+    /* Cannon/Knight/Gargoyle: MOUNTED TURRETS. Their asm updates (FUN_100071a0,
+     * FUN_1000c2e8, FUN_1000adc4) never call the gravity predicate FUN_10005750 and
+     * never write their own +0x58/+0x5a (x/y) after init -- they hold their spawn
+     * position and only fire on a timer (dispatched separately after enemy_step). So
+     * they are EXEMPT from gravity and the walk/ledge logic below: a Cannon hung in
+     * mid-board (bord 44) must NOT drop onto -- and kill -- the player under it, and a
+     * column of flying shooters must keep its placed vertical spread instead of all
+     * falling and stacking on the floor. The SPINNER (FUN_1000d490) is the ONE hazard
+     * that DOES call FUN_10005750, so it is deliberately NOT exempt and still falls. */
+    if (e->type == SOI_ENEMY_CANNON || e->type == SOI_ENEMY_KNIGHT ||
+        e->type == SOI_ENEMY_GARGOYLE) return;
 
     /* Gravity: a nasty is supported while EITHER foot rests on a SOLID block
      * (0x200) in the cell below; only over open air (BOTH feet clear) does it
@@ -1165,9 +1176,11 @@ void soi_projectiles_update(SoiWorld *w)
             ncol = (ncol >= 0) ? (ncol / SOI_CELL_PX) : -1;   /* floor at the LEFT field edge */
             nrow = (cy + pr->vy - SOI_ORIGIN_Y) / SOI_CELL_PX;
             nc = soi_get_cell(w, ncol, nrow);
-            if (!soi_in_bounds(ncol, nrow) || (nc & SOI_CELL_PERMANENT) ||
-                ((nc & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(nc) != 0)) {
-                /* wall ahead: turn 90 deg. VERIFIED vs asm FUN_1000fd5c (ricochet states
+            if (!soi_in_bounds(ncol, nrow) || (nc & SOI_CELL_SUPPORTIVE)) {
+                /* wall ahead: turn 90 deg. Solidity is the SUPPORTIVE bit ALONE (asm
+                 * FUN_1000554c / FUN_1000fd5c probe (cell & 0x200) only), so the arrow
+                 * ricochets off real blocks but flies straight through 0x9xx goodies.
+                 * VERIFIED vs asm FUN_1000fd5c (ricochet states
                  * 0x52 1=L/2=U/3=R/4=D): the original turns PRIMARY (x,y)->(y,-x) then, at a
                  * corner, SECONDARY (x,y)->(-y,x). cand[0]={vy,-vx} and cand[1]={-vy,vx} below
                  * ARE those two transforms exactly (checked all 4 dirs: L->D/U, R->U/D, U->L/R,
@@ -1186,8 +1199,7 @@ void soi_projectiles_update(SoiWorld *w)
                     int tc = acol + (cand[t][0] > 0 ? 1 : cand[t][0] < 0 ? -1 : 0);
                     int tr = arow + (cand[t][1] > 0 ? 1 : cand[t][1] < 0 ? -1 : 0);
                     uint32_t cc = soi_get_cell(w, tc, tr);
-                    if (soi_in_bounds(tc, tr) && !(cc & SOI_CELL_PERMANENT) &&
-                        !((cc & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(cc) != 0)) {
+                    if (soi_in_bounds(tc, tr) && !(cc & SOI_CELL_SUPPORTIVE)) {
                         pr->vx = (int16_t)cand[t][0];
                         pr->vy = (int16_t)cand[t][1];
                         break;
@@ -1221,9 +1233,10 @@ void soi_projectiles_update(SoiWorld *w)
             lcol = lead - SOI_ORIGIN_X;
             lcol = (lcol >= 0) ? (lcol / SOI_CELL_PX) : -1;   /* floor at the LEFT field edge -> the ball stops, it does not roll off-screen */
             lc = soi_get_cell(w, lcol, lrow);
-            if (!soi_in_bounds(lcol, lrow) || (lc & SOI_CELL_PERMANENT) ||
-                ((lc & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(lc) != 0)) {
-                /* rest with the leading edge flush on the wall face */
+            if (!soi_in_bounds(lcol, lrow) || (lc & SOI_CELL_SUPPORTIVE)) {
+                /* rest with the leading edge flush on the wall face. Solidity is the SUPPORTIVE
+                 * bit ALONE (asm FUN_1000554c: (cell & 0x200) != 0) -- goodies/coins (0x9xx) alias
+                 * PERMANENT 0x100 but carry no 0x200, so the ball rolls straight through them. */
                 if (pr->vx > 0) pr->x = (int16_t)(SOI_ORIGIN_X + (lcol - 1) * SOI_CELL_PX);
                 else            pr->x = (int16_t)(SOI_ORIGIN_X + (lcol + 1) * SOI_CELL_PX);
                 pr->active = 0;

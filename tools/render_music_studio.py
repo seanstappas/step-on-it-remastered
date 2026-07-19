@@ -131,17 +131,35 @@ OVERRIDES = {
     # incl. ch9, the main 114-note low melody -- was piano. RECONSTRUCTED parts 5-9 by role
     # (the single-pitch ticks ch5/ch6/ch8 = more sitar/agogo like their siblings; the
     # melodic ch7/ch9 = strings like ch0). ch0/ch9 hp=30 keeps the deep sub the real game has.
+    # ARRANGEMENT (user 2026-07-12: "foreground = some string; background = ding-ding +
+    # drums; mostly spooky"). Map to that: the melodic STRINGS (ch7/ch9 + ch0 bed) are the
+    # FOREGROUND; the AGOGO (ch4/ch8) is the "ding ding" bell; the dense single-pitch
+    # ostinati (ch2/ch5/ch6, the header's "sitar" but the user hears DRUMS) render as toms
+    # on ch9; choir (ch1) + reverse cymbal (ch3) support. Balance: strings up, rhythm under.
+    # ARRANGEMENT + BALANCE from Demucs 6-stem separation of the real Spooky.wav (2026-07-13,
+    # D:\SOI-tools\demucs_out): "other"(strings)=-18dB DOMINANT foreground; guitar/piano
+    # (the twangy SITAR)=-24.8dB ~7dB under; drums=-27.9 ~10dB under; choir/bass=-31 ~13dB
+    # under. So the spread is only ~13dB -- I'd over-buried the background (18-23dB). Fix:
+    # strings FOREGROUND; SITAR = the "twangy" foreground-mid element (user wanted it back);
+    # agogo "ding ding" + drums + choir as PRESENT background detail (not buried). Moderate
+    # lp keeps warmth without hiding the articulation/detail.
     "spooky": {
-        0: {"gain": 3.0, "hp": 30},                 # strings bed (48) -> louder background + deep sub
-        1: {"gain": 3.0},                           # choir -> louder background
-        2: {"gain": -1.0, "lp": 2800},              # SITAR -> DARK (lp keeps it from cutting through), present
-        3: {"gain": -8.0, "lp": 2500},              # REVERSE CYMBAL (noise swell) -> well down + dark
-        4: {"gain": 3.0, "lp": 4000},               # agogo -> up (the warm prominent percussive) + darken
-        5: {"prog": 104, "gain": -1.0, "lp": 2800}, # part5 tick -> Sitar (dark)
-        6: {"prog": 104, "gain": -1.0, "lp": 2800}, # part6 tick -> Sitar (dark)
-        7: {"prog": 48, "gain": 2.0},               # part7 melody -> Strings
-        8: {"prog": 113, "gain": 3.0, "lp": 4000},  # part8 -> Agogo (up + dark)
-        9: {"prog": 48, "gain": 2.0, "hp": 30},     # part9 low melody -> Strings, keep deep sub
+        "mono": True,                                        # original QTMA output is MONO (side ch -81 dB vs mid); collapse to match
+        # master FX to match the original (2026-07-13 fxcheck vs spooky_ref58.wav): the
+        # original is +9dB brighter in the 5-10kHz "air" band, hard band-limited above
+        # ~11kHz (ours leaked +33dB of hiss), more compressed (crest 11.8 vs 14.7dB) and a
+        # touch more reverberant. air_g=high brilliance shelf; lp=junk cut; comp=density.
+        "master": {"reverb": 0.40, "air_hz": 7000, "air_g": 5.0, "lp": 11000, "comp": True},
+        0: {"gain": 5.0, "hp": 30},                          # strings bed -> foreground + deep sub (bass)
+        1: {"gain": 8.0},                                    # choir -> present background (ref vocals)
+        2: {"drum": True, "drum_note": 75, "gain": -3.0},    # part2 ostinato -> CLAVES (light percussive click). QTMA labels part2 "Sitar" (GM104) but QuickTime's sitar played as rapid 38ms D#4 notes = a bright ~5500Hz click, 0% pitched fundamental (measured off the ref recording) -- a light perc tick, NOT a buzzy soundfont sitar
+        3: {"gain": -5.0, "lp": 3000},                       # reverse cymbal -> subtle detail
+        4: {"gain": -1.0, "lp": 6500},                       # AGOGO = "ding ding" -> present background
+        5: {"drum": True, "drum_note": 76, "gain": -2.0},     # hi woodblock (clicky tick, matches ref high percussion)
+        6: {"drum": True, "drum_note": 77, "gain": -2.0},     # lo woodblock (clicky tick accent)
+        7: {"prog": 107, "gain": 12.0, "lp": 6000},          # part7 SLOW LEAD -> KOTO = clean twangy pluck (ref lead is a clean plucked string, not a buzzy sitar)
+        8: {"gain": -1.0, "lp": 6500},                       # agogo ding-ding (present background)
+        9: {"prog": 98, "gain": 11.0},                       # fast ORNAMENTAL RUNS -> CRYSTAL (FX3) glassy/weird percussion, louder (user: "distorted glass percussion", was buried harp)
     },
     # spooky_thin: same instrument fix via re-extraction (String Ensemble + Sitar/Reverse
     # Cymbal/Agogo now correct); reconstruct the unrequested parts' melodic line as strings.
@@ -551,8 +569,9 @@ def render_stem(mid_path, font, wav_path, chorus=False):
          "-o", "synth.polyphony=256", "-R", "0", *cx, font, mid_path])
     return os.path.exists(wav_path) and os.path.getsize(wav_path) > 1024
 
-def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0, refmatch=False):
+def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0, refmatch=False, mono=False, master=None):
     """stems_info: list of (wav_path, family_dict). Build ffmpeg mix + master."""
+    master = master or {}
     premix = os.path.join(tmp, "premix.wav")
     inputs, filt, labels = [], [], []
     for i, (wav, fam) in enumerate(stems_info):
@@ -590,10 +609,19 @@ def mix_and_master(stems_info, ir, out_ogg, tmp, reverb=0.26, lufs=-14.0, refmat
              "equalizer=f=400:width_type=q:w=1.0:g=-2.5,"
              "equalizer=f=3000:width_type=q:w=1.2:g=2.0,"
              "equalizer=f=5500:width_type=q:w=1.2:g=3.5,") if refmatch else ""
+    # tracks whose original is MONO collapse to dual-mono (faithful); others widen slightly
+    stereo_stage = ("pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1," if mono
+                    else "extrastereo=m=1.08,")
+    # per-track master FX (measured to match a specific original, e.g. spooky): add a
+    # 5-10kHz "air" shelf, steeply low-pass the >11kHz hiss the original lacks (2 poles
+    # cascaded), and glue the dynamics with a gentle compressor.
+    m_air = f"equalizer=f={master['air_hz']}:width_type=q:w=0.9:g={master['air_g']}," if master.get("air_g") else ""
+    m_lp = f"lowpass=f={master['lp']},lowpass=f={master['lp']}," if master.get("lp") else ""
+    m_comp = "acompressor=threshold=-16dB:ratio=3:attack=8:release=140:makeup=1.5," if master.get("comp") else ""
     filt.append("[bus]bass=g=1.5:f=90,treble=g=1.5:f=10000,"
-                f"{refeq}"
+                f"{refeq}{m_air}{m_lp}{m_comp}"
                 "volume=1.5dB,asoftclip=type=tanh,volume=-1.5dB,"
-                f"extrastereo=m=1.08,{trim}[pol]")
+                f"{stereo_stage}{trim}[pol]")
     # dynaudnorm's gaussian window ramps its gain over the first ~3s (an audible fade-in);
     # warm it up with a reversed-head pre-roll, then trim the pre-roll off so the track
     # starts at full, steady level.
@@ -732,7 +760,10 @@ def main():
             if not info:
                 raise RuntimeError("no stems")
             out_ogg = os.path.join(out_dir, base + ".ogg")
-            mix_and_master(info, ir, out_ogg, tmp, reverb=reverb_wet, lufs=lufs_target, refmatch=refmatch_mode)
+            track_mono = bool(ov_track.get("mono"))   # collapse to mono when the original was mono (e.g. spooky)
+            track_master = ov_track.get("master", {})  # per-track master FX (air/lp/comp/reverb) measured to match the original
+            mix_and_master(info, ir, out_ogg, tmp, reverb=track_master.get("reverb", reverb_wet),
+                           lufs=lufs_target, refmatch=refmatch_mode, mono=track_mono, master=track_master)
             dur = subprocess.run([FP, "-v", "error", "-show_entries", "format=duration",
                                   "-of", "csv=p=0", out_ogg], stdout=subprocess.PIPE).stdout.decode().strip()
             print(f"  {base:24s} stems={len(info):2d} -> {float(dur):6.1f}s")

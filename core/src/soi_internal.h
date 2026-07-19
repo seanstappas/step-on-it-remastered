@@ -8,6 +8,10 @@
 
 #include "soi_core.h"
 
+/* Largest BORD resource we snapshot for the faithful death-reload (biggest shipped
+ * board is 656 bytes; 1024 leaves headroom). */
+#define SOI_BORD_MAX 1024u
+
 /* ---- grid cell encoding (CONFIRMED from asm; docs decompiled-findings.md §0) ---- */
 #define SOI_CELL_EMPTY        0u
 #define SOI_CELL_TYPE(c)      ((c) & 0xFFu)          /* block/goodie type; 0=empty */
@@ -147,6 +151,14 @@ struct SoiWorld {
     uint8_t  death_type[SOI_DEATH_QUEUE_MAX];
     uint8_t  death_dir[SOI_DEATH_QUEUE_MAX];
     uint8_t  death_count;
+
+    /* Faithful death recovery: a copy of the CURRENT board's BORD bytes, captured at
+     * load, so a death can RELOAD the board (asm FUN_1001f4f8 -> FUN_10029acc ->
+     * FUN_1002b448: grid/enemies/bonus/positions reset, persistent stats kept). NOT part
+     * of soi_serialize -- it is fixed input data, not evolving sim state -- so it is
+     * absent from the determinism hash regardless of whether a reload ever fires. */
+    uint16_t bord_len;                    /* 0 = no stored board (bare unit-test world) */
+    uint8_t  bord_data[SOI_BORD_MAX];
 };
 
 /* ---- rng (soi_rng.c) ---- */

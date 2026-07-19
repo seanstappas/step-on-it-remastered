@@ -26,6 +26,11 @@ static void reset_player(SoiWorld *w, int idx, int col, int row)
     p->lives = 3; p->block_type = 0x19;   /* blue built block (ref-confirmed) */
     p->spawn_x = (int16_t)p->x; p->spawn_y = (int16_t)p->y;
     p->mult = 1;                          /* default score multiplier (matches soi_world_init) */
+    p->bonus_time = 5000;                 /* realistic board-load default (BORD 0x0E). Bare-world
+                                           * tests carry no captured board, so a runout respawns IN
+                                           * PLACE without reseeding the clock; seed a healthy value
+                                           * so a test that ticks a few frames isn't killed by the
+                                           * timer (board-reload recovery is exercised by test 41). */
 }
 
 /* Mark the player's feet cell supportive so soi_tick keeps it grounded instead
@@ -131,7 +136,7 @@ int main(void)
     w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 6, 9);
     ground_player(w, 6, 9);                     /* stand so the jump can launch */
-    soi_set_cell(w, 6, 8, 1);                  /* breakable block above head */
+    soi_set_cell(w, 6, 8, SOI_CELL_SUPPORTIVE | 1);  /* breakable block above head (real block: has 0x200) */
     soi_tick(w, SOI_IN_JUMP, 0);
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) != SOI_CELL_EMPTY &&
           (soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED),
@@ -176,6 +181,23 @@ int main(void)
         CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) == SOI_CELL_EMPTY,
               "jump: a clear-headroom leap breaks no block");
     }
+
+    /* ---- 3c. A GOODIE directly overhead is NOT a head-bonk: the player leaps up
+     * INTO it (and can then collect it), instead of being stopped dead. Headroom is
+     * blocked only by the SUPPORTIVE bit (asm FUN_10012444 tests (cell & 0x200)),
+     * and treasure goodies (0x9xx, e.g. a 3x-multiplier / coin) carry no 0x200. The
+     * old `SOI_CELL_TYPE(a) != 0` test wrongly treated any non-empty overhead cell
+     * (including a coin) as a bonk ("cannot jump into coins/3x above"). */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 6, 9);
+    ground_player(w, 6, 9);
+    soi_set_cell(w, 6, 8, 0x90A);                 /* a silver-coin goodie directly overhead (no 0x200) */
+    soi_tick(w, SOI_IN_JUMP, 0);                  /* edge-trigger the jump */
+    CHECK(w->players[1].in_air == 1 && w->players[1].ground_state == SOI_ST_JUMP,
+          "jumpgoody: a goodie overhead does NOT block the leap (player goes airborne)");
+    CHECK(soi_get_cell(w, 6, 8) == 0x90A,
+          "jumpgoody: leaping up does not crack/break the goodie (it is not a solid block)");
 
 
     /* ---- 3b. Block create/destroy TOGGLE: two block-high presses at the same
@@ -1363,10 +1385,14 @@ int main(void)
     /* 12d. A ricochet arrow that reaches a wall at FLOOR level must climb (turn
      * up), not get trapped in the corner. Regression: the deflect probe must test
      * the ADJACENT cell, not a bare +/-2px that stays in the arrow's own row and
-     * wrongly reads "down" (into the floor) as clear. */
+     * wrongly reads "down" (into the floor) as clear. The player stands ON TOP of
+     * the row-12 floor (support probes one row below), so the arrow spawns in the
+     * EMPTY row-11 cell -- projectile solidity is (cell & 0x200) with no type guard
+     * (asm FUN_1000554c), so a support cell co-located on the arrow's own row would
+     * (correctly) read solid and wrongly deflect it at spawn. */
     soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
-    reset_player(w, 1, 6, 11);
-    ground_player(w, 6, 11);                                             /* player stands (own row) */
+    reset_player(w, 1, 6, 11);                                           /* stands on the row-12 floor below */
+    w->players[1].y = (int16_t)(soi_cell_y(11) + 1);                     /* rest at block-top+1: feet reach row 12, body cell (row 11) is EMPTY */
     { int c; for (c = 1; c <= 9; c++) soi_set_cell(w, c, 12, 0x300u); }  /* solid floor below the arrow */
     soi_set_cell(w, 3, 11, 0x300u); soi_set_cell(w, 3, 10, 0x300u);      /* wall to the left */
     w->players[1].arrows = 1; w->players[1].facing = -1;                 /* face left */
@@ -1521,6 +1547,31 @@ int main(void)
         for (t = 0; t < 20; t++) soi_enemies_update(w);
         CHECK(soi_enemy_x(w, gi) == gx0, "turret: the Gargoyle holds its ground (stationary)");
         CHECK(soi_enemy_x(w, ki) == kx0, "turret: the Knight holds its ground (stationary)");
+    }
+
+    /* ---- 14d. Stationary shooters DO NOT fall: the Cannon (asm FUN_100071a0), Gargoyle
+     * (FUN_1000adc4) and Knight (FUN_1000c2e8) never call the gravity predicate
+     * FUN_10005750 -- they are mounted turrets that hold their spawn Y over open air (a
+     * Cannon on bord 44 hangs in mid-board, it does not drop onto -- and kill -- the
+     * player below; flying shooters keep their placed vertical spread instead of all
+     * falling and stacking on the floor). The SPINNER (FUN_1000d490) is the ONE hazard
+     * that DOES call FUN_10005750, so it must still fall -- guards against an over-broad
+     * exemption. NO floor is placed under any of them. ---- */
+    {
+        int ci, gi, ki, si, cy0, gy0, ky0, sy0, t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        ci = soi_enemy_spawn(w, SOI_ENEMY_CANNON,   3, 5);   /* open air, no floor below */
+        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 6, 5);
+        ki = soi_enemy_spawn(w, SOI_ENEMY_KNIGHT,   9, 5);
+        si = soi_enemy_spawn(w, SOI_ENEMY_SPINNER, 12, 5);
+        cy0 = soi_enemy_y(w, ci); gy0 = soi_enemy_y(w, gi);
+        ky0 = soi_enemy_y(w, ki); sy0 = soi_enemy_y(w, si);
+        for (t = 0; t < 10; t++) soi_enemies_update(w);
+        CHECK(soi_enemy_y(w, ci) == cy0, "turret: the Cannon does NOT fall over open air (static, mid-board)");
+        CHECK(soi_enemy_y(w, gi) == gy0, "turret: the Gargoyle does NOT fall over open air");
+        CHECK(soi_enemy_y(w, ki) == ky0, "turret: the Knight does NOT fall over open air");
+        CHECK(soi_enemy_y(w, si) >  sy0, "spinner: DOES fall over open air (still obeys gravity)");
     }
 
     /* ---- 15. Magic Ball: a distinct weapon (asm fire FUN_100110b4, mover
@@ -1907,19 +1958,29 @@ int main(void)
 
     /* ---- 27. A Bonus-timer runout kills with the SAME death as an enemy hit: the
      * airborne death-throw (SOI_ST_DEAD) + the hit cry (asm FUN_1000f500 routes a
-     * timed-out player through FUN_10012228 == soi_player_hit). The old code silently
-     * set alive=0 -- no animation, no sound, a mute "RESPAWNING" pop. ---- */
+     * timed-out player through FUN_10012228 == soi_player_hit). The asm decrements the
+     * counter, SURVIVES the tick it first reads 0, and dies only when the NEXT decrement
+     * would take it negative (FUN_1000f500 line 43 `< 0`), CLAMPING it back to 0 (line 45).
+     * The old port dropped a tick early (died at ==0) and originally set alive=0 silently. ---- */
     {
         int k, cried = 0;
         soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
         reset_player(w, 1, 5, 9);
         ground_player(w, 5, 9);
         w->players[1].invuln = 0;
-        w->players[1].bonus_time = 1;               /* one decrement from expiry */
-        w->bonus_div = 1;                           /* force the ~20Hz bonus tick next frame */
-        soi_tick(w, 0, 0);                          /* bonus 1 -> 0 -> fatal */
+        w->players[1].bonus_time = 1;               /* one decrement to reach 0 */
+        w->bonus_div = 1;                           /* force the ~20Hz bonus tick */
+        soi_tick(w, 0, 0);                          /* bonus 1 -> 0: NOT fatal (asm survives 0) */
+        CHECK(w->players[1].bonus_time == 0,
+              "timerdeath: the bonus reaches 0");
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD,
+              "timerdeath: the player SURVIVES the 0 tick (asm dies at <0, not ==0)");
+        w->bonus_div = 1;                           /* force the next bonus tick */
+        soi_tick(w, 0, 0);                          /* bonus 0 -> -1 (<0): fatal, clamped to 0 */
         CHECK(w->players[1].ground_state == SOI_ST_DEAD,
-              "timerdeath: a bonus runout plays the death-throw (SOI_ST_DEAD), not a silent alive=0");
+              "timerdeath: the runout plays the death-throw (SOI_ST_DEAD) when the bonus would go negative");
+        CHECK(w->players[1].bonus_time == 0,
+              "timerdeath: the bonus is clamped back to 0 on the fatal tick (asm FUN_1000f500)");
         for (k = 0; k < soi_sfx_count(w); k++)
             if (soi_sfx_get(w, k) == SOI_SFX_PLAYER_HIT) cried = 1;
         CHECK(cried, "timerdeath: a bonus runout plays the player hit cry (SOI_SFX_PLAYER_HIT)");
@@ -2019,9 +2080,13 @@ int main(void)
         reset_player(w, 1, 5, 9);
         ground_player(w, 5, 9);
         w->players[1].invuln = 90;                        /* fresh spawn grace / potion i-frames */
-        w->players[1].bonus_time = 1;                     /* one decrement from expiry */
-        w->bonus_div = 1;                                 /* force the bonus tick next frame */
-        soi_tick(w, 0, 0);                                /* bonus 1 -> 0 while invulnerable */
+        w->players[1].bonus_time = 1;                     /* one decrement to reach 0 */
+        w->bonus_div = 1;                                 /* force the bonus tick */
+        soi_tick(w, 0, 0);                                /* bonus 1 -> 0: survives, still invulnerable */
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD,
+              "timerdeath-iframes: the player survives the 0 tick even while invulnerable");
+        w->bonus_div = 1;                                 /* force the next bonus tick */
+        soi_tick(w, 0, 0);                                /* bonus 0 -> -1 (<0): fatal despite i-frames */
         CHECK(w->players[1].ground_state == SOI_ST_DEAD,
               "timerdeath-iframes: a bonus runout kills even an INVULNERABLE player (asm FUN_10012228, no invuln gate)");
         for (k = 0; k < soi_sfx_count(w); k++)
@@ -2322,6 +2387,116 @@ int main(void)
               "dead-not-fall: death_step still ran (parabola advanced), not the FALL/idle path");
         CHECK(SOI_CELL_TYPE(soi_get_cell(w, 9, 3)) == SOI_CELL_EMPTY,
               "dead-not-fall: the pressed BLOCK built nothing (gated at the top before build)");
+    }
+
+    /* ---- 41. FAITHFUL death recovery: reload the whole board. asm FUN_1001f4f8 ->
+     * FUN_10029acc -> FUN_1002b448 reloads the board after EVERY death, so the grid,
+     * enemies, positions and the per-player Bonus timer all reset while score / lives /
+     * ammo / shield persist and the RNG stream continues. Concretely: (A) a Bonus runout
+     * costs exactly ONE life and the player respawns with a FRESH clock (not stuck at 0,
+     * which used to infinite-kill); (B) a block destroyed before death is REBUILT after it
+     * (dying resets the board); (C) the fresh clock means the respawn does not instantly
+     * re-die (no infinite cascade); and (D) timing out on the LAST life ends the game
+     * (eliminated, never an infinite loop). These need a captured board, so they load a
+     * crafted BORD via soi_load_level (P1 (5,9), P2 (9,9), Bonus 200, supportive floor at
+     * (5,10)/(9,10)). ---- */
+    {
+        uint8_t bord[64];
+        int guard, lb;
+
+        #define MK_BORD() do { \
+            memset(bord, 0, sizeof(bord)); \
+            bord[0x07] = 5;  bord[0x09] = 9;    /* P1 col,row */ \
+            bord[0x0B] = 9;  bord[0x0D] = 9;    /* P2 col,row */ \
+            bord[0x0E] = 0;  bord[0x0F] = 200;  /* Bonus = 200 */ \
+            bord[0x1A] = 0x02; bord[0x1B] = 0x07;   /* tile_type 0x0207 (supportive) */ \
+            bord[0x1C] = 5;  bord[0x1D] = 10;   /* floor under P1 */ \
+            bord[0x1E] = 9;  bord[0x1F] = 10;   /* floor under P2 */ \
+            bord[0x20] = 12; bord[0x21] = 10;   /* a lone block, NOT under any player */ \
+            bord[0x22] = 100; bord[0x23] = 100; /* sentinel; 0x24.. = 0 -> end of tiles */ \
+        } while (0)
+
+        /* (A) one Bonus runout -> exactly one life lost, respawn with a RESET clock. */
+        soi_world_init(w, 1);
+        MK_BORD();
+        CHECK(soi_load_level(w, bord, sizeof(bord)) == 1, "reload41: crafted board loads");
+        soi_limit_players(w, 1);                    /* single-player: P2 disabled */
+        w->players[1].lives = 3;
+        w->players[1].bonus_time = 1;               /* about to time out */
+        for (guard = 0; guard < 400 && w->players[1].lives == 3; guard++)
+            soi_tick(w, 0, 0);                       /* run the death arc */
+        CHECK(w->players[1].lives == 2, "reload41(A): a Bonus runout costs exactly one life");
+        for (guard = 0; guard < 200 && !w->players[1].alive; guard++)
+            soi_tick(w, 0, 0);                       /* wait out respawn_timer -> board reload */
+        CHECK(w->players[1].alive, "reload41(A): the player respawns after the runout");
+        CHECK(w->players[1].bonus_time >= 190,
+              "reload41(A): the reload RESETS the Bonus clock to ~200 (no infinite kill)");
+        CHECK(!w->players[1].eliminated, "reload41(A): still in the game (2 lives left)");
+        CHECK(w->players[2].active == 0,
+              "reload41(A): the reload keeps a disabled player disabled (single-player P2)");
+        CHECK(w->tick > 100,
+              "reload41(A): the reload keeps the tick counter monotonic (no reset -> no spurious throw / RNG desync)");
+
+        /* (B) a block destroyed BEFORE death is rebuilt AFTER it (dying resets the board).
+         * Smash the LONE block at (12,10) -- the player stays supported on (5,10) -- then
+         * force a clean Bonus runout so the death (and reload) fire deterministically. */
+        lb = w->players[1].lives;
+        soi_set_cell(w, 12, 10, SOI_CELL_EMPTY);
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 12, 10)) == SOI_CELL_EMPTY,
+              "reload41(B): lone block destroyed pre-death");
+        w->players[1].bonus_time = 1;                /* deterministic runout */
+        for (guard = 0; guard < 400 && !(w->players[1].alive && w->players[1].lives < lb); guard++)
+            soi_tick(w, 0, 0);                        /* die -> reload */
+        CHECK(w->players[1].alive && w->players[1].lives == lb - 1,
+              "reload41(B): the player died once and respawned");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 12, 10)) != SOI_CELL_EMPTY,
+              "reload41(B): the death reload REBUILDS the destroyed block");
+
+        /* (C) the reset clock means the respawn does NOT instantly re-die (no cascade). */
+        lb = w->players[1].lives;
+        for (guard = 0; guard < 30; guard++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].alive && w->players[1].lives == lb,
+              "reload41(C): the fresh clock survives many ticks (no infinite cascade)");
+
+        /* (D) timing out on the LAST life ends the game (eliminated), never loops forever. */
+        soi_world_init(w, 1);
+        MK_BORD();
+        soi_load_level(w, bord, sizeof(bord));
+        soi_limit_players(w, 1);
+        w->players[1].lives = 0;                     /* last life */
+        w->players[1].bonus_time = 1;
+        for (guard = 0; guard < 400 && !w->players[1].eliminated; guard++)
+            soi_tick(w, 0, 0);
+        CHECK(w->players[1].eliminated,
+              "reload41(D): timing out on the last life ends the game (no infinite loop)");
+        #undef MK_BORD
+    }
+
+    /* ---- 42. A Magic Ball rolls THROUGH a goodie and stops only on a real wall. The
+     * original's projectile solidity predicate is FUN_1000554c -> (cell & 0x200) != 0:
+     * it tests ONLY the SUPPORTIVE bit, never PERMANENT (0x100). Treasure goodies live in
+     * the 0x9xx range (silver coin 0x90A = 0x900|0x0A), which ALIASES 0x100 but has NO
+     * 0x200, so the ball must roll straight over the coin and come to rest flush against
+     * the first real 0x200 block. The old `(cell & PERMANENT)` test wrongly stopped the
+     * ball dead at any 0x9xx goodie ("b39: balls are blocked by goodies"). ---- */
+    {
+        int restcol, k;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        w->players[1].facing = 1;                       /* fire rightward */
+        w->players[1].balls  = 1;
+        soi_set_cell(w, 7, 9, 0x90A);                   /* a real silver-coin goodie (has 0x100, NOT 0x200) in the path */
+        soi_set_cell(w, 10, 9, SOI_WALL);               /* a real solid wall further along (has 0x200) */
+        soi_ball_fire(w, 1);
+        for (k = 0; k < 120 && w->projectiles[0].active; k++)
+            soi_projectiles_update(w);
+        CHECK(!w->projectiles[0].active, "ballgoody: the ball comes to rest (does not fly forever)");
+        restcol = (w->projectiles[0].x + SOI_CELL_PX / 2 - SOI_ORIGIN_X) / SOI_CELL_PX;
+        CHECK(restcol == 9,
+              "ballgoody: the ball rolls THROUGH the 0x9xx goodie (col 7) and stops flush on the "
+              "0x200 wall (col 10) -- solidity is (cell & 0x200), never PERMANENT (asm FUN_1000554c)");
+        CHECK(soi_get_cell(w, 7, 9) == 0x90A,
+              "ballgoody: the passing ball does NOT consume the goodie it rolls over");
     }
 
     free(w);

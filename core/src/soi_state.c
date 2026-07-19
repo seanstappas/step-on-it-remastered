@@ -289,7 +289,70 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
      * the board (coins/gems/gold). Count it now; pickups decrement it. */
     w->goodies_total = (int16_t)soi_count_treasure(w);
     w->goodies_left  = w->goodies_total;
+    /* Snapshot the board bytes so a death can faithfully reload it. reload_board_on_death
+     * copies these into a LOCAL buffer before the reload, because soi_world_init zeroes
+     * bord_data before the reload's soi_load_level re-runs. A board too big to snapshot
+     * (> SOI_BORD_MAX, none ship that large) disables reload recovery rather than leaving a
+     * stale snapshot from a previous board. */
+    if (len <= sizeof(w->bord_data)) {
+        size_t k;
+        for (k = 0; k < len; k++) w->bord_data[k] = bord[k];
+        w->bord_len = (uint16_t)len;
+    } else {
+        w->bord_len = 0;
+    }
     return 1;
+}
+
+/* Faithful death recovery (asm FUN_1001f4f8 -> FUN_10029acc -> FUN_1002b448 +
+ * FUN_1002b174): reload the WHOLE board -- grid, enemies, positions, multiplier, key
+ * and the Bonus timer all reset -- while score / lives / ammo / shield persist and the
+ * RNG stream continues. This makes a bonus runout cost exactly one life with a fresh
+ * clock (repeatable, no infinite cascade) and restores destroyed blocks on death. A
+ * stored board is required; a bare unit-test world falls back to the simple in-place
+ * respawn (caller checks bord_len). */
+static void reload_board_on_death(SoiWorld *w)
+{
+    uint8_t tmp[SOI_BORD_MAX];
+    struct { int32_t score; int16_t lives, arrows, balls, shield; uint8_t active, elim; }
+        keep[SOI_MAX_PLAYERS];
+    uint32_t seed   = w->rng_seed;
+    uint32_t tick   = w->tick;          /* the reload runs MID-tick; keep the frame counter */
+    uint8_t  parity = w->frame_parity;  /* monotonic so the tick-gated badguy throw + 30Hz  */
+    size_t len = w->bord_len, k;        /* input latch don't refire/desync (review finding). */
+    int i, p3_active;
+
+    if (len == 0u || len > sizeof(tmp)) return;   /* no board captured -> in-place fallback */
+    for (k = 0; k < len; k++) tmp[k] = w->bord_data[k];
+
+    p3_active = w->players[3].active && !w->players[3].eliminated;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        keep[i].score  = w->players[i].score;
+        keep[i].lives  = w->players[i].lives;
+        keep[i].arrows = w->players[i].arrows;
+        keep[i].balls  = w->players[i].balls;
+        keep[i].shield = w->players[i].shield;
+        keep[i].active = w->players[i].active;
+        keep[i].elim   = w->players[i].eliminated;
+    }
+
+    soi_world_init(w, 1);          /* full reset; also re-seeds default stats */
+    w->rng_seed      = seed;       /* continue the RNG stream across the reload */
+    w->tick          = tick;       /* restore the frame counter (see above) */
+    w->frame_parity  = parity;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        w->players[i].score  = keep[i].score;
+        w->players[i].lives  = keep[i].lives;
+        w->players[i].arrows = keep[i].arrows;
+        w->players[i].balls  = keep[i].balls;
+        w->players[i].shield = keep[i].shield;
+    }
+    soi_load_level(w, tmp, len);   /* rebuild grid/enemies, reseed bonus, re-store bytes */
+    if (p3_active) soi_spawn_player3(w);
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {   /* keep disabled / eliminated players out */
+        if (keep[i].elim)    { w->players[i].eliminated = 1; w->players[i].alive = 0; }
+        if (!keep[i].active) { w->players[i].active = 0;     w->players[i].alive = 0; }
+    }
 }
 
 /* ---------- tick ---------- */
@@ -324,14 +387,25 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
         if (w->players[i].fire_cd > 0) w->players[i].fire_cd--; /* vestigial: player weapons now
                                                                 * gate on one-shot-in-flight, not a
                                                                 * timer (asm has no fire cooldown) */
+    /* Respawn commit. FAITHFUL death recovery: the asm reloads the whole board after
+     * every death (session loop FUN_1001f4f8 -> FUN_10029acc -> FUN_1002b448), so the
+     * grid, enemies, positions and the Bonus timer all reset while score / lives / ammo /
+     * shield persist -- a death RESETS THE BOARD and a runout comes back with a fresh
+     * clock. A captured board is required; a bare unit-test world (no board loaded) keeps
+     * the simple in-place respawn. reload_board_on_death revives every active player at
+     * once, so break out of the per-player loop after it runs. */
     for (i = 0; i < SOI_MAX_PLAYERS; i++) {                      /* respawn timer */
         SoiPlayer *rp = &w->players[i];
         if (rp->active && !rp->alive && !rp->eliminated && rp->respawn_timer > 0) {
             if (--rp->respawn_timer == 0) {
+                if (w->bord_len > 0) {
+                    reload_board_on_death(w);
+                    break;
+                }
                 rp->x = rp->spawn_x; rp->y = rp->spawn_y;
                 rp->alive = 1; rp->in_air = 0; rp->move_ctr = 0; rp->run_dir = 0;
                 rp->ground_state = SOI_ST_IDLE;
-                rp->invuln = 90;                                /* spawn grace */
+                rp->invuln = 90;                                /* spawn grace (no-board fallback) */
             }
         }
     }
@@ -378,21 +452,27 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
         w->bonus_div = 3;
         for (i = 1; i < SOI_MAX_PLAYERS; i++) {
             SoiPlayer *p = &w->players[i];
-            if (p->active && p->alive && !p->eliminated && p->bonus_time > 0) {
+            /* level_loaded gate (cf. the badguy-throw below): the asm's timer FUN_1000f500
+             * runs only from the in-play game loop, never pre-board. Mirror that so an active
+             * player left at bonus 0 before a board is up can't be insta-killed on tick 0. */
+            if (w->level_loaded && p->active && p->alive && !p->eliminated) {
                 p->bonus_time--;
                 if (p->bonus_time == 1000) soi_sfx_emit(w, SOI_SFX_HURRY);
-                if (p->bonus_time == 0) {
-                    /* Bonus expiry is FATAL and plays the SAME death as an enemy hit:
-                     * asm FUN_1000f500 routes a timed-out player through FUN_10012228
-                     * (== soi_player_hit) -- the airborne death-throw somersault + the
-                     * hit cry (SOI_SFX_PLAYER_HIT), with the life-loss + respawn committed
-                     * in air_step. The old code silently set alive=0 (no animation, no
-                     * sound), which read as a mute "RESPAWNING" pop when the clock ran out.
-                     * UNLIKE enemy contact, the timeout is NOT gated by i-frames: the asm
-                     * launcher FUN_10012228 has no invuln check, so a player still in spawn
-                     * grace / potion invuln who lets the clock hit 0 STILL dies (you can't
-                     * cheese the timer by timing the runout into your grace window). Clear
-                     * invuln first so soi_player_hit doesn't early-return on it. */
+                if (p->bonus_time < 0) {
+                    /* Timeout death, per asm FUN_1000f500: decrement every in-play tick,
+                     * SURVIVE the tick the counter first reads 0, and die only when the next
+                     * decrement goes negative (line 43 `< 0`), clamping back to 0 (line 45).
+                     * Route through FUN_10012228 (== soi_player_hit): the SAME airborne
+                     * death-throw + hit cry as an enemy hit; the life is debited in air_step.
+                     * The runout is NOT i-frame gated (FUN_10012228 has no invuln check), so
+                     * spawn / potion grace can't cheese it -- clear invuln first so
+                     * soi_player_hit doesn't early-return. Recovery is faithful: the death
+                     * reloads the board (see the respawn commit above), which RESEEDS the
+                     * bonus, so a timed-out player returns with a fresh clock -- one life per
+                     * runout, repeatable until the lives run out (no infinite cascade). The
+                     * SOI_ST_DEAD guard in soi_player_hit keeps the still-clamped-0 bonus from
+                     * re-launching the same death mid-arc. */
+                    p->bonus_time = 0;
                     p->invuln = 0;
                     soi_player_hit(w, i);
                 }
