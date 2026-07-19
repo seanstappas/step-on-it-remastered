@@ -1490,7 +1490,11 @@ func _draw_player(idx: int, shirt: Color) -> void:
 		_p_runtimer[idx] = 6
 		_p_stuck[idx] = int(_p_stuck.get(idx, 0)) + 1
 		if int(_p_stuck[idx]) >= 3:              # blocked by a wall for a few frames -> run IN PLACE
-			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX
+			# Advance the leg cycle at the SAME 30 Hz cadence as a real run step (half of
+			# PLAYER_RUN_PX per 60 Hz draw = 2 px per 30 Hz step). Advancing a FULL PLAYER_RUN_PX
+			# every draw cycled the legs at 60 Hz -- twice run speed -- which read as the player
+			# "moving faster" while merely pushing against a wall.
+			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX * 0.5
 	elif _p_runtimer.get(idx, 0) > 0:
 		_p_runtimer[idx] = int(_p_runtimer[idx]) - 1
 	# idle/fall default: the static stand pose is DIRECTIONAL art (asm FUN_100128f8 idle /
@@ -1529,7 +1533,13 @@ func _draw_player(idx: int, shirt: Color) -> void:
 		flip = false                             # native directional art -- no mirror
 	elif st == 3:                                # FALL -> the static directional pose (same as idle)
 		pass
-	elif int(_p_runtimer.get(idx, 0)) > 0:       # running
+	elif st == 1:                                # running (or holding into a wall = run-in-place)
+		# Gate the run legs on the core's actual RUN state, NOT a lingering _p_runtimer. When the
+		# player genuinely stops (st -> 0 idle) or falls (st 3), the countdown timer used to keep
+		# drawing run frames for ~6 more frames, leaving one foot planted ahead of the other. The
+		# core holds st==1 for the whole run (no idle<->run flicker between 30 Hz steps, verified),
+		# so keying off st==1 keeps the legs alive while running yet snaps to the two-feet STAND the
+		# instant the player is idle/falling/on an edge.
 		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
 		flip = not right                         # right = f37-48 (head forward); left = the same, mirrored
 	var folder := "GP_sprites" if idx == 2 else "BP_sprites"   # P2 = green art; P1/P3 = blue art
@@ -1592,8 +1602,6 @@ func _draw_hud() -> void:
 	_ex_num(_board_number(), 3, x + 2, y)
 	if _core.player_has_key(1) >= 1:
 		_draw_key(Vector2(610, 2))
-	if not _core.player_alive(1) and not _core.game_over():
-		draw_string(_font, Vector2(18, 40), "RESPAWNING", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.6, 0.6))
 
 ## Blit one `extra's` HUD sprite at (x,y); returns the x just past it.
 func _ex(frame: int, x: float, y: float) -> float:
