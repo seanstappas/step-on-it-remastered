@@ -1678,17 +1678,60 @@ func _hud_potion(p: Vector2) -> void:
 
 # --- faithful cell / entity drawing ------------------------------------------
 
-## Grey 3D beveled frame around the playfield (the original's raised border).
+## Fill a rounded rectangle (corner circles + a cross of rects).
+func _round_rect(rect: Rect2, rad: float, col: Color) -> void:
+	var x := rect.position.x
+	var y := rect.position.y
+	var w := rect.size.x
+	var h := rect.size.y
+	rad = minf(rad, minf(w, h) * 0.5)
+	draw_rect(Rect2(x + rad, y, w - rad * 2.0, h), col)
+	draw_rect(Rect2(x, y + rad, rad, h - rad * 2.0), col)
+	draw_rect(Rect2(x + w - rad, y + rad, rad, h - rad * 2.0), col)
+	draw_circle(Vector2(x + rad, y + rad), rad, col)
+	draw_circle(Vector2(x + w - rad, y + rad), rad, col)
+	draw_circle(Vector2(x + rad, y + h - rad), rad, col)
+	draw_circle(Vector2(x + w - rad, y + h - rad), rad, col)
+
+## Grey 3D beveled frame around the playfield (the original's raised, rounded picture
+## frame). A thick grey band with rounded outer corners and a smooth diagonal bevel:
+## light on the top/left edges fading into the mid-grey face, dark on the bottom/right,
+## so the whole border reads as raised. The bevel is drawn as per-vertex gradient quads
+## (draw_polygon) rather than single hard bevel lines, matching the original's soft look.
 func _draw_frame(pf: Rect2) -> void:
-	var t := 12.0
-	var o := Rect2(pf.position - Vector2(t, t), pf.size + Vector2(t * 2, t * 2))
-	draw_rect(o, Color(0.74, 0.74, 0.77))
-	draw_rect(Rect2(o.position, Vector2(o.size.x, 3)), Color(0.93, 0.93, 0.96))
-	draw_rect(Rect2(o.position, Vector2(3, o.size.y)), Color(0.93, 0.93, 0.96))
-	draw_rect(Rect2(o.position + Vector2(0, o.size.y - 3), Vector2(o.size.x, 3)), Color(0.42, 0.42, 0.47))
-	draw_rect(Rect2(o.position + Vector2(o.size.x - 3, 0), Vector2(3, o.size.y)), Color(0.42, 0.42, 0.47))
-	# inner groove framing the black field
-	draw_rect(Rect2(pf.position - Vector2(3, 3), pf.size + Vector2(6, 6)), Color(0.30, 0.30, 0.34), false, 3.0)
+	var t := 20.0
+	var rad := 18.0
+	var face := Color(0.61, 0.61, 0.65)
+	var lite := Color(0.93, 0.93, 0.96)
+	var dark := Color(0.33, 0.33, 0.39)
+	var o := pf.grow(t)
+	_round_rect(o, rad, face)
+	var ox := o.position.x
+	var oy := o.position.y
+	var ow := o.size.x
+	var oh := o.size.y
+	var ix := pf.position.x
+	var iy := pf.position.y
+	var iw := pf.size.x
+	var ih := pf.size.y
+	# top edge: light (outer) -> face (inner playfield edge)
+	draw_polygon(
+		PackedVector2Array([Vector2(ox + rad, oy), Vector2(ox + ow - rad, oy), Vector2(ix + iw, iy), Vector2(ix, iy)]),
+		PackedColorArray([lite, lite, face, face]))
+	# left edge: light -> face
+	draw_polygon(
+		PackedVector2Array([Vector2(ox, oy + rad), Vector2(ix, iy), Vector2(ix, iy + ih), Vector2(ox, oy + oh - rad)]),
+		PackedColorArray([lite, face, face, lite]))
+	# bottom edge: dark -> face
+	draw_polygon(
+		PackedVector2Array([Vector2(ox + rad, oy + oh), Vector2(ix, iy + ih), Vector2(ix + iw, iy + ih), Vector2(ox + ow - rad, oy + oh)]),
+		PackedColorArray([dark, face, face, dark]))
+	# right edge: dark -> face
+	draw_polygon(
+		PackedVector2Array([Vector2(ox + ow, oy + rad), Vector2(ox + ow, oy + oh - rad), Vector2(ix + iw, iy + ih), Vector2(ix + iw, iy)]),
+		PackedColorArray([dark, dark, face, face]))
+	# thin dark groove framing the black field (the recessed inner lip)
+	draw_rect(Rect2(pf.position - Vector2(2, 2), pf.size + Vector2(4, 4)), Color(0.22, 0.22, 0.27), false, 2.0)
 
 ## Dispatch a grid cell to the right sprite by its flags + low-byte type.
 ## Both block and goody sprite frame = (tile low byte + 1)  (CONFIRMED: files are
