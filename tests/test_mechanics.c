@@ -130,32 +130,113 @@ int main(void)
     CHECK(w->players[1].ground_state != SOI_ST_DEAD && soi_player_alive(w, 1),
           "hit: timed invuln blocks the hit (no death)");
 
-    /* ---- 3. Head-bonk is a TWO-STAGE destroy: the first jump CRACKS the block
-     * above (it stays, marked 0x4000), a second jump BREAKS it (asm FUN_1002ca5c). */
+    /* ---- 3. Head-bonk is a FROZEN 10-frame recoil that destroys at the MIDPOINT,
+     * NOT an instant break (asm ground-state 4, FUN_10014524). Jumping into a solid
+     * block directly overhead enters a distinct BONK state; the player is frozen for
+     * ~10 logic frames (no run/build/jump); the block is CRACKED at frame ~5 (asm
+     * counter==5) and he returns to IDLE at frame 10. A SECOND bonk BREAKS the cracked
+     * block (asm FUN_1002ca5c two-stage destroy). Regression: the old port cracked the
+     * block INSTANTLY on the press frame and left ground_state IDLE, so the player
+     * could act immediately -- no animation, no freeze, wrong timing. */
     soi_world_init(w, 1);
     w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 6, 9);
     ground_player(w, 6, 9);                     /* stand so the jump can launch */
     soi_set_cell(w, 6, 8, SOI_CELL_SUPPORTIVE | 1);  /* breakable block above head (real block: has 0x200) */
-    soi_tick(w, SOI_IN_JUMP, 0);
-    CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) != SOI_CELL_EMPTY &&
-          (soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED),
-          "bonk: the first jump cracks the block above (still there)");
-    /* Input latches every 2 frames (soi_tick samples on odd ticks), so a second
-     * edge needs the key released and re-pressed across a couple of frames each. */
-    soi_tick(w, 0, 0); soi_tick(w, 0, 0);       /* release the jump key */
-    soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);  /* bonk again */
+    {
+        int bonk_x0 = w->players[1].x;
+        int crack_f = -1, idle_f = -1, f, frozen = 1;
+        soi_tick(w, SOI_IN_JUMP, 0);                 /* press jump into the block (odd tick: logic runs) */
+        CHECK(w->players[1].ground_state == SOI_ST_BONK,
+              "bonk: jumping into a solid block overhead enters the frozen bonk state (no leap)");
+        CHECK(!(soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED),
+              "bonk: the block is NOT cracked on the press frame (destroy deferred to the midpoint)");
+        /* Drive RIGHT throughout to PROVE the freeze: a bonking player must not run. */
+        for (f = 1; f <= 14 && idle_f < 0; f++) {
+            soi_tick(w, SOI_IN_RIGHT, 0);            /* even tick: no logic */
+            soi_tick(w, SOI_IN_RIGHT, 0);            /* odd tick: one 30Hz logic frame */
+            if (crack_f < 0 && (soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED)) crack_f = f;
+            if (w->players[1].ground_state == SOI_ST_IDLE) idle_f = f;
+            else if (w->players[1].ground_state != SOI_ST_BONK) frozen = 0;  /* must stay BONK until idle */
+            if (idle_f < 0 && w->players[1].x != bonk_x0) frozen = 0;        /* x pinned while bonking */
+        }
+        CHECK(frozen, "bonk: the player stays frozen in BONK (RIGHT does nothing) until the recoil ends");
+        CHECK(w->players[1].x == bonk_x0,
+              "bonk: the recoil is stationary -- x never slides during the animation");
+        CHECK(crack_f >= 4 && crack_f <= 6,
+              "bonk: the block cracks at the animation MIDPOINT (~frame 5), not on the press frame");
+        CHECK(idle_f >= crack_f + 4 && idle_f <= crack_f + 6,
+              "bonk: the player returns to IDLE ~5 frames after the crack (a 10-frame animation)");
+        CHECK((soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED) &&
+              SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) != SOI_CELL_EMPTY,
+              "bonk: after one bonk the block is cracked but still present");
+    }
+    /* A SECOND bonk BREAKS the cracked block. The player is IDLE now; release the keys
+     * (clear the edge), then re-press JUMP for 2 ticks (spans an odd logic tick). */
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0);            /* release inputs */
+    soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);  /* re-press -> bonk #2 */
+    CHECK(w->players[1].ground_state == SOI_ST_BONK,
+          "bonk2: re-pressing jump into the cracked block bonks again");
+    {
+        int f;
+        for (f = 0; f < 14 && SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) != SOI_CELL_EMPTY; f++) {
+            soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+        }
+    }
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) == SOI_CELL_EMPTY,
-          "bonk: a second jump breaks the cracked block");
+          "bonk2: the second bonk BREAKS the cracked block at its midpoint");
 
-    /* a permanent block above must survive a jump */
+    /* A PERMANENT block overhead still HEAD-BONKS (enters the frozen recoil -- asm
+     * FUN_10012444 tests only the 0x200 solid bit, which SOI_WALL=0x300 carries) but
+     * the block is IMMUNE: the midpoint destroy no-ops on 0x100, so it survives. */
     soi_world_init(w, 1);
     w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 6, 9);
     ground_player(w, 6, 9);
     soi_set_cell(w, 6, 8, SOI_WALL);
     soi_tick(w, SOI_IN_JUMP, 0);
-    CHECK(soi_get_cell(w, 6, 8) == SOI_WALL, "jump: permanent block is untouched");
+    CHECK(w->players[1].ground_state == SOI_ST_BONK,
+          "bonkperm: jumping into a permanent block overhead still enters the bonk recoil");
+    {
+        int f;
+        for (f = 0; f < 14; f++) { soi_tick(w, 0, 0); soi_tick(w, 0, 0); }
+    }
+    CHECK(soi_get_cell(w, 6, 8) == SOI_WALL,
+          "bonkperm: the permanent block is untouched by the head-bonk (immune)");
+    CHECK(w->players[1].ground_state == SOI_ST_IDLE,
+          "bonkperm: the player returns to IDLE after the recoil");
+
+    /* ---- 3 (boundary straddle). A player whose head spans a column boundary bonks off
+     * the TRAILING upper-body column too: the asm head-clear (FUN_10012444) probes TWO
+     * columns (x+0x10 AND x+0x0e), so start_jump must use the same two-column headroom_clear
+     * -- a single-column (x+0x10 only) probe would MISS a block above the trailing column
+     * and wrongly leap. At x = cell_x(6)+16 the head straddles cols; a solid block sits
+     * above the LEFT (trailing) column only. The midpoint destroy targets the FACING column
+     * (do_head_break: x+0x12 -> the empty RIGHT one, asm FUN_10014524), so this is a
+     * faithful bonk-WITHOUT-break: the player freezes and recoils, the trailing block is
+     * never cracked, and he returns to IDLE. Both the two-column detect AND the faithful
+     * facing-column destroy are pinned here (mutation-proof for either regressing). */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 6, 9);
+    w->players[1].x += 16;                          /* straddle: head spans cols (x+0x0e left, x+0x10 right) */
+    w->players[1].spawn_x = (int16_t)w->players[1].x;
+    ground_player(w, 6, 9);                         /* the left (trailing) column still supports the feet */
+    soi_set_cell(w, 6, 8, SOI_CELL_SUPPORTIVE | 1); /* block above the TRAILING (left) head column only */
+    CHECK(!(soi_get_cell(w, 7, 8) & SOI_CELL_SUPPORTIVE),
+          "bonk-straddle: the FACING (right) head column is clear (only the trailing one has a block)");
+    soi_tick(w, SOI_IN_JUMP, 0);
+    CHECK(w->players[1].ground_state == SOI_ST_BONK,
+          "bonk-straddle: the two-column head-clear bonks off the trailing column (a single-column probe would leap)");
+    {
+        int f;
+        for (f = 0; f < 14; f++) { soi_tick(w, 0, 0); soi_tick(w, 0, 0); }
+    }
+    CHECK((soi_get_cell(w, 6, 8) & SOI_CELL_SUPPORTIVE) &&
+          !(soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED),
+          "bonk-straddle: faithful bonk-WITHOUT-break -- the facing-column destroy misses the trailing block");
+    CHECK(w->players[1].ground_state == SOI_ST_IDLE,
+          "bonk-straddle: the player returns to IDLE after the boundary recoil");
 
     /* ---- 3a. A clear-headroom jump leaps the table-driven arc (~37px peak, asm
      * FUN_10013404 + DAT_1003474c) and lands back on the ground, breaking nothing. */
@@ -1937,6 +2018,79 @@ int main(void)
         CHECK(w->enemies[wi].dir == 1, "ant: turns around at the breakable block");
     }
 
+    /* ---- 23c. ENEMY CHECK-BEFORE-MOVE (speed-near-obstacle). The asm walkers/robos
+     * (FUN_1000dd4c / FUN_1000a780) PROBE the cell ahead from their CURRENT position
+     * and only advance x when it is clear AND has ground; a wall/ledge/breakable
+     * enters a turn/punch state with NO x change that frame. The port used to move
+     * FIRST (e->x += e->vx) and only THEN probe the moved position, so on every
+     * collision frame the nasty OVERSHOT one vx step and reversed the next frame ->
+     * a visible "speed-up"/jitter next to an obstacle (worst in the degenerate
+     * one-block case, where it vibrated +-vx forever). A faithful nasty must NOT
+     * step into a wall or over a ledge on the turn frame. ---- */
+    {
+        int ri, x0, k;
+        /* (a) DISCRIMINATOR -- a permanent wall directly ahead: turn WITHOUT stepping
+         * into it. Old (move-first) code lands x0+vx before reversing -> x != x0. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);          /* ground under the robo   */
+        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);          /* ground ahead (isolate WALL, not a ledge) */
+        soi_set_cell(w, 6, 9, SOI_WALL);                      /* permanent wall directly ahead -> turn */
+        w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
+        w->enemies[ri].y = soi_cell_y(9);
+        x0 = w->enemies[ri].x;
+        soi_enemies_update(w);                                /* one logic frame */
+        CHECK(w->enemies[ri].x == x0,
+              "speed-obstacle: an enemy does NOT step into a wall on the turn frame");
+        CHECK(w->enemies[ri].dir == 1, "speed-obstacle: it reverses at the wall");
+
+        /* (b) CONTROL -- a clear path: the enemy still advances a FULL vx step (the
+         * fix must not freeze normal patrol). Passes on old and new. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);
+        for (k = 3; k <= 9; k++) soi_set_cell(w, k, 10, SOI_CELL_SUPPORTIVE);  /* long platform */
+        w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
+        w->enemies[ri].y = soi_cell_y(9);
+        x0 = w->enemies[ri].x;
+        soi_enemies_update(w);
+        CHECK(w->enemies[ri].x == x0 + 2,
+              "speed-obstacle: with a clear path the enemy still advances a full step");
+        CHECK(w->enemies[ri].dir == 2, "speed-obstacle: it keeps heading with a clear path");
+
+        /* (c) DISCRIMINATOR -- a LEDGE ahead (no ground in the next-and-below cell):
+         * turn WITHOUT stepping over it. Old code steps out then reverses -> x != x0. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);
+        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);          /* ground under the robo only; col 6 is a gap */
+        w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
+        w->enemies[ri].y = soi_cell_y(9);
+        x0 = w->enemies[ri].x;
+        soi_enemies_update(w);
+        CHECK(w->enemies[ri].x == x0,
+              "speed-obstacle: an enemy does NOT step over a ledge on the turn frame");
+        CHECK(w->enemies[ri].dir == 1, "speed-obstacle: it reverses at the ledge");
+
+        /* (d) CONTROL -- a plow nasty (Hippo) clears a breakable block ahead AND keeps
+         * advancing through it (the fix must still move in the plow branch). */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        ri = soi_enemy_spawn(w, SOI_ENEMY_HIPPO, 5, 9);
+        for (k = 3; k <= 9; k++) soi_set_cell(w, k, 10, SOI_CELL_SUPPORTIVE);
+        soi_set_cell(w, 6, 9, 0x207u);                        /* breakable block ahead (type 7 + SUPPORTIVE) */
+        w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
+        w->enemies[ri].y = soi_cell_y(9);
+        x0 = w->enemies[ri].x;
+        soi_enemies_update(w);
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0,
+              "speed-obstacle: a plow nasty clears the breakable block ahead");
+        CHECK(w->enemies[ri].x == x0 + 2,
+              "speed-obstacle: a plow nasty keeps advancing through the cleared block");
+        CHECK(w->enemies[ri].dir == 2, "speed-obstacle: a plow nasty keeps its heading");
+    }
+
     /* ---- 24. Procedural badguy throw GATES on valid params. The 4 "DATA:" boards
      * (301/428/446/498) carry the ASCII marker "DATA: " in header bytes 0x10-0x14 ->
      * pct_badguy=21569 / thrown_badguy=17473 = GARBAGE, which used to spawn a spurious
@@ -2614,6 +2768,280 @@ int main(void)
               "0x200 wall (col 10) -- solidity is (cell & 0x200), never PERMANENT (asm FUN_1000554c)");
         CHECK(soi_get_cell(w, 7, 9) == 0x90A,
               "ballgoody: the passing ball does NOT consume the goodie it rolls over");
+    }
+
+    /* ---- 43. STOP/GO SWITCH (b41): stepping onto a switch TILE (low 0x24-0x2d) toggles
+     * its paired block GROUP between SOLID and PASSABLE. asm chain: FUN_1002bc64:593 fires
+     * the toggle when the player ENTERS a new cell whose low byte is 0x24-0x2d ->
+     * FUN_10016544 -> FUN_100166b8 (state flip) -> per-frame FUN_10016784 (open/close
+     * animator: an OPENING block stays SOLID until the ~9-frame anim completes, THEN turns
+     * passable; a CLOSING block turns solid immediately). Group g: tile low (0x24+2g),
+     * block low SOLID (0x9d+12g) / PASSABLE (0xa3+12g). The switch BLOCKS are registered by
+     * a post-load grid scan (FUN_1002de00 reads cell & 0xff). The port previously no-op'd
+     * this ("cosmetic"); it is a REAL path-gate. ("b41: falling into switch doesn't change
+     * the switch animation") ---- */
+    {
+        uint8_t bord[96];
+        int guard, off;
+        memset(bord, 0, sizeof(bord));
+        bord[0x07] = 3;  bord[0x09] = 9;     /* P1 col,row = (3,9) */
+        bord[0x0B] = 9;  bord[0x0D] = 9;     /* P2 (disabled below) */
+        bord[0x0E] = 0;  bord[0x0F] = 200;   /* Bonus 200 */
+        off = 0x18;
+        /* floor 0x0207 (supportive) across row 10, cols 3..6 (the walkway) */
+        bord[off]=0;bord[off+1]=0;bord[off+2]=0x02;bord[off+3]=0x07; off+=4;
+        bord[off++]=3; bord[off++]=10;
+        bord[off++]=4; bord[off++]=10;
+        bord[off++]=5; bord[off++]=10;
+        bord[off++]=6; bord[off++]=10;
+        bord[off++]=100; bord[off++]=100;
+        /* switch TILE group 0 (0x0924, low 0x24) at (4,9) -- walk-on */
+        bord[off]=0;bord[off+1]=0;bord[off+2]=0x09;bord[off+3]=0x24; off+=4;
+        bord[off++]=4; bord[off++]=9;
+        bord[off++]=100; bord[off++]=100;
+        /* switch BLOCK group 0 SOLID (0x039d, low 0x9d) at (6,9) */
+        bord[off]=0;bord[off+1]=0;bord[off+2]=0x03;bord[off+3]=0x9d; off+=4;
+        bord[off++]=6; bord[off++]=9;
+        bord[off++]=100; bord[off++]=100;
+        /* type==0 terminator already present (zeroed tail) */
+
+        soi_world_init(w, 1);
+        CHECK(soi_load_level(w, bord, sizeof(bord)) == 1, "switch: crafted board loads");
+        soi_limit_players(w, 1);
+        CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) != 0,
+              "switch: the group-0 block loads SOLID (0x200 set)");
+        /* walk RIGHT from (3,9): the player's centre enters the switch tile at (4,9),
+         * toggling the group; the block then OPENS (solid through the anim, then passable). */
+        for (guard = 0; guard < 60 && (soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE); guard++)
+            soi_tick(w, SOI_IN_RIGHT, 0);
+        CHECK(!(soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE),
+              "switch: stepping the switch tile OPENS the paired block (now PASSABLE, 0x200 clear)");
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 4, 9)) == 0x25u,
+              "switch: the stepped tile flips its Stop/Go sign (low 0x24 -> 0x25)");
+
+        /* (B) the entry emits the switch sound UNCONDITIONALLY (asm FUN_1002bc64 plays
+         * evt 0x2c right after the toggle, not gated on a block flipping). */
+        {
+            int heard = 0, k;
+            soi_world_init(w, 1);
+            soi_load_level(w, bord, sizeof(bord));
+            soi_limit_players(w, 1);
+            for (guard = 0; guard < 60 && !heard; guard++) {
+                soi_tick(w, SOI_IN_RIGHT, 0);
+                for (k = 0; k < soi_sfx_count(w); k++)
+                    if (soi_sfx_get(w, k) == SOI_SFX_SWITCH) heard = 1;
+            }
+            CHECK(heard, "switch: stepping the tile plays the switch sound (asm evt 0x2c)");
+        }
+        /* (C) a PASSABLE-variant block (low 0xa3, rem 6) loads PASSABLE (asm case 0xa3 ->
+         * state 1, cell = passcode|0x100: PERMANENT but NOT supportive). */
+        {
+            soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+            soi_set_cell(w, 5, 9, 0x300u | 0xa3u);   /* BORD ships it flagged; the scan normalises */
+            soi_switch_load_scan(w);
+            CHECK(!(soi_get_cell(w, 5, 9) & SOI_CELL_SUPPORTIVE),
+                  "switch: a rem-6 block (low 0xa3) loads PASSABLE (state 1, no 0x200)");
+            CHECK((soi_get_cell(w, 5, 9) & SOI_CELL_PERMANENT) != 0,
+                  "switch: a passable switch block is still PERMANENT (0x100)");
+            /* a low in 0x9d..0xd3 that is NOT a real switch code (rem != 0,6) is ignored */
+            soi_set_cell(w, 8, 9, 0x300u | 0xa0u);   /* rem 3: not a switch block */
+            soi_switch_load_scan(w);
+            CHECK(soi_get_cell(w, 8, 9) == (0x300u | 0xa0u),
+                  "switch: a non-switch low in 0x9d..0xd3 (rem 3) is left untouched");
+        }
+        /* (D) the open/close state machine end-to-end (asm FUN_100166b8/FUN_10016784),
+         * driving the toggle+animate directly to reach the CLOSE path the walk cannot. */
+        {
+            int k;
+            soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+            soi_set_cell(w, 7, 9, 0x300u | 0x9du);   /* group-0 SOLID variant */
+            soi_switch_load_scan(w);
+            CHECK((soi_get_cell(w, 7, 9) & SOI_CELL_SUPPORTIVE) != 0, "switch: (D) loads SOLID");
+            soi_switch_toggle(w, 0x24);              /* open group 0 (state 2 -> 3) */
+            soi_switch_animate(w);
+            CHECK((soi_get_cell(w, 7, 9) & SOI_CELL_SUPPORTIVE) != 0,
+                  "switch: (D) a block is SOLID during the opening swing");
+            for (k = 0; k < 12; k++) soi_switch_animate(w);
+            CHECK(!(soi_get_cell(w, 7, 9) & SOI_CELL_SUPPORTIVE),
+                  "switch: (D) the block is PASSABLE once the open completes");
+            soi_switch_toggle(w, 0x24);              /* close group 0 (state 1 -> 4) */
+            soi_switch_animate(w);
+            CHECK((soi_get_cell(w, 7, 9) & SOI_CELL_SUPPORTIVE) != 0,
+                  "switch: (D) closing turns the block SOLID immediately");
+            for (k = 0; k < 12; k++) soi_switch_animate(w);
+            CHECK((soi_get_cell(w, 7, 9) & SOI_CELL_SUPPORTIVE) != 0,
+                  "switch: (D) the block stays SOLID after the close settles");
+        }
+    }
+
+    /* ---- 44. Persistent SPAWNERS are STATIONARY. The asm spawner dispatchers
+     * (e.g. FUN_100076a8) never write their own X/Y and never call the gravity
+     * predicate FUN_10005750 -- they hold their placed cell and emit children on a
+     * timer (enemy_spawner_emit, dispatched separately after enemy_step). A spawner
+     * placed with OPEN AIR beneath it (as on Board 44, a Piggy at c0,r9 with an
+     * empty column below) must NOT fall straight down onto -- and kill -- the player
+     * beneath it. The emitted CHILD nasty IS a normal walker and still falls
+     * (positive control below), so the gravity path stays intact. ---- */
+    {
+        int ei, wc, t, sx0, sy0, wy0, before, after, k;
+        int hi, hx0, hy0;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 16, 11);                          /* player parked far from the spawner */
+        ground_player(w, 16, 12);
+        ei = soi_enemy_spawn(w, SOI_ENEMY_PIGGY, 5, 5);      /* mid-air: no floor in the column below */
+        CHECK(ei >= 0, "spawner-static: piggy spawner placed");
+        w->enemies[ei].spawn_child = (uint8_t)SOI_ENEMY_PIGGY;   /* loader marks a spawner this way */
+        w->enemies[ei].vx = 0;                               /* loader zeroes vx for a spawner (soi_state.c) */
+        w->enemies[ei].fire_period = 9000;                   /* 9000 = keep it from emitting during THIS window */
+        w->enemies[ei].fire_cd     = 9000;                   /*        so we isolate the "does it fall?" check */
+        sx0 = w->enemies[ei].x;
+        sy0 = w->enemies[ei].y;
+        for (t = 0; t < 8; t++) soi_enemies_update(w);
+        CHECK(w->enemies[ei].active,
+              "spawner-static: a mid-air spawner is NOT killed/deactivated");
+        CHECK(w->enemies[ei].y == sy0,
+              "spawner-static: a mid-air spawner holds its placed ROW (does NOT fall)");
+        CHECK(w->enemies[ei].x == sx0,
+              "spawner-static: a mid-air spawner holds its placed COLUMN (does NOT drift)");
+
+        /* the early return must NOT suppress EMISSION (dispatched after enemy_step):
+         * arm a short fuse and confirm a child nasty appears within a few frames. */
+        before = 0;
+        for (k = 0; k < SOI_MAX_ENEMIES; k++) if (w->enemies[k].active) before++;
+        w->enemies[ei].fire_period = 6;
+        w->enemies[ei].fire_cd     = 1;
+        for (t = 0; t < 3; t++) soi_enemies_update(w);
+        after = 0;
+        for (k = 0; k < SOI_MAX_ENEMIES; k++) if (w->enemies[k].active) after++;
+        CHECK(after > before,
+              "spawner-static: a stationary spawner STILL emits children (emit survives the early return)");
+
+        /* HAMMER is the ONE spawner type gated by an EARLIER early-return
+         * (enemy_hammer_hop, line ~530, guarded by `&& spawn_child == 0`). A HAMMER
+         * SPAWNER must skip BOTH the hop and the fall -- it holds its exact cell.
+         * This case fails if that spawn_child==0 guard is ever dropped: a mis-routed
+         * hammer would hop (move in x) and/or fall off the mid-air ledge. Fresh world
+         * so the PIGGY spawner's emitted children above don't perturb it. */
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 16, 11);
+        ground_player(w, 16, 12);
+        hi = soi_enemy_spawn(w, SOI_ENEMY_HAMMER, 8, 5);     /* mid-air: open column below */
+        CHECK(hi >= 0, "spawner-static: hammer spawner placed");
+        w->enemies[hi].spawn_child = (uint8_t)SOI_ENEMY_HAMMER;
+        w->enemies[hi].vx = 0;
+        w->enemies[hi].fire_period = 9000;
+        w->enemies[hi].fire_cd     = 9000;
+        hx0 = w->enemies[hi].x;
+        hy0 = w->enemies[hi].y;
+        for (t = 0; t < 8; t++) soi_enemies_update(w);
+        CHECK(w->enemies[hi].y == hy0,
+              "spawner-static: a HAMMER spawner does NOT fall (skips both hammer-hop and gravity)");
+        CHECK(w->enemies[hi].x == hx0,
+              "spawner-static: a HAMMER spawner does NOT hop/drift (line-530 spawn_child guard holds)");
+
+        /* positive control: the SAME type as the SUT (PIGGY) but WITHOUT the spawner
+         * flag (spawn_child == 0, zero-inited by soi_enemy_spawn) DOES fall -- so
+         * spawn_child is the only variable and the fall path is genuinely reachable
+         * for a PIGGY (not vacuously exempt like a Beanie). */
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 16, 11);
+        ground_player(w, 16, 12);
+        wc = soi_enemy_spawn(w, SOI_ENEMY_PIGGY, 5, 5);      /* SAME cell + SAME type as the SUT */
+        CHECK(wc >= 0, "spawner-static: control piggy placed");
+        wy0 = w->enemies[wc].y;
+        for (t = 0; t < 8; t++) soi_enemies_update(w);
+        CHECK(w->enemies[wc].y > wy0,
+              "spawner-static: a PIGGY with spawn_child==0 still falls (gravity path reachable for this type)");
+    }
+
+    /* ---- 45. WALL-FOLLOWER BALL (asm FUN_1000fd5c, +0x54==2 fired-right /
+     * +0x54==3 fired-left): the player's spinning ball is a 4-state TERRAIN
+     * FOLLOWER (dir +0x52: 1=L/2=U/3=R/4=D), NOT the bare straight roller the port
+     * had. Rolling RIGHT along a floor that ENDS mid-field (a cliff), the asm
+     * state-3 handler sees the floor drop from under its leading edge -- S(0,+0x19)
+     * and S(+0x19,+0x19) clear while S(-2,+0x19) (floor just behind) is still solid
+     * -- and turns DOWN (+0x52=4, orig FUN_1000fd5c lines 285-312) to hug the cliff
+     * face. The old port probed only the single cell dead ahead, so at a ledge it
+     * flew straight off into open air (and out of the field). Regression guard for
+     * the user's "ball goes straight off a cliff / out of bounds" report. ---- */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 3, 7);
+    w->players[1].y = (int16_t)(soi_cell_y(7) + 1);     /* stand on the row-8 floor; body row 7 stays empty */
+    w->players[1].arrows = 1;
+    w->players[1].facing = 1;                           /* fire RIGHT */
+    { int c; for (c = 1; c <= 7; c++) soi_set_cell(w, c, 8, 0x300u); }   /* floor cols 1..7, row 8; then a cliff (cols 8+ open) */
+    soi_tick(w, SOI_IN_ARROW, 0);                       /* fire the wall-follower ball */
+    CHECK(soi_projectile_count(w) == 1 && soi_projectile_kind(w, 0) == 0,
+          "wall-ball: a kind-0 follower is in flight after firing right");
+    {
+        int by0   = soi_projectile_y(w, 0);
+        int brow0 = (by0 + 0xc - SOI_ORIGIN_Y) / SOI_CELL_PX;    /* the ball's body row at spawn */
+        int t, brow1;
+        for (t = 0; t < 160 && soi_projectile_count(w) == 1; t++)
+            soi_projectiles_update(w);                  /* advance ONLY the ball (isolate from player physics) */
+        brow1 = (soi_projectile_y(w, 0) + 0xc - SOI_ORIGIN_Y) / SOI_CELL_PX;
+        CHECK(soi_projectile_count(w) == 1,
+              "wall-ball: still in flight after reaching the cliff (did not fly off-field and fizzle)");
+        CHECK(brow1 > brow0,
+              "wall-ball: TURNS DOWN to follow the cliff edge (row increases), never straight off the ledge");
+    }
+
+    /* ---- 46. IDLE X-SNAP (asm idle handler FUN_100128f8 line 21: an idle player's
+     * physics x is snapped to a 4 px boundary EVERY idle frame, BEFORE the support
+     * check at line 37). The port previously snapped x ONLY on a RUN->IDLE release
+     * (soi_physics.c settle branch, gated on ground_state==RUN), so a player who
+     * LANDS from the air at a 2-off-grid x (air-steer / wall-rebound / an off-grid
+     * spawn) kept that odd x while idle -- and if a block then broke under him he
+     * fell from an x that was NOT aligned to the block column (the user's "doesn't
+     * fall quite straight DOWN the column"). This drives the realistic path: fall,
+     * land 2 px off the 4 px grid, then settle -> x must snap to the grid. ---- */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 3);
+    soi_set_cell(w, 7, 6, SOI_CELL_SUPPORTIVE);
+    soi_set_cell(w, 8, 6, SOI_CELL_SUPPORTIVE);
+    soi_set_cell(w, 9, 6, SOI_CELL_SUPPORTIVE);       /* floor strip at row 6 to land on */
+    w->players[1].x = (int16_t)(soi_cell_x(8) + 2);   /* 274: 2 px off the 4 px grid (274 & 3 == 2) */
+    w->players[1].y = 180;                            /* above the row-6 floor */
+    w->players[1].in_air = 1;
+    w->players[1].ground_state = SOI_ST_FALL;
+    CHECK((w->players[1].x & 3) == 2, "idle-snap: player starts 2 px off the 4 px grid");
+    {
+        int t, landed = 0;
+        for (t = 0; t < 60; t++) {
+            soi_tick(w, 0, 0);                        /* NO input: pure fall -> land -> settle */
+            if (!w->players[1].in_air) { landed++; if (landed >= 4) break; }
+        }
+        CHECK(w->players[1].in_air == 0 && w->players[1].ground_state == SOI_ST_IDLE,
+              "idle-snap: player fell and settled to IDLE on the floor");
+        CHECK((w->players[1].x & 3) == 0,
+              "idle-snap: an idle (just-landed) player's x is snapped to the 4 px grid (asm FUN_100128f8)");
+    }
+
+    /* ---- 46b. CONTROL for the IDLE gate on the x-snap. The snap above is gated
+     * `ground_state == SOI_ST_IDLE`; drop that gate (snap on EVERY grounded frame) and a
+     * player holding a direction gets rounded back DOWN 2 px on every frame his x lands
+     * 2 off the grid -- the +2 run sub-step is undone the next frame and he stalls. So a
+     * long hold must carry him a full run's worth of pixels, proving the running 2 px
+     * sub-steps survive (asm FUN_10012bf4 moves x in raw 2 px steps while a direction is
+     * held; it does not 4 px-align it). Without the gate this CHECK fails (x barely moves).
+     * Geometry: floor one row BELOW the body (row 10) so the support probe holds him while
+     * the body row (9) stays CLEAR -- a same-row floor also reads as a wall and stalls the
+     * run in place (verified empirically; cf. the switch/coinpickup tests). */
+    {
+        int t, x0;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        for (t = 1; t <= 20; t++) soi_set_cell(w, t, 10, SOI_CELL_SUPPORTIVE);  /* floor one row below */
+        for (t = 0; t < 4; t++) soi_tick(w, 0, 0);   /* settle onto the floor (idle) */
+        x0 = w->players[1].x;
+        for (t = 0; t < 40; t++) soi_tick(w, SOI_IN_RIGHT, 0);                 /* HOLD right */
+        CHECK(w->players[1].ground_state == SOI_ST_RUN,
+              "idle-snap control: a player holding a direction is RUN, not IDLE (the snap gate is off)");
+        CHECK(w->players[1].x - x0 >= 20,
+              "idle-snap control: a RUNNING player advances a full run (2 px sub-steps not snap-stalled) -- proves the IDLE gate");
     }
 
     free(w);

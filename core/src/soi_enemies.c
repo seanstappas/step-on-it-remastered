@@ -542,6 +542,23 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
     if (e->type == SOI_ENEMY_CANNON || e->type == SOI_ENEMY_KNIGHT ||
         e->type == SOI_ENEMY_GARGOYLE) return;
 
+    /* Persistent SPAWNERS are likewise STATIONARY. Placed AFTER the turret exemption
+     * above is safe because the loader never flags a turret type as a spawner (it sets
+     * spawn_child only for HIPPO/HAMMER/TEETH/SMILEY/ANT/OSTRICH/PIGGY). The loader
+     * fuses a spawn-block placement into ONE enemy typed as its emitted child but
+     * flagged with spawn_child (the loader's .bord enemy scan, which also zeroes vx);
+     * the asm keeps these two entities
+     * distinct -- the placed spawner (e.g. Piggy struct type 0x13 -> FUN_10009778)
+     * runs a dispatcher that NEVER calls the gravity predicate FUN_10005750 and
+     * never writes its own +0x58/+0x5a, while only the emitted child (0x77 ->
+     * FUN_10009a78) obeys gravity. All spawner dispatchers (FUN_100076a8 / 10007efc
+     * / 1000d5d4 / 1000ce34 / 10005d30 / 100090a4 / 10009778) are gravity-free. So a
+     * spawner holds its placed cell and only emits (enemy_spawner_emit, dispatched
+     * after enemy_step): a Piggy spawner hung over open air (Board 44's c0,r9) must
+     * NOT fall onto -- and kill -- the player beneath it. The emitted child is a
+     * normal walker and still falls. */
+    if (e->spawn_child) return;
+
     /* Gravity: a nasty is supported while EITHER foot rests on a SOLID block
      * (0x200) in the cell below; only over open air (BOTH feet clear) does it
      * FALL -- and not walk -- until it lands. The asm FUN_10005750 probes the two
@@ -604,8 +621,16 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
     if (e->type == SOI_ENEMY_WALKER)
         e->vx = (int16_t)((e->dir == 2) ? spd : -spd);
 
-    e->x += e->vx;
-    col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
+    /* CHECK BEFORE MOVE (asm FUN_1000dd4c walker / FUN_1000a780 robo): probe the cell
+     * ahead from the CURRENT position and commit the horizontal step ONLY when the way
+     * is clear (or a plow nasty has just cleared the block). A wall, a ledge, a robo
+     * punch or a smiley break turns/holds the nasty IN PLACE with NO x change this
+     * frame. The port used to move FIRST (e->x += e->vx) and only THEN probe the moved
+     * cell, so on every collision frame the nasty OVERSHOT one vx step into the
+     * obstacle and reversed the next frame -- the visible "speed-up"/jitter next to a
+     * wall (worst in the degenerate one-block case, where it vibrated +-vx forever).
+     * `col` stays the PRE-step column from above (the Beanie bud spawn below places the
+     * bud at the nasty's real cell, and the Robo-punch smash reads col+1 = this cell). */
     /* Probe the LEADING foot, not a symmetric cell offset. The asm foot probes are
      * asymmetric because a nasty's x is its LEFT edge: the walker (FUN_1000dd4c)
      * probes x+0x22 heading right and x+2 heading left; the robo (FUN_1000a780)
@@ -649,6 +674,7 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
          * chomp delay is tracked separately -- for now they plow like Teeth. */
         uint32_t bc = soi_get_cell(w, ahead, row);
         soi_set_cell(w, ahead, row, (bc & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(bc) : 0u);
+        e->x += e->vx;                       /* plow: clear the block AND step through it */
     } else if (e->type == SOI_ENEMY_SMILEY &&
         soi_in_bounds(ahead, row) &&
         (soi_get_cell(w, ahead, row) & SOI_CELL_SUPPORTIVE) &&
@@ -688,6 +714,8 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
         }
         e->dir = (uint8_t)((e->dir == 2) ? 1 : 2);
         e->vx  = (int16_t)-e->vx;
+    } else {
+        e->x += e->vx;                       /* clear ahead (+ ground) -> advance a full step */
     }
 }
 
@@ -1065,11 +1093,13 @@ static int player_has_projectile(const SoiWorld *w, int player)
     return 0;
 }
 
-/* Fire a Magic Arrow in the player's facing direction (CONFIRMED: the Arrow
- * travels in a straight line, then RICOCHETS off blocks, and kills nasties).
- * Consumes one arrow. The asm allows only ONE live projectile per player at a
- * time (player_has_projectile). Speed = 2 px/frame (VERIFIED asm FUN_1000fd5c
- * ricochet state +0x54==2/3: x +/-= 2 each frame). */
+/* Fire the player's spinning ball (the "arrow" ammo pool +0x4c) in the facing
+ * direction. CONFIRMED asm FUN_10010d30 fire + FUN_1000fd5c mover, type +0x54 ==
+ * 2 (fired right) / 3 (fired left): it is a 4-STATE TERRAIN FOLLOWER, hugging the
+ * floor/wall it travels along (down a cliff, up a wall) rather than a bare straight
+ * ricochet, and it kills any nasty it overlaps. Consumes one shot; the asm allows
+ * only ONE live shot per player (player_has_projectile). Moves 2 px/frame (asm
+ * state x/y +/-= 2 each frame). */
 void soi_projectile_fire(SoiWorld *w, int player)
 {
     SoiPlayer *p;
@@ -1084,12 +1114,22 @@ void soi_projectile_fire(SoiWorld *w, int player)
         pr->active = 1;
         pr->owner  = (uint8_t)player;
         pr->hostile = 0;
-        pr->kind = 0;                  /* Magic Arrow */
+        pr->kind = 0;                  /* the spinning wall-follower ball */
         pr->age = 0;
-        pr->x = p->x + (dc > 0 ? 0x14 : -0xe);  /* asm FUN_10010d30: +20px right / -14px left of the firer */
-        pr->y = p->y;
-        pr->vx = (int16_t)(dc * 2);   /* 2 px/frame (asm); it ricochets off blocks */
-        pr->vy = 0;
+        /* Snap Y to the firing row (asm FUN_10010d30 lines 45-49:
+         * FUN_1002e6ac(FUN_1002e6cc(playerY+0x10))+8 == (playerY & ~31)+24 ==
+         * soi_cell_y(row)+8). The +8 seat keeps the ball's centre probe (+0xc) in
+         * its own row while the floor probe (+0x19) reaches the row below, so the
+         * terrain follower can feel the floor it hugs. */
+        pr->y = (p->y & ~31) + 24;
+        pr->x = p->x + (dc > 0 ? 0x14 : -0xe);  /* asm: +20px right / -14px left of the firer */
+        /* kind 0 has no dedicated state fields, so (like the kind-2 gift, which
+         * reuses vx/vy for its launch point) it stores its follower STATE in vx and
+         * follower TYPE in vy: vx = dir-state (asm +0x52, 1=L/2=U/3=R/4=D), vy = type
+         * (asm +0x54). Fire right -> type 2 rolling RIGHT (state 3); fire left ->
+         * type 3 rolling LEFT (state 1). */
+        pr->vx = (int16_t)(dc > 0 ? 3 : 1);
+        pr->vy = (int16_t)(dc > 0 ? 2 : 3);
         p->arrows--;
         p->no_weapons_reward = 0;   /* firing forfeits the board's No-Weapons Reward (asm FUN_10010d30 clears +0x42) */
         soi_sfx_emit(w, SOI_SFX_FIRE);
@@ -1131,12 +1171,27 @@ void soi_ball_fire(SoiWorld *w, int player)
     }
 }
 
-/* Advance projectiles. Three behaviours, per the disassembly:
- *  - Player MAGIC ARROW (kind 0, friendly; asm FUN_1000fd5c +0x54==2/3): a
- *    4-direction RICOCHET. It travels 2 px/frame and, on reaching a solid block,
- *    turns 90 deg (following the wall) rather than smashing it; it kills any nasty
- *    it passes through (and keeps going) and fizzles after ~500 ticks. The exact
- *    corner-deflection nesting is simplified to CCW-then-CW-then-reverse.
+/* Terrain probe for the wall-follower ball (asm FUN_1000fd5c cell test): does the
+ * pixel (px,py) fall in a SOLID cell? Solidity is the SUPPORTIVE bit ALONE (asm
+ * (cell & 0x200), matching FUN_1000554c), so the ball rolls THROUGH goodies/coins
+ * (0x9xx) but hugs real blocks. Out-of-bounds reads SOLID (soi_get_cell returns
+ * SOI_WALL), so the follower turns at the field border instead of leaving it. Col/
+ * row use the asm helpers FUN_1002e6cc/FUN_1002e6f8 = floor((px-16)/32) /
+ * floor((py-48)/32) (explicit floor so pixels left/above the field read as OOB). */
+static int proj_col(int px){ int c = px - SOI_ORIGIN_X; return (c >= 0) ? c / SOI_CELL_PX : -1 - (-c - 1) / SOI_CELL_PX; }
+static int proj_row(int py){ int c = py - SOI_ORIGIN_Y; return (c >= 0) ? c / SOI_CELL_PX : -1 - (-c - 1) / SOI_CELL_PX; }
+
+static int proj_solid(const SoiWorld *w, int px, int py)
+{
+    return (soi_get_cell(w, proj_col(px), proj_row(py)) & SOI_CELL_SUPPORTIVE) != 0;
+}
+
+/* Advance projectiles. Behaviours, per the disassembly:
+ *  - Player wall-follower BALL (kind 0, friendly; asm FUN_1000fd5c +0x54==2/3): a
+ *    4-state TERRAIN FOLLOWER. It travels 2 px/frame hugging the floor/wall it runs
+ *    along -- turning DOWN at a convex corner (a cliff edge) and UP into a concave
+ *    corner (a wall) -- so it flows around obstacles instead of flying straight off
+ *    a ledge. Kills any nasty it overlaps; fizzles after 500 ticks.
  *  - Player MAGIC BALL (kind 1, friendly): rolls straight, kills one nasty, and
  *    stops dead at a block.
  *  - Hostile shot (kind 0, hostile: Cannon/Gargoyle/Knight; asm FUN_1000744c):
@@ -1183,52 +1238,68 @@ void soi_projectiles_update(SoiWorld *w)
             continue;
         }
 
-        /* ---- Player Magic Arrow: 4-direction ricochet ---- */
+        /* ---- Player wall-follower ball (kind 0): the 4-state terrain follower,
+         * asm FUN_1000fd5c type +0x54 == 2 (fired right) / 3 (fired left). vx holds
+         * the dir-state (+0x52: 1=L/2=U/3=R/4=D), vy the follower type. Each state
+         * probes the terrain around the ball and either steps 2 px in its heading or
+         * turns 90 deg to stay glued to the surface it runs along -- turning DOWN at
+         * a cliff edge (state 3: floor ahead gone but floor behind still solid) and
+         * UP into a wall. Reproduced 1:1 with the asm nested probes; proj_solid() is
+         * the (cell & 0x200) test with OOB = solid. ---- */
         if (pr->kind == 0 && !pr->hostile) {
-            int cx, cy, ncol, nrow;
-            uint32_t nc;
-            if (++pr->age >= 500) { pr->active = 0; continue; }   /* fizzle */
-            cx = pr->x + SOI_CELL_PX / 2;               /* arrow centre */
-            cy = pr->y + SOI_CELL_PX / 2;
-            ncol = cx + pr->vx - SOI_ORIGIN_X;
-            ncol = (ncol >= 0) ? (ncol / SOI_CELL_PX) : -1;   /* floor at the LEFT field edge */
-            nrow = (cy + pr->vy - SOI_ORIGIN_Y) / SOI_CELL_PX;
-            nc = soi_get_cell(w, ncol, nrow);
-            if (!soi_in_bounds(ncol, nrow) || (nc & SOI_CELL_SUPPORTIVE)) {
-                /* wall ahead: turn 90 deg. Solidity is the SUPPORTIVE bit ALONE (asm
-                 * FUN_1000554c / FUN_1000fd5c probe (cell & 0x200) only), so the arrow
-                 * ricochets off real blocks but flies straight through 0x9xx goodies.
-                 * VERIFIED vs asm FUN_1000fd5c (ricochet states
-                 * 0x52 1=L/2=U/3=R/4=D): the original turns PRIMARY (x,y)->(y,-x) then, at a
-                 * corner, SECONDARY (x,y)->(-y,x). cand[0]={vy,-vx} and cand[1]={-vy,vx} below
-                 * ARE those two transforms exactly (checked all 4 dirs: L->D/U, R->U/D, U->L/R,
-                 * D->R/L). cand[2]=reverse is a port-only fallback for a fully-boxed corner (the
-                 * asm cannot box itself in); fizzle only if even that is blocked. The single
-                 * next-cell probe below simplifies the asm's multi-corner turn-vs-continue test. */
-                int ov = pr->vx, ow = pr->vy, t;
-                int cand[3][2] = { { ow, -ov }, { -ow, ov }, { -ov, -ow } };
-                int acol = (cx - SOI_ORIGIN_X) / SOI_CELL_PX;   /* arrow's own cell */
-                int arow = (cy - SOI_ORIGIN_Y) / SOI_CELL_PX;
-                pr->vx = 0; pr->vy = 0;
-                for (t = 0; t < 3; t++) {
-                    /* probe the ADJACENT cell in the candidate direction (a bare
-                     * +/-2 px would stay inside the arrow's own cell and wrongly
-                     * read a blocked side as clear -- e.g. "down" into the floor). */
-                    int tc = acol + (cand[t][0] > 0 ? 1 : cand[t][0] < 0 ? -1 : 0);
-                    int tr = arow + (cand[t][1] > 0 ? 1 : cand[t][1] < 0 ? -1 : 0);
-                    uint32_t cc = soi_get_cell(w, tc, tr);
-                    if (soi_in_bounds(tc, tr) && !(cc & SOI_CELL_SUPPORTIVE)) {
-                        pr->vx = (int16_t)cand[t][0];
-                        pr->vy = (int16_t)cand[t][1];
-                        break;
-                    }
+            int st   = pr->vx;             /* dir-state 1=L/2=U/3=R/4=D (asm +0x52) */
+            int type = pr->vy;             /* 2 = fired-right, 3 = fired-left (asm +0x54) */
+            int X = pr->x, Y = pr->y;
+            if (++pr->age >= 500) { pr->active = 0; continue; }   /* fizzle (asm age +0x56 >= 500) */
+            if (type == 2) {
+                /* fired RIGHT: asm FUN_1000fd5c type 2 (orig lines 155-401). NOTE the
+                 * UP state's middle probe is X+5 (NOT X+0x19 like its siblings) -- a
+                 * verified asm asymmetry (orig line 233), the counterpart of type 3
+                 * DOWN's Y+0x18. Do NOT "correct" it to match the mirror. */
+                if (st == 1) {                                              /* LEFT */
+                    if (proj_solid(w, X - 2, Y + 0xc)) st = 4;
+                    else if (!proj_solid(w, X + 0x17, Y - 2) && !proj_solid(w, X - 2, Y - 2) && proj_solid(w, X + 0x19, Y - 2)) st = 2;
+                    else X -= 2;
+                } else if (st == 2) {                                      /* UP */
+                    if (proj_solid(w, X + 0xc, Y - 2)) st = 1;
+                    else if (!proj_solid(w, X + 0x19, Y + 0x17) && !proj_solid(w, X + 5, Y - 2) && proj_solid(w, X + 0x19, Y + 0x19)) st = 3;
+                    else Y -= 2;
+                } else if (st == 3) {                                      /* RIGHT */
+                    if (proj_solid(w, X + 0x19, Y + 0xc)) st = 2;
+                    else if (!proj_solid(w, X, Y + 0x19) && !proj_solid(w, X + 0x19, Y + 0x19) && proj_solid(w, X - 2, Y + 0x19)) st = 4;
+                    else X += 2;
+                } else {                                                   /* DOWN (st==4) */
+                    if (proj_solid(w, X + 0xc, Y + 0x19)) st = 3;
+                    else if (!proj_solid(w, X - 2, Y) && !proj_solid(w, X - 2, Y + 0x19) && proj_solid(w, X - 2, Y - 2)) st = 1;
+                    else Y += 2;
                 }
-                if (pr->vx == 0 && pr->vy == 0) { pr->active = 0; continue; }
-            } else {
-                pr->x += pr->vx; pr->y += pr->vy;
+            } else if (type == 3) {
+                /* fired LEFT: asm FUN_1000fd5c type 3 (orig lines 465-711), the mirror
+                 * of type 2. NOTE state 4 probes Y+0x18, NOT +0x19 -- a verified asm
+                 * asymmetry (orig lines 653 & 665). */
+                if (st == 1) {                                              /* LEFT */
+                    if (proj_solid(w, X - 2, Y + 0xc)) st = 2;
+                    else if (!proj_solid(w, X + 0x17, Y + 0x19) && !proj_solid(w, X - 2, Y + 0x19) && proj_solid(w, X + 0x19, Y + 0x19)) st = 4;
+                    else X -= 2;
+                } else if (st == 2) {                                      /* UP */
+                    if (proj_solid(w, X + 0xc, Y - 2)) st = 3;
+                    else if (!proj_solid(w, X - 2, Y + 0x17) && !proj_solid(w, X - 2, Y - 2) && proj_solid(w, X - 2, Y + 0x19)) st = 1;
+                    else Y -= 2;
+                } else if (st == 3) {                                      /* RIGHT */
+                    if (proj_solid(w, X + 0x19, Y + 0xc)) st = 4;
+                    else if (!proj_solid(w, X, Y - 2) && !proj_solid(w, X + 0x19, Y - 2) && proj_solid(w, X - 2, Y - 2)) st = 2;
+                    else X += 2;
+                } else {                                                   /* DOWN (st==4) */
+                    if (proj_solid(w, X + 0xc, Y + 0x18)) st = 1;
+                    else if (!proj_solid(w, X + 0x19, Y) && !proj_solid(w, X + 0x19, Y + 0x18) && proj_solid(w, X + 0x19, Y - 2)) st = 3;
+                    else Y += 2;
+                }
             }
-            col = (pr->x + SOI_CELL_PX / 2 - SOI_ORIGIN_X) / SOI_CELL_PX;
-            row = (pr->y + SOI_CELL_PX / 2 - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            pr->x = X; pr->y = Y; pr->vx = (int16_t)st;
+            /* kill any nasty the ball overlaps (asm find-enemy-in-rect FUN_100030ac
+             * over the ball's box; the port samples its centre cell). Hazards immune. */
+            col = proj_col(pr->x + 0xc);
+            row = proj_row(pr->y + 0xc);
             victim = soi_enemy_at(w, col, row);
             if (victim >= 0 && !enemy_is_hazard(w->enemies[victim].type))
                 soi_enemy_kill(w, victim, pr->owner);   /* keeps flying; hazards are immune */

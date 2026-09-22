@@ -72,6 +72,7 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
     p->respawn_timer = 0;
     p->block_type = 0x07;
     p->input = 0; p->input_prev = 0;
+    p->prev_pcol = (int16_t)col; p->prev_prow = (int16_t)row;   /* seed switch entry-edge to spawn cell */
     p->mult = 1;                   /* multiplier resets to 1 each level (asm FUN_1002b174 -> +0x44) */
 }
 
@@ -285,6 +286,7 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
         }
     }
     w->level_loaded = 1;
+    soi_switch_load_scan(w);   /* register Stop/Go switch blocks + normalise their cells (b41) */
     /* Level objective (FIRST-DRAFT, TODO(oracle)): clear all treasure placed on
      * the board (coins/gems/gold). Count it now; pickups decrement it. */
     w->goodies_total = (int16_t)soi_count_treasure(w);
@@ -439,6 +441,7 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
         soi_enemies_update(w);
     if (w->reveal_timer > 0) w->reveal_timer--;   /* magnifying-glass reveal (goody 0x2F) counts down */
     soi_projectiles_update(w);
+    soi_switch_animate(w);   /* advance Stop/Go open/close animations (b41; no-op when sw_count==0) */
 
     /* PER-PLAYER Bonus countdown (@0x1003a9f0, decremented by FUN_1000f500). Each
      * player's on-screen "Bonus" is their own survival timer; reaching 0 costs THAT

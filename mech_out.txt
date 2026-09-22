@@ -1,0 +1,395 @@
+﻿ok:   arrow: enemy present before firing
+ok:   accessor: enemy slot 0 active + type readable
+ok:   accessor: enemy pixel position readable
+ok:   arrow: firing consumed one arrow
+ok:   arrow: a projectile is in flight
+ok:   arrow: enemy killed by the arrow
+ok:   arrow: ant score (50) awarded to firer
+ok:   one-shot: first arrow fires (1 in flight, ammo 3->2)
+ok:   one-shot: a 2nd arrow is BLOCKED while the 1st is live (no timer needed)
+ok:   one-shot: a ball is BLOCKED too (arrow+ball share the one slot)
+ok:   one-shot: the live arrow eventually despawns
+ok:   one-shot: once the slot is free, firing works again (ammo 2->1)
+ok:   hit: an unprotected enemy contact is fatal (no shield buffer)
+ok:   hit: timed invuln blocks the hit (no death)
+ok:   bonk: jumping into a solid block overhead enters the frozen bonk state (no leap)
+ok:   bonk: the block is NOT cracked on the press frame (destroy deferred to the midpoint)
+ok:   bonk: the player stays frozen in BONK (RIGHT does nothing) until the recoil ends
+ok:   bonk: the recoil is stationary -- x never slides during the animation
+ok:   bonk: the block cracks at the animation MIDPOINT (~frame 5), not on the press frame
+ok:   bonk: the player returns to IDLE ~5 frames after the crack (a 10-frame animation)
+ok:   bonk: after one bonk the block is cracked but still present
+ok:   bonk2: re-pressing jump into the cracked block bonks again
+ok:   bonk2: the second bonk BREAKS the cracked block at its midpoint
+ok:   bonkperm: jumping into a permanent block overhead still enters the bonk recoil
+ok:   bonkperm: the permanent block is untouched by the head-bonk (immune)
+ok:   bonkperm: the player returns to IDLE after the recoil
+ok:   bonk-straddle: the FACING (right) head column is clear (only the trailing one has a block)
+ok:   bonk-straddle: the two-column head-clear bonks off the trailing column (a single-column probe would leap)
+ok:   bonk-straddle: faithful bonk-WITHOUT-break -- the facing-column destroy misses the trailing block
+ok:   bonk-straddle: the player returns to IDLE after the boundary recoil
+ok:   jump: clear headroom -> the player leaps (airborne)
+ok:   jump: the arc peaks ~37px up (recovered table DAT_1003474c)
+ok:   jump: lands cleanly back on the ground
+ok:   jump: a clear-headroom leap breaks no block
+ok:   jumpgoody: a goodie overhead does NOT block the leap (player goes airborne)
+ok:   jumpgoody: leaping up does not crack/break the goodie (it is not a solid block)
+ok:   block-high: first press builds a block in front
+ok:   block-high: a second press at the same cell removes it
+ok:   build-gate: test nasty spawned on the front cell
+ok:   build-gate: no block is built on a nasty-occupied cell
+ok:   build-gate: the nasty is NOT squashed by the build (weapons/goody defeat it)
+ok:   pose: building sets the BUILD pose (display)
+ok:   pose: firing a ball sets the FIRE pose (display)
+ok:   fall: holding a direction does NOT steer a cliff-fall (x stays fixed)
+ok:   fall: the player still descends straight down (y increases)
+ok:   midair-freeze: the player is airborne (falling) before the build
+ok:   midair-freeze: the build pose is active
+ok:   midair-freeze: the fall is frozen while the build pose plays
+ok:   midair-freeze: still frozen partway through the pose
+ok:   midair-freeze: the descent resumes once the pose ends
+ok:   jump-build: a same-frame build+jump performs the BUILD (block created)
+ok:   jump-build: the same-frame jump does NOT swallow the build (player stays grounded)
+ok:   jump-build: the build pose is still active
+ok:   jump-build: a jump pressed DURING the pose is dropped (no airborne-frozen state)
+ok:   jump-build: player is still grounded after the pose drains
+ok:   jump-build: a jump pressed after the pose still leaps
+ok:   jump-build: the leap actually arcs upward (y decreases), not airborne-frozen
+ok:   airborne: can BUILD a block in front while jumping (mid-air)
+ok:   airborne: building mid-air does NOT cancel the jump
+ok:   thunderballs: three nasties before pickup
+ok:   thunderballs: all nasties cleared
+ok:   thunderballs: pickup cell consumed
+ok:   hazards: three turrets before thunderballs
+ok:   hazards: turrets SURVIVE thunderballs (unkillable)
+ok:   hazards: turrets award no points (Help lists them as non-scorable)
+ok:   time bonus 0x15 (x3) adds 7500 to that player's bonus
+ok:   loader: per-board Bonus comes from header 0x0E, not the 0x16 flag
+ok:   loader: No-Weapons Reward (0x16 sentinel 0x3A20) defaults to 5000
+ok:   loader: garbage pct_ultrabuster (0x10 > 100) clamps to 0
+ok:   loader: garbage thrown/pct (0x12/0x14 out of range) clamp to 0
+ok:   loader: a valid pct_ultrabuster (0..100) is kept
+ok:   loader: pct_badguy zeroed when thrown_badguy is 0 (the fields are linked)
+ok:   1up: goody 0x10 grants +1 life
+ok:   1up: goody 0x10 does NOT touch the shield count
+ok:   1up: the 0x10 cell is consumed
+ok:   transporter: player zapped to the paired OUT cell
+ok:   transporter: IN marker persists (not consumed)
+ok:   transporter: OUT marker does not re-teleport
+ok:   stopgo: switch does NOT freeze nasties (vestigial field stays 0)
+ok:   stopgo: nasties keep moving after a switch is stepped
+ok:   wheelie: flight is player-INDEPENDENT (does not home)
+ok:   wheelie: actually flies (it moved)
+ok:   wheelie: flies UP with no gravity (does not fall)
+ok:   wheelie: rolls around a wall (turns 90 deg, does not pass through)
+ok:   spawner: placement 6/12 are spawners, 4 (Walker) is a direct nasty
+ok:   spawner: a persistent spawner emits a child nasty
+ok:   spawner: the emitted child is transient (lifespan set)
+ok:   spawner: a child despawns when its lifespan expires
+ok:   spawner alt: first child emits RIGHT
+ok:   spawner alt: second child emits LEFT (toggled)
+ok:   spawner seek: child aims LEFT toward the player
+ok:   robo: turns back at a wall (does not climb over)
+ok:   robo: stays on its row at a wall (no climb up)
+ok:   robo: punches through a breakable block
+ok:   robo: keeps its heading after punching (no turn)
+ok:   beanie: buds one child at a wall
+ok:   beanie: parent records its one living bud
+ok:   beanie: at most one living bud at a time
+ok:   gargoyle: aims a hostile shot toward the player (rightward)
+ok:   gargoyle: aims DIAGONALLY at an up-right player (vx>0, vy<0)
+ok:   knight: drops a gift (a kind-2, non-hostile projectile), not a bolt
+ok:   knight: fires no hostile shot (it drops gifts)
+ok:   ledge: an enemy straddling a one-cell gap stays up
+ok:   ledge: an enemy fully over the gap falls
+ok:   walker: patrols without falling off the platform
+ok:   walker: walks back and forth (patrols, not stuck)
+ok:   walker: turns at the platform edges (foot patrols cols 4-6)
+ok:   robo: patrols without falling off the platform
+ok:   robo: walks back and forth (patrols, not stuck)
+ok:   robo: turns at the platform edges (foot patrols cols 4-6)
+ok:   bug3: robo rests on its support block (not falling yet)
+ok:   bug3: robo FALLS when its support is destroyed
+ok:   bug3: the fall is STRAIGHT DOWN (x unchanged -- no drift)
+ok:   bug3: robo DIES on landing (edge-turner fall-death; was: survived)
+ok:   bug3: the fall-kill awards the robo's points to the nearest player
+ok:   bug3: the fall-kill plays the robo kill 'ding' (SOI_SFX_KILL_ROBO)
+ok:   bug3: the fall-kill enqueues one death-pop effect (asm FUN_10028014)
+ok:   bug3: the queued death-pop is the ROBO (type snapshot for the renderer)
+ok:   bug3: the death-pop x matches the robo's column (no drift at spawn)
+ok:   bug3-contrast: an edge-WALKER (Ant) SURVIVES the same drop (resettles, no kill)
+ok:   clock: collecting the 0x2E goody arms the slow-enemies counter
+ok:   clock: pickup plays the 'slow' sound (evt 0x2B -> 1005)
+ok:   clock: the slow counter ticks down (600 -> 560 over 40 frames)
+ok:   clock: the nasty still moves while slowed
+ok:   clock: slowed nasty travels ~half as far
+ok:   magnify: 0x2F arms the ~5s hidden-treasure reveal timer
+ok:   magnify: 0x2F does NOT defeat nasties (thunderballs is 0x31)
+ok:   magnify: the reveal timer counts down
+ok:   gargoyle-break: destroys the first block
+ok:   gargoyle-break: stops at the first (second intact)
+ok:   gargoyle-pierce: UltraBuster destroys the second block too
+ok:   knight-gift: the gift lands and despawns
+ok:   knight-gift: an empty target becomes a collectible goody (0x90A silver coin)
+ok:   knight-gift: a blocked target becomes a gift-block (gold coin hidden as its payload)
+ok:   p3: soi_spawn_player3 activates the 3rd co-op player (slot 3)
+ok:   p3: soi_tick3 latches the 3rd player's input channel
+ok:   p3: the 2-arg soi_tick drives P1/P2 and leaves P3 with no input (backward compat)
+ok:   goody: shield pickup plays its own sound (evt 0x18)
+ok:   goody: arrow ammo plays its own sound (evt 0x19)
+ok:   goody: ball ammo plays its own sound (evt 0x1a)
+ok:   goody: time bonus plays its own sound (evt 0x1b)
+ok:   goody: shield activate plays its own sound (evt 0x29)
+ok:   goody: enemy-claim plays its own sound (evt 0x2a)
+ok:   goody: speed shoes play their own sound (evt 0x28)
+ok:   goody: colored key plays its own sound (evt 0x14 -> 17661)
+ok:   goody: 0x10 grants a LIFE/1UP (not a shield or ball)
+ok:   goody: 0x12 grants a ball (not a shield)
+ok:   goody: 0x32 arms fast-mode speed shoes, not a life
+ok:   accessor: player_fast reflects speed-shoes
+ok:   goody: 0x32 fast-mode ~doubles the fall rate (60Hz physics)
+ok:   hammer: walks FLAT on open floor (no continuous hop)
+ok:   hammer: walks forward
+ok:   hammer: rises a fixed 11px as it begins the smash
+ok:   hammer: jump-smashes the breakable wall ahead (mid-swing)
+ok:   hammer: holds a fixed 11px lift through the swing
+ok:   hammer: drops back to the floor after the smash
+ok:   hammer: turns at a permanent wall ahead
+ok:   hammer: the permanent wall survives
+ok:   sfx: gold coin queues its own SOI_SFX_COIN_GOLD
+ok:   sfx: killing an Ant queues its own kill sound (per-enemy, not the generic squash)
+ok:   sfx: queue is cleared at the start of each tick
+ok:   sfx: silver coin -> SOI_SFX_COIN
+ok:   sfx: gold coin -> SOI_SFX_COIN_GOLD
+ok:   sfx: gem -> SOI_SFX_COIN_GEM
+ok:   sfx: gold bars -> SOI_SFX_COIN_BARS
+ok:   death: a hit launches the somersault death-throw (still 'alive' mid-arc)
+ok:   death: the throw ends off-screen and costs a life
+ok:   respawn: not game over while a life remains
+ok:   respawn: player revives at the spawn cell
+ok:   gameover: dying at lives=1 drops to a PLAYABLE 0 -- NOT game over (asm: out at lives<0)
+ok:   gameover: the death AT 0 lives (-> -1) finally eliminates all players
+ok:   levelclear: not complete before the key
+ok:   levelclear: key collected
+ok:   levelclear: key alone is not the exit
+ok:   levelclear: exited through the door
+ok:   levelclear: key + door exit -> complete
+ok:   levelclear: remaining bonus added to score on exit
+ok:   levelclear: key+door completes even with treasure left (treasure = score, not objective)
+ok:   colorkey: not complete before the key
+ok:   colorkey: colored key collected
+ok:   colorkey: key cell consumed
+ok:   colorkey: matching lock opened into a door
+ok:   colorkey: collecting the key is not yet the exit
+ok:   colorkey: exited through the opened door
+ok:   colorkey: key + opened-door exit -> complete
+ok:   colorkey: remaining bonus added to score on exit
+ok:   mult: default multiplier is 1
+ok:   mult: 0x0D goody sets the 3x multiplier
+ok:   mult: multiplier goody is consumed
+ok:   mult: key collected
+ok:   mult: exited the door
+ok:   mult: end-of-level bonus is multiplied (1000 x 3 = 3000)
+ok:   perplayer: P1 collected the key
+ok:   perplayer: P1 exit completes the board
+ok:   perplayer: exiter P1 awarded 1000 x 2 = 2000
+ok:   perplayer: NON-exiter P2 still awarded 700 x 1 = 700
+ok:   perplayer: both players' bonuses zeroed at completion
+ok:   nextlevel: SCORE persists across boards
+ok:   nextlevel: LIVES persist across boards
+ok:   nextlevel: ammo + shield persist across boards
+ok:   nextlevel: multiplier RESETS each board (FUN_1002b174)
+ok:   nextlevel: has_key RESETS (board not instantly complete)
+ok:   nextlevel: the incoming board is not already complete
+ok:   nextlevel: bonus reseeded from the new board
+ok:   noweap: no fire -> bonus (1000) + No-Weapons Reward (5000) = 6000
+ok:   noweap: firing an arrow zeroes the No-Weapons Reward
+ok:   noweap: after firing, completion awards only the bonus (no 5000 reward)
+ok:   arrow: ricochets off a block WITHOUT smashing it
+ok:   arrow: keeps flying after the deflect (does not despawn on the block)
+ok:   arrow: survives the floor-corner deflect (not trapped)
+ok:   arrow: climbs up the wall at a floor corner
+ok:   payload: smashing a special block reveals its concealed goody
+ok:   payload: the revealed goody is collectible
+ok:   payload: a hidden type-0 payload cell is not collected on walk-over
+ok:   payload: a block built on a hidden-payload cell inherits the goody
+ok:   shoes: every nasty is claimed by the collector
+ok:   shoes: the goody is consumed
+ok:   shoes: a claimed nasty is defeated next update
+ok:   shoes: its points go to the collector
+ok:   cannon: spawned
+ok:   cannon: fired a hostile projectile
+ok:   cannon: the shot hits the player
+ok:   cannon-cadence: a cannon spawned from the BORD block
+ok:   cannon-cadence: reload = StartDelay(40) * 6 = 240
+ok:   cannon-cadence: initial = SpawnDelay(20) * 6 = 120
+ok:   turret: the Gargoyle holds its ground (stationary)
+ok:   turret: the Knight holds its ground (stationary)
+ok:   turret: the Cannon does NOT fall over open air (static, mid-board)
+ok:   turret: the Gargoyle does NOT fall over open air
+ok:   turret: the Knight does NOT fall over open air
+ok:   spinner: DOES fall over open air (still obeys gravity)
+ok:   plow-silent: the Piggy broke the block ahead
+ok:   plow-silent: breaking the block emits NO block-destroy sound (asm FUN_100279c4)
+ok:   faceball: the Smiley broke the block ahead
+ok:   faceball: the Smiley REVERSES after breaking (dir 2 -> 1), does not plow through
+ok:   teeth-plow: the Teeth broke the block ahead
+ok:   teeth-plow: the Teeth KEEPS its heading (plows through, does not reverse)
+ok:   ball: firing consumed one ball
+ok:   ball: a ball is in flight
+ok:   ball: the projectile reports kind = Magic Ball
+ok:   ball: the rolling ball killed the nasty
+ok:   ball: a solid block in the path is NOT smashed
+ok:   ball: the ball despawns when it hits the block
+ok:   ball: the 0x12 pickup grants ball ammo
+ok:   map: bord 13 -> Knight
+ok:   map: bord 14 -> Gargoyle
+ok:   map: bord 16 -> Creeper (horizontal)
+ok:   map: bord 17 -> Creeper (vertical)
+ok:   creeper: spawned
+ok:   creeper: traverses a background (0x197) tile instead of getting stuck
+ok:   creeper: never fires a projectile
+ok:   creeper: temp-solidifies the cell it occupies
+ok:   creeper: restores the background tile it covered (capture/restore)
+ok:   creeper: restores the cell it left (temporary trail)
+ok:   serialize: projectile src_type is part of the state hash
+ok:   objective: counts goodie + hidden treasure, not blue blocks
+ok:   transporter: OUT scan lands on the marker, not a same-low-byte pink block
+ok:   set_stats: score overwritten
+ok:   set_stats: lives overwritten
+ok:   set_stats: arrows overwritten
+ok:   set_stats: balls overwritten
+ok:   set_stats: shield overwritten
+ok:   set_stats: score multiplier is PRESERVED (not reset)
+ok:   set_stats: idx 0 is a guarded no-op
+ok:   set_stats: OOB-high idx leaves valid players intact
+ok:   rng: seeds to 1 (Toolbox default)
+ok:   rng: Park-Miller 10000th-iterate checkpoint (1043618065)
+ok:   walker: spawned
+ok:   walker: fires a bolt when a player shares its row
+ok:   walker: the fired bolt is hostile
+ok:   walker: bolt slot found
+ok:   walker: the bolt travels 4 px/frame, not 8
+ok:   walker: does NOT fire when no player shares its row
+ok:   hippo: spawned
+ok:   hippo: destroys the breakable block in its path
+ok:   hippo: keeps walking through (did not turn at the block)
+ok:   ant: leaves the breakable block intact
+ok:   ant: turns around at the breakable block
+ok:   speed-obstacle: an enemy does NOT step into a wall on the turn frame
+ok:   speed-obstacle: it reverses at the wall
+ok:   speed-obstacle: with a clear path the enemy still advances a full step
+ok:   speed-obstacle: it keeps heading with a clear path
+ok:   speed-obstacle: an enemy does NOT step over a ledge on the turn frame
+ok:   speed-obstacle: it reverses at the ledge
+ok:   speed-obstacle: a plow nasty clears the breakable block ahead
+ok:   speed-obstacle: a plow nasty keeps advancing through the cleared block
+ok:   speed-obstacle: a plow nasty keeps its heading
+ok:   procspawn: garbage params (pct>100 / bad type) throw nothing
+ok:   procspawn: valid params throw the configured badguy (no ANT fallback)
+ok:   collision: a falling enemy sharing the player's grid CELL but not his hurtbox does NOT kill (asm AABB, not cell-equality)
+ok:   breakunder: a Robo whose INSET feet clear the block drops even while a far corner still overlaps the next block (lenient inset-foot probe, asm FUN_10005750)
+ok:   coinpickup: the player stands idle on the pickup tick (grounded, no direction)
+ok:   coinpickup: an IDLE grounded player standing on a coin collects it (pickup every tick, asm FUN_1002a308)
+ok:   coinpickup: the collected coin cell is cleared
+ok:   glide: firing a weapon starts the action pose
+ok:   glide: holding a direction during the action pose does NOT advance x (no glide)
+ok:   glide: the run DISPATCH is frozen during the pose (stutter-stop, not just x-clamped)
+ok:   glide: the action pose drains after ~12 frames
+ok:   glide: once the pose ends, holding a direction runs the player again
+ok:   timerdeath: the bonus reaches 0
+ok:   timerdeath: the player SURVIVES the 0 tick (asm dies at <0, not ==0)
+ok:   timerdeath: the runout plays the death-throw (SOI_ST_DEAD) when the bonus would go negative
+ok:   timerdeath: the bonus is clamped back to 0 on the fatal tick (asm FUN_1000f500)
+ok:   timerdeath: a bonus runout plays the player hit cry (SOI_SFX_PLAYER_HIT)
+ok:   gift: the gift reaches its drop cell and lands
+ok:   gift: a Knight gift holds a straight heading on a SHALLOW shot -- stays within 1/8 tile of the launch->target line every frame (no mid-flight bow; asm FUN_1000c544)
+ok:   deathpickup: the player is still mid death-throw on this tick
+ok:   deathpickup: a dying player collects NO coins (asm gates pickup on the dying flag)
+ok:   deathpickup: the coin under a dying player is left in place
+ok:   airpickup: a JUMPING player sweeping a coin collects it (pickup every tick, not ground-only)
+ok:   airpickup: the collected coin cell is cleared
+ok:   timerdeath-iframes: the player survives the 0 tick even while invulnerable
+ok:   timerdeath-iframes: a bonus runout kills even an INVULNERABLE player (asm FUN_10012228, no invuln gate)
+ok:   timerdeath-iframes: the death cry still plays
+ok:   hurry-music: OFF when every player's Bonus is above 1000
+ok:   hurry-music: ON the moment a Bonus reaches 1000 (zone is 0 < t <= 1000)
+ok:   hurry-music: stays ON as the Bonus drains toward 0
+ok:   hurry-music: a fully-drained (dead) player does not count (>0 guard)
+ok:   hurry-music: ON when ONLY a non-P1 player is in the zone (per-player timers, shared movie)
+ok:   hurry-music: an eliminated player in the zone does NOT hold it ON
+ok:   gargoyle-muzzle: the puff spawns in the Gargoyle's OWN cell (col 3), not the wall cell (col 4)
+ok:   gargoyle-muzzle: the puff SURVIVES that frame -- it did not spawn INSIDE the solid wall (the old e->x+sx*0x20 muzzle died on tick 1; asm FUN_1000adc4)
+ok:   gift-exclusion: a Knight's own cell is not a gift target
+ok:   gift-exclusion: a cell diagonally adjacent to a Knight is excluded
+ok:   gift-exclusion: a cell adjacent to a Gargoyle is excluded
+ok:   gift-exclusion: a Robo does NOT block a gift (only Knight/Gargoyle do)
+ok:   gift-exclusion: a far empty cell IS a legal gift target
+ok:   gift-exclusion: a non-empty cell is never a gift target
+ok:   deaththrow: soi_player_hit starts the airborne somersault
+ok:   deaththrow: the somersault advances in Y but never drifts x (asm FUN_10011fcc = Y-only)
+ok:   transporter: a player straddling two columns is NOT teleported (asm straddle guard)
+ok:   wall-rebound: a wedged player nets zero x (orig-x used for both probes, asm FUN_10012554)
+ok:   wall-rebound: a wall in ONLY the right column pushes -2 (right probe fires, closes the no-op blind spot)
+ok:   jumpstall: the leap launches with clear headroom
+ok:   jumpstall: still in the rising phase (jump_t < 8)
+ok:   jumpstall: a block built overhead mid-rise snaps the jump to the apex (asm sets 0xc, then the unconditional ++ persists 0xd)
+ok:   jump-rebound: a jumper (jump_t>=8) rebounds on the PRE-step Y (asm FUN_10013404 line 31 before line 38)
+ok:   fall-rebound: the fall rebounds on the PRE-step Y (asm FUN_1001386c line 9 before line 19)
+ok:   headroom-2col: a wall in ONLY the x+0x0e column stalls the rise (both columns probed, asm FUN_10012444)
+ok:   rise-no-rebound: a rising jumper (jump_t<8) ignores the side wall (asm FUN_10013404 if/else)
+ok:   rise-no-rebound: the rise still advances (headroom clear, no stall) -- proves the wall did not cap it
+ok:   deadbuild: the front build cell (col10,row4) starts empty
+ok:   deadbuild: a dying player's BLOCK press builds NOTHING (asm FUN_1001166c death-flag gate)
+ok:   deadbuild: the death throw still advances while build is gated (death_step ran)
+ok:   dead-not-fall: a DEAD player with in_air=0 stays in the death throw (top-level DEAD gate)
+ok:   dead-not-fall: death_step still ran (parabola advanced), not the FALL/idle path
+ok:   dead-not-fall: the pressed BLOCK built nothing (gated at the top before build)
+ok:   reload41: crafted board loads
+ok:   reload41(A): a Bonus runout costs exactly one life
+ok:   reload41(A): the player respawns after the runout
+ok:   reload41(A): the reload RESETS the Bonus clock to ~200 (no infinite kill)
+ok:   reload41(A): still in the game (2 lives left)
+ok:   reload41(A): the reload keeps a disabled player disabled (single-player P2)
+ok:   reload41(A): the reload keeps the tick counter monotonic (no reset -> no spurious throw / RNG desync)
+ok:   reload41(B): lone block destroyed pre-death
+ok:   reload41(B): the player died once and respawned
+ok:   reload41(B): the death reload REBUILDS the destroyed block
+ok:   reload41(C): the fresh clock survives many ticks (no infinite cascade)
+ok:   reload41(D): timing out on the last life ends the game (no infinite loop)
+ok:   ballgoody: the ball comes to rest (does not fly forever)
+ok:   ballgoody: the ball rolls THROUGH the 0x9xx goodie (col 7) and stops flush on the 0x200 wall (col 10) -- solidity is (cell & 0x200), never PERMANENT (asm FUN_1000554c)
+ok:   ballgoody: the passing ball does NOT consume the goodie it rolls over
+ok:   switch: crafted board loads
+ok:   switch: the group-0 block loads SOLID (0x200 set)
+ok:   switch: stepping the switch tile OPENS the paired block (now PASSABLE, 0x200 clear)
+ok:   switch: the stepped tile flips its Stop/Go sign (low 0x24 -> 0x25)
+ok:   switch: stepping the tile plays the switch sound (asm evt 0x2c)
+ok:   switch: a rem-6 block (low 0xa3) loads PASSABLE (state 1, no 0x200)
+ok:   switch: a passable switch block is still PERMANENT (0x100)
+ok:   switch: a non-switch low in 0x9d..0xd3 (rem 3) is left untouched
+ok:   switch: (D) loads SOLID
+ok:   switch: (D) a block is SOLID during the opening swing
+ok:   switch: (D) the block is PASSABLE once the open completes
+ok:   switch: (D) closing turns the block SOLID immediately
+ok:   switch: (D) the block stays SOLID after the close settles
+ok:   spawner-static: piggy spawner placed
+ok:   spawner-static: a mid-air spawner is NOT killed/deactivated
+ok:   spawner-static: a mid-air spawner holds its placed ROW (does NOT fall)
+ok:   spawner-static: a mid-air spawner holds its placed COLUMN (does NOT drift)
+ok:   spawner-static: a stationary spawner STILL emits children (emit survives the early return)
+ok:   spawner-static: hammer spawner placed
+ok:   spawner-static: a HAMMER spawner does NOT fall (skips both hammer-hop and gravity)
+ok:   spawner-static: a HAMMER spawner does NOT hop/drift (line-530 spawn_child guard holds)
+ok:   spawner-static: control piggy placed
+ok:   spawner-static: a PIGGY with spawn_child==0 still falls (gravity path reachable for this type)
+ok:   wall-ball: a kind-0 follower is in flight after firing right
+ok:   wall-ball: still in flight after reaching the cliff (did not fly off-field and fizzle)
+ok:   wall-ball: TURNS DOWN to follow the cliff edge (row increases), never straight off the ledge
+ok:   idle-snap: player starts 2 px off the 4 px grid
+ok:   idle-snap: player fell and settled to IDLE on the floor
+ok:   idle-snap: an idle (just-landed) player's x is snapped to the 4 px grid (asm FUN_100128f8)
+ok:   idle-snap control: a player holding a direction is RUN, not IDLE (the snap gate is off)
+ok:   idle-snap control: a RUNNING player advances a full run (2 px sub-steps not snap-stalled) -- proves the IDLE gate
+
+ALL MECHANIC TESTS PASSED

@@ -153,11 +153,14 @@ static void wall_rebound(SoiWorld *w, SoiPlayer *p)
  * solid bit, and that row must sit at/below the top wall (y-2 >= 0x20; in practice
  * the row-0 border wall already floors this via the OOB=solid probe). Clear -> 1,
  * blocked -> 0. In the ASM this SAME FUN_10012444 runs both at the launch frame
- * (FUN_10013404 jump_t==0) and every rising frame (jump_t<8). The PORT instead gives
- * start_jump its own SIMPLIFIED single-column launch probe (px_col1(x+0x10) at
- * px_row1(y)-1 -- a different row than this px_row1(y-2)); that divergence is a port
- * choice, not two different asm functions, so the launch and the rise can disagree for
- * non-cell-aligned y. This function is the per-frame re-check the RISING jump runs. */
+ * (FUN_10013404 jump_t==0, via start_jump) and every rising frame (jump_t<8, via
+ * jump_step). BOTH port callers use THIS function, so the launch bonk-detection and the
+ * rise re-check probe the identical two upper-body columns at the identical row for every
+ * x -- there is no launch-vs-rise geometry drift for off-grid x. NOTE the DESTROY probe in
+ * do_head_break is deliberately DIFFERENT (a single facing-column probe x+0x12/x+0x0c at
+ * y-4, asm FUN_10014524 frame 5), so detection and destruction CAN target different cells
+ * at a column boundary -- that detect-vs-destroy asymmetry is faithful and is exactly what
+ * the boundary-straddle test guards; do NOT "unify" the two probes. */
 static int headroom_clear(const SoiWorld *w, const SoiPlayer *p)
 {
     int yTop = p->y - 2;
@@ -181,37 +184,76 @@ static void air_drift(SoiWorld *w, SoiPlayer *p)
         p->x += dir * 2;
 }
 
-/* Begin a jump (asm FUN_10013404 @ t==0): if a solid block is directly overhead it
- * is a HEAD-BONK -- break that block and do NOT leap (FUN_12444 head-clear check ->
- * state 4 FUN_10014524). With clear headroom the player leaps into the table arc.
- * The launch is SILENT (the only somersault sound, event 0x21 -> 26486, is the
+/* The head-bonk destroy (asm FUN_1002ca5c via the state-4 handler FUN_10014524 at
+ * frame 5): recompute the overhead cell from the player's CURRENT (frozen) x/y with
+ * the asm's facing-dependent probe -- FUN_1002e6cc(x + 0x12 right / + 0xc left) ==
+ * px_col1, FUN_1002e6f8(y - 4) == px_row1 -- then run the TWO-STAGE crack/break. The
+ * first bonk CRACKS the block (sets 0x4000, sfx 0x23); a second bonk BREAKS the cracked
+ * block (reveals any 0x1000 payload, sfx 0x24). Permanent (0x100) and door (0x800)
+ * blocks are IMMUNE -- the recoil plays but nothing breaks (FUN_1002ca5c line 39). */
+static void do_head_break(SoiWorld *w, int player)
+{
+    SoiPlayer *p = &w->players[player];
+    int aCol = px_col1(p->x + (p->facing >= 0 ? 0x12 : 0x0c));
+    int aRow = px_row1(p->y - 4);
+    uint32_t a = cell1(w, aCol, aRow);
+    if (!(a & SOI_CELL_SUPPORTIVE)) return;                 /* block already gone */
+    if (a & (SOI_CELL_PERMANENT | SOI_CELL_DOOR)) return;   /* immune: bonk but no break */
+    if (!(a & SOI_CELL_CRACKED)) {
+        set_cell1(w, aCol, aRow, a | SOI_CELL_CRACKED);
+        soi_sfx_emit(w, SOI_SFX_BLOCK_CRACK);
+    } else {
+        set_cell1(w, aCol, aRow, (a & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(a) : 0u);
+        soi_sfx_emit(w, SOI_SFX_BLOCK_BREAK);
+    }
+}
+
+/* One head-bonk frame (asm ground-state 4, FUN_10014524): a fixed 10-frame recoil. The
+ * frame counter is jump_t -- the asm reuses field 0x1003a9e2 for both the jump arc and
+ * this bonk (you cannot jump and bonk at once), so the port does too. Each frame advances
+ * the counter; the block is cracked/broken ONCE, at the MIDPOINT (counter == 5); on the
+ * 10th frame the player returns to IDLE. This handler moves nothing -- the caller's
+ * `return` after it is the FREEZE (no run/build/jump while the recoil plays). */
+static void bonk_step(SoiWorld *w, int player)
+{
+    SoiPlayer *p = &w->players[player];
+    p->jump_t++;                                  /* asm: sVar3 = counter + 1; counter = sVar3 */
+    if (p->jump_t < 10) {
+        if (p->jump_t == 5) do_head_break(w, player);
+    } else {
+        p->ground_state = SOI_ST_IDLE;            /* asm: counter reaches 10 -> ground_state 0 */
+    }
+}
+
+/* Begin a jump (asm FUN_10013404 @ t==0): a solid block directly overhead is a HEAD-BONK
+ * -- enter the frozen recoil (ground-state 4) and do NOT leap (FUN_10012444 head-clear
+ * check -> state 4 FUN_10014524). With clear headroom the player leaps into the table
+ * arc. The launch is SILENT (the only somersault sound, event 0x21 -> 26486, is the
  * DEATH throw FUN_10012228, not the jump). */
 static void start_jump(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
-    int aCol = px_col1(p->x + 0x10);
-    int aRow = px_row1(p->y) - 1;
-    uint32_t a = cell1(w, aCol, aRow);
-    /* A solid block directly overhead is a HEAD-BONK, not a leap (asm state 4
-     * FUN_10014524 -> FUN_1002ca5c): a TWO-STAGE destroy. The first bonk CRACKS
-     * the block (sets 0x4000, sfx 0x23); a second bonk BREAKS the cracked block
-     * (reveals any 0x1000 payload, sfx 0x24). Permanent (0x100) and door (0x800)
-     * blocks are immune -- they stop the jump but never break. Headroom is blocked
-     * by the SUPPORTIVE bit ALONE (asm FUN_10012444 probes (cell & 0x200) only, as
-     * headroom_clear above already does), so a non-solid goodie/coin overhead (0x9xx,
-     * no 0x200) is NOT a bonk -- the player leaps up INTO it (fixes "cannot jump into
-     * coins/3x above"). */
-    if (a & SOI_CELL_SUPPORTIVE) {
-        if (!(a & (SOI_CELL_PERMANENT | SOI_CELL_DOOR))) {
-            if (!(a & SOI_CELL_CRACKED)) {
-                set_cell1(w, aCol, aRow, a | SOI_CELL_CRACKED);
-                soi_sfx_emit(w, SOI_SFX_BLOCK_CRACK);
-            } else {
-                set_cell1(w, aCol, aRow, (a & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(a) : 0u);
-                soi_sfx_emit(w, SOI_SFX_BLOCK_BREAK);
-            }
-        }
-        return;                                  /* no leap on a bonk */
+    /* A solid block directly overhead is a HEAD-BONK, not a leap (asm FUN_10013404
+     * line 23 -> FUN_10012444 head-clear fails -> ground-state 4 FUN_10014524): enter
+     * the frozen 10-frame recoil. Use the SAME faithful two-column head-clear the RISING
+     * jump uses (headroom_clear == FUN_10012444), not a simplified single-column probe,
+     * so the launch bonk-detection and the midpoint destroy (do_head_break) resolve the
+     * overhead cell by the asm's own geometry for EVERY x -- including a player straddling
+     * a column boundary -- not just grid-aligned ones. The TWO-STAGE destroy is DEFERRED
+     * to the animation midpoint (do_head_break, from bonk_step at jump_t==5) -- NOT done
+     * on this press frame. Permanent (0x100)/door (0x800) blocks ALSO bonk (the recoil
+     * plays) but survive: the midpoint destroy no-ops on them. Headroom is blocked by the
+     * SUPPORTIVE bit ALONE (FUN_10012444 probes (cell & 0x200) only), so a non-solid
+     * goodie/coin overhead (0x9xx, no 0x200) is NOT a bonk -- the player leaps up INTO it
+     * (fixes "cannot jump into coins/3x above"). The destroy uses the asm's facing-
+     * direction column (do_head_break: x+0x12 right / x+0xc left) while this detection
+     * uses the x+0x10 & x+0x0e straddle -- that asymmetry is in the ORIGINAL (FUN_10012444
+     * vs FUN_10014524), so at a boundary a bonk can leave the facing destroy-target empty:
+     * a faithful bonk-without-break, preserved deliberately. */
+    if (!headroom_clear(w, p)) {
+        p->ground_state = SOI_ST_BONK;           /* enter the 10-frame head-bonk recoil */
+        p->jump_t = 0;                           /* asm state 4 entered with counter (0x1003a9e2) == 0 */
+        return;                                  /* no leap; frozen for the animation */
     }
     p->in_air = 1;
     p->jump_t = 0;
@@ -380,6 +422,22 @@ void soi_player_update(SoiWorld *w, int player)
      * death-throw (short-circuited above) collects nothing. */
     soi_pickup_check(w, player);
 
+    /* asm ground-state 4 (FUN_10014524): the head-bonk recoil. A grounded player who
+     * jumped into a solid block overhead is frozen here for a fixed 10-frame animation
+     * -- this `return` is the FREEZE (no run/build/jump/gravity is processed while it
+     * runs); the block is cracked/broken at the midpoint (bonk_step). Dispatched AFTER
+     * the walk-over pickup: the asm runs the per-player pickup pass (FUN_1002bc64) every
+     * 30Hz frame gated ONLY on the player-active flags (FUN_1002a308 cRam1003aa5a /
+     * cRam1003aa48), NEVER on ground_state, so a bonking player still collects goodies as
+     * in the original -- moving this dispatch above the pickup would DEVIATE. It sits
+     * BEFORE the in_air/grounded logic, mirroring the asm per-player state dispatch
+     * (FUN_1001166c case 4). The freeze is a MOVEMENT freeze (no run/build/jump/gravity),
+     * not a pickup freeze. */
+    if (p->ground_state == SOI_ST_BONK) {
+        bonk_step(w, player);
+        return;
+    }
+
     if (p->in_air) {
         /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
          * animation (FUN_1001166c) every frame and the build/fire fires from that animation
@@ -414,6 +472,17 @@ void soi_player_update(SoiWorld *w, int player)
      * asm-impossible "airborne but frozen at ground height" state (a jump pressed DURING a pose
      * is dropped, not started). */
     if (p->pose_t == 0) {
+        /* asm idle handler FUN_100128f8 line 21: an IDLE player's physics x is snapped
+         * to a 4 px boundary EVERY idle frame, and it runs BEFORE the support check
+         * (line 37). So a player who lands from the air at a 2-off-grid x (air-steer /
+         * wall-rebound / off-grid spawn) is grid-aligned on the next idle frame -- and
+         * a block broken under him drops from an x aligned to the block column (the
+         * "fall straight DOWN the column" the user wanted). While a direction is HELD the
+         * run handler (FUN_10012bf4) moves x in raw 2 px sub-steps and does NOT 4 px-align
+         * it, so gate this to the IDLE state only: a running player keeps his 2 px sub-step,
+         * and running off a ledge falls from that raw x exactly as the asm run handler does
+         * (FUN_10012bf4 line 27 -> state 3, no snap). */
+        if (p->ground_state == SOI_ST_IDLE) p->x &= ~3;
         /* gravity: fall if unsupported (asm state 3 = flat 4 px/frame; see fall_step). */
         if (!supported(w, p)) {
             p->in_air = 1;
@@ -432,8 +501,10 @@ void soi_player_update(SoiWorld *w, int player)
         if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
         if (in & SOI_IN_LEFT)         { run_step(w, player, -1); return; }
         if (in & SOI_IN_RIGHT)        { run_step(w, player, +1); return; }
-        /* no direction held: settle to rest -- snap X to a 4 px boundary (asm idle
-         * FUN_100128f8) and drop to idle. */
+        /* no direction held: settle to rest -- snap x to a 4 px boundary and drop RUN->IDLE
+         * on this transition frame. The top-of-block IDLE snap then re-aligns x on every
+         * subsequent idle frame (and is what aligns a player who reached IDLE via a landing,
+         * where fall_step sets IDLE without snapping). */
         if (p->ground_state == SOI_ST_RUN) {
             p->x &= ~3;
             p->ground_state = SOI_ST_IDLE;
