@@ -236,8 +236,8 @@ Handler **`FUN_1002bc64(player)`**; effects dispatched to per-type helpers.
 |---|---|---|---|
 | `0x0A/0x17/0x18/0x19` | silver/gold coin, gem, gold bars | +500 / +1000 / +2000 / +5000 score | CONFIRMED |
 | `0x10` | **1UP (extra life)** | +1 life (`player+0x46` = lives) — `FUN_1000e9c8`; confirmed: bonus-expiry calls `FUN_1000e9c8(p,-1)` | CONFIRMED (2026-07-06) |
-| `0x11` | arrow | +1 arrows (`player+0x4c`) — `FUN_1000eb34` | CONFIRMED |
-| `0x12` | magic ball ammo | +1 ball (`player+0x4a`) — `FUN_1000ec50` | CONFIRMED |
+| `0x11` | Magic **Ball** ammo (bottled swirl icon) | +1 (`player+0x4c`, fired by the rolling `FUN_10010d30`) — `FUN_1000eb34` | CONFIRMED (name corrected 2026-09-22) |
+| `0x12` | Magic **Arrow** ammo (red arrow icon) | +1 (`player+0x4a`, fired by the straight `FUN_100110b4`) — `FUN_1000ec50` | CONFIRMED (name corrected 2026-09-22) |
 | **`0x13–0x16`** | **time bonuses ×1–×4** | **+2500 / +5000 / +7500 / +10000** bonus time, **cap 30000** — `FUN_1000f3f0` | **CONFIRMED (was TODO)** |
 | `0x1A–0x23` | transporters (5 IN/OUT pairs) | teleport to paired OUT; **IN = even, OUT = odd** — `FUN_1002b9bc` | CONFIRMED (matches our impl) |
 | `0x24–0x2D` | stop/go switches | toggle persistent gate/directional MARKER states (per-code jump table -> marker table `DAT_10004d58` + state machine `FUN_100166b8`; stamps a `0x9xx` cell) — `FUN_10016544` | CONFIRMED mechanism (local effect on enemy pathing INFERRED; **our port simplifies to a global freeze**) |
@@ -266,7 +266,7 @@ cell x/y `+0x58/+0x5a`, point value `+0x8a`, killer-player `+0x88`.
 | **Wheelie** | 300 | `FUN_10009e98` | gravity-free 8-direction FLYER, wall-collision nav (~2 px/frame) — does **NOT** home (never reads the player position; verified 2026-07-06) |
 | Smiley | 400 | `FUN_1000d130` | walk-and-turn + aggressive block destroy |
 | **Hammer** | 500 | `FUN_10007998` | walk-and-turn + **JUMP** on obstacle (state 0x41, row −11) |
-| **Beanie** | 750 | `FUN_10006378` (child `FUN_10006840`) | walk-and-turn + **SPLIT** (spawns child on collision) |
+| **Beanie** | 750 | `FUN_10006378` horizontal (bord 7), `FUN_10006840` vertical (bord 8) | floats; at a breakable block shoots a block-breaking bud (child 0x6b `FUN_10006d44` / 0x6c `FUN_10006f6c`), at a permanent one turns (16 steps). CORRECTED 2026-09-22: it does NOT split/spawn Beanies |
 | **Robo** | 1000 | `FUN_1000a780` | walk-and-turn + **PUNCH** breakable blocks (`FUN_10027d84`/`ecc` + sound 0x11); turns at permanent walls/ledges — **not** a climber (states 5/6 are stationary turn anims) |
 | **Walker** | 1250 | `FUN_1000dd4c` | **SEEK + SHOOT** projectile (2-frame cycle; seek `FUN_1000e5c8/e7c8`) |
 | Teeth | 1500 | `FUN_1000d8c4` | walk-and-turn (large) + **destroys blocks** in path (`FUN_100279c4`) |

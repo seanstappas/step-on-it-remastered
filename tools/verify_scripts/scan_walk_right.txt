@@ -1,0 +1,5 @@
+0 170
+SHOT scan_a
+R 600
+SHOT scan_b
+0 5

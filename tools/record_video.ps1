@@ -19,6 +19,8 @@ param(
     [string]$Board = "",          # e.g. board_301.bord — records this real board via --play
     [int]$Play = 0,               # frames to play the real board (0 = use the --demo showcase)
     [switch]$Bug3,                # record the bug #3 proof (Robo fall-death) via the --bug3 showcase
+    [string]$Script = "",         # --script=FILE scripted run on -Board (see game.gd _load_script)
+    [string[]]$Extra = @(),       # extra game args, e.g. --players=2 --compete --alternate
     [switch]$HD,                  # --hd: load the 4x AI-upscaled sheets + record at 1280x960 (native)
     [switch]$Visible,             # record with the window ON-SCREEN (default: hidden/off-screen)
     [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
@@ -38,7 +40,8 @@ try {
     if (-not (Test-Path $Godot)) { throw "Godot not found at $Godot" }
 
     Write-Host "==> recording $Mode demo -> $avi" -ForegroundColor Cyan
-    $gargs = if ($Play -gt 0) { @("--play=$Play", "--mode=$Mode", "--board=$Board") } elseif ($Bug3) { @("--bug3", "--mode=$Mode") } else { @("--demo", "--mode=$Mode") }
+    $gargs = if ($Script -ne "") { @("--script=$Script", "--mode=$Mode", "--board=$Board") } elseif ($Play -gt 0) { @("--play=$Play", "--mode=$Mode", "--board=$Board") } elseif ($Bug3) { @("--bug3", "--mode=$Mode") } else { @("--demo", "--mode=$Mode") }
+    $gargs += ($Extra | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })   # -File passes an array as ONE string
     if ($HD) { $gargs += "--hd" }
     if ($Visible) { $gargs += "--visible" }   # else the --demo/--play capture flag auto-hides the window
     $gargs += "--hidden"   # force off-screen headless render (main_menu _apply_window_mode) so the

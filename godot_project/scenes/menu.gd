@@ -30,7 +30,7 @@ func _ready() -> void:
 	var ua := OS.get_cmdline_user_args()
 	var want_play := false
 	for a in ua:
-		if a.begins_with("--play"):   # --play=N carries a value, so match by prefix
+		if a.begins_with("--play=") or a.begins_with("--script="):   # valued flags (not --players=N)
 			want_play = true
 	if "--shot" in ua or "--demo" in ua or "--bug3" in ua or want_play:
 		# --board=<file> overrides; else --demo uses a challenge board (has nasties).
@@ -42,6 +42,13 @@ func _ready() -> void:
 				target = arg.substr(8)
 		if target == "":
 			target = "board_450.bord" if "--demo" in ua else "board_401.bord"
+		if target.is_absolute_path() and FileAccess.file_exists(target):
+			# a crafted test board outside extracted/levels (tools/verify_scripts/*.bord)
+			Session.board_list = PackedStringArray([target])
+			Session.board_index = 0
+			Session.board_path = target
+			get_tree().change_scene_to_file.call_deferred("res://scenes/game.tscn")
+			return
 		# match by basename so "--board=board_450" and "--board=board_450.bord" both
 		# resolve (a strict ends_with silently fell back to board_401 without the ext).
 		var want := (target as String).get_file().get_basename()
@@ -87,19 +94,29 @@ func _board_num(fn: String) -> int:
 
 ## Grounded difficulty tiers (gameplay-and-design.md 8): the tiered campaign is BORD 401-500
 ## in five tiers of 20 -- Beginner / Novice / Intermediate / Advanced / Expert; 1001-1050 are
-## the Challenge set. Label each board by tier so "Set Starting Board" reads by difficulty.
+## the Compete set (asm FUN_1002b448: BORD N+1000 in Compete mode). Label each board by tier so
+## "Set Starting Board" reads by difficulty.
 func _board_label(num: int) -> String:
 	if num >= 401 and num <= 500:
 		var tiers := ["Beginner", "Novice", "Intermediate", "Advanced", "Expert"]
 		return "%s  %d   (board_%d)" % [tiers[(num - 401) / 20], (num - 401) % 20 + 1, num]
 	if num >= 1001 and num <= 1050:
-		return "Challenge  %d   (board_%d)" % [num - 1000, num]
+		return "Compete  %d   (board_%d)" % [num - 1000, num]
 	return "board_%d" % num
 
 func _on_activated(idx: int) -> void:
 	if idx >= 0 and idx < _files.size():
-		Session.board_list = _files
-		Session.board_index = idx
+		# Advance within the picked board's own set (campaign 401-500 or compete 1001-1050),
+		# never running off the end of one set into the next.
+		var n := _board_num((_files[idx] as String).get_file())
+		var set_files := PackedStringArray()
+		for fpath in _files:
+			var m := _board_num((fpath as String).get_file())
+			if (n >= 401 and n <= 500 and m >= 401 and m <= 500) or \
+					(n >= 1001 and n <= 1050 and m >= 1001 and m <= 1050) or m == n:
+				set_files.append(fpath)
+		Session.board_list = set_files
+		Session.board_index = set_files.find(_files[idx])
 		Session.board_path = _files[idx]
 	else:
 		Session.board_path = ""   # fall back to the game's built-in demo level

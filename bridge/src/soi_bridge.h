@@ -38,6 +38,11 @@ public:
     bool load_level(const PackedByteArray &bord);
     bool next_level(const PackedByteArray &bord);
     void set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t arrows, int64_t balls, int64_t shield);
+    void set_play_mode(int64_t mode);   /* 1 One, 2 Alternate, 3 Cooperate (shared pool), 4 Compete */
+    int64_t play_mode() const;
+    void new_game(int64_t mode);        /* set the mode + apply the new-game stats (FUN_1002b060) */
+    bool challenge_round() const;       /* board holds a Knight/Gargoyle (FUN_10017a70) */
+    bool challenge_failed() const;      /* challenge round lost: every active player is down */
 
     /* one deterministic logic frame */
     void tick(int64_t p1_input, int64_t p2_input);
@@ -70,6 +75,7 @@ public:
     int64_t goodies_left() const;
     int64_t reveal_timer() const;
     int64_t bonus_time() const;
+    int64_t player_bonus(int64_t player) const;
     bool music_hurry() const;
     int64_t tick_count() const;
     int64_t enemy_count() const;
@@ -94,6 +100,10 @@ public:
     int64_t enemy_y(int64_t i) const;
     int64_t enemy_dir(int64_t i) const;
     int64_t enemy_fire_cd(int64_t i) const;
+    int64_t enemy_turn(int64_t i) const;
+    int64_t enemy_bud(int64_t i) const;
+    int64_t enemy_anim(int64_t i) const;
+    bool enemy_vertical(int64_t i) const;
     int64_t enemy_is_spawner(int64_t i) const;
     bool    projectile_active(int64_t i) const;
     int64_t projectile_x(int64_t i) const;
@@ -101,6 +111,8 @@ public:
     bool    projectile_hostile(int64_t i) const;
     int64_t projectile_kind(int64_t i) const;
     int64_t projectile_src_type(int64_t i) const;
+    int64_t projectile_pierce(int64_t i) const;
+    bool projectile_fired_left(int64_t i) const;
 
     /* determinism helpers for netcode / verification */
     int64_t          state_hash() const;   /* FNV-1a 64 as a Godot int */

@@ -1,6 +1,6 @@
 # Remaining Work — Step On It! Remaster (RE accuracy)
 
-_Last updated: 2026-07-13._
+_Last updated: 2026-09-22 (§F play-mode / challenge-round audit)._
 
 ## Status
 The port is **comprehensively faithful** and all 152 boards are winnable. Player animation, core
@@ -147,20 +147,158 @@ hash is unchanged (`0xc677624ae3878b5e` — the walk-on-floor scenario exercises
   (tests 39, 40)
 
 **Deferred (higher-risk or determinism-sensitive — documented, not changed):**
-- **E5. Door exit has an extra `has_key==1` gate — ⏸ DEFERRED.** `soi_grid.c:55` gates the door-win on a held
-  key; asm `FUN_1002bc64:51-59` door-exit checks only door-bit + type≤3 + player-match (no key check — the
-  key/lock system is the separate colored-key sweep). **Co-op-only** behavioural impact; the single-player win
-  path is well-tested and shipping. Risk of regressing a green, winnable path outweighs the co-op edge case.
-- **E6. Door exit missing row-alignment — ⏸ DEFERRED (bundled with E5).** Asm `FUN_1002bc64:53-54` also requires
-  `row(y) == row(y+0x10)` (box not straddling two rows) before the door-win. Same door path as E5.
+- **E5. Door exit has an extra `has_key==1` gate — ✅ FIXED 2026-09-22 (see F3).**
+- **E6. Door exit missing row-alignment — ✅ FIXED 2026-09-22 (see F3).**
 - **E7. Bonus-timer death fires one tick early — ⏸ DEFERRED.** `soi_state.c:384` triggers death at
   `bonus_time==0`; asm `FUN_1000f500:17-27` decrements, clamps to 0, then dies when it goes **<0** (survives the
   0 tick). BUT existing asm-cited test #27 encodes death-at-0 **and** respawn doesn't reset `bonus_time`, so
   flipping to `<0` risks a respawn death-loop. Needs the respawn-reset interaction resolved first (not derivable
   from `FUN_1000f500` alone).
-- **E8. Speed-shoes input latch — ⏸ DEFERRED.** Port latches input on odd ticks only, always; asm
-  `FUN_10028a0c:73-74` sets the input/locomotion divider to 1 (full 60 Hz) while the player's fast flag is set.
-  Architectural (~16 ms cadence), determinism-sensitive — would move the golden hash. Low observability.
+- **E8. Speed-shoes input latch — ✅ FIXED 2026-09-22 (see F6).**
+
+---
+
+## F. Play-mode / session-flow audit (2026-09-22) — 6 SHIPPED
+The per-board mechanics were already audited; this pass checked the **session layer** (mode setup,
+board sets, challenge rounds) against the decomp. `r2 = 0x10034170` resolves the `local_XX + 0x69fc`
+style globals: `+0x69fc` = `DAT_1003ab6c` (Compete), `+0x69fe` = `DAT_1003ab6e` (two players at once),
+`+0x759e` = `_DAT_1003b70e` (player count), `+0x5260` = `DAT_100393d0` (saved game being resumed).
+- **F1. New-game stats — ✅ FIXED.** `FUN_1002b060`: every player starts with **2 lives / 1 arrow /
+  1 ball**; only Cooperate's shared pool gets 4 / 2 / 2. The port started a solo game on 4 / 2 / 2
+  (two free lives). `refs/images/board_1.png` + `board_3.png` HUD read `02 / 01 / 01`. New core
+  `soi_new_game(w, mode)`; `soi_world_init` defaults are now the One-Player values. (test 47)
+- **F2. Cooperate = one shared pool — ✅ FIXED.** Mode 3 (`DAT_100370e4 == 0`) redirects every
+  score / lives / ammo / multiplier / time-bonus / No-Weapons credit to player 1's slot
+  (`FUN_1002bc64`, `FUN_1000e9c8`, `FUN_10010d30`, `FUN_100110b4`, `FUN_10011428`, ...), ticks ONE
+  Bonus whose runout kills every player (`FUN_1000f500`), and tallies once. Core `soi_pool()`.
+  P2's coins used to land in an invisible P2 score. (test 48)
+- **F3. Keys are shared outside Compete; the door has no held-key test — ✅ FIXED (was E5/E6).**
+  `FUN_1002bc64` sets both players' key flag unless `DAT_1003ab6c`; the exit checks door bit + type +
+  player + `row(y) == row(y+0x10)`, never a held key (no board ships a pre-opened door, verified by
+  scan). Co-op partners can now leave through a door the other opened. (tests 48b, 48c)
+- **F4. Compete plays boards 1001-1050 — ✅ FIXED.** `FUN_1002b448` loads `BORD N+1000` when the
+  Compete flag is set; those boards carry the per-player keys 8/9. The port called them "Challenge"
+  boards and played 401-500 in Compete. `Session.start_campaign()` + level-select now stay in-set.
+  Compete HUD draws both players' rows (`FUN_1000fb18` y=0 / y=0x10).
+- **F5. Challenge Round = a board with a Knight or Gargoyle — ✅ FIXED.** `FUN_10017a70` sets
+  `DAT_1003ad0e` from the live enemies (boards 410, 420 ... 500). `FUN_10016c90` snapshots
+  score/lives/ammo + shows PICT 300; on exit `FUN_10016f80(0)` pays Bonus x mult (no No-Weapons
+  Reward, no PICT 1000 tally, the warp still plays); on death `FUN_10016f80(1)` restores the snapshot
+  (no life lost) and the board is skipped anyway. Core `soi_challenge_round/failed`. (test 50)
+- **F6. Shield/shoes share one power-up slot; shoes sample input every frame — ✅ FIXED (was E8).**
+  `FUN_10014c28`/`FUN_10014ccc` write the same `+0x5c` mode / `+0x6e` timer; `FUN_10028a0c` drops the
+  input divider to 1 while `+0x5c == 1`. (tests 49, 49b)
+- Alternate: 3 attempts per player (2 reserve lives), ammo carried per player between turns.
+- **F7. Gargoyle throw — ✅ FIXED.** `FUN_1000adc4` rolls Random(100) vs `pct_badguy` on every throw:
+  at/below it `FUN_1000bf54` lobs a harmless type-200 EGG (not an UltraBuster, as older notes said)
+  to a random empty cell in the top 3 rows, which `FUN_1000b6a0`/`FUN_1000b7dc` hatch into the
+  `thrown_badguy` nasty (5 Hippo, 6 Hammer, 10 Teeth, 11 Smiley, 12 Ant, 19 Piggy, else Ostrich;
+  life 400). Otherwise `FUN_1000b44c` fires the aimed puff (pierces at `pct_ultrabuster` odds). The
+  port instead spawned `thrown_badguy` (mis-mapped: 10 -> Walker) at the top of the board every 120
+  ticks -- removed. The puff (`FUN_1000b0a4`) had a made-up 28-frame range and died on the Gargoyle's
+  own cage: the cage blocks are permanent low **0x8b**, which the puff passes through, so on boards
+  410-500 the Gargoyle never reached the player. Now: no range limit, cage pass-through, 3-probe
+  collision, enemy-box player hit. Puff/egg drawn with their `master's objects` (sssf 134) frames:
+  piercing puff f02-16 (red/blue), normal f32-46 (green), egg f47-59. (tests 24, 51; videos
+  `verify_gargoyle_puff_*`, `verify_gargoyle_egg_*`)
+- **F8. Turrets / hurtboxes / stamps — ✅ FIXED.** Gargoyle phase lengths `64*max(1,b*6/80)+171/268`,
+  Knight `4*max(1,b*6/5)+199/300` (fire period / initial), Cannon keeps `b0*6`/`b1*6`
+  (FUN_100071a0). Cannon cell stamped `0x300` wall, spawner cells `0x100`; neither has a touch
+  hurtbox (box top parked at 1000). Per-type hurtboxes: Spinner (5,0x12,0x1b,0x20), Wheelie
+  (4,6,0x1a,0x1c), others the Robo box (9,6,0x19,0x1e). Knight gift 4 px/frame, frames f17-31. (test 52)
+- **F9. Enemy walking pace — ✅ FIXED.** The asm AI runs every frame but only STEPS when the
+  per-enemy `+0x6c` counter expires: most nasties step every 2 frames x 2 px (1 px/frame, falls
+  4 px/step), the Walker every 3 frames x 1 px, the bord-3 Wheelie 1 px / 2 frames; turrets and
+  the Creeper every frame. The port stepped every frame (2x too fast; Walker ~6x). Now `period`/
+  `stepc` on `SoiEnemy`; lifespans (+0x74), claim-kill and AI are per step; firing and contact per
+  frame. Walker fire gate is in steps (`b0*18` frames initial, `b0*12` reload) and it also fires
+  at a breakable block in the 4 cells ahead (FUN_1000e5c8/e7c8), aimed along its pre-turn heading.
+  Reference video check: Robo ~52 px/s at ~52 fps = 1 px/frame; in-game recording
+  `media/video/enemy_pace_retro_*.mp4` shows the board-1 Robo cover 60 px in 60 ticks. (test 53)
+- **F10. Turn-arounds, block responses, Beanie, hurtboxes — ✅ FIXED.** From the per-type AIs:
+  - Ant/Ostrich/Hippo/Piggy/Teeth/Walker/Beanie stand for **16 steps** playing a turn animation
+    (+0x4c states 5/6) when they turn; the Robo for 15. Only the Smiley flips instantly. The
+    Walker's left-to-right turn ends with x -= 3; it runs no line-of-fire test while turning.
+  - Hippo/Piggy CHOMP a breakable block and TURN (they never plowed through); the Teeth chomps
+    and walks on; Ostrich/Teeth turn to face the nearest player on landing (FUN_100054a4).
+  - Beanie (FUN_10006378): at a breakable block it stops and shoots a bud (child 0x6b,
+    FUN_10006d44) that grows 16 steps, smashes the block, retracts; at a permanent one it turns.
+    It never spawns Beanies (the old "bud a walking child" was invented). Bord 8 is a VERTICAL
+    Beanie (FUN_10006840): floats up/down 2 px/step, buds downward/upward (0x6c, FUN_10006f6c).
+  - Per-type wall probes (x+0x24/x, Robo x+0x1c/x+4, Walker x+0x22/x+2, Smiley x+0x20/x) and
+    per-type hurtboxes offset by each nasty's rest height (it falls 4 px/step until its support
+    probe reaches the floor: Ant/Hippo +16, Piggy +8, Walker +6, others +4); Gargoyle/Knight
+    boxes follow their -0x18,-0x2b / -0x10,-0x30 sprite shift; a Beanie's bud is a second box.
+  - Robo punch smashes on the 7th of 16 steps at col(x+0x20)/col(x); art f18-33 / f02-17.
+  - Renderer: exact asm walk tables (frame = TABLE[x & 31] + 1, PEF data DBASE 0x100337f0),
+    turn frames and bud art. `tools/sssf_decode.py` dropped the LAST TWO frames of every sheet
+    (the header count excludes the two blank leading slots) — recovered into extracted/sprites.
+  - Proof: tests 8e, 23, 23c, 54; `media/video/verify_beanie_bud_*` (crafted
+    `tools/verify_scripts/board_9420.bord`), `beanie411_*`, `vbeanie408_*`, `robo_turn401_*`.
+- **F11. Weapon hits, launch point, support feet, spin frames — ✅ FIXED.**
+  - Weapons hit the first entity whose asm hurtbox overlaps their rect (FUN_100030ac/30d4), not
+    the centre cell: wall-follower (x+1,y+1)-(x+0x17,y+0x17), tested before its step; the port's
+    "Magic Ball" (the game's straight arrow, see F12) (x,y+1)-(x+0xf,y+5) — so a low Ant/Hippo
+    ducks under it. Spawners and the Cannon have
+    no box and can no longer be shot (the old cell test killed spawners). A hazard or a Beanie's
+    bud absorbs a Magic Ball without dying.
+  - Magic Ball mover exactly FUN_1000fd5c type 1: roll 4 px while (x+0x18|x, y+3) is clear, else
+    erased in place. Both weapons launch at row-top+8 (FUN_100110b4/10d30 +0x50; the ball used to
+    roll at the player's y) and snap back to a cell edge when the launch spot is inside a block.
+  - Per-type support feet (each AI's FUN_10005750 x offsets: Ant/Piggy 4/0x20, Hippo/Teeth
+    6/0x1e, Ostrich 8/0x1e, Smiley 2/0x1e, Walker 8/0x20, Spinner 8/0x18, Robo 6/0x1a).
+  - Wheelie/Spinner spin frames follow the asm +0x56 counter (Wheelie ±step 1..24 by mode,
+    Spinner 1..16 per step); Smiley roll frame tied to x (−1 per 2 px, 48 frames).
+  - Proof: tests 15/15a, 55, 8g; `tools/verify_scripts/weapons.txt` ->
+    `media/screenshots/verify_weapons_*`, `media/video/verify_weapons_*`.
+- **F12. Hammer, spawner art, turret frames, weapon art — ✅ FIXED.**
+  - Hammer (FUN_10007998): wall probes x+0x1a / x+4, feet x+4 / x+0x1a, 16-step turn at a
+    permanent wall; the left jump-smash shifts x by -12 for the swing and back (+12) after it.
+    Art: walk tables 0x10034370/0330, turn 0x11-0x20, smash 0x31-40 / 0x41-50 drawn at the
+    lifted asm position (tests 8i, 54; `tools/verify_scripts/board_9430.bord`,
+    `media/video/verify_hammer_smash_*`).
+  - Spawners draw their sheet's emblem block (FUN_10004108 frame 0x21/0x31/0x32/0x51: a red block
+    with a silver nasty) — these were among the frames the extractor had dropped. Matches
+    refs/images/board_3.png (`media/screenshots/verify_spawner_board3_ref_vs_port.png`).
+  - Gargoyle/Knight frames follow their asm phase machine (unfold 1-0x11 per 6 frames; Gargoyle
+    flap 0x11-0x20 and wind-up 0x20-0x49, Knight hold 0x10 and wind-up 0x10-0x41, per 4 frames),
+    derived in the core from the throw countdown (`soi_enemy_anim`).
+  - Weapon art: the straight shot (asm type 1, ammo goody 0x12 = a red arrow) is the ARROW
+    (weapons f11 right / f10 left); the terrain-follower (types 2/3, goody 0x11 = bottled swirl)
+    is the swirl BALL, spinning 1 frame per tick, backward when fired left. The port's
+    arrow/ball *names* are swapped vs the art, but keys, ammo and sounds follow the asm latches.
+    Action priority now matches FUN_1001166c (latch +0x24 before +0x23).
+  - Stop/Go group 4 uses its full 8-frame flip run (Go = f41).
+- **F13. Cannon ball / Walker bolt — ✅ FIXED.** Spawn points per FUN_100071a0 (x+0x1c | x-0xc,
+  y+8) and FUN_1000dd4c (x+0x1e, y+8 | x-8, y+4 off the Walker's +6 asm y). Movers FUN_1000744c /
+  FUN_1000e3c0: 4 px/frame (the cannon ball waits 2 frames first), die on the first solid cell at
+  (x+0x10 | x-1, y+8) and smash it if breakable. They hit a player by box (ball x+2..0xe, bolt
+  x+4..0x10, y+2..0xe) via FUN_100299b4 and KEEP FLYING — the old port used a same-cell test and
+  removed the shot (also the Gargoyle puff now keeps flying). Cannon art: asm frame 1 (f02) when
+  firing right, 2 (f03) left (was reversed); ball f04-23 and bolt f50-65 spin one frame per tick.
+  (test 56; `media/screenshots/verify_cannon_board043.png`)
+- **F14. Wheelie offset, HD frames — ✅ FIXED.** The Wheelie spawns 2 px low like the asm (FUN_10009e98
+  init +0x5a += 2), so its wall-follow probes and box (4,4)-(0x1a,0x1a) use the real asm y; drawn at
+  that position. The 60 frames the old extractor dropped were upscaled (hqx, `tools/upscale_sprites.py`
+  into a scratch dir) and only the missing ones copied into `extracted/sprites_hd`, so `--hd` shows the
+  spawner emblems, arrow art, turret wind-ups etc. too.
+- **F15. Weapon keys, spawner child heights — ✅ FIXED.**
+  - The Arrow key fired the rolling ball and the Ball key the straight shot. FUN_1002d440 reads the
+    key table slot 5 into latch +0x24 and slot 6 into +0x23, the key dialog labels those slots
+    "Arrow" / "Ball", and FUN_1001166c fires +0x24 -> FUN_100110b4 (straight, arrow art, red-arrow
+    ammo goody 0x12, 68k name ShootArrow/DecArrows) and +0x23 -> FUN_10010d30 (rolling swirl ball,
+    ShootBall/DecBalls) — matching the manual ("Arrow travels straight, Ball rolls along walls").
+    SOI_IN_ARROW now fires the straight shot (checked first, as the asm tests +0x24 first) and
+    SOI_IN_BALL the roller. The core's `arrows`/`balls` field names stay swapped (documented).
+  - Spawner/egg children appear at their standing height (Ant +16, Hippo +14, Piggy +5, Teeth +4,
+    others +2 — FUN_100076a8 &c, FUN_1000b7dc) and a right-heading Piggy 4 px left; hurtboxes use
+    those heights. Spawner "seek" and hatch facing compare pixel x (FUN_100054a4).
+- **In-game proof**: scripted runs `tools/verify_scripts/*.txt` (`--script=FILE`, via
+  `tools/record_video.ps1 -Script ... -Board ...`) -> `media/video/verify_*_retro_*.mp4` +
+  `media/screenshots/verify_*.png`: solo lives 02->01->00->game over; co-op P2 coin/arrow hit the pool,
+  runout costs 2 pool lives; Alternate hand-off; Compete two-row HUD on board 1001; challenge fail on
+  board 470 ("Nothing!", stats restored, Board#071 next); challenge success on the crafted
+  `tools/verify_scripts/board_9410.bord` (warp -> rewards, score 500 + 2932 x 3 = 9296, no reward).
 
 ---
 

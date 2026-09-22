@@ -1,0 +1,13 @@
+# Weapons on Board#001 (board_401): 64 = the rolling Magic Ball (FUN_10010d30), 32 = the straight
+# Magic Arrow (FUN_100110b4, launched at row-top+8); both are hit-tested by box (FUN_100030d4).
+0 20
+64 2
+0 6
+SHOT weapons_1_ball
+0 40
+32 2
+0 10
+SHOT weapons_2_arrow
+0 60
+SHOT weapons_3_arrow_later
+QUIT

@@ -25,11 +25,11 @@ const IN_BALL := 1 << 6
 const DEMO := [
 	[0, 40],                       # settle on the floor (start col 3)
 	[IN_RIGHT, 190], [0, 30],      # run right, scooping arrows (5,6,7) + ball ammo (8,9)
-	[IN_BALL, 6], [0, 55],         # fire a Magic Ball: a red ball ROLLS along the ground
+	[IN_BALL, 6], [0, 55],         # fire a Magic Ball: the swirl ROLLS along the ground/walls
 	[IN_BALL, 6], [0, 50],         # roll another
 	[IN_JUMP, 6], [0, 70],         # a plain jump -> shows the somersault spin
-	[IN_ARROW, 6], [0, 40],        # fire a Magic Arrow -> it RICOCHETS up the right wall
-	[IN_ARROW, 6], [0, 60],        # fire another -> watch them pinball
+	[IN_ARROW, 6], [0, 40],        # fire a Magic Arrow -> it flies straight to the wall
+	[IN_ARROW, 6], [0, 60],        # fire another
 	[IN_LEFT, 90], [0, 15],        # step back...
 	[IN_BLOCK_HIGH, 6], [0, 45],   # build a block in front (same row)
 	[IN_BLOCK_HIGH, 6], [0, 55],   # knock it back out
@@ -67,6 +67,8 @@ var _font_hud: Font   # bold serif (original HUD font = Mac "New York" bold)
 var _shot_countdown := -1
 var _demo_frames := -1
 var _demo_script: Array = DEMO   # which scripted timeline --demo/--bug3 plays
+var _script: Array = []          # --script=FILE: [p1, frames, p2, cmd, arg] segments (verification runs)
+var _script_f := 0               # physics frames elapsed in the --script run
 var _play_frames := -1   # --play=N: play the loaded (real) board for N frames, then quit
 var _enemy_lastpos := {}   # slot -> Vector2, for travel-synced enemy animation
 var _enemy_walk := {}      # slot -> float, accumulated movement distance
@@ -143,7 +145,9 @@ var _tp_pre := {}                   # idx -> pre-tick pixel pos (to spot the tel
 # turn-grain (one-attempt here) and cross-board score persistence are not pinned in the
 # decomp -- flagged.
 var _alt := false
-var _alt_lives := [4, 4]         # per-player remaining lives (P1=index0, P2=index1)
+var _alt_lives := [3, 3]         # per-player board ATTEMPTS left: the original's 2 reserve lives
+                                 # (asm FUN_1002b060 +0x46 = 2) + the life in play
+var _alt_ammo := [[1, 1], [1, 1]]   # per-player [arrows, balls] carried between turns (FUN_1002b060: 1 / 1)
 var _alt_score := [0, 0]         # per-player banked score from finished board attempts
 var _alt_board := [0, 0]         # per-player index into Session.board_list
 var _alt_active := 0             # whose turn (0=P1, 1=P2)
@@ -163,11 +167,11 @@ var _hs_checked := false       # only offer the entry once per game-over
 var _board_start_stats: Array = []   # per-player {score,lives,arrows,balls,shield} at this board's start
 var _save_flash := 0                 # frames left to show the "GAME SAVED" confirmation
 
-# "Challenge Round" intro (PICT 300). REMASTER PRESENTATION: shown when entering a board in the
-# 1001-1050 Challenge set. The original's exact trigger (DAT_100393d0) is not statically
-# recoverable, so this is keyed on the board id rather than the original gate -- flagged.
+# "Challenge Round" intro (PICT 300 + jingle 0x35, asm FUN_10016c90): shown at the start of every
+# round on a board holding a Knight or Gargoyle (DAT_1003ad0e; boards 410, 420 ... 500).
 var _challenge_intro := 0            # frames remaining to show the intro (freezes play)
-var _challenge_forfeited := false    # challenge boards: loot forfeited on game over (survive-to-keep)
+var _challenge_forfeited := false    # the failed-challenge cue has played this round
+var _harness_run := false            # a capture/demo run (--shot/--demo/--play/--bug3): no intro
 
 # --- real sprite pipeline (decoded from the original sssf, tools/sssf_decode.py) ---
 const SPRITES_DIR := "res://../extracted/sprites"
@@ -242,14 +246,10 @@ const ENEMY_ROLL := { 6: true }
 # Enemies that SPIN in place on a timer (rotate through their whole sheet): the
 # Spinner trap (etype 13, 14 frames) and the flying star-disk Wheelie (etype 5,
 # a green orb with a rotating red star, 22 frames). etype -> frame count.
-const ENEMY_SPIN := { 5: 22, 13: 14 }   # creeper (16) is NOT here -- it's a travel-gated moving block (handled in _draw_enemy) so it animates ONLY while stepping, never on a free-running timer
-# Stationary turrets that IDLE then CHARGE an energy orb as their reload nears 0
-# and RELEASE it at the shot (asm FUN_1000adc4 gargoyle=bord14 / FUN_1000c2e8 knight=bord13).
-#   etype: { idle:[start,count], charge:[start,count] }  (charge over the last 30 reload frames)
-const ENEMY_SHOOTER := {
-	14: { "idle": [12, 9], "charge": [42, 31] },   # gargoyle: idle wings f12-20, red-orb charge f42-72
-	15: { "idle": [12, 9], "charge": [52, 13] },   # knight:   idle f12-20, yellow-orb charge f52-64
-}
+const ENEMY_SPIN := { 5: 24, 13: 16 }   # asm +0x56 range (Wheelie 1-0x18, Spinner 1-0x10); creeper (16) is travel-gated in _draw_enemy
+# Stationary turrets (asm FUN_1000adc4 gargoyle=bord14 / FUN_1000c2e8 knight=bord13); their frame
+# comes from the core (soi_enemy_anim = the asm +0x56 phase counter).
+const ENEMY_SHOOTER := { 14: true, 15: true }
 # Per-enemy WALK cycles. Enemy sheets carry the walk as an explicit run of frames;
 # several (pig, sheep) hold SEPARATE left- and right-facing runs, so we pick the
 # matching run by travel direction instead of mirroring one fixed set -- mirroring
@@ -262,13 +262,39 @@ const ENEMY_WALK := {
 	2:  { "r": [2, 12],  "l": [21, 12], "flip": false },   # ostrich: right f02-13, left f21-32
 	3:  { "r": [21, 12], "l": [2, 12],  "flip": false },   # hippo: right f21-32, left f02-13
 	4:  { "r": [21, 12], "l": [2, 8],   "flip": false },   # piggy: right f21-32, left f02-09
-	7:  { "r": [2, 10],  "l": [12, 10], "flip": false },   # hammer: run/hop right f02-11, left f12-21
+	7:  { "r": [34, 16], "l": [2, 16],  "flip": false },   # hammer: right f34-49, left f02-17 (asm tables 0x10034370/0330)
 	8:  { "r": [66, 12], "l": [66, 12], "flip": true  },   # beanie: floating kid, propeller-cap body
 	9:  { "r": [38, 12], "l": [62, 12], "flip": false },   # robo: right-walk f38-49, left-walk f62-73
 	10: { "r": [26, 12], "l": [2, 12],  "flip": false },   # sheep/walker: VERIFIED f02-13 face LEFT, f26-37 face RIGHT -> r(right travel)=f26-37, l=f02-13 (were swapped = moonwalk)
 	11: { "r": [2, 12],  "l": [2, 12],  "flip": true  },   # teeth: symmetric chomp cycle, mirror to face
 }
 var _sprite_index := {}   # folder -> { frame:int -> absolute path }
+# The asm's own walk frames: each nasty's update sets frame = TABLE[x & 31] (x = its asm x),
+# so the legs are planted to position. Tables from the PEF data section (DBASE 0x100337f0):
+# ant 0x100341f0/0230, beanie 0270/02b0, hammer 0370/0330, hippo 03b0/03f0, ostrich 0430/0470, piggy 04b0/04f0,
+# robo 0570/0530, teeth 05ec/062c, walker 06ac/066c. Values are asm frames (sheet fNN = +1).
+const _W16_R := [26, 26, 27, 27, 28, 28, 29, 29, 30, 30, 31, 31, 32, 32, 25, 25]
+const _W16_L := [7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 8, 8]
+const ENEMY_WALK_TBL := {
+	1: { "r": [35, 35, 37, 37, 39, 39, 41, 41, 43, 43, 45, 45, 47, 47, 33, 33],
+		 "l": [1, 1, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15], "dx": 0 },
+	2: { "r": _W16_R, "l": _W16_L, "dx": 0 },
+	3: { "r": _W16_R, "l": _W16_L, "dx": 0 },
+	4: { "r": _W16_R, "l": _W16_L, "dx": 0 },
+	7: { "r": [48, 48, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37, 38, 38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45, 46, 46, 47, 47],
+		 "l": [15, 15, 14, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 16, 16], "dx": 0 },
+	8: { "r": [70, 70, 71, 71, 72, 72, 65, 65, 66, 66, 67, 67, 68, 68, 69, 69],
+		 "l": [103, 103, 104, 104, 97, 97, 98, 98, 99, 99, 100, 100, 101, 101, 102, 102], "dx": 4 },
+	9: { "r": [38, 38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45, 46, 46, 47, 47, 48, 48, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37],
+		 "l": [69, 69, 68, 68, 67, 67, 66, 66, 65, 65, 80, 80, 79, 79, 78, 78, 77, 77, 76, 76, 75, 75, 74, 74, 73, 73, 72, 72, 71, 71, 70, 70], "dx": 0 },
+	10: { "r": [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 33, 34],
+		  "l": [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 15], "dx": 0 },
+	11: { "r": [9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8],
+		  "l": [40, 40, 39, 39, 38, 38, 37, 37, 36, 36, 35, 35, 34, 34, 49, 49, 48, 48, 47, 47, 46, 46, 45, 45, 44, 44, 43, 43, 42, 42, 41, 41], "dx": 0 },
+}
+# Beanie turn-around frame tables (asm DAT_100342f0 horizontal / DAT_10034310 vertical).
+const BEANIE_TURN := [73, 74, 75, 76, 77, 78, 79, 80, 89, 90, 91, 92, 93, 94, 95, 96]
+const VBEANIE_TURN := [89, 90, 91, 92, 93, 94, 95, 96, 105, 106, 107, 108, 109, 110, 111, 112]
 var _tex_cache := {}      # "folder/frame/flip" -> Texture2D (or null)
 var _p_lastx := {}        # player idx -> last x (run-animation motion tracking)
 var _p_runtimer := {}     # player idx -> frames of run animation left to play
@@ -303,6 +329,11 @@ func _sprite(folder: String, frame: int, flip: bool = false, red: bool = false) 
 		return _tex_cache[key]
 	var idx := _folder_index(folder)
 	var tex: Texture2D = null
+	if not idx.has(frame):                  # e.g. an --hd tree built before a sheet's last frames
+		for f in range(frame - 1, 1, -1):    # were recovered: use the nearest earlier frame
+			if idx.has(f):
+				frame = f
+				break
 	if idx.has(frame):
 		var img := Image.load_from_file(idx[frame])
 		if img:
@@ -475,7 +506,9 @@ func _draw_complete_tally() -> void:
 	var lx := 212.0
 	var vr := 425.0        # right edge the values right-align to
 	var fs := 17           # cap-height ~11px, matched to the reference labels ("No Weapons Reward" ~155px)
-	if _num_players <= 1:
+	if _num_players <= 1 or not _mode_compete:
+		# Co-op tallies ONE team pool (player 1's slot, asm FUN_100153d0 -> FUN_10015714(3)), so it
+		# shares this single centred panel.
 		# Faithful single-player tally (asm FUN_100159f4 + FUN_10015714): the LABELS
 		# ("Board#"/"Bonus"/"No Weapons Reward"/"Score") are the pre-rendered PICT 1020
 		# panel art (blue), and the VALUES are the HUD SPRITE DIGITS -- FUN_10015714 draws
@@ -500,8 +533,7 @@ func _draw_complete_tally() -> void:
 		_tally_digits(reward, vx, py + 98.0)             # No Weapons Reward row (panel y~99 = asm 0x158)
 		_tally_digits(shown, vx, py + 134.0)             # Score row (panel y~135 = asm 0x17c)
 		return
-	# Co-op (2-3 players) has no single-screen reference; show each player in the same colour
-	# scheme, stacked, sharing the one Board# header.
+	# Per-player stacked rows (Compete; normally its wins screen is shown instead).
 	_tally_line(lx, vr, 250.0, fs, "Board#", str(_board_number()), label_col, value_col)
 	draw_rect(Rect2(lx, 263.0, vr - lx, 3.0), bar_col)
 	var names := ["", "BLUE", "GREEN", "RED"]
@@ -604,20 +636,19 @@ func _draw_transport() -> void:
 	var s := _texsize(tex)
 	_dtex(tex, (pos + Vector2(CELL_PX, CELL_PX) * 0.5 - s * 0.5).floor())   # centred on the cell
 
-## Challenge-board completion ("Your Rewards", PICT 301): the LOOT kept = the score gained on
-## this board (the survive-to-keep rule stated on PICT 300). REMASTER PRESENTATION for 1001-1050.
+## Challenge Round completion ("Your Rewards", asm FUN_10016f80(0)): PICT 301 with the blue tally
+## panel PICT 303 centred at y=0x8c; the remaining Bonus is drawn at (0x1ad,0x9c) and the Score at
+## (0x1ad,0xbf) climbs as Bonus x mult is added (a Challenge Round pays no No-Weapons Reward). Solo
+## and co-op both show player 1 (co-op's team pool).
 func _draw_challenge_rewards() -> void:
 	_draw_pict_screen("challenge_rewards", "YOUR REWARDS", "Enter: next board     Esc: menu")
-	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5), Color(1.0, 0.45, 0.4)]
-	var names := ["BLUE", "GREEN", "RED"]
-	var y := 200.0
-	for idx in range(1, mini(_num_players, 3) + 1):
-		var entry := 0
-		if idx - 1 < _board_start_stats.size():
-			entry = int(_board_start_stats[idx - 1].get("score", 0))
-		var loot := maxi(int(_core.player_score(idx)) - entry, 0)
-		draw_string(_font, Vector2(140, y), "%s    LOOT  %d" % [names[idx - 1], loot], HORIZONTAL_ALIGNMENT_LEFT, 360, 20, cols[idx - 1])
-		y += 46.0
+	var panel := _pict("blue_challenge_tally")
+	if panel != null:
+		_draw_pict(panel, Vector2(floorf(320.0 - _pict_size(panel).x * 0.5), 140.0))
+	var delta := int(_tally_bonus.get(1, 0))
+	var final_score := int(_tally_final.get(1, _core.player_score(1)))
+	_tally_digits(_tally_prebonus, 429.0, 156.0)
+	_tally_digits(final_score - int(round(delta * (1.0 - _tally_anim))), 429.0, 191.0)
 
 ## Compete mode: the FIRST player to exit through their door wins (has_key == 2).
 func _winner() -> int:
@@ -686,17 +717,21 @@ func _update_win_video() -> void:
 ## --- Alternate mode (two solo games taking turns) ---------------------------
 
 ## End the active player's turn: bank their board score, then advance (on a clear)
-## or dock a life (on a death), and pass the seat to the other player.
+## or dock a life (on a death), and pass the seat to the other player. A death on a
+## Challenge Round (FUN_10016f80(failed)) banks nothing and costs no life -- the loot is
+## lost, the turn-start counters come back -- but that player still moves on a board.
 func _alt_end_turn(won: bool) -> void:
-	_alt_score[_alt_active] += int(_core.player_score(1))
-	if won:
+	var failed_challenge := not won and _core.challenge_round()
+	if not failed_challenge:
+		_alt_score[_alt_active] += int(_core.player_score(1))
+		_alt_ammo[_alt_active] = [int(_core.player_arrows(1)), int(_core.player_balls(1))]
+		_alt_lives[_alt_active] = int(_core.player_lives(1)) + 1   # reserve (+1UPs / -death) + the life in play
+	if won or failed_challenge:
 		_alt_board[_alt_active] += 1
 		if Session.board_list.size() > 0 and _alt_board[_alt_active] >= Session.board_list.size():
 			_alt_out[_alt_active] = true            # cleared every board -> done
-	else:
-		_alt_lives[_alt_active] -= 1
-		if _alt_lives[_alt_active] <= 0:
-			_alt_out[_alt_active] = true
+	elif _alt_lives[_alt_active] <= 0:
+		_alt_out[_alt_active] = true
 	if _alt_out[0] and _alt_out[1]:
 		_alt_state = "results"
 		return
@@ -712,8 +747,15 @@ func _alt_begin_turn() -> void:
 		Session.board_path = Session.board_list[clampi(_alt_board[_alt_active], 0, Session.board_list.size() - 1)]
 	_level_bytes = _load_level_bytes()
 	_start()
+	_alt_apply_turn_stats()
 	_alt_prev_alive = true
 	_alt_state = "play"
+
+## Load the active Alternate player's own counters into the core's single slot: the HUD face
+## shows their RESERVE lives (attempts left - 1) and their banked ammo carries over.
+func _alt_apply_turn_stats() -> void:
+	var a: Array = _alt_ammo[_alt_active]
+	_core.set_player_stats(1, 0, maxi(int(_alt_lives[_alt_active]) - 1, 0), int(a[0]), int(a[1]), 2)
 
 ## "PLAYER N -- GET READY" seat-hand-off screen with the running scoreboard.
 func _draw_alt_transition() -> void:
@@ -742,7 +784,7 @@ func _draw_alt_scoreboard(y: float) -> void:
 	var cols := [Color(0.4, 0.6, 1.0), Color(0.4, 0.9, 0.5)]
 	for i in 2:
 		var live := int(_alt_score[i]) + (int(_core.player_score(1)) if (_alt_state == "play" and _alt_active == i) else 0)
-		var status := "OUT" if _alt_out[i] else ("LIVES %d" % int(_alt_lives[i]))
+		var status := "OUT" if _alt_out[i] else ("LIVES %d" % maxi(int(_alt_lives[i]) - 1, 0))   # reserve lives, as the HUD face
 		var line := "PLAYER %d    SCORE %d    %s" % [i + 1, live, status]
 		draw_string(_font, Vector2(150, y + i * 40.0), line, HORIZONTAL_ALIGNMENT_LEFT, 360, 20, cols[i])
 
@@ -756,6 +798,8 @@ func _hs_game_ended() -> bool:
 		return _alt_state == "results"
 	if _core.game_over():
 		return true
+	if _core.challenge_failed() and not _has_next_board():
+		return true   # failing the final (board-100) challenge still ends the campaign (FUN_1001768c)
 	return _core.level_complete() and _tally_anim >= 1.0 and not _has_next_board()
 
 ## Is there another board to advance to after this one? Mirrors Session.advance()'s test
@@ -816,10 +860,32 @@ func _do_save() -> void:
 		_save_flash = 90
 		Audio.play_snd(1101)   # "huh" confirmation (About doc 8: QuickSave plays a "Huuuh!" sound)
 
-## Is the current board in the 1001-1050 Challenge set?
+## Is the current board a CHALLENGE ROUND? The original keys it on a Knight or Gargoyle being on
+## the board (FUN_10017a70 -> DAT_1003ad0e) -- every 10th campaign board, 410..500.
 func _is_challenge_board() -> bool:
-	var n := _board_number()
-	return n >= 1001 and n <= 1050
+	return _core != null and _core.challenge_round()
+
+## A failed Challenge Round (FUN_10016f80(failed)): the board-start score / lives / ammo come back
+## (the loot is lost, no life is spent) and play moves on to the NEXT board regardless.
+func _challenge_fail_advance() -> void:
+	var saved := _board_start_stats.duplicate(true)
+	if not Session.advance():
+		get_tree().change_scene_to_file("res://scenes/menu.tscn")
+		return
+	_level_bytes = _load_level_bytes()
+	for i in range(1, mini(_num_players, 3) + 1):
+		if i - 1 < saved.size():
+			var st: Dictionary = saved[i - 1]
+			_core.set_player_stats(i, int(st.get("score", 0)), int(st.get("lives", 2)),
+				int(st.get("arrows", 1)), int(st.get("balls", 1)), int(st.get("shield", 2)))
+	_next_board()
+
+## "Nothing!" -- the failed-challenge screen: PICT 301 with PICT 302 centred at (318,275).
+func _draw_challenge_failed() -> void:
+	_draw_pict_screen("challenge_rewards", "NOTHING!", "")
+	var t := _pict("Nothing")
+	if t != null:
+		_draw_pict(t, (Vector2(318, 275) - _pict_size(t) * 0.5).floor())
 
 
 func _ready() -> void:
@@ -850,6 +916,9 @@ func _ready() -> void:
 	# so _start() spawns the 3rd co-op player on board 1 too. Otherwise P3 was absent on the first
 	# board (only _next_board re-spawned it) and Resume wrote P3's stats to an unspawned player.
 	var ua := OS.get_cmdline_user_args()
+	for a in ua:
+		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3"):
+			_harness_run = true
 	if "--hd" in ua:                       # opt-in HD: load the 4x AI-upscaled sheets and render the 640x480
 		_sprites_dir = "res://../extracted/sprites_hd"   # canvas at the window's higher resolution so the extra
 		_sprite_scale = 4                  # detail shows. The SD default is byte-for-byte unchanged (gate = SD).
@@ -871,6 +940,10 @@ func _ready() -> void:
 		if arg == "--mode=retro": _mode = 0
 		elif arg == "--mode=remastered": _mode = 1
 		elif arg == "--players=3": _num_players = 3
+		elif arg == "--players=2": _num_players = 2
+		elif arg == "--players=1": _num_players = 1
+		elif arg == "--compete": _mode_compete = true
+		elif arg == "--alternate": _alt = true
 	if ("--demo" in ua) or ("--fx" in ua) or ("--bug3" in ua):
 		_num_players = 1   # the showcase demos are single-player, so the faithful 1-player
 		                   # Board-Completed tally (PICT 1020 panel + sprite digits) shows
@@ -879,7 +952,7 @@ func _ready() -> void:
 		_num_players = 1
 		var s := maxi(Session.board_index, 0)
 		_alt_board = [s, s]
-		_alt_lives = [4, 4]; _alt_score = [0, 0]; _alt_active = 0
+		_alt_lives = [3, 3]; _alt_ammo = [[1, 1], [1, 1]]; _alt_score = [0, 0]; _alt_active = 0
 		_alt_out = [false, false]; _alt_prev_alive = true; _alt_state = "play"
 	_start()
 
@@ -893,16 +966,9 @@ func _ready() -> void:
 				_core.set_player_stats(i, int(st.get("score", 0)), int(st.get("lives", 4)),
 					int(st.get("arrows", 1)), int(st.get("balls", 1)), int(st.get("shield", 2)))
 	elif not _alt:
-		# New-game starting stats (asm FUN_1002b060): every player's survival counter (+0x46)
-		# starts at 2 with 1 arrow + 1 ball; SINGLE-player alone bumps player 1 to 4 lives + 2
-		# arrows + 2 balls (P2 disabled). So co-op/compete with 2+ players starts 2 lives / 1+1
-		# ammo each; solo starts 4 lives / 2+2 ammo. VERIFIED vs refs/images: the 2-player HUD
-		# smiley reads 02 (not 04), arrows/balls 01. (soi_world_init sets the solo 4-life default.)
-		if _num_players == 1:
-			_core.set_player_stats(1, 0, 4, 2, 2, 2)
-		else:
-			for i in range(1, mini(_num_players, 3) + 1):
-				_core.set_player_stats(i, 0, 2, 1, 1, 2)
+		_core.new_game(_core_mode())   # new-game stats per mode (asm FUN_1002b060; see _core_mode)
+	if _alt:
+		_alt_apply_turn_stats()
 	Session.resume_stats = []
 	_capture_board_start()   # snapshot this board's entry stats (with the correct player count)
 	if "--shot" in ua:
@@ -935,13 +1001,8 @@ func _ready() -> void:
 	for arg in ua:
 		if arg.begins_with("--play="):
 			_play_frames = int(arg.substr(7))   # record the real board (no showcase override)
-	var _harness := false
-	for a in ua:
-		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play") or a.begins_with("--bug3"):
-			_harness = true
-	if not _alt and not _harness and _is_challenge_board():
-		_challenge_intro = 150   # brief "Challenge Round" intro before a challenge board
-		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
+		elif arg.begins_with("--script="):
+			_load_script(arg.substr(9))
 	Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]   # Options->Speed (local)
 	set_physics_process(true)
 
@@ -966,10 +1027,20 @@ func _exit_tree() -> void:
 	_core = null
 
 
+## The core play mode (asm FUN_100263d8 numbering): 1 One Player, 2 Alternate, 3 Cooperate
+## (one shared score/lives/ammo/Bonus pool in P1's slot), 4 Compete.
+func _core_mode() -> int:
+	if _alt:
+		return 2
+	if _num_players <= 1:
+		return 1
+	return 4 if _mode_compete else 3
+
 ## (re)start the current board from a clean core state.
 func _start() -> void:
 	_core.init(1)
 	_core.load_level(_level_bytes)
+	_core.set_play_mode(_core_mode())
 	if _num_players >= 3:
 		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
 	_core.limit_players(_num_players)   # BORD always spawns P1+P2 -> turn P2/P3 off for a 1-player game
@@ -1007,6 +1078,9 @@ func _reset_round_ui() -> void:
 	_sg_last = [-1, -1, -1, -1]
 	_death_pops.clear()
 	_capture_board_start()
+	if not _harness_run and _core.challenge_round():
+		_challenge_intro = 150   # "Challenge Round" intro before a challenge board
+		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
 
 ## Stop/Go SWITCH flip (asm FUN_10016544): a player stepping onto a switch cell (low 0x24-0x2D,
 ## 0x800 class) flips its paired block group's sign over an ~8-frame animation + a click (evt 0x2c
@@ -1040,20 +1114,24 @@ func _update_stopgo() -> void:
 func _physics_process(_delta: float) -> void:
 	if _tp_frames > 0:
 		_tp_frames -= 1              # transporter slide in progress: FREEZE the sim (skip the core tick)
-	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0:
+	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0 and (_alt or not _core.challenge_failed()):
 		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
 		for idx in range(1, mini(_num_players, 3) + 1):
 			_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
 			_tp_pre[idx] = Vector2(_core.player_x(idx), _core.player_y(idx))   # pre-tick pos (teleport detect)
 		var p1 := _read_input(0)
-		if _demo_frames > 0:
+		var p2 := _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
+		if not _script.is_empty():
+			var seg: Array = _script_seg()
+			p1 = int(seg[0])
+			p2 = int(seg[2])
+		elif _demo_frames > 0:
 			p1 = _demo_input()         # scripted play for the --demo movie / capture
 		elif _play_frames > 0:
 			p1 = _play_input()         # scripted play on a real board (--play recording)
 		elif _shot_countdown > 0:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
 		var p3 := _read_input(2) if _num_players >= 3 else 0
-		var p2 := _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
 		_core.tick3(p1, p2, p3)
 		var teleported := false
 		for i in _core.sfx_count():
@@ -1096,34 +1174,30 @@ func _physics_process(_delta: float) -> void:
 			_warp_vp = Vector2(float(_core.player_x(ex)) + 16.0, float(_core.player_y(ex)) + 16.0)
 			_tally_captured = true
 			# Board-clear warp "whoosh": asm event 0x1f -> snd 16969 "Lore" (FUN_10028a0c /
-			# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). Coop/single warp only.
-			if not _alt and not _mode_compete and not _is_challenge_board():
+			# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). A Challenge Round warps too.
+			if not _alt and not _mode_compete:
 				Audio.play_snd(16969)
 			# Beat the whole campaign -> switch to the ending tune (Angel Pie, FUN_1001768c).
 			# Co-op/single only; Alternate + Compete have their own end screens.
 			if not _alt and not _mode_compete and not _has_next_board():
 				Audio.play_ending_music()
 	if _core.level_complete():
-		# The board-clear WARP plays first (standard coop/single clear only); the tally count-up
-		# waits until the tunnel finishes. Compete/Alternate/Challenge have no warp -> tally at once.
-		if not _alt and not _mode_compete and not _is_challenge_board() and _warp_anim < 1.0:
+		# The board-clear WARP plays first (coop/single, Challenge Rounds included -- FUN_10028a0c
+		# runs FUN_10026bb8 before choosing the tally or the challenge reward); the count-up waits
+		# until the tunnel finishes. Compete/Alternate have no warp -> tally at once.
+		if not _alt and not _mode_compete and _warp_anim < 1.0:
 			_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
 		elif _tally_anim < 1.0:
 			var prev_anim := _tally_anim
 			_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)   # count-up progress (also gates HS-on-win)
-			# The count-up scale belongs to the VISIBLE coop "Board Completed" tally (FUN_10015714 /
-			# PICT 1000) only -- not the Compete wins screens (blue_wins/green_wins), the Challenge
-			# rewards (PICT 301), or Alternate's hand-off. Advance the anim in every mode (HS-on-win
-			# needs it) but ring the dings only where the tally is actually drawn.
-			if not _alt and not _mode_compete and not _is_challenge_board():
+			# The count-up scale rings on the coop "Board Completed" tally (FUN_10015714) and the
+			# Challenge reward (FUN_10016f80 plays the same 0x2e / 0x30+i / 0x2f notes) -- not the
+			# Compete wins screens or Alternate's hand-off.
+			if not _alt and not _mode_compete:
 				_tally_dings(prev_anim, _tally_anim)
-	if not _alt and _is_challenge_board() and _core.game_over() and not _challenge_forfeited:
-		_challenge_forfeited = true   # challenge rule (PICT 300): lose the board's loot if you don't survive
-		for i in range(1, mini(_num_players, 3) + 1):
-			if i - 1 < _board_start_stats.size():
-				_core.set_player_stats(i, int(_board_start_stats[i - 1].get("score", 0)),
-					int(_core.player_lives(i)), int(_core.player_arrows(i)),
-					int(_core.player_balls(i)), int(_core.player_shield(i)))
+	if not _alt and _core.challenge_failed() and not _challenge_forfeited:
+		_challenge_forfeited = true   # FUN_10016f80(failed): "Nothing!" + event 8
+		Audio.play_snd(32129)
 	if not _hs_checked and _hs_game_ended():
 		_hs_checked = true
 		var sc := _hs_final_score()
@@ -1159,6 +1233,8 @@ func _physics_process(_delta: float) -> void:
 		_play_frames -= 1
 		if _play_frames == 0:
 			get_tree().quit()          # ends the real-board Movie Maker recording
+	if not _script.is_empty():
+		_script_step()
 	if _shot_countdown > 0:
 		_shot_countdown -= 1
 		if _shot_countdown == 0:
@@ -1171,6 +1247,86 @@ func _physics_process(_delta: float) -> void:
 			img.save_png(path)
 			print("saved screenshot -> %s" % path)
 			get_tree().quit()
+
+## --script=FILE (verification runs): one segment per line, `<p1> <frames> [p2]`, where an input
+## is a bitmask or letters L R J H(block high) W(block low) A(arrow) O(ball) and 0 = none.
+## `ENTER` presses Enter, `SHOT <name>` saves media/screenshots/verify_<name>.png, `QUIT` ends,
+## `SPEED <n>` fast-forwards n physics frames per rendered frame (so a movie skips a long wait).
+## Frames count physics frames (they keep running through intros / result screens).
+func _load_script(path: String) -> void:
+	if not path.is_absolute_path():
+		path = ProjectSettings.globalize_path("res://../" + path)
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		push_warning("--script: cannot open %s" % path)
+		return
+	while not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		if line == "" or line.begins_with("#"):
+			continue
+		var parts := line.split(" ", false)
+		var cmd := parts[0].to_upper()
+		if cmd == "ENTER" or cmd == "SHOT" or cmd == "QUIT" or cmd == "SPEED":
+			_script.append([0, 1, 0, cmd, parts[1] if parts.size() > 1 else ""])
+		else:
+			var frames := int(parts[1]) if parts.size() > 1 else 1
+			var p2 := _script_mask(parts[2]) if parts.size() > 2 else 0
+			_script.append([_script_mask(parts[0]), frames, p2, "", ""])
+
+func _script_mask(s: String) -> int:
+	if s.is_valid_int():
+		return int(s)
+	var m := 0
+	for ch in s.to_upper():
+		match ch:
+			"L": m |= IN_LEFT
+			"R": m |= IN_RIGHT
+			"J": m |= IN_JUMP
+			"H": m |= IN_BLOCK_HIGH
+			"W": m |= IN_BLOCK_LOW
+			"A": m |= IN_ARROW
+			"O": m |= IN_BALL
+	return m
+
+## The segment active at the current script frame (or an idle one past the end).
+func _script_seg() -> Array:
+	var acc := 0
+	for seg in _script:
+		acc += int(seg[1])
+		if _script_f < acc:
+			return seg
+	return [0, 1, 0, "", ""]
+
+## Advance the script one frame, firing a command on its (single) frame.
+func _script_step() -> void:
+	var acc := 0
+	var total := 0
+	for seg in _script:
+		total += int(seg[1])
+	for seg in _script:
+		if _script_f == acc and seg[3] != "":
+			match seg[3]:
+				"ENTER": _press_enter()
+				"SHOT": _snap("verify_" + str(seg[4]))
+				"QUIT": total = _script_f
+				"SPEED":
+					var n := maxi(int(seg[4]), 1)
+					Engine.max_physics_steps_per_frame = maxi(n, 8)
+					Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)] * n
+		acc += int(seg[1])
+	_script_f += 1
+	if _script_f > total:
+		_script = []
+		await RenderingServer.frame_post_draw
+		get_tree().quit()
+
+func _snap(name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	var dir := ProjectSettings.globalize_path("res://../media/screenshots")
+	DirAccess.make_dir_recursive_absolute(dir)
+	img.save_png("%s/%s.png" % [dir, name])
+	print("saved screenshot -> %s/%s.png" % [dir, name])
 
 ## Real-board recording input (--play): hold the opening layout briefly so it
 ## reads, then walk right off the ledge so player one falls off the cliff.
@@ -1212,21 +1368,32 @@ func _input(e: InputEvent) -> void:
 			if (e as InputEventKey).ctrl_pressed:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
 		KEY_ENTER, KEY_KP_ENTER:
-			if _alt:
-				if _alt_state == "results":
-					get_tree().change_scene_to_file("res://scenes/menu.tscn")
-				elif _alt_state == "transition":
-					_alt_begin_turn()
-				elif _core.level_complete():
-					_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
-			elif _core.game_over():
-				_start()   # retry the board
-			elif _core.level_complete():
-				if Session.advance():
-					_level_bytes = _load_level_bytes()   # next board (Session.board_path)
-					_next_board()   # keep score/lives/ammo across boards
-				else:
-					get_tree().change_scene_to_file("res://scenes/menu.tscn")
+			_press_enter()
+
+## Enter: advance the current result screen (retry / next board / next Alternate turn).
+func _press_enter() -> void:
+	if _challenge_intro > 0:
+		_challenge_intro = 0
+		return
+	if _alt:
+		if _alt_state == "results":
+			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+		elif _alt_state == "transition":
+			_alt_begin_turn()
+		elif _core.level_complete():
+			_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
+	elif _core.game_over():
+		_start()   # retry the board
+		_core.new_game(_core_mode())
+		_capture_board_start()
+	elif _core.challenge_failed():
+		_challenge_fail_advance()
+	elif _core.level_complete():
+		if Session.advance():
+			_level_bytes = _load_level_bytes()   # next board (Session.board_path)
+			_next_board()   # keep score/lives/ammo across boards
+		else:
+			get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 # --- input -------------------------------------------------------------------
 
@@ -1314,54 +1481,52 @@ func _draw() -> void:
 				if int(_core.grid_cell(c, r)) & CELL_SPECIAL:
 					_draw_reveal_marker(Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX))
 
-	# projectiles: BOTH the Magic Ball and Magic Arrow are the SAME spinning red-white
-	# swirl -- the same projectile bank 0x83 in the asm (ball = index 9/10, arrow =
-	# index 1, FUN_1000fd5c). They differ by BEHAVIOUR (ball rolls, arrow ricochets),
-	# not by art. The pointed red arrow / potion are the AMMO PICKUP icons, not shots.
-	# A hostile shot is a bolt.
+	# projectiles: the player's straight ARROW (weapons f10/f11) and rolling swirl BALL (f02-09),
+	# the enemies' cannon balls, Walker bolts, Gargoyle puffs/eggs and Knight gifts.
 	for i in range(MAX_PROJECTILES):
 		if _core.projectile_active(i):
 			var pp := Vector2(_core.projectile_x(i), _core.projectile_y(i))
 			var c := pp + Vector2(16, 16)
+			var going_left: bool = pp.x < float(_proj_lastpos.get(i, pp).x)
 			if _core.projectile_hostile(i):
-				if _core.projectile_src_type(i) == 12:    # Cannon: its spinning beach ball (f04-21)
-					var bf := 4 + (int(_core.tick_count() / 2) % 18)
+				if _core.projectile_src_type(i) == 12:    # Cannon ball: asm frames 3..0x16 (f04-23), +1 a
+					var sp := int(_core.tick_count()) % 20  # frame heading right, -1 heading left
+					var bf := (23 - sp) if going_left else (4 + sp)
 					if not _blit_clip("cannon_sprites", bf, pp, pf):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
-				elif _core.projectile_src_type(i) == 14:  # Gargoyle: the charged RED energy ball it releases
-					draw_circle(c, 9.0, Color(0.9, 0.25, 0.2, 0.55))
-					draw_circle(c, 6.0, Color(1.0, 0.4, 0.2, 0.95))
-					draw_circle(c + Vector2(-2, -2), 3.0, Color(1.0, 0.85, 0.5, 0.95))
-				elif _core.projectile_src_type(i) == 10:  # Walker: its own small RED bolt
-					# The walker fires a horizontal block-smashing bolt (asm type 0x68,
-					# FUN_1000e3c0) that animates frames 0x31..0x40 -- the small 20x19
-					# red-bolt frames on the walker sheet (f50..f63). Render THAT, not a
-					# made-up green blob.
-					var kf := 50 + (int(_core.tick_count() / 2) % 14)
+				elif _core.projectile_src_type(i) == 14:  # Gargoyle puff: green cluster, master's objects (sssf 134)
+					# asm FUN_1000b0a4 cycles frames 1..15 for a piercing puff, 0x1f..0x2d otherwise (+1 in the PNGs)
+					var gbase := 2 if _core.projectile_pierce(i) else 32
+					if not _blit_clip("master_s_objects", gbase + int(_core.tick_count()) % 15, pp, pf):
+						draw_circle(c, 6.0, Color(0.2, 0.7, 0.2))
+				elif _core.projectile_src_type(i) == 10:  # Walker bolt (0x68, FUN_1000e3c0): asm frames
+					var ks := int(_core.tick_count()) % 16  # 0x31..0x40 (f50-65) a frame each, backward left
+					var kf := (65 - ks) if going_left else (50 + ks)
 					if not _blit_clip("walker_sprites", kf, pp, pf):
 						draw_circle(c, 4.5, Color(0.85, 0.15, 0.12))
 				else:                                     # other hostile shot: a generic energy bolt
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
 					draw_circle(c, 2.5, Color(1, 0.55, 1))
+			elif _core.projectile_kind(i) == 3:
+				# Gargoyle BADGUY EGG in flight (asm FUN_1000b6a0 cycles master's objects 0x2e..0x3c)
+				if not _blit_clip("master_s_objects", 47 + int(_core.tick_count()) % 13, pp, pf):
+					draw_circle(c, 6.0, Color(0.6, 0.1, 0.1))
 			elif _core.projectile_kind(i) == 2:
-				# Knight GIFT in flight: a random goody flown to a target cell
-				# (enemy_knight_gift / FUN_1000c8bc) -- a treasure sparkle, NOT a
-				# weapon shot. (It used to fall through to the arrow's ball swirl.)
-				_draw_gift_sparkle(c)
+				# Knight GIFT in flight (enemy_knight_gift / FUN_1000c8bc): the asm mover FUN_1000c544
+				# cycles master's objects 0x10..0x1e (+1 in the PNGs) -- a harmless tumbling box.
+				if not _blit_clip("master_s_objects", 17 + int(_core.tick_count()) % 15, pp, pf):
+					_draw_gift_sparkle(c)
 			elif _core.projectile_kind(i) == 1:
-				# Magic BALL: the candy swirl held at a FIXED frame -- it ROLLS, it does not
-				# spin (asm FUN_1000fd5c draws the ball at a steady weapons frame by facing --
-				# the higher of the sheet's top pair when moving right; only the ARROW cycles
-				# the swirl). The weapons sheet is f02..f09; use its top pair 9/8. No glow.
+				# The straight shot (asm FUN_1000fd5c type 1, fired by FUN_100110b4) is drawn with the
+				# weapons sheet's ARROW (asm frame 10 heading right / 9 left = f11 / f10, 24x9).
 				var bl: float = pp.x - float(_proj_lastpos.get(i, pp).x)
-				if not _blit_clip("weapons", 9 if bl >= 0.0 else 8, pp, pf):
+				if not _blit_clip("weapons", 11 if bl >= 0.0 else 10, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			else:
-				# Magic ARROW: the SAME weapons swirl but CYCLING (it spins as it flies) --
-				# asm FUN_1000fd5c animates the frame while it ricochets. BOTH shots are this
-				# swirl; they differ only in BEHAVIOUR (ball rolls / arrow bounces). The pointed
-				# red arrow goody f19 is the ball-AMMO PICKUP icon, NOT a projectile. No glow.
-				var af := 2 + (int(_core.tick_count() / 2) % 8)
+				# The rolling swirl ball (types 2/3, FUN_10010d30): +0x5a steps 1..8 every frame,
+				# forward when fired right, backward when fired left (f02..f09).
+				var sp := int(_core.tick_count()) % 8
+				var af := (9 - sp) if _core.projectile_fired_left(i) else (2 + sp)
 				if not _blit_clip("weapons", af, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			_proj_lastpos[i] = pp
@@ -1387,17 +1552,16 @@ func _draw() -> void:
 	elif _alt and _alt_state == "transition":
 		_draw_alt_transition()
 	elif _core.game_over():
-		if not _alt and _is_challenge_board():
-			_draw_pict_screen("Nothing", "NOTHING!", "Enter: retry     Esc: menu")   # challenge: loot forfeited
-		else:
-			_draw_banner("GAME OVER", "Enter: retry     Esc: menu")
+		_draw_banner("GAME OVER", "Enter: retry     Esc: menu")
+	elif _core.challenge_failed():
+		_draw_challenge_failed()
 	elif _core.level_complete():
 		if _mode_compete:
 			_draw_win_screen()
-		elif not _alt and _is_challenge_board():
-			_draw_challenge_rewards()
 		elif _warp_anim < 1.0:
 			_draw_board_warp()          # R/G/B tunnel wipe from the cleared board into the tally
+		elif not _alt and _is_challenge_board():
+			_draw_challenge_rewards()
 		else:
 			_draw_pict_screen("board_completed", "LEVEL CLEAR!", "Enter: next board     Esc: menu")
 			_draw_complete_tally()
@@ -1611,6 +1775,9 @@ func _draw_hud() -> void:
 	# font + icons.
 	var y := 9.0
 	var iy := 3.0
+	if _mode_compete and _num_players >= 2 and not _alt:
+		_draw_hud_compete(iy)
+		return
 	var x := _ex(4, 14, y)                       # "Score"
 	x = _ex_num((_alt_score[_alt_active] + int(_core.player_score(1))) if _alt else int(_core.player_score(1)), 10, x + 4, y)
 	x = _ex(2, x + 22, y)                        # "Bonus"
@@ -1618,18 +1785,44 @@ func _draw_hud() -> void:
 	x = _ex(16, x + 26, iy)                      # face = LIVES (asm FUN_1000fb18 draws +0x46 = lives)
 	x = _ex_num(maxi(int(_core.player_lives(1)), 0), 2, x + 3, y)   # clamp <0 -> 0 (asm FUN_1000fb18: an
 	                                             # eliminated player's -1 shows as 0, never a "-1")
-	# The original HUD (asm FUN_1000fb18) pairs the ROCKET icon (bank frame 0x10 -> f17) with the
-	# BALL count (+0x4a, drawn at x=0x184) and the POTION icon (0x11 -> f18) with the ARROW count
-	# (+0x4c, x=0x1d4) -- the same art!=effect quirk as the goodies (balls carry the arrow-shaped
-	# art, arrows the potion art). We had the two counts swapped.
-	x = _ex(17, x + 14, iy)                      # rocket icon -> Magic BALL count (asm frame 0x10 @ x=0x184)
+	# The original HUD (asm FUN_1000fb18) pairs the ROCKET icon (bank frame 0x10 -> f17) with +0x4a
+	# (drawn at x=0x184) and the POTION icon (0x11 -> f18) with +0x4c (x=0x1d4). +0x4a is the Magic
+	# ARROW's ammo and +0x4c the Magic BALL's; the core's field names `balls`/`arrows` are swapped.
+	x = _ex(17, x + 14, iy)                      # rocket icon -> Magic Arrow ammo (+0x4a, core `balls`)
 	x = _ex_num(_core.player_balls(1), 2, x + 3, y)
-	x = _ex(18, x + 14, iy)                      # potion icon -> Magic ARROW count (asm frame 0x11 @ x=0x1d4)
+	x = _ex(18, x + 14, iy)                      # potion icon -> Magic Ball ammo (+0x4c, core `arrows`)
 	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(28, x + 28, y)                       # "Board#"
 	_ex_num(_board_number(), 3, x + 2, y)
 	if _core.player_has_key(1) >= 1:
 		_draw_key(Vector2(610, 2))
+
+## Compete HUD (asm FUN_1000fb18 / FUN_1000efb4 / FUN_1000f500 two-player branch): the same
+## icons, but every counter is drawn TWICE -- player 1's values on the top line (asm y=0) and
+## player 2's underneath (asm y=0x10) -- with the blue / green "Score" labels.
+func _draw_hud_compete(iy: float) -> void:
+	var rows := [[1, 1.0, 4], [2, 17.0, 5]]   # [player, y, Score label frame (blue f04 / green f05)]
+	for r in rows:
+		var idx: int = r[0]
+		var y: float = r[1]
+		var x := _ex(r[2], 14, y)
+		x = _ex_num(int(_core.player_score(idx)), 10, x + 4, y)
+		x = _ex(2, x + 22, y)
+		x = _ex_num(maxi(int(_core.player_bonus(idx)), 0), 5, x + 4, y)
+		x = _ex(16, x + 26, iy) if idx == 1 else x + _ex_w(16) + 26
+		x = _ex_num(maxi(int(_core.player_lives(idx)), 0), 2, x + 3, y)
+		x = _ex(17, x + 14, iy) if idx == 1 else x + _ex_w(17) + 14
+		x = _ex_num(_core.player_balls(idx), 2, x + 3, y)
+		x = _ex(18, x + 14, iy) if idx == 1 else x + _ex_w(18) + 14
+		x = _ex_num(_core.player_arrows(idx), 2, x + 3, y)
+		if idx == 1:
+			x = _ex(28, x + 28, 9.0)
+			_ex_num(_board_number(), 3, x + 2, 9.0)
+
+## Width of one `extra's` HUD sprite (0 if missing).
+func _ex_w(frame: int) -> float:
+	var tex := _sprite("extra_s", frame)
+	return _texsize(tex).x if tex != null else 0.0
 
 ## Blit one `extra's` HUD sprite at (x,y); returns the x just past it.
 func _ex(frame: int, x: float, y: float) -> float:
@@ -1654,15 +1847,15 @@ func _ex_num(value: int, ndigits: int, x: float, y: float) -> float:
 func _board_number() -> int:
 	# The original campaign's Board#N is the extracted file board_(400+N): the main
 	# set 401..500 = Board 1..100 (verified vs the reference montage: board_401 is
-	# the 3-column Board#001). The Challenge set 1001..1050 is numbered Challenge
-	# 1..50 (matches menu.gd _board_label). board_301 and board_501 are unnumbered
+	# the 3-column Board#001). The Compete set 1001..1050 is numbered Board 1..50
+	# (asm FUN_1002b448 loads BORD N+1000 in Compete). board_301 and board_501 are unnumbered
 	# extras (reachable only via level-select) -> they use the play-order index.
 	if Session.board_path != "":
 		var num := Session.board_path.get_file().get_basename().replace("board_", "").to_int()
 		if num >= 401 and num <= 500:
 			return num - 400
 		if num >= 1001 and num <= 1050:
-			return num - 1000       # Challenge 1..50 (was the raw full-list sort index)
+			return num - 1000
 	if Session.board_index >= 0:
 		return Session.board_index + 1
 	return 1
@@ -1784,9 +1977,9 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 				g = dg / 12
 			if g >= 0:
 				# a stepped SWITCH flips the displayed sign; animate across the group's frame run
-				# (Stop 2/10/18/26/34 <-> Go 9/17/25/33/39; group 4 is a shorter run).
+				# (Stop 2/10/18/26/34 <-> Go 9/17/25/33/41: five 8-frame flip runs).
 				var stop_f: int = [2, 10, 18, 26, 34][g]
-				var go_f: int = [9, 17, 25, 33, 39][g]
+				var go_f: int = [9, 17, 25, 33, 41][g]
 				var disp_stop: bool = loaded_stop != _sg_toggled[g]
 				var new_f := stop_f if disp_stop else go_f
 				var a: float = _sg_anim[g]
@@ -1891,20 +2084,18 @@ func _draw_door(pos: Vector2) -> void:
 ## A small creature body. Prefers the real decoded enemy sheet (walk cycle,
 ## flipped by travel direction); falls back to a per-type coloured blob.
 func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
-	# A persistent SPAWNER (bord 5/6/10/11/12/18/19) is NOT a walking nasty. The
-	# original stamps a solid RED block at the spawner cell and emits the moving
-	# children from it (asm FUN_10009778 / FUN_100076a8). Reference board_3 top-right
-	# shows this as a RED block with the spawned nasty standing on it -- NOT a grey
-	# block and NOT a stuck-looking nasty. Render the red marker. VERIFIED vs
-	# refs/images/board_3.png (2026-07-06).
+	# A persistent SPAWNER (bord 5/6/10/11/12/18/19) is NOT a walking nasty: it stamps its cell
+	# (0x100) and emits the moving children from it (asm FUN_10009778 / FUN_100076a8).
 	if _core.enemy_is_spawner(slot):
-		_draw_block(e, Color(0.85, 0.16, 0.16))       # the red nest cell (asm stamps a solid marker),
-		var nf: String = ENEMY_FOLDER.get(etype, "")  # then the emitted child stands on it -- etype IS
-		if nf != "":                                   # the child's type (ref board_3: an ant on red).
-			var it := _sprite(nf, 2, false)
-			if it != null:
-				var isz := _texsize(it)
-				_dtex(it, Vector2(e.x + (CELL_PX - isz.x) * 0.5, e.y + CELL_PX - isz.y))
+		# The spawner draws its sheet's emblem block (FUN_10004108 frame: ant/teeth 0x32, smiley 0x31,
+		# hammer 0x51, hippo/ostrich/piggy 0x21) -- a red block with a silver nasty (refs board_3).
+		var sf: int = int({1: 0x32, 2: 0x21, 3: 0x21, 4: 0x21, 6: 0x31, 7: 0x51, 11: 0x32}.get(etype, 0))
+		var nf: String = ENEMY_FOLDER.get(etype, "")
+		var st: Texture2D = _sprite(nf, sf + 1, false) if (nf != "" and sf > 0) else null
+		if st != null:
+			_dtex(st, e)
+		else:
+			_draw_block(e, Color(0.85, 0.16, 0.16))
 		return
 	# travel-synced walk cycle: a moving nasty animates; a stationary one
 	# (turret / spawner / Spinner) holds its frame instead of walking in place.
@@ -1915,6 +2106,8 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		walk += moved
 	_enemy_walk[slot] = walk
 	_enemy_lastpos[slot] = e
+	if etype == 12:                       # CANNON: its cell is a plain 0x300 wall (asm FUN_100071a0) -> no white fallback
+		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)
 	if etype == 16:                       # CREEPER: a moving SOLID "pulsing block" (sssf 1016). Its own cell
 		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)   # is a plain 0x300 (white fallback) -> cover it
 		# PULSE through the 13-frame morph (f02 full block <-> f14 ball), ping-ponged on a per-creeper
@@ -1931,40 +2124,39 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		var frame: int
 		var face_left := (edir == 1)             # core enemy dir: 1 = left, 2 = right
 		var flip := face_left
-		if ENEMY_SPIN.has(etype):                # Spinner trap / flying star-disk: rotates on a
-			frame = 2 + (int(_core.tick_count() / 2) % int(ENEMY_SPIN[etype]))   # timer in place
+		if ENEMY_SPIN.has(etype):                # Spinner trap / flying star-disk: the asm spin
+			frame = clampi(int(_core.enemy_anim(slot)), 1, int(ENEMY_SPIN[etype])) + 1   # counter +0x56
 			flip = false
 		elif etype == 12:                        # Cannon: a barrel that faces its firing direction
-			frame = 2 if face_left else 3        # f02 barrel points left, f03 right
+			frame = 3 if face_left else 2        # FUN_100071a0: frame 1 (f02) muzzle right, 2 (f03) left
 			flip = false
-		elif ENEMY_SHOOTER.has(etype):           # Gargoyle/Knight turret: idle, then CHARGE an orb
-			var sh: Dictionary = ENEMY_SHOOTER[etype]        # and RELEASE at the shot, driven by the
-			var fcd: int = _core.enemy_fire_cd(slot)         # reload counter exposed by the core
-			var idl: Array = sh["idle"]
-			if fcd >= 0 and fcd <= 30:               # CHARGE: the energy orb grows to the shot (last 30)
-				var ch: Array = sh["charge"]
-				frame = int(ch[0]) + clampi(int((30 - fcd) * (int(ch[1]) - 1) / 30.0), 0, int(ch[1]) - 1)
-			elif fcd >= 0 and fcd <= 30 + 40:        # WIND-UP: unfold the wings ONCE, synced to THIS
-				var t := 70 - fcd                     # turret's own reload -- NOT the shared global clock
-				frame = int(idl[0]) + clampi(int(t * (int(idl[1]) - 1) / 40.0), 0, int(idl[1]) - 1)
-			else:                                    # waiting: hold the folded rest pose (stable, no flap
-				frame = int(idl[0])                   # loop -- the old tick/8 loop snapped f20->f12 = twitch)
+		elif ENEMY_SHOOTER.has(etype):           # Gargoyle/Knight: the core's asm +0x56 phase frame
+			frame = maxi(1, int(_core.enemy_anim(slot))) + 1   # (unfold / flap-or-hold / wind-up to the throw)
 			flip = false
-		elif ENEMY_ROLL.has(etype):              # face-ball: a ball that ROLLS along the ground
-			var nframes: int = max(1, _folder_index(folder).size())
-			var step := int(walk / 3.0)          # ~one frame per 3px of travel
-			# asm FUN_1000d130 spins the ball via its anim index +0x56: heading RIGHT
-			# DECREMENTS it (line 43), heading LEFT INCREMENTS it (line 68). The port's
-			# `walk` only ever grows, so negate it heading RIGHT to roll the correct way
-			# (it was negated heading LEFT -> the ball spun backwards in both directions).
-			if not face_left:
-				step = -step                     # moving right -> frame decrements (asm +0x56 --)
-			frame = 2 + posmod(step, nframes)    # cycle the whole sheet; no flip (symmetric ball)
+		elif ENEMY_ROLL.has(etype):              # face-ball: FUN_1000d130 steps +0x56 by -1 per 2 px
+			frame = posmod(-(int(e.x) >> 1), 48) + 2  # right / +1 left (1..0x30), i.e. tied to x
 			flip = false
-		elif etype == 9 and _core.enemy_fire_cd(slot) > 0:   # Robo PUNCH: it bounces its ball
-			var pfcd: int = _core.enemy_fire_cd(slot)        # forward to smash a breakable block
-			frame = 17 + clampi(16 - pfcd, 0, 15)            # (asm +0x6e swing f17-f32; ball hits
-			flip = face_left                                 # ~f25) -- right swing, mirror for left
+		elif etype == 9 and _core.enemy_fire_cd(slot) > 0:   # Robo PUNCH (asm +0x6e): right swing
+			var pfcd: int = _core.enemy_fire_cd(slot)        # f18-33, left swing f02-17; the ball
+			frame = (2 if face_left else 18) + clampi(16 - pfcd, 0, 15)   # meets the block ~7 steps in
+			flip = false
+		elif etype == 7 and _core.enemy_fire_cd(slot) > 0:   # Hammer jump-smash (asm +0x6e 0x31-40 left /
+			frame = (0x30 if face_left else 0x40) + clampi(int(_core.enemy_fire_cd(slot)), 1, 16) + 1   # 0x41-50 right)
+			var ht := _sprite(folder, frame, false)
+			if ht != null:
+				_dtex(ht, Vector2(e.x, e.y + 2))   # top-left at the lifted asm position (41 px tall art)
+				return
+		elif _core.enemy_turn(slot) > 0 and _enemy_turn_frame(etype, int(_core.enemy_turn(slot)), face_left, _core.enemy_vertical(slot)) >= 0:
+			frame = _enemy_turn_frame(etype, int(_core.enemy_turn(slot)), face_left, _core.enemy_vertical(slot)) + 1
+			flip = false
+		elif etype == 8 and _core.enemy_vertical(slot):     # vertical Beanie: 0x51-58 down / 0x71-78 up
+			frame = (0x71 if face_left else 0x51) + posmod(int(e.y) / 2, 8) + 1
+			flip = false
+		elif ENEMY_WALK_TBL.has(etype):          # the asm's position-planted walk frame
+			var wt: Dictionary = ENEMY_WALK_TBL[etype]
+			var tb: Array = wt["l"] if face_left else wt["r"]
+			frame = int(tb[posmod(int(e.x) + int(wt["dx"]), tb.size())]) + 1
+			flip = false
 		elif ENEMY_WALK.has(etype):              # dedicated directional walk cycle. The asm plants the leg
 			var cfg: Dictionary = ENEMY_WALK[etype]  # frame to POSITION (frame = table[x mod 32], ~16px/cycle,
 			var seg: Array = cfg["l"] if face_left else cfg["r"]   # FUN_1000dd4c). walk/8 was ~6x too slow ->
@@ -1975,7 +2167,12 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		var tex := _sprite(folder, frame, flip)
 		if tex != null:
 			var s := _texsize(tex)
-			_dtex(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
+			if etype == 5:                       # Wheelie: a flyer, drawn at its asm x/y (already +2)
+				_dtex(tex, e)
+			else:
+				_dtex(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
+			if etype == 8 and _core.enemy_bud(slot) > 0:
+				_draw_beanie_bud(slot, e, face_left)
 			return
 	var c := e + Vector2(16, 16)
 	var body := _enemy_color(etype)
@@ -1985,6 +2182,45 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 	draw_circle(c + Vector2(3.5, -3), 2.2, Color.WHITE)
 	draw_circle(c + Vector2(-3.5, -3), 1.0, Color.BLACK)
 	draw_circle(c + Vector2(3.5, -3), 1.0, Color.BLACK)
+
+## asm frame of a turning nasty (+0x4c 5/6), or -1 for "keep the walk frame". `turn` counts the
+## AI steps still to go (16 at the step the turn starts; 15 for the Robo); `face_left` is the
+## heading it is turning TO.
+func _enemy_turn_frame(etype: int, turn: int, face_left: bool, vertical: bool) -> int:
+	match etype:
+		1, 7, 10: return (0x10 + turn) if face_left else (0x21 - turn)   # ant / hammer / walker
+		2, 3, 4: return (8 + turn) if face_left else (0x19 - turn)     # ostrich / hippo / piggy
+		11: return (0x22 - turn) if face_left else (0x11 + turn)       # teeth
+		9: return (0x40 - turn) if face_left else (0x31 + turn)        # robo
+		8:
+			var tb: Array = VBEANIE_TURN if vertical else BEANIE_TURN
+			var i := (15 - turn) if face_left else turn
+			return int(tb[i]) if i >= 0 and i < tb.size() else -1
+	return -1
+
+## A Beanie's bud (asm child 0x6b horizontal FUN_10006d44 / 0x6c vertical FUN_10006f6c): a
+## colour beam that grows out of the Beanie for 16 steps, smashes the block, then retracts.
+## Drawn at the asm child position off the Beanie's (x+4, y+2).
+func _draw_beanie_bud(slot: int, e: Vector2, face_left: bool) -> void:
+	var bud := int(_core.enemy_bud(slot))
+	var ax := e.x + 4.0
+	var ay := e.y + 2.0
+	var ext: int
+	var af: int
+	var pos: Vector2
+	if _core.enemy_vertical(slot):
+		ext = (bud - 1) if bud <= 17 else (33 - bud)
+		af = (0x30 if face_left else 0x10) + ext
+		pos = Vector2(ax + (4.0 if face_left else -4.0), ay + (-8.0 if face_left else 18.0))
+	else:
+		ext = bud if bud <= 16 else (32 - bud)
+		af = (0x20 if face_left else 0) + ext
+		pos = Vector2(ax + (-24.0 if face_left else 28.0), ay + (2.0 if face_left else 3.0))
+	if ext < 1:
+		return
+	var bt := _sprite("beenie_sprites", af + 1, false)
+	if bt != null:
+		_dtex(bt, pos)
 
 ## Enemy death "pop" (asm FUN_10028014 -> FUN_100278bc/FUN_10028060): every KILL enqueues one
 ## flying death sprite that pops UP ~64px and arcs off the screen. The core feeds us the dying
@@ -1997,7 +2233,12 @@ func _spawn_death_pop(x0: int, y0: int, etype: int, dir: int) -> void:
 	var face_left := (dir == 1)   # enemy dir: 1 = left, 2 = right (soi_core.h)
 	var frame := 2
 	var flip := face_left
-	if ENEMY_WALK.has(etype):   # freeze on the correct-facing walk frame (asm keeps the last live frame)
+	if ENEMY_WALK_TBL.has(etype):   # freeze on the walk frame it last showed (asm keeps the last live frame)
+		var wt: Dictionary = ENEMY_WALK_TBL[etype]
+		var tb: Array = wt["l"] if face_left else wt["r"]
+		frame = int(tb[posmod(x0 + int(wt["dx"]), tb.size())]) + 1
+		flip = false
+	elif ENEMY_WALK.has(etype):
 		var cfg: Dictionary = ENEMY_WALK[etype]
 		var seg: Array = cfg["l"] if face_left else cfg["r"]
 		frame = int(seg[0])

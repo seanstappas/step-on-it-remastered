@@ -124,11 +124,25 @@ void soi_switch_animate(SoiWorld *w)
     }
 }
 
+/* Mark a collected key held. Outside COMPETE every player gets the key flag (asm
+ * FUN_1002bc64: DAT_1003ab6c == 0 -> uRam1003aa47 = uRam1003aab7 = 1); in COMPETE only
+ * the collector does. A player who already exited (has_key 2) keeps that marker. */
+static void give_key(SoiWorld *w, int player)
+{
+    int j;
+    for (j = 1; j < SOI_MAX_PLAYERS; j++) {
+        SoiPlayer *pj = &w->players[j];
+        if (pj->has_key == 2) continue;
+        if (j == player || (w->play_mode != SOI_MODE_COMPETE && pj->active)) pj->has_key = 1;
+    }
+}
+
 /* Walk-over goodie pickup for the player's current cell (FUN_1002bc64).
  * Coin/gem values are CONFIRMED; the rest are first-draft (TODO(oracle)). */
 void soi_pickup_check(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
+    SoiPlayer *cp = soi_pool(w, player);   /* who is CREDITED (the co-op pool, else self) */
     uint32_t c;
     unsigned t;
     /* Pick up from the player's COLLISION-BOX CENTRE, not its left/top edge: asm
@@ -162,7 +176,7 @@ void soi_pickup_check(SoiWorld *w, int player)
 
     /* KEY (0x0B, CONFIRMED docs §0): collect to open the door. */
     if (t == SOI_TILE_KEY) {
-        p->has_key = 1;
+        give_key(w, player);
         soi_sfx_emit(w, SOI_SFX_POWERUP);
         w->cell[prow][pcol] = SOI_CELL_EMPTY;
         return;
@@ -170,22 +184,32 @@ void soi_pickup_check(SoiWorld *w, int player)
     /* DOOR: bit 0x800 with a LOW type 1-3 (the exit). The original gates the exit on the
      * PLAYER (asm FUN_1002bc64: uVar10 == sVar14+1 || uVar10 == 1): low 1 = UNIVERSAL,
      * low (player+1) = that player's OWN door (P1->low2, P2->low3). Coins/goodies also
-     * carry 0x800 but with a higher low type, so the t<=3 bound also avoids swallowing them. */
+     * carry 0x800 but with a higher low type, so the t<=3 bound also avoids swallowing them.
+     * There is NO held-key test: an opened door exists only after the colored-key sweep
+     * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
+     * of the key collector can exit too. The asm DOES require the box not to straddle two
+     * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
     if ((c & SOI_CELL_DOOR) && t <= 3u && (t == 1u || t == (unsigned)player + 1u)) {
-        if (p->has_key == 1) {            /* first exit through the door: level won */
+        int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+        if (p->y < SOI_ORIGIN_Y) yrow = -1;
+        if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
             int j;
             p->has_key = 2;
             /* Board complete: award EACH player their OWN remaining bonus x mult and
              * zero it -- FUN_100153d0 runs the per-player tally FUN_10015714 for every
-             * player, not just the door-exiter (per-player @0x1003a9f0 x @f4). */
+             * player, not just the door-exiter (per-player @0x1003a9f0 x @f4). In co-op
+             * the team pool (player 1's slot) is tallied once. */
             for (j = 1; j < SOI_MAX_PLAYERS; j++) {
                 SoiPlayer *pj = &w->players[j];
+                if (soi_pool_idx(w, j) != j) continue;
                 if (pj->active) {
                     pj->score += (int)pj->bonus_time * pj->mult;
                     pj->bonus_time = 0;
                     /* No-Weapons Reward: added ONCE (not x mult) if this player never fired a
-                     * weapon this board -- asm FUN_10015714 draws it at row 0x158 and adds it. */
-                    if (pj->no_weapons_reward >= 1)
+                     * weapon this board -- asm FUN_10015714 draws it at row 0x158 and adds it.
+                     * A Challenge Round skips that tally (FUN_10028a0c: `if (!DAT_1003ad0e)
+                     * FUN_100153d0`); its reward screen FUN_10016f80 pays only Bonus x mult. */
+                    if (pj->no_weapons_reward >= 1 && !w->challenge)
                         pj->score += pj->no_weapons_reward;
                 }
             }
@@ -203,7 +227,7 @@ void soi_pickup_check(SoiWorld *w, int player)
      * 8/9 are per-player, but low-1 doors (from key 7) are universal exits. */
     if ((c & SOI_CELL_DOOR) && t >= 7u && t <= 9u && (t == 7u || t == (unsigned)player + 7u)) {
         int cc, rr;
-        p->has_key = 1;                              /* the key is now held (player-gated:
+        give_key(w, player);                         /* the key is now held (player-gated:
                                                       * key 7 universal, key player+7 own; asm
                                                       * FUN_1002bc64 uVar10 == sVar14+7 || == 7) */
         for (rr = 0; rr < SOI_GRID_ROWS; rr++)
@@ -269,18 +293,18 @@ void soi_pickup_check(SoiWorld *w, int player)
     if (c & SOI_CELL_SUPPORTIVE) return;
 
     switch (t) {
-        case 0x0A: p->score += 500;  break;   /* silver coin   (CONFIRMED) */
-        case 0x17: p->score += 1000; break;   /* gold coin     (CONFIRMED) */
-        case 0x18: p->score += 2000; break;   /* gem           (CONFIRMED) */
-        case 0x19: p->score += 5000; break;   /* gold bars     (CONFIRMED) */
-        case 0x10: p->lives += 1;    break;   /* 1UP: goody 0x10 grants +1 LIFE. asm FUN_1002bc64 ->
+        case 0x0A: cp->score += 500;  break;   /* silver coin   (CONFIRMED) */
+        case 0x17: cp->score += 1000; break;   /* gold coin     (CONFIRMED) */
+        case 0x18: cp->score += 2000; break;   /* gem           (CONFIRMED) */
+        case 0x19: cp->score += 5000; break;   /* gold bars     (CONFIRMED) */
+        case 0x10: cp->lives += 1;    break;   /* 1UP: goody 0x10 grants +1 LIFE. asm FUN_1002bc64 ->
                                                * FUN_1000e9c8(player, +1); +0x46 is the LIVES counter --
                                                * CONFIRMED: FUN_1000f500 calls FUN_1000e9c8(p, -1) when the
                                                * bonus reaches 0 ("if the Bonus reaches zero, you die"), and
                                                * FUN_1000e9c8 eliminates the player when the count goes < 0.
                                                * (The old "shield (+0x46)" label was WRONG -- +0x46 = lives.) */
-        case 0x11: p->arrows += 1;   break;   /* Magic Arrow ammo (asm FUN_1000eb34 -> +0x4c, arrow-fire reads +0x4c) */
-        case 0x12: p->balls += 1;    break;   /* Magic Ball ammo (asm FUN_1000ec50 -> +0x4a, ball-fire reads +0x4a) */
+        case 0x11: cp->arrows += 1;   break;   /* Magic Arrow ammo (asm FUN_1000eb34 -> +0x4c, arrow-fire reads +0x4c) */
+        case 0x12: cp->balls += 1;    break;   /* Magic Ball ammo (asm FUN_1000ec50 -> +0x4a, ball-fire reads +0x4a) */
         case 0x2E:                            /* TURTLES (asm FUN_1002bc64 -> _DAT_1003b294 = 600):
                                                * SLOW every nasty to half speed for ~10s. (The CLOCK that
                                                * adds bonus points is the 0x13-0x16 time goodies above.) */
@@ -290,8 +314,8 @@ void soi_pickup_check(SoiWorld *w, int player)
             /* time bonuses x1..x4 = +2500/5000/7500/10000, cap 30000 (CONFIRMED,
              * decompiled FUN_1000f3f0). */
             static const int add[4] = { 2500, 5000, 7500, 10000 };
-            p->bonus_time += add[t - 0x13];   /* adds to the COLLECTING player's bonus (FUN_1000f3f0) */
-            if (p->bonus_time > 30000) p->bonus_time = 30000;
+            cp->bonus_time += add[t - 0x13];  /* adds to the CREDITED player's bonus (FUN_1000f3f0) */
+            if (cp->bonus_time > 30000) cp->bonus_time = 30000;
             break;
         }
         case 0x2F:                            /* MAGNIFYING GLASS (asm FUN_10016b28): temporarily reveal
@@ -303,7 +327,10 @@ void soi_pickup_check(SoiWorld *w, int player)
                                                * the 0x31 goody below (FUN_1000543c). */
             w->reveal_timer = 300;
             break;
-        case 0x30: p->invuln = 600; break;    /* shield (activate): timed i-frames */
+        case 0x30: p->invuln = 600; p->fast = 0; break;   /* shield (activate): timed i-frames. Shield
+                                               * and shoes share ONE power-up slot (asm FUN_10014c28 /
+                                               * FUN_10014ccc: mode +0x5c = 2 / 1, one timer +0x6e), so
+                                               * grabbing either replaces the other. */
         case 0x31: {                          /* THUNDERBALLS (asm FUN_1000543c): defeat every real nasty,
                                                * credited to the collecting player (sets each active
                                                * enemy's +0x88 "claimed" field -> defeated on its next update). */
@@ -317,12 +344,13 @@ void soi_pickup_check(SoiWorld *w, int player)
                                                * timer +0x6e=0x4b0(1200). NOT a 1UP -- the
                                                * 1UP is goody 0x10 (FUN_1000e9c8 -> +0x46 lives). */
             p->fast = 1200;
+            p->invuln = 0;                    /* replaces an active shield (shared slot, see 0x30) */
             break;
         case 0x0C: case 0x0D: case 0x0E: case 0x0F:
             /* score multiplier 2x/3x/4x/5x (asm FUN_10011428(player, type-0x0A) -> +0x44).
              * SET (not stacked); multiplies the end-of-level bonus at the door exit
              * (mult x bonus_timer, tallied by FUN_10029264). Coins stay unmultiplied. */
-            p->mult = (int16_t)(t - 0x0Au);
+            cp->mult = (int16_t)(t - 0x0Au);
             break;
         default:
             /* 0x1a-0x23 transporters, 0x24-0x2d stop/go handled above. */

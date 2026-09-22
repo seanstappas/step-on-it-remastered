@@ -1,0 +1,22 @@
+# Challenge Round FAIL on board 470 (Board#070): intro -> fire an arrow + grab the Knight's
+# loot -> fast-forward until the Bonus runs out -> "Nothing!" -> Board#071 starts with the
+# board-START score / lives / ammo (loot lost, no life spent).
+SHOT chfail_1_intro
+0 170
+A 4
+0 30
+R 600
+SHOT chfail_2_loot
+SPEED 16
+0 16300
+SPEED 1
+SHOT chfail_3_lowbonus
+0 300
+SHOT chfail_4
+0 300
+SHOT chfail_5_nothing
+0 90
+ENTER
+0 30
+SHOT chfail_6_board071
+0 120

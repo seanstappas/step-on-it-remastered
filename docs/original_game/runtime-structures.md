@@ -246,7 +246,7 @@ within 32 units):
 |---|---|
 | Ant / Ostrich / Hippo / Piggy / Smiley | horizontal walk-and-turn patrollers (CONFIRMED pattern); differ in speed + collision footprint + sprite table |
 | **Hammer** | jumper — sets a jump field (`0x6e`) on hitting a wall, arcs up then lands |
-| **Beanie** | splitter — spawns a child Beanie (same 750 value) on collision (`FUN_10006840` = child cleanup) |
+| **Beanie** | floater — at a breakable block shoots a bud (0x6b/0x6c, `FUN_10006d44`/`FUN_10006f6c`) that smashes it; `FUN_10006840` is the VERTICAL Beanie (bord 8), not a child. CORRECTED 2026-09-22 (no splitting) |
 | **Robo** | walk-and-turn + **punch** — states 5/6 are stationary turn animations; punches breakable blocks, turns at permanent walls/ledges (no climb / vertical movement; verified 2026-07-06) |
 | **Wheelie / Walker** | NEITHER homes (verified 2026-07-06): Wheelie = gravity-free wall-bouncing flyer; Walker patrols + shoots when a player shares its row (`FUN_1000e5c8`/`FUN_1000e7c8` gate the SHOT, not movement) |
 | Cannon / Spinner | static hazards (no points; separate handling — TBD) |
