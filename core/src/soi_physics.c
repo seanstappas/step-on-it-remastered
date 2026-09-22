@@ -260,6 +260,22 @@ static void start_jump(SoiWorld *w, int player)
     p->ground_state = SOI_ST_JUMP;
 }
 
+/* Commit a finished death: debit a life (from the co-op pool, FUN_1000e9c8) and either
+ * schedule the board reload or eliminate at lives < 0 (the displayed "0 lives" is still a
+ * playable last life: FUN_1000e9c8 allows -1, FUN_1001f4f8 games-over at lives<0, the HUD
+ * clamps to 0). In a CHALLENGE ROUND the round just fails instead: FUN_10016f80(failed)
+ * restores the board-start score/lives/ammo and the board is skipped, so no life is spent and
+ * no reload is scheduled -- the player stays down and soi_challenge_failed reports it. */
+static void commit_death(SoiWorld *w, int player)
+{
+    SoiPlayer *p = &w->players[player];
+    p->in_air = 0;
+    p->alive = 0;
+    if (w->challenge) return;
+    if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
+    else p->respawn_timer = 90;
+}
+
 /* One JUMP frame (asm FUN_10013404, ground-state 2): the table-driven arc. */
 static void jump_step(SoiWorld *w, int player)
 {
@@ -281,13 +297,7 @@ static void jump_step(SoiWorld *w, int player)
     if (p->jump_t > 17) p->jump_t = 17;          /* clamp t, then step (asm order) */
     y = p->y + JUMP_DY[p->jump_t];
     if (y >= IN_AIR_DEATH_Y) {                    /* leapt into a pit -> death */
-        p->in_air = 0;
-        p->alive = 0;
-        if (--p->lives < 0) p->eliminated = 1;   /* eliminate only when the killing blow takes
-                                                  * lives BELOW 0: the displayed "0 lives" is still a
-                                                  * playable last life (asm FUN_1000e9c8 allows -1,
-                                                  * FUN_1001f4f8 games-over at lives<0, HUD clamps to 0) */
-        else p->respawn_timer = 90;
+        commit_death(w, player);
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
     }
@@ -323,10 +333,7 @@ static void fall_step(SoiWorld *w, int player)
                                                    * own pit-death check). */
     y = p->y + 4;
     if (y >= IN_AIR_DEATH_Y) {
-        p->in_air = 0;
-        p->alive = 0;
-        if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (dying at 0, asm) */
-        else p->respawn_timer = 90;
+        commit_death(w, player);
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
     }
@@ -351,10 +358,7 @@ static void death_step(SoiWorld *w, int player)
     y = (p->launch_y * 10 - 30 * t + (t * t) / 2) / 10;
     if (y < IN_AIR_TOP_Y) y = IN_AIR_TOP_Y;
     if (y >= IN_AIR_DEATH_Y) {
-        p->in_air = 0;
-        p->alive = 0;
-        if (--p->lives < 0) p->eliminated = 1;   /* out only at lives<0 (dying at 0, asm) */
-        else p->respawn_timer = 90;
+        commit_death(w, player);
         return;
     }
     p->y = (int16_t)y;
@@ -455,8 +459,8 @@ void soi_player_update(SoiWorld *w, int player)
         if (p->pose_t == 0) {
             if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
             else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
-            else if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
-            else if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
+            else if (edge & SOI_IN_ARROW)      { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
+            else if (edge & SOI_IN_BALL)       { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
             else                               air_step(w, player);
         }
         return;
@@ -496,8 +500,11 @@ void soi_player_update(SoiWorld *w, int player)
          * everything below -- including a later same-window jump -- until it drains. */
         if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; return; }
         if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
-        if (edge & SOI_IN_ARROW)      { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
-        if (edge & SOI_IN_BALL)       { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+        /* Key slot 5 "Arrow" -> latch +0x24 -> FUN_100110b4 straight shot; slot 6 "Ball" -> +0x23 ->
+         * FUN_10010d30 roller (FUN_1002d440 + the key dialog labels). The port's soi_ball_fire is the
+         * straight Arrow and soi_projectile_fire the rolling Ball; +0x24 is tested first. */
+        if (edge & SOI_IN_ARROW)      { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
+        if (edge & SOI_IN_BALL)       { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
         if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
         if (in & SOI_IN_LEFT)         { run_step(w, player, -1); return; }
         if (in & SOI_IN_RIGHT)        { run_step(w, player, +1); return; }

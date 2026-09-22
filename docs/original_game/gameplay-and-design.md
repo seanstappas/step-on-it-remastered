@@ -33,6 +33,18 @@ Publisher: Casady & Greene (1996). Also released as "Stepping Stones."
 
 (The remaster's online 2P maps onto Cooperate/Compete; a 3rd player is a post-parity extension.)
 
+**CONFIRMED from the decomp (2026-09-22)** — mode selector `FUN_100263d8` (1 One, 2 Alternate,
+3 Cooperate, 4 Compete) and new game `FUN_1002b060`:
+- Every player starts with **2 reserve lives, 1 arrow, 1 ball** (HUD `02 / 01 / 01`, refs board_1/3).
+- **Cooperate** is ONE team: score, lives (pool of 4), ammo (2 + 2), multiplier and the Bonus all live
+  in player 1's slot; a Bonus runout kills both players; a collected key opens the door for both.
+- **Compete** plays the second board set **BORD 1001-1050** (`FUN_1002b448` loads N+1000) with
+  per-player keys/doors, and the HUD shows both players' values on two lines.
+- **Challenge Round** — any board holding a Knight or Gargoyle (every 10th board, 410..500;
+  `FUN_10017a70`). PICT 300 intro; survive and exit to keep the loot (Bonus x mult, no No-Weapons
+  Reward); die and the board-start score/lives/ammo are restored and play moves on to the next
+  board (`FUN_10016c90` / `FUN_10016f80`).
+
 ## 2. Blocks
 
 Block behavior (from the Board Designer's property definitions):

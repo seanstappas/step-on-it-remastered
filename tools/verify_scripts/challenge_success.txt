@@ -1,0 +1,16 @@
+# Challenge Round SUCCESS on a crafted board (Gargoyle caged in permanent blocks, so the round is a
+# Challenge Round per FUN_10017a70): grab a coin + a 3x multiplier + key 7, exit the opened door ->
+# warp -> "Your Rewards" (PICT 301 + 303) pays Bonus x 3 with NO No-Weapons Reward.
+SHOT chok_1_intro
+0 170
+SHOT chok_2_board
+R 240
+0 10
+SHOT chok_3_exit
+0 40
+SHOT chok_4_warp
+0 150
+SHOT chok_5_rewards_mid
+0 200
+SHOT chok_6_rewards_end
+0 30

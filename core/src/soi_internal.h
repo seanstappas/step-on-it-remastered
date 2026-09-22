@@ -127,6 +127,11 @@ typedef struct {
     int16_t  life;        /* transient lifespan in frames (0 = immortal; spawned children only) */
     uint8_t  child;       /* Beanie: slot+1 of its one living bud (0 = none) */
     uint32_t under;       /* Creeper: the tile it currently covers (asm +0x70), restored on leave */
+    uint8_t  period;      /* frames per AI step (asm +0x6c reload+1): 2 for the walkers, 3 Walker,
+                           * 1 fast Wheelie / turrets / Creeper */
+    uint8_t  stepc;       /* frames since the last AI step */
+    uint8_t  turn;        /* AI steps left in a turn-around (asm +0x4c states 5/6); dir is already the new heading */
+    uint8_t  bud;         /* Beanie: steps into its block-breaking bud (asm 0x6b/0x6c child); 0 = none */
 } SoiEnemy;
 
 struct SoiWorld {
@@ -155,6 +160,9 @@ struct SoiWorld {
     uint8_t  level_loaded;
     int16_t  goodies_total;    /* treasure cells present at level load */
     int16_t  goodies_left;     /* treasure still uncollected */
+    uint8_t  play_mode;        /* SOI_MODE_* (0 behaves as SOI_MODE_ONE) */
+    uint8_t  challenge;        /* 1 = CHALLENGE ROUND: the board holds a Knight or Gargoyle (asm
+                                * FUN_10017a70 -> DAT_1003ad0e, computed at load by FUN_1002d980) */
 
     /* transient per-tick sound-event queue (NOT serialized/hashed) */
     uint8_t  sfx_queue[SOI_SFX_QUEUE_MAX];
@@ -214,6 +222,16 @@ void     soi_set_cell(SoiWorld *w, int col, int row, uint32_t v);
 void     soi_switch_load_scan(SoiWorld *w);   /* register switch blocks after a board load */
 void     soi_switch_toggle(SoiWorld *w, int tile_low);  /* flip the group a switch tile selects */
 void     soi_switch_animate(SoiWorld *w);     /* advance open/close animations one frame */
+
+/* ---- play-mode credit pool ----
+ * Cooperate keeps ONE team pool in player 1's slot: every score/lives/ammo/multiplier/Bonus
+ * credit for any player is redirected there (asm: FUN_1002bc64, FUN_1000e9c8, FUN_1000ed6c,
+ * FUN_1000ee90, FUN_10010d30, FUN_100110b4, FUN_10011428 all do `if (!DAT_100370e4) p = 1`). */
+static inline int soi_pool_idx(const SoiWorld *w, int idx)
+{
+    return (w->play_mode == SOI_MODE_COOPERATE && idx > 0) ? 1 : idx;
+}
+static inline SoiPlayer *soi_pool(SoiWorld *w, int idx) { return &w->players[soi_pool_idx(w, idx)]; }
 
 /* ---- physics / players (soi_physics.c) ---- */
 void     soi_player_update(SoiWorld *w, int player);

@@ -1,0 +1,15 @@
+# Alternate on Board#001: two solo games taking turns, each starting with 02 reserve lives
+# (asm FUN_1002b060). P1's Bonus runs out -> the seat passes to P2 (P1 now 01 reserve lives);
+# P2's turn opens with its own 02 lives / 01 / 01.
+0 20
+SHOT alt_1_p1_start
+SPEED 16
+0 9300
+SPEED 1
+0 10
+SHOT alt_2_handoff
+0 30
+ENTER
+0 30
+SHOT alt_3_p2_start
+0 30

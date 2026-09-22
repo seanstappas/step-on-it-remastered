@@ -42,8 +42,8 @@ enum {
     SOI_IN_JUMP       = 1u << 2,  /* jump (breaks the block above) */
     SOI_IN_BLOCK_HIGH = 1u << 3,  /* switch the block above the head */
     SOI_IN_BLOCK_LOW  = 1u << 4,  /* switch the block at the feet */
-    SOI_IN_ARROW      = 1u << 5,  /* fire a Magic Arrow */
-    SOI_IN_BALL       = 1u << 6   /* fire a Magic Ball */
+    SOI_IN_ARROW      = 1u << 5,  /* fire the Magic Arrow (straight; key slot 5 -> latch +0x24) */
+    SOI_IN_BALL       = 1u << 6   /* fire the Magic Ball (rolls along walls; slot 6 -> +0x23) */
 
 };
 
@@ -122,6 +122,7 @@ typedef enum {
     SOI_SFX_HURRY,        /* low-bonus warning as the timer passes 1000 (asm FUN_10018b24 -> evt 0x2d) */
     SOI_SFX_WALKER_FIRE,  /* Walker bolt throw (asm event 0x13 -> snd 2689 "Strings") */
     SOI_SFX_SWITCH,       /* Stop/Go switch flip (asm FUN_10016544 -> FUN_1002b020 evt 0x2c) */
+    SOI_SFX_BEANIE_BUD,   /* Beanie shoots its block-breaking bud (asm FUN_10006d44/6f6c evt 0x12 -> snd 2937) */
     SOI_SFX_COUNT
 } SoiSfx;
 
@@ -149,6 +150,25 @@ int    soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len);
 
 /* Overwrite a player's PERSISTENT stats (Resume restores a saved board-start game). */
 void   soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arrows, int balls, int shield);
+
+/* Play modes, numbered as the original's mode selector (asm FUN_100263d8). */
+enum { SOI_MODE_ONE = 1, SOI_MODE_ALTERNATE = 2, SOI_MODE_COOPERATE = 3, SOI_MODE_COMPETE = 4 };
+/* Select the play mode. COOPERATE pools every player's score/lives/ammo/multiplier/Bonus
+ * in player 1's slot (asm DAT_100370e4 == 0); in every mode but COMPETE a collected key
+ * is shared by all players. Survives soi_next_level and the death-reload; soi_world_init
+ * resets it to SOI_MODE_ONE. */
+void   soi_set_play_mode(SoiWorld *w, int mode);
+int    soi_play_mode(const SoiWorld *w);
+/* Set the mode and apply the NEW-GAME stats (asm FUN_1002b060): every player starts with
+ * score 0, 2 lives, 1 arrow, 1 ball; COOPERATE instead gives the shared pool 4/2/2. */
+void   soi_new_game(SoiWorld *w, int mode);
+
+/* CHALLENGE ROUND (asm FUN_10017a70 / FUN_10016c90 / FUN_10016f80): a board holding a Knight or
+ * Gargoyle (every 10th campaign board). A death there costs NO life -- the round simply fails
+ * (the caller restores the board-start stats and moves on to the next board); an exit pays the
+ * Bonus x mult with no No-Weapons Reward. soi_challenge_failed = every active player is down. */
+int    soi_challenge_round(const SoiWorld *w);
+int    soi_challenge_failed(const SoiWorld *w);
 
 /* Advance one logic frame with the two players' input bitmasks. */
 void   soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input);
@@ -188,6 +208,7 @@ int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected *
 int      soi_count_treasure(const SoiWorld *w);  /* treasure cells now in the grid (objective count) */
 int      soi_reveal_timer(const SoiWorld *w);    /* magnifying-glass reveal (goody 0x2F); >0 = hidden treasures shown */
 int      soi_bonus_time(const SoiWorld *w);
+int      soi_player_bonus(const SoiWorld *w, int player);   /* that player's own Bonus (Compete HUD row 2) */
 int      soi_music_hurry(const SoiWorld *w);     /* 1 if ANY in-play player is in the low-bonus "hurry" zone (shared 1.25x music) */
 uint32_t soi_tick_count(const SoiWorld *w);
 uint32_t soi_grid_cell(const SoiWorld *w, int col, int row);
@@ -218,13 +239,19 @@ int      soi_enemy_x(const SoiWorld *w, int i);
 int      soi_enemy_y(const SoiWorld *w, int i);
 int      soi_enemy_dir(const SoiWorld *w, int i);
 int      soi_enemy_fire_cd(const SoiWorld *w, int i);   /* reload counter; small = about to fire */
+int      soi_enemy_turn(const SoiWorld *w, int i);      /* AI steps left in a turn-around (0 = walking) */
+int      soi_enemy_bud(const SoiWorld *w, int i);       /* Beanie bud progress (0 = none) */
+int      soi_enemy_vertical(const SoiWorld *w, int i);  /* 1 = vertical Beanie (bord 8) */
+int      soi_enemy_anim(const SoiWorld *w, int i);      /* asm +0x56 spin frame (Wheelie 1-24, Spinner 1-16) */
 int      soi_enemy_is_spawner(const SoiWorld *w, int i);/* 1 = persistent stationary spawner (draws as a spawn block, not a nasty) */
 int      soi_projectile_active(const SoiWorld *w, int i);
 int      soi_projectile_x(const SoiWorld *w, int i);
 int      soi_projectile_y(const SoiWorld *w, int i);
 int      soi_projectile_hostile(const SoiWorld *w, int i);
-int      soi_projectile_kind(const SoiWorld *w, int i);   /* 0 = Magic Arrow, 1 = Magic Ball */
+int      soi_projectile_kind(const SoiWorld *w, int i);   /* 0 = rolling Magic Ball, 1 = straight Magic Arrow */
 int      soi_projectile_src_type(const SoiWorld *w, int i);   /* hostile shot's shooter type (0 = player) */
+int      soi_projectile_pierce(const SoiWorld *w, int i);     /* 1 = block-piercing Gargoyle puff */
+int      soi_projectile_fired_left(const SoiWorld *w, int i); /* kind 0 rolling ball fired left (asm type 3) */
 
 /* ---- determinism (MASTER_PLAN §5.5): canonical little-endian serialize +
  *      FNV-1a 64-bit hash over the logical state. ---- */

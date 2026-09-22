@@ -19,14 +19,14 @@ const SFX_ID := {
 	4: 29940,   # ENEMY_KILL    -> "Smack" (generic squash; per-enemy evts 5..15 = refinement)
 	5: 26486,   # PLAYER_HIT    -> game evt 33 "moon blast 11khz" (also the death cry)
 	# 6 (JUMP) intentionally omitted: the jump launch is SILENT in the original
-	7: 28670,   # FIRE (arrow)  -> game evt 2  "Psiou"
+	7: 28670,   # FIRE          -> game evt 2  "Psiou" (rolling Magic Ball, FUN_10010d30)
 	8: 19339,   # TELEPORT      -> game evt 37 "transport"
 	9: 1001,    # POWERUP       -> game evt 39 door/key "bugle 11khz" (generic goody)
 	10: 1000,   # THUNDER       -> game evt 38 "chime1 11khz"
 	11: 10637,  # COIN_GOLD     -> game evt 0x1c "Brass fanfare 1"
 	12: 11228,  # COIN_GEM      -> game evt 0x1d "DumDaDumDum"
 	13: 5548,   # COIN_BARS     -> game evt 0x1e "bugle1 11khz"
-	14: 4397,   # BALL          -> game evt 1  "Whip" (Magic Ball fire)
+	14: 4397,   # BALL          -> game evt 1  "Whip" (straight Magic Arrow, FUN_100110b4)
 	15: 12863,  # CANNON_FIRE   -> game evt 0x10 "Flens"
 	16: 4704,   # KILL_WHEELIE  -> game evt 0x0b "Gabing"
 	17: 2224,   # KILL_HAMMER   -> game evt 0x05 "hammer half speed"
@@ -43,8 +43,8 @@ const SFX_ID := {
 	28: 29940,  # BLOCK_BREAK   -> head-bonk 2nd hit, game evt 0x24 "Smack"
 	29: 15960,  # ROBO_PUNCH    -> Robo block smash, game evt 0x11 "Metal"
 	30: 1005,   # CLOCK         -> slow-enemies power-up, game evt 0x2B "slow"
-	31: 24336,  # PICKUP_BALL   -> Magic Ball ammo (goody 0x12), game evt 0x1a "slide whistle"
-	32: 3001,   # PICKUP_ARROW  -> Magic Arrow ammo (goody 0x11), game evt 0x19 "rooster"
+	31: 24336,  # PICKUP_BALL   -> goody 0x12 (red arrow: Magic Arrow ammo), game evt 0x1a "slide whistle"
+	32: 3001,   # PICKUP_ARROW  -> goody 0x11 (bottled swirl: Magic Ball ammo), game evt 0x19 "rooster"
 	33: 31429,  # PICKUP_SHIELD -> shield pickup (goody 0x10), game evt 0x18 "oh la la"
 	34: 7119,   # PICKUP_TIME   -> time bonus, game evt 0x1b "space balls"
 	35: 1002,   # SHOES         -> speed-shoes goody 0x32, game evt 0x28 "zap"
@@ -53,6 +53,8 @@ const SFX_ID := {
 	38: 17661,  # KEY           -> colored-key collect, game evt 0x14 "Announce"
 	39: 1007,   # HURRY         -> low-bonus "hurry up" warning (timer passes 1000), game evt 0x2d -> 1007_hurry_up
 	40: 2689,   # WALKER_FIRE    -> Walker bolt throw, game evt 0x13 "Strings" (DAT_10037074[0x13])
+	41: 1006,   # SWITCH         -> Stop/Go switch flip, game evt 0x2c "snap" (DAT_10037074[0x2c])
+	42: 2937,   # BEANIE_BUD     -> Beanie bud shot, game evt 0x12 (DAT_10037074[0x12])
 }
 # name-keyword fallbacks (used only if the id above isn't present)
 const SFX := {

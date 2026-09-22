@@ -1,0 +1,15 @@
+# Cooperate on Board#001 (two players): ONE team pool in player 1's slot (asm DAT_100370e4 == 0):
+# HUD starts 04 lives / 02 / 02 (FUN_1002b060); P2's coin and arrow hit the shared score / ammo;
+# a Bonus runout kills BOTH players and costs the pool two lives.
+0 20
+SHOT coop_1_start
+0 300 R
+SHOT coop_2_p2_coin
+0 6 A
+0 60
+SHOT coop_3_p2_arrow
+SPEED 16
+0 9200
+SPEED 1
+SHOT coop_4_after_runout
+0 60

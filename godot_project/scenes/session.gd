@@ -105,9 +105,17 @@ func load_game() -> bool:
 	resume_stats = data.get("players", [])
 	return true
 
-# --- New Game: build the tiered campaign board list (BORD 401-500) and start at board 1. ---
+# --- New Game: build the board list and start at board 1. One Player / Alternate / Cooperate play
+# the tiered campaign BORD 401-500; COMPETE plays the separate 1001-1050 set (asm FUN_1002b448 loads
+# BORD N+1000 when the compete flag DAT_1003ab6c = r2+0x69fc is set; those boards carry the
+# per-player keys 8/9 and doors). ---
 func start_campaign() -> void:
 	resume_stats = []
+	var lo := 401
+	var hi := 500
+	if num_players >= 2 and mode == 1:
+		lo = 1001
+		hi = 1050
 	var dir := ProjectSettings.globalize_path("res://../extracted/levels")
 	var files: Array[String] = []
 	var da := DirAccess.open(dir)
@@ -117,7 +125,7 @@ func start_campaign() -> void:
 		while f != "":
 			if f.ends_with(".bord"):
 				var n := _board_num_of(f)
-				if n >= 401 and n <= 500:   # tiered campaign (challenge 1001-1050 is a separate set)
+				if n >= lo and n <= hi:
 					files.append(dir.path_join(f))
 			f = da.get_next()
 		da.list_dir_end()

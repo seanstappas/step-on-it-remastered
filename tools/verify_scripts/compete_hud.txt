@@ -1,0 +1,8 @@
+# Compete on the second board set (board_1001 = Compete Board#001, asm FUN_1002b448 BORD N+1000):
+# the HUD shows each player's counters on its own line (asm FUN_1000fb18: y=0 / y=0x10); both
+# start with 02 lives / 01 / 01; P1 and P2 score separately.
+0 20
+SHOT compete_1_start
+R 400 L
+SHOT compete_2_moving
+0 20

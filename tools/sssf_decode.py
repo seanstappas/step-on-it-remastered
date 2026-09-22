@@ -48,9 +48,15 @@ def decode_palette(res: dict) -> list[tuple[int, int, int]]:
 
 
 def frame_offsets(d: bytes) -> list[int]:
+    # The header count excludes the two blank leading slots (0,1): the table holds count+2
+    # entries (the first frame starts right after it) and asm frame i is slot i+1.
     (count,) = struct.unpack_from(">I", d, 0)
-    offs = [struct.unpack_from(">I", d, 4 + i * 4)[0] for i in range(count)]
-    return offs
+    n = count
+    first = next((struct.unpack_from(">I", d, 4 + i * 4)[0] for i in range(min(count, 4))
+                  if struct.unpack_from(">I", d, 4 + i * 4)[0]), 0)
+    if first == 4 + 4 * (count + 2):
+        n = count + 2
+    return [struct.unpack_from(">I", d, 4 + i * 4)[0] for i in range(n)]
 
 
 def decode_frame(d: bytes, off: int, ctrl_off: int, lead: int, swap: bool = False) -> tuple[int, int, list[int]]:

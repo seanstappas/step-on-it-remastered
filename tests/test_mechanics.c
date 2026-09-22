@@ -63,7 +63,7 @@ int main(void)
     CHECK(soi_enemy_x(w, 0) == soi_cell_x(5) && soi_enemy_y(w, 0) == soi_cell_y(9),
           "accessor: enemy pixel position readable");
 
-    soi_tick(w, SOI_IN_ARROW, 0);              /* fire once */
+    soi_tick(w, SOI_IN_BALL, 0);               /* fire once */
     CHECK(w->players[1].arrows == 1, "arrow: firing consumed one arrow");
     CHECK(soi_projectile_count(w) == 1, "arrow: a projectile is in flight");
 
@@ -87,13 +87,13 @@ int main(void)
     w->players[1].arrows = 3;
     w->players[1].balls  = 3;
     w->players[1].facing = 1;
-    soi_tick(w, SOI_IN_ARROW, 0);              /* fire an arrow */
+    soi_tick(w, SOI_IN_BALL, 0);               /* fire the rolling ball */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
           "one-shot: first arrow fires (1 in flight, ammo 3->2)");
-    soi_tick(w, SOI_IN_ARROW, 0);              /* try to fire again while it flies */
+    soi_tick(w, SOI_IN_BALL, 0);               /* try to fire again while it flies */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
           "one-shot: a 2nd arrow is BLOCKED while the 1st is live (no timer needed)");
-    soi_tick(w, SOI_IN_BALL, 0);               /* a ball SHARES the slot -> also blocked */
+    soi_tick(w, SOI_IN_ARROW, 0);              /* the other weapon SHARES the slot -> also blocked */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].balls == 3,
           "one-shot: a ball is BLOCKED too (arrow+ball share the one slot)");
     {
@@ -102,7 +102,7 @@ int main(void)
             soi_tick(w, 0, 0);
     }
     CHECK(soi_projectile_count(w) == 0, "one-shot: the live arrow eventually despawns");
-    soi_tick(w, SOI_IN_ARROW, 0);
+    soi_tick(w, SOI_IN_BALL, 0);
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 1,
           "one-shot: once the slot is free, firing works again (ammo 2->1)");
 
@@ -334,7 +334,7 @@ int main(void)
     soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
     w->players[1].facing = 1; w->players[1].balls = 3;
-    soi_tick(w, SOI_IN_BALL, 0); soi_tick(w, SOI_IN_BALL, 0);
+    soi_tick(w, SOI_IN_ARROW, 0); soi_tick(w, SOI_IN_ARROW, 0);
     CHECK(soi_player_pose(w, 1) == 1, "pose: firing a ball sets the FIRE pose (display)");
 
     /* ---- 3e. A cliff-fall is PURELY VERTICAL (asm FUN_1001386c calls ONLY the
@@ -648,8 +648,8 @@ int main(void)
             if (e != si && w->enemies[e].active && w->enemies[e].type == SOI_ENEMY_HAMMER) { ci = e; break; }
         CHECK(ci >= 0, "spawner: a persistent spawner emits a child nasty");
         CHECK(ci >= 0 && w->enemies[ci].life > 0, "spawner: the emitted child is transient (lifespan set)");
-        if (ci >= 0) w->enemies[ci].life = 2;           /* force it to the brink of expiry */
-        soi_enemies_update(w); soi_enemies_update(w);
+        if (ci >= 0) w->enemies[ci].life = 2;           /* force it to the brink of expiry (2 steps) */
+        { int k; for (k = 0; k < 4; k++) soi_enemies_update(w); }   /* 2 steps x 2 frames */
         CHECK(ci >= 0 && !w->enemies[ci].active, "spawner: a child despawns when its lifespan expires");
     }
 
@@ -731,33 +731,40 @@ int main(void)
         w->enemies[ri].y = soi_cell_y(9);
         for (c = 3; c <= 11; c++) soi_set_cell(w, c, 10, SOI_CELL_SUPPORTIVE);  /* long floor */
         soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 0x07);     /* a breakable block ahead */
-        for (t = 0; t < 50; t++) soi_enemies_update(w);
+        for (t = 0; t < 80; t++) soi_enemies_update(w);
         CHECK(!(soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE), "robo: punches through a breakable block");
         CHECK(w->enemies[ri].dir == 2, "robo: keeps its heading after punching (no turn)");
     }
 
-    /* ---- 8e. A Beanie BUDS a child when a wall blocks it (FUN_10006378), at most
-     * one living bud at a time; buds are transient and do not themselves bud. */
+    /* ---- 8e. A Beanie (FUN_10006378) meeting a BREAKABLE block stops and shoots out a bud
+     * (child 0x6b, FUN_10006d44) that grows, smashes the block, retracts and vanishes; the
+     * Beanie waits for it and then walks on. At a PERMANENT block it turns around. It never
+     * spawns another Beanie. */
     {
-        int pi, n, e, t;
+        int pi, n, e, t, x0, broke_at = -1;
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
         pi = soi_enemy_spawn(w, SOI_ENEMY_BEANIE, 5, 9);
-        w->enemies[pi].dir = 2; w->enemies[pi].vx = 2;     /* walking right into a wall */
-        soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);       /* floor */
-        soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE);        /* wall ahead */
-        soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
-        soi_enemies_update(w);                             /* hits the wall -> buds + reverses */
+        w->enemies[pi].dir = 2; w->enemies[pi].vx = 2;
+        soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 0x07);  /* breakable block ahead */
+        x0 = w->enemies[pi].x;
+        soi_enemies_update(w);
+        CHECK(w->enemies[pi].bud > 0 && w->enemies[pi].x == x0, "beanie: stops and shoots a bud at a breakable block");
+        for (t = 0; t < 80 && w->enemies[pi].bud; t++) {
+            soi_enemies_update(w);
+            if (broke_at < 0 && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0) broke_at = w->enemies[pi].bud;
+        }
+        CHECK(broke_at == 17, "beanie: the bud smashes the block when fully out (16 steps)");
+        CHECK(w->enemies[pi].x == x0 && w->enemies[pi].dir == 2, "beanie: waits for its bud, keeps its heading");
         n = 0;
         for (e = 0; e < SOI_MAX_ENEMIES; e++)
             if (w->enemies[e].active && w->enemies[e].type == SOI_ENEMY_BEANIE) n++;
-        CHECK(n == 2, "beanie: buds one child at a wall");
-        CHECK(w->enemies[pi].child != 0, "beanie: parent records its one living bud");
-        for (t = 0; t < 6; t++) soi_enemies_update(w);     /* must not bud a second while it lives */
-        n = 0;
-        for (e = 0; e < SOI_MAX_ENEMIES; e++)
-            if (w->enemies[e].active && w->enemies[e].type == SOI_ENEMY_BEANIE) n++;
-        CHECK(n == 2, "beanie: at most one living bud at a time");
+        CHECK(n == 1, "beanie: never spawns another Beanie");
+        for (t = 0; t < 4; t++) soi_enemies_update(w);
+        CHECK(w->enemies[pi].x > x0, "beanie: walks on through the cleared cell");
+        soi_set_cell(w, 8, 9, SOI_WALL);                      /* permanent block further on */
+        for (t = 0; t < 200 && w->enemies[pi].dir == 2; t++) soi_enemies_update(w);
+        CHECK(w->enemies[pi].dir == 1 && w->enemies[pi].turn == 16, "beanie: turns around (16 steps) at a permanent block");
     }
 
     /* ---- 8f. The Gargoyle (bord 14, asm FUN_1000adc4) and Knight (bord 13, asm
@@ -830,8 +837,8 @@ int main(void)
         y0 = w->enemies[ai].y;
         soi_enemies_update(w);
         CHECK(w->enemies[ai].y == y0, "ledge: an enemy straddling a one-cell gap stays up");
-        w->enemies[ai].x = soi_cell_x(5);               /* now fully over the gap */
-        soi_enemies_update(w);
+        w->enemies[ai].x = soi_cell_x(5) - 2;           /* now fully over the gap (Ant feet x+4, x+0x20) */
+        soi_enemies_update(w); soi_enemies_update(w);   /* one AI step = 2 frames (asm +0x6c) */
         CHECK(w->enemies[ai].y > y0, "ledge: an enemy fully over the gap falls");
     }
 
@@ -849,7 +856,7 @@ int main(void)
         w->enemies[wi].dir = 2;
         w->enemies[wi].y = soi_cell_y(9);
         y0 = w->enemies[wi].y;
-        for (t = 0; t < 200; t++) {
+        for (t = 0; t < 600; t++) {                     /* 1 px per 3 frames + 16-step turns */
             int c;
             soi_enemies_update(w);
             c = (w->enemies[wi].x - SOI_ORIGIN_X) / SOI_CELL_PX;
@@ -1231,12 +1238,13 @@ int main(void)
         soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);
         soi_set_cell(w, 6, 9, 0x207u);                  /* breakable wall directly ahead */
         w->enemies[hi].dir = 2; w->enemies[hi].vx = 2;
+        w->enemies[hi].x += 6;                          /* probe x+0x1a now in col 6 */
         {
             int y0 = w->enemies[hi].y, minY, t, smashed = 0;
             soi_enemies_update(w);                      /* step 1: begin the jump-smash (rise) */
             minY = w->enemies[hi].y;
             CHECK(w->enemies[hi].y == y0 - 11, "hammer: rises a fixed 11px as it begins the smash");
-            for (t = 0; t < 20 && w->enemies[hi].fire_cd != 0; t++) {
+            for (t = 0; t < 60 && w->enemies[hi].fire_cd != 0; t++) {   /* 16 steps x 2 frames */
                 soi_enemies_update(w);
                 if (w->enemies[hi].y < minY) minY = w->enemies[hi].y;
                 if (SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0) smashed = 1;
@@ -1252,6 +1260,7 @@ int main(void)
         soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);
         soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | SOI_CELL_PERMANENT | 0x01u);  /* permanent wall ahead */
         w->enemies[hi].dir = 2; w->enemies[hi].vx = 2;
+        w->enemies[hi].x += 6;
         soi_enemies_update(w);
         CHECK(w->enemies[hi].dir == 1, "hammer: turns at a permanent wall ahead");
         CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE), "hammer: the permanent wall survives");
@@ -1515,7 +1524,7 @@ int main(void)
     w->players[1].arrows = 1;
     w->players[1].facing = 1;
     soi_set_cell(w, 5, 9, 0x201);                       /* destructible block directly ahead */
-    soi_tick(w, SOI_IN_ARROW, 0);                       /* fire -> travels right */
+    soi_tick(w, SOI_IN_BALL, 0);                        /* fire -> travels right */
     {
         int t;
         for (t = 0; t < 20; t++) soi_tick(w, 0, 0);     /* it reaches + deflects off the block */
@@ -1539,7 +1548,7 @@ int main(void)
     { int c; for (c = 1; c <= 9; c++) soi_set_cell(w, c, 12, 0x300u); }  /* solid floor below the arrow */
     soi_set_cell(w, 3, 11, 0x300u); soi_set_cell(w, 3, 10, 0x300u);      /* wall to the left */
     w->players[1].arrows = 1; w->players[1].facing = -1;                 /* face left */
-    soi_tick(w, SOI_IN_ARROW, 0);                                        /* fire left */
+    soi_tick(w, SOI_IN_BALL, 0);                                         /* fire left */
     {
         int y0 = w->projectiles[0].y, t;
         for (t = 0; t < 60 && soi_projectile_count(w) == 1; t++) soi_tick(w, 0, 0);
@@ -1783,9 +1792,9 @@ int main(void)
     w->players[1].balls = 2;
     w->players[1].arrows = 0;
     w->players[1].facing = 1;
-    soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);            /* two cells to the right */
+    soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);           /* two cells to the right */
     soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);        /* floor so the nasty stands */
-    soi_tick(w, SOI_IN_BALL, 0);                        /* fire the ball */
+    soi_tick(w, SOI_IN_ARROW, 0);                       /* fire the straight shot */
     CHECK(w->players[1].balls == 1, "ball: firing consumed one ball");
     CHECK(soi_projectile_count(w) == 1, "ball: a ball is in flight");
     CHECK(soi_projectile_active(w, 0) == 1 && soi_projectile_kind(w, 0) == 1,
@@ -1797,6 +1806,25 @@ int main(void)
     }
     CHECK(soi_enemy_count(w) == 0, "ball: the rolling ball killed the nasty");
 
+    /* 15a. Its hit strip is (x,y+1)-(x+0xf,y+5) at row-top+8 (FUN_1000fd5c): it rolls
+     * straight over a low Ant (box row-top+16..+32) and spends itself on the wall. */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 3, 9);
+    ground_player(w, 3, 9);
+    w->players[1].balls = 1;
+    w->players[1].facing = 1;
+    soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+    w->enemies[0].vx = 0; w->enemies[0].turn = 200;
+    soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);
+    soi_tick(w, SOI_IN_ARROW, 0);
+    {
+        int t;
+        for (t = 0; t < 120 && soi_projectile_count(w) > 0; t++)
+            soi_tick(w, 0, 0);
+    }
+    CHECK(soi_enemy_count(w) == 1, "ball: a low Ant ducks under the Magic Ball");
+
     /* 15b. The ball stops at a solid block and does NOT smash it (contrast the
      * Arrow, which clears the block in test 12). */
     soi_world_init(w, 1);
@@ -1806,7 +1834,7 @@ int main(void)
     w->players[1].balls = 1;
     w->players[1].facing = 1;
     soi_set_cell(w, 5, 9, 0x201);                       /* destructible block ahead */
-    soi_tick(w, SOI_IN_BALL, 0);
+    soi_tick(w, SOI_IN_ARROW, 0);
     {
         int t;
         for (t = 0; t < 24 && soi_projectile_count(w) > 0; t++)
@@ -2005,7 +2033,7 @@ int main(void)
         w->enemies[wi].dir = 2; w->enemies[wi].vx = 3;    /* moving right toward the block */
         for (k = 0; k < 40; k++) soi_tick(w, 0, 0);
         CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 6)) == 0, "hippo: destroys the breakable block in its path");
-        CHECK(w->enemies[wi].dir == 2, "hippo: keeps walking through (did not turn at the block)");
+        CHECK(w->enemies[wi].dir == 1, "hippo: chomps the block then turns back (FUN_100081f8 state 5)");
         /* (b) an Ant TURNS at the same breakable block (does not destroy it) */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
@@ -2039,11 +2067,16 @@ int main(void)
         soi_set_cell(w, 6, 9, SOI_WALL);                      /* permanent wall directly ahead -> turn */
         w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
         w->enemies[ri].y = soi_cell_y(9);
+        w->enemies[ri].x += 4;                                /* leading probe x+0x1c now in col 6 */
         x0 = w->enemies[ri].x;
         soi_enemies_update(w);                                /* one logic frame */
         CHECK(w->enemies[ri].x == x0,
               "speed-obstacle: an enemy does NOT step into a wall on the turn frame");
-        CHECK(w->enemies[ri].dir == 1, "speed-obstacle: it reverses at the wall");
+        CHECK(w->enemies[ri].dir == 1 && w->enemies[ri].turn == 15, "speed-obstacle: it reverses at the wall (15-step turn)");
+        for (k = 0; k < 30; k++) soi_enemies_update(w);       /* 15 steps x 2 frames */
+        CHECK(w->enemies[ri].x == x0 && w->enemies[ri].turn == 0, "speed-obstacle: it stands still through the turn");
+        for (k = 0; k < 2; k++) soi_enemies_update(w);
+        CHECK(w->enemies[ri].x == x0 - 2, "speed-obstacle: then walks back");
 
         /* (b) CONTROL -- a clear path: the enemy still advances a FULL vx step (the
          * fix must not freeze normal patrol). Passes on old and new. */
@@ -2067,14 +2100,15 @@ int main(void)
         soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);          /* ground under the robo only; col 6 is a gap */
         w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
         w->enemies[ri].y = soi_cell_y(9);
+        w->enemies[ri].x += 4;
         x0 = w->enemies[ri].x;
         soi_enemies_update(w);
         CHECK(w->enemies[ri].x == x0,
               "speed-obstacle: an enemy does NOT step over a ledge on the turn frame");
         CHECK(w->enemies[ri].dir == 1, "speed-obstacle: it reverses at the ledge");
 
-        /* (d) CONTROL -- a plow nasty (Hippo) clears a breakable block ahead AND keeps
-         * advancing through it (the fix must still move in the plow branch). */
+        /* (d) a Hippo (FUN_100081f8) chomps a breakable block ahead AND turns back on
+         * that same step (16-step turn), without stepping forward. */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
         ri = soi_enemy_spawn(w, SOI_ENEMY_HIPPO, 5, 9);
@@ -2085,33 +2119,54 @@ int main(void)
         x0 = w->enemies[ri].x;
         soi_enemies_update(w);
         CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0,
-              "speed-obstacle: a plow nasty clears the breakable block ahead");
-        CHECK(w->enemies[ri].x == x0 + 2,
-              "speed-obstacle: a plow nasty keeps advancing through the cleared block");
-        CHECK(w->enemies[ri].dir == 2, "speed-obstacle: a plow nasty keeps its heading");
+              "speed-obstacle: a Hippo chomps the breakable block ahead");
+        CHECK(w->enemies[ri].x == x0,
+              "speed-obstacle: the Hippo does not step on the chomp step");
+        CHECK(w->enemies[ri].dir == 1 && w->enemies[ri].turn == 16, "speed-obstacle: the Hippo turns back after chomping");
     }
 
-    /* ---- 24. Procedural badguy throw GATES on valid params. The 4 "DATA:" boards
-     * (301/428/446/498) carry the ASCII marker "DATA: " in header bytes 0x10-0x14 ->
-     * pct_badguy=21569 / thrown_badguy=17473 = GARBAGE, which used to spawn a spurious
-     * ANT (fallback) every 120 frames. A percentage is <=100 and the type must be a
-     * real nasty, else nothing is thrown (no ANT fallback). ---- */
+    /* ---- 24. thrown_badguy / pct_badguy drive ONLY the Gargoyle's EGG throw (asm FUN_1000adc4
+     * rolls Random(100) vs pct_badguy -> FUN_1000bf54 egg -> FUN_1000b6a0 flight -> FUN_1000b7dc
+     * hatch). There is no global top-of-board spawn: a board without a Gargoyle never throws, and
+     * the selector maps through FUN_1000b7dc's switch (10 -> Teeth, 11 -> Smiley, 19 -> Piggy,
+     * anything else -> Ostrich), hatching a 400-frame nasty. pct_badguy 0 -> always the puff. ---- */
     {
-        int k, found = -1;
+        int k, t, gi, found = -1;
         soi_world_init(w, 1);
         w->level_loaded = 1;
-        w->pct_badguy = 21569; w->thrown_badguy = 17473;   /* the "DATA:" garbage */
-        w->tick = 119;                                     /* next tick lands on %120==0 */
-        soi_tick(w, 0, 0);
-        CHECK(soi_enemy_count(w) == 0, "procspawn: garbage params (pct>100 / bad type) throw nothing");
-        soi_world_init(w, 1);
-        w->level_loaded = 1;
-        w->pct_badguy = 100; w->thrown_badguy = (int16_t)SOI_ENEMY_TEETH;   /* valid: always passes */
+        w->pct_badguy = 100; w->thrown_badguy = 11;
         w->tick = 119;
+        for (t = 0; t < 400; t++) soi_tick(w, 0, 0);
+        CHECK(soi_enemy_count(w) == 0, "egg: no Gargoyle -> nothing is ever thrown (no global spawn)");
+
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        reset_player(w, 1, 3, 11);
+        ground_player(w, 3, 11);
+        for (t = 0; t < SOI_GRID_COLS; t++) soi_set_cell(w, t, 12, SOI_CELL_SUPPORTIVE);
+        w->pct_badguy = 100; w->thrown_badguy = 11;
+        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 15, 8);
+        soi_set_cell(w, 15, 9, SOI_WALL);
+        w->enemies[gi].fire_cd = 0; w->enemies[gi].fire_period = 999;
         soi_tick(w, 0, 0);
-        for (k = 0; k < SOI_MAX_ENEMIES; k++) if (w->enemies[k].active) { found = k; break; }
-        CHECK(soi_enemy_count(w) == 1 && found >= 0 && w->enemies[found].type == SOI_ENEMY_TEETH,
-              "procspawn: valid params throw the configured badguy (no ANT fallback)");
+        CHECK(soi_projectile_count(w) == 1 && w->projectiles[0].kind == 3 && !w->projectiles[0].hostile,
+              "egg: pct_badguy 100 -> the Gargoyle lobs a harmless egg, not a puff");
+        CHECK(w->projectiles[0].trow <= 2, "egg: aimed at a cell in the top three rows");
+        for (t = 0; t < 300 && w->projectiles[0].active; t++) soi_tick(w, 0, 0);
+        for (k = 0; k < SOI_MAX_ENEMIES; k++)
+            if (w->enemies[k].active && w->enemies[k].type == SOI_ENEMY_SMILEY) { found = k; break; }
+        CHECK(found >= 0 && w->enemies[found].life > 0 && w->enemies[found].life <= 400,
+              "egg: hatches the mapped badguy (selector 11 -> Smiley) with a 400-frame life");
+
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        reset_player(w, 1, 3, 11);
+        w->pct_badguy = 0; w->thrown_badguy = 0;
+        gi = soi_enemy_spawn(w, SOI_ENEMY_GARGOYLE, 15, 8);
+        w->enemies[gi].fire_cd = 0;
+        soi_tick(w, 0, 0);
+        CHECK(soi_projectile_count(w) == 1 && w->projectiles[0].hostile,
+              "egg: pct_badguy 0 -> always the aimed puff");
     }
 
     /* ---- 25. Enemy touch is an AABB HURTBOX overlap, not coarse grid-cell equality
@@ -2208,7 +2263,7 @@ int main(void)
         reset_player(w, 1, 5, 9);
         ground_player(w, 5, 9);
         w->players[1].facing = 1; w->players[1].arrows = 5;
-        soi_tick(w, SOI_IN_ARROW, 0);               /* fire -> action pose starts (pose_t=12) */
+        soi_tick(w, SOI_IN_BALL, 0);                /* fire -> action pose starts (pose_t=12) */
         CHECK(w->players[1].pose_t > 0, "glide: firing a weapon starts the action pose");
         x0 = w->players[1].x;
         for (t = 0; t < 5; t++) {                   /* hold RIGHT while the pose still swings */
@@ -2971,7 +3026,7 @@ int main(void)
     w->players[1].arrows = 1;
     w->players[1].facing = 1;                           /* fire RIGHT */
     { int c; for (c = 1; c <= 7; c++) soi_set_cell(w, c, 8, 0x300u); }   /* floor cols 1..7, row 8; then a cliff (cols 8+ open) */
-    soi_tick(w, SOI_IN_ARROW, 0);                       /* fire the wall-follower ball */
+    soi_tick(w, SOI_IN_BALL, 0);                        /* fire the wall-follower ball */
     CHECK(soi_projectile_count(w) == 1 && soi_projectile_kind(w, 0) == 0,
           "wall-ball: a kind-0 follower is in flight after firing right");
     {
@@ -3042,6 +3097,361 @@ int main(void)
               "idle-snap control: a player holding a direction is RUN, not IDLE (the snap gate is off)");
         CHECK(w->players[1].x - x0 >= 20,
               "idle-snap control: a RUNNING player advances a full run (2 px sub-steps not snap-stalled) -- proves the IDLE gate");
+    }
+
+    /* ---- 47. NEW-GAME stats per play mode (asm FUN_1002b060). Every player starts with
+     * 2 lives / 1 arrow / 1 ball (refs/images board_1+3 solo HUD read 02 / 01 / 01); only
+     * COOPERATE's shared pool in player 1 gets 4 / 2 / 2. The port used to start a solo game
+     * on 4 lives + 2 + 2 -- two free lives the original never gives. */
+    {
+        soi_world_init(w, 1);
+        CHECK(w->players[1].lives == 2 && w->players[1].arrows == 1 && w->players[1].balls == 1,
+              "newgame: world_init defaults = the One-Player new game (2 lives, 1 arrow, 1 ball)");
+        CHECK(soi_play_mode(w) == SOI_MODE_ONE, "newgame: world_init resets to One Player");
+        w->players[1].score = 99;
+        soi_new_game(w, SOI_MODE_ONE);
+        CHECK(w->players[1].lives == 2 && w->players[1].arrows == 1 && w->players[1].balls == 1 &&
+              w->players[1].score == 0, "newgame: One Player = 2 / 1 / 1, score 0");
+        soi_new_game(w, SOI_MODE_COMPETE);
+        CHECK(w->players[1].lives == 2 && w->players[2].lives == 2 && w->players[2].arrows == 1,
+              "newgame: Compete = each player 2 / 1 / 1");
+        soi_new_game(w, SOI_MODE_COOPERATE);
+        CHECK(w->players[1].lives == 4 && w->players[1].arrows == 2 && w->players[1].balls == 2,
+              "newgame: Cooperate = shared pool 4 / 2 / 2 in player 1");
+    }
+
+    /* ---- 48. COOPERATE shared pool: every credit lands in player 1's slot (asm
+     * `if (!DAT_100370e4) player = 1` in FUN_1002bc64 / FUN_1000e9c8 / FUN_10010d30 /
+     * FUN_10011428 ...), so P2's coins, ammo and deaths all hit the one team pool. */
+    {
+        int t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 2, 9);
+        reset_player(w, 2, 6, 9);
+        soi_new_game(w, SOI_MODE_COOPERATE);
+        soi_set_cell(w, 6, 9, 0x090Au);                  /* silver coin under P2 */
+        soi_pickup_check(w, 2);
+        CHECK(w->players[1].score == 500 && w->players[2].score == 0,
+              "coop: P2's coin is credited to the team pool (player 1)");
+        soi_set_cell(w, 6, 9, 0x0911u);                  /* arrow ammo under P2 */
+        soi_pickup_check(w, 2);
+        CHECK(w->players[1].arrows == 3, "coop: P2's ammo pickup fills the pool");
+        soi_set_cell(w, 6, 9, 0x090Du);                  /* 3x multiplier under P2 */
+        soi_pickup_check(w, 2);
+        CHECK(w->players[1].mult == 3, "coop: P2's multiplier sets the pool multiplier");
+        soi_projectile_fire(w, 2);
+        CHECK(w->players[1].arrows == 2 && soi_projectile_count(w) == 1,
+              "coop: P2 fires from the pool's arrows");
+        CHECK(w->players[1].no_weapons_reward == 0, "coop: P2 firing forfeits the team No-Weapons Reward");
+        /* P2 is hit -> its death-throw ends in the pool losing the life (P1 stands on a floor) */
+        ground_player(w, 2, 9);
+        w->players[2].pose_t = 0; w->players[2].invuln = 0;
+        soi_player_hit(w, 2);
+        for (t = 0; t < 200 && w->players[2].alive; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].lives == 3 && !w->players[2].eliminated,
+              "coop: P2's death debits the shared pool (4 -> 3)");
+    }
+
+    /* ---- 48b. COOPERATE key + door: the key is shared (asm DAT_1003ab6c == 0 sets both
+     * players' key flag) and the door-exit has NO held-key test, so the partner of the
+     * collector can leave; the team pool is tallied once. COMPETE keeps the key private. */
+    {
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 2, 9);
+        reset_player(w, 2, 6, 9);
+        soi_new_game(w, SOI_MODE_COOPERATE);
+        w->players[1].bonus_time = 1000; w->players[1].mult = 2;
+        soi_set_cell(w, 12, 9, 0x0904u);                 /* lock for key 7 */
+        soi_set_cell(w, 2, 9, 0x0907u);                  /* key 7 under P1 */
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].has_key == 1 && w->players[2].has_key == 1,
+              "coop: the collected key is shared by both players");
+        w->players[2].x = soi_cell_x(12);
+        soi_pickup_check(w, 2);
+        CHECK(soi_level_complete(w) == 1 && w->players[2].has_key == 2,
+              "coop: P2 exits through the door P1's key opened");
+        CHECK(w->players[1].score == 2000 && w->players[2].score == 0,
+              "coop: the team pool bonus (1000 x 2) is tallied once, into player 1");
+
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 2, 9);
+        reset_player(w, 2, 6, 9);
+        soi_new_game(w, SOI_MODE_COMPETE);
+        soi_set_cell(w, 2, 9, 0x0908u);                  /* P1's own key 8 */
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].has_key == 1 && w->players[2].has_key == 0,
+              "compete: the key stays with its collector");
+    }
+
+    /* ---- 48c. Door exit requires the box NOT to straddle two rows (asm FUN_1002bc64:
+     * row(y) == row(y+0x10)), and no longer needs a held key. */
+    {
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 10, 9);
+        soi_set_cell(w, 10, 9, SOI_CELL_DOOR | 0x01u);
+        w->players[1].y = soi_cell_y(9) - 12;            /* box top in row 8, pickup centre in row 9 */
+        soi_pickup_check(w, 1);
+        CHECK(soi_level_complete(w) == 0, "door: a row-straddling box does not exit");
+        w->players[1].y = soi_cell_y(9) + 1;             /* standing in the door row */
+        soi_pickup_check(w, 1);
+        CHECK(soi_level_complete(w) == 1, "door: an aligned box exits (no held-key test in the asm)");
+    }
+
+    /* ---- 49. Shield potion (0x30) and speed shoes (0x32) share ONE power-up slot (asm
+     * FUN_10014c28 / FUN_10014ccc write the same mode +0x5c and timer +0x6e), so picking
+     * one up cancels the other instead of stacking. */
+    {
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        soi_set_cell(w, 4, 9, 0x0930u);
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].invuln == 600 && w->players[1].fast == 0, "powerup: shield on");
+        soi_set_cell(w, 4, 9, 0x0932u);
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].fast == 1200 && w->players[1].invuln == 0, "powerup: shoes replace the shield");
+        soi_set_cell(w, 4, 9, 0x0930u);
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].invuln == 600 && w->players[1].fast == 0, "powerup: shield replaces the shoes");
+    }
+
+    /* ---- 49b. A speed-shoes player samples input EVERY frame (asm FUN_10028a0c drops the
+     * divider to 1 while +0x5c == 1); a normal player keeps the 2-frame latch. */
+    {
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 4, 9);
+        reset_player(w, 2, 8, 9);
+        w->players[1].fast = 1200;
+        soi_tick(w, 0, 0);                                /* tick 1 (odd): latch 0 */
+        soi_tick(w, SOI_IN_RIGHT, SOI_IN_RIGHT);          /* tick 2 (even) */
+        CHECK(w->players[1].input == SOI_IN_RIGHT, "shoes latch: the fast player reads input on the even frame");
+        CHECK(w->players[2].input == 0, "shoes latch: a normal player still holds the odd-frame latch");
+    }
+
+    /* ---- 50. CHALLENGE ROUND = a board holding a Knight or Gargoyle (asm FUN_10017a70 ->
+     * DAT_1003ad0e; every 10th campaign board 410..500). A death there spends NO life and does
+     * not reload: the round fails (FUN_10016f80 restores the board-start stats, the board is
+     * skipped). An exit pays Bonus x mult but NOT the No-Weapons Reward (no FUN_100153d0 tally). */
+    {
+        int t;
+        uint8_t bord[0x28];
+        memset(bord, 0, sizeof(bord));
+        bord[0x07] = 3; bord[0x09] = 9;          /* P1 spawn (3,9) */
+        bord[0x18] = 0x28; bord[0x19] = 0x14; bord[0x1A] = 0x05; bord[0x1B] = 0x0E;   /* Gargoyle spawn block */
+        bord[0x1C] = 12; bord[0x1D] = 3;         /* at (12,3) */
+        bord[0x1E] = 0x64; bord[0x1F] = 0x64;    /* record end; a 0 tile then ends the body */
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(soi_challenge_round(w) == 1, "challenge: a Gargoyle on the board makes it a Challenge Round");
+        soi_limit_players(w, 1);
+        w->pct_badguy = 0;
+        ground_player(w, 3, 10);
+        w->players[1].lives = 0;                 /* even the LAST life is safe in a challenge */
+        soi_player_hit(w, 1);
+        for (t = 0; t < 300 && w->players[1].alive; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].lives == 0 && !w->players[1].eliminated && w->players[1].respawn_timer == 0,
+              "challenge: a death spends no life and schedules no reload");
+        CHECK(soi_challenge_failed(w) == 1 && soi_game_over(w) == 0,
+              "challenge: the round FAILS (not game over)");
+
+        memset(bord, 0, sizeof(bord));
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(soi_challenge_round(w) == 0 && soi_challenge_failed(w) == 0,
+              "challenge: an ordinary board is not a Challenge Round");
+
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0; w->challenge = 1;
+        reset_player(w, 1, 10, 9);
+        w->players[1].bonus_time = 1000; w->players[1].mult = 2; w->players[1].no_weapons_reward = 5000;
+        soi_set_cell(w, 10, 9, SOI_CELL_DOOR | 0x01u);
+        soi_pickup_check(w, 1);
+        CHECK(soi_level_complete(w) == 1 && w->players[1].score == 2000,
+              "challenge: the exit pays Bonus x mult only (no No-Weapons Reward)");
+    }
+
+    /* ---- 51. The Gargoyle PUFF (asm FUN_1000b0a4) passes through its CAGE blocks (permanent,
+     * low 0x8b) and has no range limit; any other permanent block stops it. ---- */
+    {
+        int t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        memset(&w->projectiles[0], 0, sizeof(w->projectiles[0]));
+        w->projectiles[0].active = 1; w->projectiles[0].hostile = 1;
+        w->projectiles[0].src_type = SOI_ENEMY_GARGOYLE;
+        w->projectiles[0].x = soi_cell_x(16); w->projectiles[0].y = soi_cell_y(5);
+        w->projectiles[0].vx = -4;
+        soi_set_cell(w, 15, 5, 0x38Bu);                  /* cage block */
+        soi_set_cell(w, 2, 5, 0x307u);                   /* ordinary permanent wall */
+        for (t = 0; t < 200 && w->projectiles[0].active; t++) soi_tick(w, 0, 0);
+        CHECK(!w->projectiles[0].active && w->projectiles[0].x < soi_cell_x(4) &&
+              soi_get_cell(w, 15, 5) == 0x38Bu,
+              "puff: flies through the 0x8b cage and on across the board until a real wall");
+    }
+
+    /* ---- 52. The Cannon and the persistent spawners have NO touch hurtbox (asm box top parked
+     * at 1000 in FUN_100071a0 / FUN_100076a8 &c); instead the Cannon's cell becomes a solid 0x300
+     * wall and a spawner's a permanent 0x100 marker (their init stamps). ---- */
+    {
+        uint8_t bord[0x28];
+        int ci = -1, si = -1, k, t;
+        memset(bord, 0, sizeof(bord));
+        bord[0x07] = 3; bord[0x09] = 9;
+        bord[0x18] = 0x28; bord[0x19] = 0x14; bord[0x1A] = 0x06; bord[0x1B] = 0x01;   /* Cannon */
+        bord[0x1C] = 10; bord[0x1D] = 5; bord[0x1E] = 0x64; bord[0x1F] = 0x64;
+        bord[0x20] = 0x28; bord[0x21] = 0x14; bord[0x22] = 0x06; bord[0x23] = 0x13;   /* Piggy spawner */
+        bord[0x24] = 14; bord[0x25] = 5; bord[0x26] = 0x64; bord[0x27] = 0x64;
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        for (k = 0; k < SOI_MAX_ENEMIES; k++) {
+            if (!w->enemies[k].active) continue;
+            if (w->enemies[k].type == SOI_ENEMY_CANNON) ci = k;
+            else if (w->enemies[k].spawn_child) si = k;
+        }
+        CHECK(ci >= 0 && si >= 0 && soi_get_cell(w, 10, 5) == SOI_WALL && soi_get_cell(w, 14, 5) == SOI_CELL_PERMANENT,
+              "stamps: the Cannon cell is a 0x300 wall, the spawner cell a 0x100 marker");
+        soi_limit_players(w, 1);
+        w->players[1].x = w->enemies[si].x; w->players[1].y = w->enemies[si].y;
+        w->players[1].in_air = 0; w->players[1].ground_state = SOI_ST_IDLE;
+        soi_set_cell(w, 14, 6, SOI_WALL);
+        w->players[1].invuln = 0;
+        for (t = 0; t < 4; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD, "stamps: standing in a spawner's cell does not hurt");
+    }
+
+    /* ---- 53. Enemy walking pace matches the asm step counters (+0x6c): a Robo steps every
+     * 2 frames x 2 px = 1 px/frame (the refs video: ~52 px/s at ~52 fps); the Walker steps
+     * every 3 frames x 1 px. ---- */
+    {
+        int ri, wi, c, t, rx0, wx0;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        for (c = 0; c < 18; c++) { soi_set_cell(w, c, 10, SOI_WALL); soi_set_cell(w, c, 13, SOI_WALL); }
+        ri = soi_enemy_spawn(w, SOI_ENEMY_ROBO, 2, 9);
+        wi = soi_enemy_spawn(w, SOI_ENEMY_WALKER, 2, 12);
+        w->enemies[ri].dir = 2; w->enemies[ri].vx = 2;
+        w->enemies[wi].dir = 2; w->enemies[wi].vx = 1;
+        w->enemies[wi].fire_cd = 10000;
+        rx0 = w->enemies[ri].x; wx0 = w->enemies[wi].x;
+        for (t = 0; t < 60; t++) soi_enemies_update(w);
+        CHECK(w->enemies[ri].x - rx0 == 60, "pace: the Robo walks 1 px/frame (60 px in 60 frames)");
+        CHECK(w->enemies[wi].x - wx0 == 20, "pace: the Walker walks 1 px per 3 frames (20 px in 60)");
+    }
+
+    /* ---- 54. Turn-arounds, the vertical Beanie and per-type hurtboxes (asm +0x4c 5/6,
+     * FUN_10006840, +0x7e..0x84). ---- */
+    {
+        int ai, vi, t, y0, x0, k;
+        /* Ant: stands for 16 steps after the step it meets a wall on (FUN_1000602c). */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        for (k = 0; k < 18; k++) soi_set_cell(w, k, 10, SOI_WALL);
+        ai = soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+        soi_set_cell(w, 6, 9, SOI_WALL);
+        w->enemies[ai].x += 0x20 - 0x24 + 1;          /* x+0x24 just inside col 6 */
+        soi_enemies_update(w);
+        CHECK(w->enemies[ai].dir == 1 && w->enemies[ai].turn == 16, "turn: an Ant starts a 16-step turn at a wall");
+        x0 = w->enemies[ai].x;
+        for (t = 0; t < 32; t++) soi_enemies_update(w);
+        CHECK(w->enemies[ai].x == x0 && w->enemies[ai].turn == 0, "turn: it stands still through the turn");
+        soi_enemies_update(w); soi_enemies_update(w);
+        CHECK(w->enemies[ai].x == x0 - 2, "turn: then walks the other way");
+
+        /* Vertical Beanie (bord 8): moves DOWN 2 px a step, buds into a breakable block below. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        vi = soi_enemy_spawn(w, SOI_ENEMY_BEANIE, 8, 4);
+        w->enemies[vi].state = 8; w->enemies[vi].dir = 2;
+        soi_set_cell(w, 8, 7, SOI_CELL_SUPPORTIVE | 0x07);
+        y0 = w->enemies[vi].y;
+        for (t = 0; t < 10; t++) soi_enemies_update(w);
+        CHECK(w->enemies[vi].y == y0 + 10 && w->enemies[vi].x == soi_cell_x(8), "vbeanie: floats straight down 2 px per step");
+        for (t = 0; t < 200 && !w->enemies[vi].bud; t++) soi_enemies_update(w);
+        CHECK(w->enemies[vi].bud > 0 && w->enemies[vi].y + 2 + 0x1e >= soi_cell_y(7), "vbeanie: buds at the breakable block below");
+        for (t = 0; t < 80 && w->enemies[vi].bud; t++) soi_enemies_update(w);
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 8, 7)) == 0, "vbeanie: its bud smashes the block below");
+
+        /* Hurtbox: the Ant is a low 16 px nasty (box y+0x10..y+0x20 in its cell), so a player
+         * whose box sits entirely above that band is not hit. */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 5, 9);
+        for (k = 0; k < 18; k++) soi_set_cell(w, k, 10, SOI_WALL);
+        ai = soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
+        w->enemies[ai].vx = 0; w->enemies[ai].turn = 200;
+        w->players[1].invuln = 0;
+        w->players[1].y = soi_cell_y(9) - 0x0e;       /* player box bottom (y+0x1d) at cell y+0x0f */
+        soi_enemies_update(w);
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD, "hurtbox: the Ant's low box misses a player above it");
+        w->players[1].y = soi_cell_y(9) + 1;
+        soi_enemies_update(w);
+        CHECK(w->players[1].ground_state == SOI_ST_DEAD, "hurtbox: the Ant hits a player standing on its row");
+
+        /* Hammer heading LEFT into a breakable block: the swing art is placed 12 px left
+         * (FUN_10007998 x -= 0xc / += 0xc) and the smash lands on col(x+4). */
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 15, 1);
+        for (k = 0; k < 18; k++) soi_set_cell(w, k, 10, SOI_WALL);
+        vi = soi_enemy_spawn(w, SOI_ENEMY_HAMMER, 6, 9);
+        w->enemies[vi].dir = 1; w->enemies[vi].vx = -2;
+        w->enemies[vi].x -= 6;                         /* x+4 inside col 5 */
+        soi_set_cell(w, 5, 9, 0x207u);
+        x0 = w->enemies[vi].x;
+        soi_enemies_update(w);
+        CHECK(w->enemies[vi].x == x0 - 12 && w->enemies[vi].fire_cd == 1, "hammer: the left swing starts 12 px left");
+        for (t = 0; t < 40 && w->enemies[vi].fire_cd; t++) soi_enemies_update(w);
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 5, 9)) == 0 && w->enemies[vi].x == x0, "hammer: smashes the block and steps back");
+    }
+
+    /* ---- 55. Weapons hit by box (FUN_100030d4): a persistent spawner has no box, so the
+     * wall-follower passes through its cell and it keeps emitting. ---- */
+    {
+        int si, t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 3, 9);
+        ground_player(w, 3, 9);
+        w->players[1].arrows = 1; w->players[1].facing = 1;
+        for (t = 0; t < 18; t++) soi_set_cell(w, t, 10, SOI_WALL);
+        si = soi_enemy_spawn(w, SOI_ENEMY_HIPPO, 6, 9);
+        w->enemies[si].spawn_child = (uint8_t)SOI_ENEMY_HIPPO;
+        w->enemies[si].vx = 0; w->enemies[si].fire_period = 30000; w->enemies[si].fire_cd = 30000;
+        soi_tick(w, SOI_IN_BALL, 0);
+        for (t = 0; t < 120; t++) soi_tick(w, 0, 0);
+        CHECK(w->enemies[si].active, "weapon: a spawner cannot be shot (no hurtbox)");
+    }
+
+    /* ---- 56. Cannon ball (FUN_100071a0 spawn x+0x1c,y+8; mover FUN_1000744c): waits 2 frames,
+     * then flies 4 px/frame, smashes the first breakable block and dies there. ---- */
+    {
+        int ci, pi = -1, t, x0;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 1, 1);
+        ci = soi_enemy_spawn(w, SOI_ENEMY_CANNON, 3, 9);
+        w->enemies[ci].dir = 2; w->enemies[ci].fire_cd = 0; w->enemies[ci].fire_period = 30000;
+        soi_set_cell(w, 8, 9, SOI_CELL_SUPPORTIVE | 0x07);
+        soi_enemies_update(w);
+        for (t = 0; t < SOI_MAX_PROJECTILES; t++) if (w->projectiles[t].active) pi = t;
+        CHECK(pi >= 0 && w->projectiles[pi].x == soi_cell_x(3) + 0x1c && w->projectiles[pi].y == soi_cell_y(9) + 8,
+              "cannon: the ball appears at x+0x1c, y+8");
+        x0 = (pi >= 0) ? w->projectiles[pi].x : 0;
+        soi_projectiles_update(w); soi_projectiles_update(w);
+        CHECK(pi >= 0 && w->projectiles[pi].x == x0, "cannon: the ball waits 2 frames");
+        soi_projectiles_update(w);
+        CHECK(pi >= 0 && w->projectiles[pi].x == x0 + 4, "cannon: then flies 4 px a frame");
+        for (t = 0; t < 100 && pi >= 0 && w->projectiles[pi].active; t++) soi_projectiles_update(w);
+        CHECK(pi >= 0 && !w->projectiles[pi].active && SOI_CELL_TYPE(soi_get_cell(w, 8, 9)) == 0,
+              "cannon: the ball smashes the breakable block and is spent");
     }
 
     free(w);

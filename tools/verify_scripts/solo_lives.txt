@@ -1,0 +1,18 @@
+# One Player on Board#001 (board_401): the new game HUD reads 02 lives / 01 / 01 (asm FUN_1002b060;
+# refs/images/board_1.png shows the same). Let the 3000 Bonus run out three times: each runout costs
+# one life and reloads the board with a fresh Bonus; the third death (at 00 lives) is GAME OVER.
+0 20
+SHOT solo_1_start
+SPEED 16
+0 9300
+SPEED 1
+SHOT solo_2_after_death1
+SPEED 16
+0 9300
+SPEED 1
+SHOT solo_3_after_death2
+SPEED 16
+0 9300
+SPEED 1
+SHOT solo_4_gameover
+0 60
