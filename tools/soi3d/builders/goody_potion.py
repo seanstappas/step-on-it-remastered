@@ -9,7 +9,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _swirl(z, r0=0.05, r1=0.32, turns=2.6, n=80):
@@ -99,3 +99,13 @@ def render(args):
     build_potion()
     C.setup_scene(px, world_strength=0.18, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_potion()
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_potion", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

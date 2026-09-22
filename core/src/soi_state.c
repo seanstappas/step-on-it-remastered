@@ -316,8 +316,8 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
                     } else if (soi_bord_is_spawner((uint8_t)(tile & 0xFFu))) {
                         /* Persistent spawner (FUN_100076a8 &c): a STATIONARY emitter
                          * that produces its base nasty (child = placement+0x64) every
-                         * StartDelay*6 frames. We render it as a stationary instance
-                         * of that nasty. TODO(oracle): the distinct spawner sprite. */
+                         * StartDelay*6 frames. The renderer draws its emblem block (the
+                         * sheet's last frame, FUN_10004108). */
                         w->enemies[ei].spawn_child = (uint8_t)w->enemies[ei].type;
                         w->enemies[ei].vx = 0;                       /* stationary */
                         soi_set_cell(w, a, b, SOI_CELL_PERMANENT);   /* FUN_100076a8 &c init stamp: 0x100 */
@@ -330,14 +330,12 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
                         if (tile & 0x2000u)                 w->enemies[ei].state = 4;
                         else if ((tile & 0x300u) == 0x300u) w->enemies[ei].state = 3;
                     } else if (w->enemies[ei].type == SOI_ENEMY_CREEPER) {
-                        /* Creeper (asm FUN_10008618/8b18): bord 16 = horizontal,
-                         * 17 = vertical (state). Step interval = cell byte3 (asm
-                         * +0x50 = StartDelay) * ~6 (asm +0x6e = +0x50*3 at a 2-frame
-                         * cadence). It is self-propelled, never a shooter. */
+                        /* Creeper segment (asm FUN_10008618 h / FUN_10008b18 v): bord 16 =
+                         * horizontal, 17 = vertical (state). fire_period keeps StartDelay
+                         * (+0x50, copied to every child), fire_cd is the grow timer +0x6e. */
                         w->enemies[ei].state = (uint8_t)(((tile & 0xFFu) == 0x11u) ? 1 : 0);
                         w->enemies[ei].vx = 0;
-                        w->enemies[ei].fire_period = (int16_t)(b0 ? b0 * 6u : 24u);
-                        w->enemies[ei].fire_cd = (int16_t)(b0 ? b0 * 6u : 24u);
+                        w->enemies[ei].fire_period = (int16_t)b0;
                     } else if (w->enemies[ei].type == SOI_ENEMY_WALKER) {
                         /* Walker (asm FUN_1000dd4c): its fire gate +0x6e counts WALKER STEPS (one
                          * per 3 frames): it opens after StartDelay(+0x50)*6 steps and reloads to
@@ -359,6 +357,9 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     }
     w->level_loaded = 1;
     soi_switch_load_scan(w);   /* register Stop/Go switch blocks + normalise their cells (b41) */
+    for (i = 0; i < SOI_MAX_ENEMIES; i++)
+        if (w->enemies[i].active && w->enemies[i].type == SOI_ENEMY_CREEPER)
+            soi_creeper_init(w, i);
     w->challenge = 0;          /* Knight/Gargoyle on the board -> Challenge Round (FUN_10017a70) */
     for (i = 0; i < SOI_MAX_ENEMIES; i++)
         if (w->enemies[i].active &&

@@ -44,6 +44,7 @@ cleared board / retries after game over; **Ctrl-S** quick-saves.
 | Flag | Effect |
 |---|---|
 | `--hd` | Prefer the AI-upscaled `sprites_hd`/`sprites_uhd` + `pict_hd_v2`/`pict_hd`, and render the 640×480 canvas at the window's resolution (via `content_scale`) so the extra detail shows. SD default is byte-for-byte unchanged. |
+| `--3d` | `--hd` plus the frame-matched 3D sprite overlay `extracted/sprites_3d_frames/<sheet>/fNN_WxH.png` (4×, same frame index as the original, so the game's own frame logic drives it). A frame with no 3D render falls back to HD. **F3** toggles HD ↔ 3D live. See `plan/SPRITE_REMASTER_PROCESS.md` §F. |
 | `--mode=retro` / `--mode=remastered` | Start in the flat retro or the remastered look (also **M** in game). |
 | `--players=3` | Enable the remaster's 3rd (red) co-op player. |
 | `--board=board_NNN` | Load a specific board (harness / capture). |
@@ -76,6 +77,7 @@ Decoded assets live under `extracted/` (gitignored, regenerable). Each upgradeab
 | Class | SD (faithful) | Remaster (HD) | Tools |
 |---|---|---|---|
 | **Sprites** | `sprites/<sheet>/fNN_WxH.png` | `sprites_hd` (hqx pixel-clean) · `sprites_uhd` (Real-ESRGAN 8×) | `tools/upscale_sprites.py`, `tools/sssf_decode.py` |
+| **3D sprites** | `sprites/<sheet>/fNN_WxH.png` = the per-frame reference | `sprites_3d_frames/<sheet>/fNN_{4W}x{4H}.png` (procedural Blender model, pose fitted + gated per frame; `--3d`) | `tools/soi3d/framematch.py` |
 | **Full-screen art (PICT)** | `pict/*.png` | `pict_hd` → `pict_hd_v2` (general model; text panels **re-rendered** with the real font) | `tools/upscale_picts.py`, `tools/render_text_picts.py`, `tools/pict_decode.py` |
 | **Music** | `music/*.mid` (QTMA extraction) | `music/*.ogg` (synth render, per-screen mapping) | `tools/qtma_to_midi.py`, `tools/render_music*.py` |
 | **SFX** | `audio/wav/<sndid>_<name>.wav` | `wav_hd` (deterministic clean-up) · `wav_ai` (AudioSR super-res) | `tools/enhance_sfx.py`, `tools/ai_super_sfx.py`; loaded by `audio.gd` |

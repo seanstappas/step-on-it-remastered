@@ -9,7 +9,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def build_magnifier():
@@ -86,3 +86,13 @@ def render(args):
     build_magnifier()
     C.setup_scene(px, world_strength=0.18, fill_energy=0.14)
     return out
+
+
+def _frames_setup(opts):
+    build_magnifier()
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.14)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_magnifier", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

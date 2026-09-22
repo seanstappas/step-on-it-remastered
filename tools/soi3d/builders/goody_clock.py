@@ -11,7 +11,7 @@ import bpy
 import bmesh
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _pie_sector(name, fill, radius, z, mat, n=96, dome=0.11):
@@ -99,3 +99,13 @@ def render(args):
     build_clock(fill)
     C.setup_scene(px, world_strength=0.18, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_clock(float(opts.get("fill", 0.25)))       # per-frame option: f20 1/4 .. f23 full
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_clock", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

@@ -22,6 +22,9 @@
 /godot_project/.godot/
 # media/ (screenshots + gameplay clips) is kept tracked for posterity
 /tools/__pycache__
+/tools/soi3d/**/__pycache__/
+# tools/soi3d/framematch.py scratch (pose sweeps, look trials, job files) -- regenerable
+/tmp/soi3d_work/
 /media/video/_diag
 /media/video/_flf
 /media/video/_rf

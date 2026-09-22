@@ -12,7 +12,7 @@ import os
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _rim_ring(name, r_out, r_minor, z, mat, seg=48, ring=12):
@@ -95,3 +95,20 @@ def render(args):
     build_coin(color=color, spin=spin, kind=kind)
     C.setup_scene(px, world_strength=0.17, fill_energy=0.18)
     return out
+
+
+def _frames_setup(opts):
+    kind = opts.get("kind", "gold")
+    color = tuple(opts.get("color", (172, 172, 172) if kind == "silver" else (185, 150, 0)))
+    build_coin(color=color, kind=kind)
+    C.setup_scene(256, world_strength=0.17, fill_energy=0.18)
+    C.apply_look(opts)
+    return {"pivot": bpy.data.objects["pivot"]}
+
+
+def _frames_pose(ctx, pose):
+    # the coin is STATIC in the game (fixed goody frame); "spin" (deg about Y) exists for fitting only
+    ctx["pivot"].rotation_euler = (0.0, math.radians(float(pose.get("spin", 0.0))), 0.0)
+
+
+register_frames("goody_coin", _frames_setup, _frames_pose)

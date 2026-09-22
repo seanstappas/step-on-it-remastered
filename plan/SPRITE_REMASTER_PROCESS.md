@@ -15,6 +15,78 @@ claim board [SPRITE_REMASTER_STATUS.md](SPRITE_REMASTER_STATUS.md); ready‑to�
 
 ---
 
+## F. Frame-matched 3D (2026-09-22): the current publishing path
+
+**Principle.** Each ORIGINAL SD frame (`extracted/sprites/<sheet>/fNN_WxH.png`, never the HD upscale,
+so no detail is lost) gets a 3D-rendered replacement whose pose is **fitted to that frame** and
+**gated against it**. The replacements keep the original frame index, so the game's own frame logic
+(Wheelie `+0x56`, Creeper grow counter, cannon-ball tick, Smiley x-roll...) drives them with the
+original timing. No live 3D runtime is needed; the stills/free-spin flow below is now the look-dev stage.
+
+**Tool:** [framematch.py](../tools/soi3d/framematch.py) (host Python) + [frames_blender.py](../tools/soi3d/frames_blender.py)
+(Blender side, GPU OptiX when present). A builder opts in with
+`soi3d.register_frames(mode, setup, pose)`: `setup(opts)` builds the model and scene once;
+`pose(ctx, params)` moves it (return True if it rebuilt the scene). Call `C.apply_look(opts)` after
+`setup_scene` so the shared look knobs (`world`, `key`, `fill`) work.
+
+**Config** = your family's own `extracted/sprites_3d/<family>/frames.json` (schema in the framematch.py
+docstring): `source` sheet, `frames` (list / `{"range": [a, b]}` / `"all"`), `mode`, `opts`,
+`frame_opts` (per-frame variants, e.g. a clock's fill), `sweep` axes (`param`, `start`, `stop`, `step`,
+`period` for periodic ones), `smooth` per param (`loop` / `linear` / `fourier:N` / `const` / `free`),
+`look` (candidate values for a coordinate-descent colour/light calibration), `post` (e.g. the glint),
+`gate`, and `status` (`published` | `wip` + a `note` saying why).
+
+**Run:** `py tools/soi3d/framematch.py <family>` (stages `sweep fit look final verify`, or name some).
+1. **sweep** renders the pose grid once per option group.
+2. **fit** fits one 2D placement (scale/offset) for the family by coordinate descent, picks each
+   frame's best pose, then smooths the poses over the frame order.
+3. **look** calibrates colours and lights against a frame subset.
+4. **final** renders every frame at 4x its SD size (camera derived from the placement) and writes the
+   overlay `extracted/sprites_3d_frames/<sheet>/fNN_{4W}x{4H}.png`.
+5. **verify** downscales each 3D frame back to SD and writes `_verify/frames_{report.json,sheet.png,anim.mp4}`
+   (the sheet shows SD | 3D per frame; the mp4 plays them side by side).
+
+**Gate (per frame, all must hold):**
+- silhouette IoU ≥ `gate.iou`;
+- **blurred** mean dE76 ≤ `gate.de` (σ = 1 SD px, which discounts the source's dithering but not a
+  wrong shape, pose or hue);
+- frame **identity**: the 3D frame matches its own source frame best, within ±`rank_tol` frames.
+
+`py tools/soi3d/framematch.py --check` re-verifies every `published` family read-only and flags any
+overlay frame no published family owns. It is gate stage 5 (`tools/verify.ps1`). **A failing family
+is set to `wip` and its overlay frames are deleted**, so `--3d` never shows an unverified frame.
+
+**Runtime:** `--3d` = `--hd` + the overlay (per-frame fallback to HD); **F3** toggles HD ↔ 3D live.
+
+**Status (2026-09-22):**
+
+| Published (gate passes) | Frames | IoU min | blurred dE mean / max |
+|---|---|---|---|
+| `disk_sprites` (Wheelie) | 24 | 0.996 | 12.8 / 13.7 |
+| `cannon_ball` (cannon_sprites f04-f23) | 20 | 0.929 | 13.9 / 16.6 (gate 17, 16 px source) |
+| `goody_coin` f24 · `goody_coin_silver` f11 · `goody_magnifier` f48 · `goody_star` f12 | 4 | 0.934 | 7.2 – 15.6 |
+
+WIP (`note` in each `frames.json` says what fails): `smiley_sprites` (new builder `smiley.py`; pose
+solved, face roll 7.5°/frame, but dE 18.8 > 16 on feature shape), `spinner_sprites` (the builder's view
+is top-down, the source is a front view), `weapons` (the projected swirl texture does not match the
+source arms), `goody_mult`, `goody_1up`, `goody_potion`, `goody_clock` (f22/f23), `goody_goldbar` (IoU 0.867).
+
+**Lessons from the first families:**
+- **Let the fit reveal the real model.** The beach ball fit badly as three 120° gores. The residual
+  pattern (picks advancing 10°/frame, then jumping 60°) and the centred band covering about half the
+  width showed it has **six 60° gores** (R, B, G twice), and its 20 frames are a half turn (9°/frame).
+- **Mirror-order trap.** No spin reaches a mirrored colour order, so fix the order from one frame
+  (left→right on the source) before sweeping.
+- **Symmetry = period.** Give a periodic axis its true symmetry period (disk 90°, spinner 180°, ball
+  180°). `loop` snaps the slope so the N frames cover whole periods; the wrong period makes it snap wrong.
+- **The originals were 3D renders with deep shadows.** The look stage consistently lowers ambient and
+  fill: the SD shadow side is near-black in-hue, and the palette is pure primaries on the lit side.
+- **Extra pose dims only when they pay.** The disk's hub tilt (a 2430-pose sweep) changed nothing, so it
+  was dropped. Sweep cost is about 0.2 s per pose on the 4090; keep grids lean.
+- PowerShell 5 `Set-Content -Encoding utf8` writes a BOM; `load_cfg` reads `utf-8-sig`.
+
+---
+
 ## 0. Golden rules (read first)
 - **Procedural 3D wins for geometric props** (disk, signs, blocks, balls, gems). **Image‑to‑3D AI fails on
   flat cel art** → keep characters as **2D UHD**. Don't try to 3D‑ify walk/run cel sprites.

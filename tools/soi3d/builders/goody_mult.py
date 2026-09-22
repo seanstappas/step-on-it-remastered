@@ -7,7 +7,7 @@ sphere mottles between dark (0,16,0) and mid (0,120,0); red text (189,0,0).
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _mottle_green(name):
@@ -75,3 +75,13 @@ def render(args):
     build_mult(n=n)
     C.setup_scene(px, world_strength=0.18, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_mult(n=int(opts.get("n", 2)))             # per-frame option: f13 2x .. f16 5x
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_mult", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

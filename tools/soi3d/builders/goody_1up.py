@@ -9,7 +9,7 @@ import os
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def build_1up():
@@ -50,3 +50,13 @@ def render(args):
     build_1up()
     C.setup_scene(px, world_strength=0.19, fill_energy=0.17)
     return out
+
+
+def _frames_setup(opts):
+    build_1up()
+    C.setup_scene(256, world_strength=0.19, fill_energy=0.17)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_1up", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

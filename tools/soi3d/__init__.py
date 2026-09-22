@@ -7,6 +7,7 @@ so parallel agents never collide on a file.
 """
 
 BUILDERS = {}
+FRAMES = {}
 _discovered = False
 
 
@@ -17,6 +18,15 @@ def register(mode):
         BUILDERS[mode] = fn
         return fn
     return deco
+
+
+def register_frames(mode, setup, pose):
+    """Register the FRAME-MATCHED interface of a builder (tools/soi3d/frames_blender.py):
+    `setup(opts) -> ctx` builds the model + scene ONCE; `pose(ctx, params)` moves it to one pose
+    (e.g. {"spin": 37.5}) without rebuilding, so a whole sweep/sequence renders in one Blender run.
+    A phase-driven builder may rebuild inside `pose` -- it must then return True so the job's render
+    size / camera / samples are re-applied to the fresh scene."""
+    FRAMES[mode] = (setup, pose)
 
 
 def discover():

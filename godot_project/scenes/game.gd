@@ -51,7 +51,7 @@ const GRID_ROWS := 13
 const CELL_PX := 32
 const ORIGIN_X := 16
 const ORIGIN_Y := 48
-const MAX_ENEMIES := 32
+const MAX_ENEMIES := 64   # == SOI_MAX_ENEMIES
 const MAX_PROJECTILES := 8
 
 # cell encoding (matches core/src/soi_internal.h)
@@ -177,6 +177,11 @@ var _harness_run := false            # a capture/demo run (--shot/--demo/--play/
 const SPRITES_DIR := "res://../extracted/sprites"
 var _sprites_dir := SPRITES_DIR    # --hd repoints this at extracted/sprites_hd (4x AI-upscaled sheets)
 var _sprite_scale := 1             # loaded sprites are this many x the logical (SD 640x480) footprint
+# --3d: the frame-matched 3D renders (tools/soi3d/framematch.py) OVERLAY the HD sheets frame by frame
+# (same fNN index, same 4x footprint), so the game's own frame logic drives them; a frame or sheet
+# without a 3D render falls back to its HD frame. F3 toggles HD <-> 3D live (HD/3D sessions only).
+const SPRITES_3D_DIR := "res://../extracted/sprites_3d_frames"
+var _use_3d := false
 # Player (Ted) animation frames into BP_sprites / GP_sprites (CONFIRMED: the sheet
 # has SEPARATE left/right blocks — idle 61 right / 52 left; run cycles follow each
 # idle; jump 133; land 26). Frames are directional, so run/idle are NOT flipped.
@@ -318,6 +323,15 @@ func _folder_index(folder: String) -> Dictionary:
 				var us := f.find("_")
 				if us > 1:
 					idx[int(f.substr(1, us - 1))] = dir + "/" + f
+	if _use_3d:
+		var d3 := ProjectSettings.globalize_path("%s/%s" % [SPRITES_3D_DIR, folder])
+		var da3 := DirAccess.open(d3)
+		if da3:
+			for f in da3.get_files():
+				if f.begins_with("f") and f.ends_with(".png"):
+					var us3 := f.find("_")
+					if us3 > 1:
+						idx[int(f.substr(1, us3 - 1))] = d3 + "/" + f
 	_sprite_index[folder] = idx
 	return idx
 
@@ -919,7 +933,8 @@ func _ready() -> void:
 	for a in ua:
 		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3"):
 			_harness_run = true
-	if "--hd" in ua:                       # opt-in HD: load the 4x AI-upscaled sheets and render the 640x480
+	if "--hd" in ua or "--3d" in ua:      # opt-in HD: load the 4x AI-upscaled sheets and render the 640x480
+		_use_3d = "--3d" in ua             # (--3d also overlays the frame-matched 3D renders)
 		_sprites_dir = "res://../extracted/sprites_hd"   # canvas at the window's higher resolution so the extra
 		_sprite_scale = 4                  # detail shows. The SD default is byte-for-byte unchanged (gate = SD).
 		# Prefer the newest HD PICT set (pict_hd_v2), else pict_hd. Deleting the
@@ -1364,6 +1379,11 @@ func _input(e: InputEvent) -> void:
 				_paused = not _paused   # pause (the original pauses on Tab; P also works)
 		KEY_M:
 			_mode = 1 - _mode   # toggle Retro <-> Remastered display
+		KEY_F3:
+			if _sprite_scale == 4:   # HD <-> frame-matched 3D sprites (both are 4x sets)
+				_use_3d = not _use_3d
+				_tex_cache.clear()
+				_sprite_index.clear()
 		KEY_S:
 			if (e as InputEventKey).ctrl_pressed:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
@@ -2108,13 +2128,12 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 	_enemy_lastpos[slot] = e
 	if etype == 12:                       # CANNON: its cell is a plain 0x300 wall (asm FUN_100071a0) -> no white fallback
 		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)
-	if etype == 16:                       # CREEPER: a moving SOLID "pulsing block" (sssf 1016). Its own cell
-		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)   # is a plain 0x300 (white fallback) -> cover it
-		# PULSE through the 13-frame morph (f02 full block <-> f14 ball), ping-ponged on a per-creeper
-		# timer so the platform visibly animates even while it WAITS between its (instant) grid steps.
-		var ph := int((int(_core.tick_count()) + slot * 5) / 4) % 24
-		var cf := 2 + (ph if ph <= 12 else 24 - ph)
-		var ct := _sprite("bigger_mblock", cf, false)
+	if etype == 16:                       # CREEPER segment: its cell is the covered tile | 0x300. A bare
+		var ccell := int(_core.grid_cell(int((e.x - ORIGIN_X) / CELL_PX), int((e.y - ORIGIN_Y) / CELL_PX)))
+		if (ccell & 0xFF) == 0:           # 0x300 would draw the white fallback -> cover it; a covered
+			draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)   # tile (mesh) shows through
+		var cf := clampi(int(_core.enemy_anim(slot)), 1, 15) + 1        # grow/shrink frame (asm +0x56:
+		var ct := _sprite("bigger_mblock", cf, false)                   # 1 = full block, 0xf = shrunk) f02-f16
 		if ct != null:
 			var cs := _texsize(ct)
 			_dtex(ct, Vector2(e.x + (CELL_PX - cs.x) * 0.5, e.y + CELL_PX - cs.y))

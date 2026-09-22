@@ -40,10 +40,11 @@ func _ready() -> void:
 			return
 	if Session.num_players <= 0:
 		Session.num_players = 2
-	# --hd: prefer the 4x AI-upscaled PICT art (tools/upscale_picts.py) + linear filtering. The
-	# window's canvas_items stretch (project.godot) renders the 640x480 canvas at window res so
-	# the extra detail shows. (SD default unchanged.)
-	if "--hd" in OS.get_cmdline_user_args() and (DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd_v2")) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd"))):
+	# --hd (or --3d, which is HD + the 3D sprite overlay): prefer the 4x AI-upscaled PICT art
+	# (tools/upscale_picts.py) + linear filtering. The window's canvas_items stretch (project.godot)
+	# renders the 640x480 canvas at window res so the extra detail shows. (SD default unchanged.)
+	var _ua := OS.get_cmdline_user_args()
+	if ("--hd" in _ua or "--3d" in _ua) and (DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd_v2")) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd"))):
 		_hd = true
 
 	# title art fills the 640x480 screen (2x nearest-neighbour for the retro look)

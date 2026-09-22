@@ -67,14 +67,12 @@ gameplay or winnability. All three gates are green (mechanics / 152-winnable / d
 
 ## B. Deferred / higher-risk
 
-### B1. Creeper grow-chain — ✅ RESOLVED (winnability-safe model kept by decision)
-- **Where**: `core/src/soi_enemies.c` `enemy_creeper()` (~line 434); full rationale in the comment above it (~411).
-- **Decision**: keep the **ONE-moving-block** model (restores the cell it covers → cannot permanently seal
-  a route). The real asm (`FUN_10008618`/`FUN_10008b18`) spawns a transient forward-creeping **chain** of
-  child creepers (`FUN_10005948`, +0x20 ahead; grow/shrink `+0x56` cap 0xf). It is **not** ported because
-  (1) `tools/verify_winnable.c` is a STATIC key→door topology check that never steps enemies, so the gate
-  **cannot validate any creeper motion**, and (2) a tile-restore bug in a growing solid chain could create
-  an **undetectable permanent-seal** unwinnability. Shipping it would keep the gate green with zero assurance.
+### B1. Creeper grow-chain — ✅ DONE 2026-09-22 (faithful asm chain, see F16)
+- **Where**: `core/src/soi_enemies.c` `soi_creeper_init()` / `enemy_creeper()`; safety net
+  `tools/verify_creepers.c` (gate stage 4).
+- History: the one-moving-block stand-in was kept at first because `tools/verify_winnable.c` is a static
+  key->door check that never steps enemies, so a tile-restore bug in a solid chain could seal a route
+  unseen. The user chose to match the original; the dynamic safety net below was added first.
 
 ---
 
@@ -84,13 +82,26 @@ gameplay or winnability. All three gates are green (mechanics / 152-winnable / d
 - **C2. Jump somersault per-frame timing — ⏸ DEFERRED (cosmetic).** `game.gd` `st == 2` advances off
   `tick_count()/2`; the core `jump_t` (`soi_internal.h`) has no bridge accessor. Exact sync would need a
   `soi_player_jump_t` accessor (core + bridge + gd). **Direction + launch pose are already correct.**
-- **C3. Stop/Go switch sign swap — ⏸ DEFERRED (cosmetic).** `core/src/soi_grid.c:136`. Gameplay is a
-  verified no-op; only the animated sign-sprite swap is missing.
-- **C4. Distinct spawner sprite — ⏸ DEFERRED (cosmetic).** `core/src/soi_state.c:247`. Currently renders
-  the red nest cell + the child nasty standing on it (matches ref board_3); a dedicated spawner sprite is polish.
+- **C3. Stop/Go switch sign swap — ✅ DONE.** `game.gd` flips the group's signs through their 8-frame
+  run when a switch is stepped (`_sg_toggled`/`_sg_anim`); gameplay remains a verified no-op.
+- **C4. Distinct spawner sprite — ✅ DONE (F12).** Spawners draw their sheet's emblem block (the frame
+  the old extractor dropped), matching refs/images/board_3.png.
 
 _C2–C4 are cosmetic-only, gameplay-neutral, and touch shared core/bridge/render files; deferred to avoid
 regressing the green gates for no gameplay benefit._
+
+## D. Frame-matched 3D sprites (remaster art, opt-in `--3d`) — 🚧 IN PROGRESS
+- Pipeline built and gated: `tools/soi3d/framematch.py` + `frames_blender.py`; the game's `--3d`
+  overlay with F3 toggle; gate stage 5. Process and status are in
+  [SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md).
+- Published: Wheelie (24), cannon ball (20), gold/silver coin, magnifier, star.
+- WIP with notes: Smiley, Spinner, weapons swirl, multiplier, 1UP, potion, clock, gold bars.
+- Not started:
+  - Props: Stop/Go flip (40, needs a flip pose + bezel colour per group), transporter (15), Creeper
+    `bigger_mblock` (15), blocks/`block_sprites` (209), `master_s_objects` (63), `spin_ind` (60),
+    cannon barrel f02/f03.
+  - Characters (players, Ant, Hippo, Ostrich, Piggy, Robo, Walker, Hammer, Teeth, Beanie, Knight,
+    Gargoyle): these need rigged models with per-frame joint fitting, a larger step than the props.
 
 ---
 
@@ -293,6 +304,24 @@ style globals: `+0x69fc` = `DAT_1003ab6c` (Compete), `+0x69fe` = `DAT_1003ab6e` 
   - Spawner/egg children appear at their standing height (Ant +16, Hippo +14, Piggy +5, Teeth +4,
     others +2 — FUN_100076a8 &c, FUN_1000b7dc) and a right-heading Piggy 4 px left; hurtboxes use
     those heights. Spawner "seek" and hatch facing compare pixel x (FUN_100054a4).
+- **F16. Creeper = the real grow/shrink chain — ✅ FIXED.** (FUN_10008618 horizontal / FUN_10008b18
+  vertical.) Each segment turns its cell into a wall (tile | 0x300, the covered low word kept like
+  +0x70) and steps every 3rd frame (+0x6c = 2). It grows in (+0x56 0xf -> 1) while +0x6e =
+  StartDelay*3 runs down, then spawns the next segment one cell ahead. The target cell must be
+  non-solid, free of any sprite (FUN_10004650 screen-vs-background test, done here as a rect test
+  against players, nasties and shots) and an enterable tile (FUN_10009030: 0, 0x197, or a non-0x200
+  tile with low byte in 0x9d..0xd3). The parent then shrinks back to 0xf and dies, restoring the
+  tile (FUN_10005630). When blocked it reverses and retries next step.
+  - The enemy pool went from 32 to 64 (the original holds 59; board 496 has 12 Creepers).
+  - Renderer: `bigger_mblock` f02-f16 from +0x56.
+  - Tests 16/16b cover the timeline, reversal and restore.
+  - `tools/verify_creepers.c` (gate stage 4) runs all 15 Creeper boards for 20k ticks, idle and with
+    random input. Every tick it asserts that every wall not present at load is a live segment, that
+    no two segments share a cell, and that the chain never dies out. A mutation with the restore
+    removed fails 12/15 boards.
+  - The other 3 boards (447, 474, 1029) have a Creeper as a pedestal under a Knight: blocked above
+    by the turret, below by a wall/block. This is faithful.
+  - In-game: `media/video/creeper_chain_496_retro_*.mp4`.
 - **In-game proof**: scripted runs `tools/verify_scripts/*.txt` (`--script=FILE`, via
   `tools/record_video.ps1 -Script ... -Board ...`) -> `media/video/verify_*_retro_*.mp4` +
   `media/screenshots/verify_*.png`: solo lives 02->01->00->game over; co-op P2 coin/arrow hit the pool,

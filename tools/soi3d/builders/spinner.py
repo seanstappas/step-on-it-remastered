@@ -14,7 +14,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _parent_keep_local(obj, parent):
@@ -130,3 +130,20 @@ def render(args):
     # ambient lifted a touch so the shadowed undersides stay dark GREEN/RED, not black
     C.setup_scene(px, world_strength=0.18, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_spinner(tilt=float(opts.get("tilt", 10.0)))
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
+    C.apply_look(opts)
+    return {"pivot": bpy.data.objects["pivot"], "root": bpy.data.objects["root"]}
+
+
+def _frames_pose(ctx, pose):
+    # pose {"spin": deg about the post (Y)} [+ "tilt": the whole prop's lean toward the camera]
+    ctx["pivot"].rotation_euler = (0.0, math.radians(float(pose.get("spin", 0.0))), 0.0)
+    if "tilt" in pose:
+        ctx["root"].rotation_euler = (math.radians(float(pose["tilt"])), 0.0, 0.0)
+
+
+register_frames("spinner", _frames_setup, _frames_pose)

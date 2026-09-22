@@ -266,11 +266,11 @@ static int enemy_period(int type)
 {
     switch (type) {
         case SOI_ENEMY_WALKER:   return 3;
+        case SOI_ENEMY_CREEPER:  return 3;   /* FUN_10008618: +0x6c reload 2 */
         case SOI_ENEMY_WHEELIE:
         case SOI_ENEMY_CANNON:
         case SOI_ENEMY_GARGOYLE:
-        case SOI_ENEMY_KNIGHT:
-        case SOI_ENEMY_CREEPER:  return 1;
+        case SOI_ENEMY_KNIGHT:  return 1;
         default:                 return 2;
     }
 }
@@ -425,70 +425,91 @@ static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
     }
 }
 
-/* Creeper (asm FUN_10008618 horizontal / FUN_10008b18 vertical; bord types 16/17):
- * a self-propelled "bigger mblock" (sssf 1016) that steps one cell at a time along
- * its axis (state 0 = horizontal, 1 = vertical), reversing at a wall or edge. It
- * carries NO projectile. While active it TEMP-SOLIDIFIES the cell it occupies (asm
- * lays cell|0x300) so it is a moving SOLID block (stand on / blocked -- NOT a touch
- * hazard). It steps onto any NON-SOLID cell (empty, 0x197 background, &c -- asm
- * FUN_10009030), remembering the covered tile in `under` (asm +0x70) and restoring
- * it exactly on leaving, so nothing is erased; it never steps onto a player.
- * fire_cd = step countdown, fire_period = interval (board StartDelay byte; the asm's
- * exact multi-counter cadence at +0x24/+0x26 is approximated here as a single timer).
- *
- * FAITHFULNESS (fully decoded vs asm FUN_10008618 horizontal / FUN_10008b18 vertical):
- * the original is NOT one persistent block -- each segment carries a grow timer
- * +0x6e (= StartDelay*3) and a sprite grow/shrink counter +0x56 (cap 0xf). When the
- * grow timer expires the segment probes the cell ahead (FUN_1000554c solid? +
- * FUN_10004650 / FUN_10009030 passable?) and, if clear, SPAWNS ONE CHILD one cell
- * ahead (FUN_10005948, x/y +0x20) then enters a shrink phase that RESTORES its covered
- * tile (+0x70 via FUN_10005630) and self-removes; if blocked it just reverses
- * (state/dir flips: h 1<->2, v 8<->9). So a Creeper is a TRANSIENT forward-creeping
- * BAND whose tail dissolves (restoring tiles) as the head advances -- it never
- * permanently seals a route. Its band WIDTH depends on StartDelay (small delay =>
- * child spawns before parent dissolves => a few overlapping cells).
- *
- * PORT MODEL -- ONE moving solid block that restores what it covers. This reproduces
- * the creeper's observable solid-footprint MOTION (a solid that creeps forward and
- * frees the tile behind it, reversing when blocked) and is provably leak-free: every
- * move restores the old cell before solidifying the new one. It is winnability-SAFE.
- * The full child-spawn band is deliberately NOT ported, for two concrete reasons:
- *   1. The winnable harness (tools/verify_winnable.c) is a STATIC key->door topology
- *      check that never steps enemies, so it CANNOT validate any creeper behavior --
- *      shipping the multi-segment chain would keep the gate green with zero assurance.
- *   2. A multi-segment chain (per-segment slot alloc + restore-on-remove) adds real
- *      risk of a tile-restore bug that PERMANENTLY solidifies a cell -> an unwinnable
- *      board that no gate would catch. The only unshipped gap is cosmetic: the band's
- *      1-2 cell visual width and the sprite grow/shrink animation. */
+/* Creeper (asm FUN_10008618 horizontal / FUN_10008b18 vertical; bord types 16/17): a chain of
+ * solid "bigger mblock" segments (sssf 1016). Each segment solidifies its cell (tile | 0x300,
+ * the covered low word kept in `under` = asm +0x70), GROWS in (+0x56 = anim 0xf -> 1) while its
+ * timer +0x6e = StartDelay*3 (fire_cd) runs down, then tries to SPAWN a child one cell ahead:
+ * the cell must be non-solid, clear of any sprite (FUN_10004650 compares the screen with the
+ * background) and hold an enterable tile (FUN_10009030). On success it SHRINKS out (anim ->
+ * 0xf) and dies, restoring the covered tile; when blocked it reverses and retries the other way
+ * on the next step, so a boxed-in segment waits. A step is every 3rd frame (+0x6c = 2).
+ * state 0 = horizontal (dir 2 right / 1 left), 1 = vertical (dir 2 down / 1 up). */
+void soi_creeper_init(SoiWorld *w, int idx)
+{
+    SoiEnemy *e = &w->enemies[idx];
+    int col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX, row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+    uint32_t c = soi_get_cell(w, col, row);
+    e->under = c & 0xFFFFu;
+    soi_set_cell(w, col, row, (c & 0xFFFF0000u) | e->under | SOI_WALL);
+    e->fire_cd = (int16_t)(e->fire_period * 3);
+    e->anim = 0x0f;
+    e->stepc = 0;
+}
+
+static int creeper_enterable(uint32_t tile)
+{
+    tile &= 0xFFFFu;
+    if (tile == 0 || tile == 0x197) return 1;
+    return !(tile & SOI_CELL_SUPPORTIVE) && (tile & 0xFFu) > 0x9c && (tile & 0xFFu) < 0xd4;
+}
+
+/* FUN_10004650: is the cell's picture untouched by any sprite (player, nasty, shot)? */
+static int creeper_cell_clear(const SoiWorld *w, int col, int row)
+{
+    int cx = soi_cell_x(col), cy = soi_cell_y(row), i;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        const SoiPlayer *p = &w->players[i];
+        if (p->active && p->alive && p->x < cx + 32 && cx < p->x + 32 && p->y < cy + 32 && cy < p->y + 32)
+            return 0;
+    }
+    for (i = 0; i < SOI_MAX_ENEMIES; i++) {
+        const SoiEnemy *o = &w->enemies[i];
+        if (o->active && o->type != SOI_ENEMY_CREEPER && !o->spawn_child &&
+            o->x < cx + 32 && cx < o->x + 32 && o->y < cy + 32 && cy < o->y + 32)
+            return 0;
+    }
+    for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
+        const SoiProjectile *pr = &w->projectiles[i];
+        if (pr->active && pr->x < cx + 32 && cx < pr->x + 24 && pr->y < cy + 32 && cy < pr->y + 24)
+            return 0;
+    }
+    return 1;
+}
+
 static void enemy_creeper(SoiWorld *w, SoiEnemy *e)
 {
-    int col, row, ac, ar, pj, blocked;
-    col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX;
-    row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
-    /* invariant: our cell is solid; on first touch capture what we cover (asm +0x70). */
-    if (!(soi_get_cell(w, col, row) & SOI_CELL_SUPPORTIVE)) {
-        e->under = soi_get_cell(w, col, row);
-        soi_set_cell(w, col, row, SOI_WALL);
+    const int idx = (int)(e - w->enemies);
+    int col = (e->x - SOI_ORIGIN_X) / SOI_CELL_PX, row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+    int t;
+    if (e->fire_cd < 1) {
+        if (e->fire_cd < 0 && ++e->anim >= 0x0f) {        /* shrunk away: restore the covered tile */
+            uint32_t c = soi_get_cell(w, col, row);
+            soi_set_cell(w, col, row, (c & 0xFFFF0000u) | e->under);
+            e->active = 0;
+            return;
+        }
+    } else if (e->anim > 1) {
+        e->anim--;                                        /* growing in */
     }
-    if (e->fire_cd > 0) { e->fire_cd--; return; }        /* wait out the step interval */
-    e->fire_cd = (e->fire_period > 0) ? e->fire_period : 24;
-    ac = col + ((e->state == 0) ? ((e->dir == 2) ? 1 : -1) : 0);   /* horizontal step */
-    ar = row + ((e->state == 1) ? ((e->dir == 2) ? 1 : -1) : 0);   /* vertical step */
-    /* blocked by an edge, a SOLID (0x200) cell, or a standing player -- else it may
-     * cross empty / background / non-solid tiles (asm FUN_10009030). */
-    blocked = (!soi_in_bounds(ac, ar) || (soi_get_cell(w, ac, ar) & SOI_CELL_SUPPORTIVE));
-    for (pj = 1; !blocked && pj < SOI_MAX_PLAYERS; pj++) {
-        const SoiPlayer *p = &w->players[pj];
-        if (p->active && p->alive &&
-            (p->x - SOI_ORIGIN_X) / SOI_CELL_PX == ac &&
-            (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX == ar) blocked = 1;
+    t = e->fire_cd--;
+    if (t == 0) {
+        int ac = col, ar = row, ci = -1;
+        if (e->state == 0) ac += (e->dir == 2) ? 1 : -1;
+        else               ar += (e->dir == 2) ? 1 : -1;
+        if (!(soi_get_cell(w, ac, ar) & SOI_CELL_SUPPORTIVE) && creeper_cell_clear(w, ac, ar) &&
+            creeper_enterable(soi_get_cell(w, ac, ar)))
+            ci = soi_enemy_spawn(w, SOI_ENEMY_CREEPER, ac, ar);
+        if (ci >= 0) {
+            SoiEnemy *c = &w->enemies[ci];
+            c->state = e->state; c->dir = e->dir; c->vx = 0;
+            c->fire_period = e->fire_period;
+            soi_creeper_init(w, ci);
+            if (ci > idx) c->stepc = 0xFF;                /* it starts updating next frame, as in the asm */
+        } else {
+            e->dir = (uint8_t)((e->dir == 2) ? 1 : 2);    /* blocked: reverse, retry next step */
+            e->fire_cd = 0;
+        }
     }
-    if (blocked) { e->dir = (uint8_t)((e->dir == 2) ? 1 : 2); return; }  /* reverse */
-    soi_set_cell(w, col, row, e->under);                 /* restore what we covered (asm +0x70) */
-    e->under = soi_get_cell(w, ac, ar);                  /* capture the cell we move onto */
-    e->x = soi_cell_x(ac);
-    e->y = soi_cell_y(ar);
-    soi_set_cell(w, ac, ar, SOI_WALL);                   /* temp-solidify (covered by the sprite) */
 }
 
 /* Edge-TURNERS: the two AIs (Robo FUN_1000a780, Walker FUN_1000dd4c) that probe
@@ -636,7 +657,7 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
 
     /* Wheelie: a gravity-free flyer that bounces by wall-collision (no homing). */
     if (e->type == SOI_ENEMY_WHEELIE) { enemy_fly_bounce(w, e); return; }
-    if (++e->anim > 0x10 && e->type == SOI_ENEMY_SPINNER) e->anim = 1;   /* FUN_1000d490 spin 1..16 */
+    if (e->type == SOI_ENEMY_SPINNER && ++e->anim > 0x10) e->anim = 1;   /* FUN_1000d490 spin 1..16 */
     row = (e->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
     /* Hammer: a WALKER that jump-smashes breakable walls (enemy_hammer_hop). A Hammer
      * SPAWNER (spawn_child set) stays put and emits, so only real Hammers are routed here. */
