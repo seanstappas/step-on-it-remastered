@@ -1,0 +1,51 @@
+﻿========================================================================
+ PROOF: fall-straight-down (idle x-snap) -- RE-faithful core fix
+========================================================================
+USER REPORT: "player still doesn't fall quite straight down. It should be
+             completely vertical line of fall."
+
+RE FINDING (raw decomp, personally re-read line-by-line):
+  * fall handler FUN_1001386c: y += 4/frame; calls wall-rebound FUN_10012554
+    (verified bit-exact to the port's wall_rebound) and the pit-death check.
+  * A block destroyed under an idle player => the fall is ALREADY perfectly
+    vertical (dx=0), because both wall-rebound probes sit at body rows above
+    the feet and read empty in open space. (Trace below.)
+  * A ledge WALK-OFF gets a faithful +4px FUN_10012554 wall-rebound nudge then
+    goes vertical -- that sideways nudge is in the ORIGINAL, not a port bug.
+  * The one genuine divergence: idle handler FUN_100128f8 line 21 snaps the
+    player's PHYSICS x to a 4px grid EVERY idle frame (before the support
+    check at line 37). The port only snapped on a RUN->IDLE release, so a
+    player who LANDED from the air at a 2-off-grid x (air-steer / wall-rebound
+    / off-grid spawn) kept that odd x -- and a block broken under him then fell
+    down an x NOT aligned to the block column. THAT is the "not quite straight
+    down the column" the user saw.
+
+FIX: core/src/soi_physics.c -- add, at the top of the grounded (pose_t==0)
+     block, before the support check:
+         if (p->ground_state == SOI_ST_IDLE) p->x &= ~3;
+     (asm FUN_100128f8 line 21). Gated to IDLE so a RUNNING player keeps his
+     raw 2px sub-step (asm run handler FUN_10012bf4 does not 4px-align x).
+
+TESTS: tests/test_mechanics.c #46 (idle x-snap) + #46b (RUN control, mutation-
+       proven: dropping the IDLE gate fails the control). verify.ps1 6/6,
+       determinism hash 0xc677624ae3878b5e UNCHANGED (harness never idles).
+
+------------------------------------------------------------------------
+ EMPIRICAL TRACE (drives the actual native core, 30Hz frames)
+------------------------------------------------------------------------
+SCENARIO A -- block destroyed under an idle player (open space)
+  start x=274 (col-aligned=NO (2 off))
+  after settle: x=272 (col-aligned=yes)  <- idle x-snap fix
+  --- block gone, falling ---   (x0=272)
+  f0   x=272  y=337   dx=+0 (VERTICAL)
+  f1   x=272  y=337   dx=+0 (VERTICAL)
+  f2   x=272  y=341   dx=+0 (VERTICAL)
+  f3   x=272  y=341   dx=+0 (VERTICAL)
+  f4   x=272  y=345   dx=+0 (VERTICAL)
+  f5   x=272  y=345   dx=+0 (VERTICAL)
+  f6   x=272  y=349   dx=+0 (VERTICAL)
+  f7   x=272  y=349   dx=+0 (VERTICAL)
+  f8   x=272  y=353   dx=+0 (VERTICAL)
+  f9   x=272  y=353   dx=+0 (VERTICAL)
+
+========================================================================

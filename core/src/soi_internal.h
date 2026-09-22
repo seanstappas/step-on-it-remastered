@@ -12,6 +12,11 @@
  * board is 656 bytes; 1024 leaves headroom). */
 #define SOI_BORD_MAX 1024u
 
+/* Stop/Go switch-block registry capacity. VERIFIED: the densest shipped board
+ * (board_1037) has 14 switch blocks; a full scan of all 152 boards never exceeds
+ * that, so 64 is >4x headroom and the sw_count cap is unreachable in practice. */
+#define SOI_SWITCH_MAX 64
+
 /* ---- grid cell encoding (CONFIRMED from asm; docs decompiled-findings.md §0) ---- */
 #define SOI_CELL_EMPTY        0u
 #define SOI_CELL_TYPE(c)      ((c) & 0xFFu)          /* block/goodie type; 0=empty */
@@ -26,9 +31,12 @@
 /* goodie / marker cell types (CONFIRMED, docs §2 / §0) */
 #define SOI_TILE_KEY          0x0Bu                   /* the key (collect to open the door) */
 
-/* Ground state machine selector (player.ground_state; asm FUN_1001166c +0x1c). */
+/* Ground state machine selector (player.ground_state; asm FUN_1001166c +0x1c).
+ * SOI_ST_BONK (4) is the asm's head-bonk recoil state (FUN_10014524): a grounded
+ * player who jumped into a solid block overhead is frozen in it for a fixed 10-frame
+ * animation, the block is cracked/broken at the midpoint, then it returns to IDLE. */
 enum { SOI_ST_IDLE = 0, SOI_ST_RUN = 1, SOI_ST_JUMP = 2, SOI_ST_FALL = 3,
-       SOI_ST_DEAD = 0xC };
+       SOI_ST_BONK = 4, SOI_ST_DEAD = 0xC };
 
 typedef struct {
     uint8_t  active;      /* slot in use */
@@ -80,6 +88,10 @@ typedef struct {
                                      * the pose rather than emitting an airborne-but-frozen state. It
                                      * self-releases because soi_state.c decrements it UNCONDITIONALLY
                                      * every frame -- keep that drain ungated or the freeze is permanent. */
+    int16_t  prev_pcol, prev_prow;  /* the player's collision-centre cell LAST frame, for the
+                                     * Stop/Go switch entry edge (asm FUN_1002bc64 bVar12 = cell
+                                     * changed this frame). Seeded to the spawn cell so spawning ON
+                                     * a switch tile does not toggle it. */
 } SoiPlayer;
 
 typedef struct {
@@ -128,8 +140,9 @@ struct SoiWorld {
     SoiProjectile projectiles[SOI_MAX_PROJECTILES];
     uint8_t  frame_parity; /* input sampled every 2 frames */
     uint8_t  enemies_frozen; /* VESTIGIAL (always 0): a former Stop/Go "freeze" stand-in. Stop/Go is a
-                              * cosmetic block-graphic swap with NO gameplay effect (see soi_grid.c), so the
-                              * switch never freezes enemies. Kept only for serialize-format stability. */
+                              * real solid<->passable block path-gate (see the switch code in soi_grid.c),
+                              * NOT an enemy freeze -- toggling a switch never stops enemies. Kept only for
+                              * serialize-format stability (still written by soi_serialize as a 0 byte). */
     int16_t  enemy_slow;     /* Clock goody (asm _DAT_1003b294): >=0 = nasties at half rate; counts down */
     int16_t  bonus_div;      /* Bonus-countdown frame divider (asm _DAT_10038eb0): fires every 3rd frame */
     int16_t  reveal_timer;   /* Magnifying-glass goody 0x2F (asm FUN_10016b28): >0 = hidden 0x1000
@@ -164,6 +177,25 @@ struct SoiWorld {
      * absent from the determinism hash regardless of whether a reload ever fires. */
     uint16_t bord_len;                    /* 0 = no stored board (bare unit-test world) */
     uint8_t  bord_data[SOI_BORD_MAX];
+
+    /* Stop/Go switch-block registry (asm array @_DAT_10038ec6, stride 0xe). Populated at
+     * load by a grid scan for switch BLOCKS (low 0x9d-0xd3); a switch TILE (low 0x24-0x2d)
+     * toggles every block in its GROUP. The blocks' live solid/passable state is stamped
+     * into w->cell[][] (which IS serialized), so the gameplay-visible state is in the hash
+     * via the grid; this registry is the animation bookkeeping and is NOT serialized (a
+     * switch-free board -- e.g. the determinism harness -- leaves sw_count=0, so it is
+     * hash-neutral there). No soi_deserialize exists -- soi_serialize feeds ONLY the
+     * forward-only determinism hash -- so this omission cannot desync a save/resume, and
+     * the sw_* / prev_pcol,prev_prow state is deterministic-from-input regardless.
+     * State: 1=passable(settled), 2=solid(settled), 3=opening, 4=closing. */
+    int16_t  sw_col[SOI_SWITCH_MAX];
+    int16_t  sw_row[SOI_SWITCH_MAX];
+    uint8_t  sw_group[SOI_SWITCH_MAX];
+    uint8_t  sw_state[SOI_SWITCH_MAX];
+    uint8_t  sw_ctr[SOI_SWITCH_MAX];      /* open/close animation counter */
+    uint8_t  sw_solid[SOI_SWITCH_MAX];    /* group SOLID low code (0x9d+12g) */
+    uint8_t  sw_pass[SOI_SWITCH_MAX];     /* group PASSABLE low code (0xa3+12g) */
+    uint8_t  sw_count;
 };
 
 /* ---- rng (soi_rng.c) ---- */
@@ -177,6 +209,11 @@ int      soi_cell_y(int row);
 int      soi_in_bounds(int col, int row);
 uint32_t soi_get_cell(const SoiWorld *w, int col, int row);
 void     soi_set_cell(SoiWorld *w, int col, int row, uint32_t v);
+
+/* ---- Stop/Go switches (soi_grid.c) ---- */
+void     soi_switch_load_scan(SoiWorld *w);   /* register switch blocks after a board load */
+void     soi_switch_toggle(SoiWorld *w, int tile_low);  /* flip the group a switch tile selects */
+void     soi_switch_animate(SoiWorld *w);     /* advance open/close animations one frame */
 
 /* ---- physics / players (soi_physics.c) ---- */
 void     soi_player_update(SoiWorld *w, int player);

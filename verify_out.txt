@@ -1,0 +1,15 @@
+﻿==> core: mechanic unit tests
+[PASS] core: mechanic unit tests
+==> core: harness + determinism
+[PASS] core: harness + determinism
+==> core: fixture-replay selftest
+[PASS] core: fixture-replay selftest
+==> bridge: GDExtension build
+GDExtension built -> godot_project/bin/
+[PASS] bridge: GDExtension build
+==> godot: import clean
+[PASS] godot: import clean
+==> godot: run + screenshot
+[PASS] godot: run + screenshot
+
+ALL STAGES PASSED

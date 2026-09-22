@@ -121,6 +121,7 @@ typedef enum {
     SOI_SFX_KEY,          /* colored-key collect (asm event 0x14 -> 17661 "Announce") */
     SOI_SFX_HURRY,        /* low-bonus warning as the timer passes 1000 (asm FUN_10018b24 -> evt 0x2d) */
     SOI_SFX_WALKER_FIRE,  /* Walker bolt throw (asm event 0x13 -> snd 2689 "Strings") */
+    SOI_SFX_SWITCH,       /* Stop/Go switch flip (asm FUN_10016544 -> FUN_1002b020 evt 0x2c) */
     SOI_SFX_COUNT
 } SoiSfx;
 
@@ -178,7 +179,7 @@ int      soi_player_facing(const SoiWorld *w, int player);
 int      soi_player_invuln(const SoiWorld *w, int player);  /* >0 = flashing/invulnerable */
 int      soi_player_fast(const SoiWorld *w, int player);    /* >0 = speed-shoes (goody 0x32) active */
 int      soi_player_has_key(const SoiWorld *w, int player); /* 0 none, 1 carrying, 2 exited */
-int      soi_player_state(const SoiWorld *w, int player);   /* ground_state: 0 idle,1 run,2 jump,3 fall,0xC dead */
+int      soi_player_state(const SoiWorld *w, int player);   /* ground_state: 0 idle,1 run,2 jump,3 fall,4 head-bonk recoil,0xC dead */
 int      soi_player_movectr(const SoiWorld *w, int player); /* 0..6 run-step animation counter */
 int      soi_player_pose(const SoiWorld *w, int player);    /* action pose (display): 0 none, 1 fire, 2 build */
 int      soi_player_pose_t(const SoiWorld *w, int player);  /* action-pose countdown (frames) */

@@ -23,6 +23,107 @@ void soi_set_cell(SoiWorld *w, int col, int row, uint32_t v)
     if (soi_in_bounds(col, row)) w->cell[row][col] = v;
 }
 
+/* ---------------------------------------------------------------------------
+ * Stop/Go switches (asm FUN_1001604c load-register / FUN_10016544 toggle /
+ * FUN_100166b8 state-advance / FUN_10016784 per-frame animator; confirmed
+ * against the decomp + a full board scan). A switch is a REAL solid<->passable
+ * path-gate, not the cosmetic no-op the port previously assumed. A switch BLOCK
+ * has low byte 0x9d-0xd3 (group g = (low-0x9d)/12; SOLID code 0x9d+12g, PASSABLE
+ * code 0xa3+12g). A switch TILE (low 0x24-0x2d, walk-on) toggles every block in
+ * its group (g = (low-0x24)/2) when the player STEPS onto it.
+ * ------------------------------------------------------------------------- */
+
+/* Register one switch BLOCK into the registry and normalise its live cell to the
+ * canonical solid/passable code for its loaded state (asm FUN_1001604c). The asm
+ * switches on the EXACT low byte: only the 10 settled codes -- SOLID 0x9d+12g (rem 0)
+ * and PASSABLE 0xa3+12g (rem 6), for groups g=0..4 -- are real switch blocks. A low in
+ * 0x9d..0xd3 that is not one of those (no board ships one) is ignored, matching the
+ * asm's default-less switch. */
+static void soi_switch_register(SoiWorld *w, int low, int col, int row)
+{
+    int g, rem, i;
+    if (low < 0x9d || low > 0xd3) return;
+    g   = (low - 0x9d) / 12;
+    rem = (low - 0x9d) % 12;
+    if (rem != 0 && rem != 6) return;         /* not one of the 10 real switch codes */
+    if (w->sw_count >= SOI_SWITCH_MAX) return;
+    i = w->sw_count++;
+    w->sw_col[i]   = (int16_t)col;
+    w->sw_row[i]   = (int16_t)row;
+    w->sw_group[i] = (uint8_t)g;
+    w->sw_solid[i] = (uint8_t)(0x9d + 12 * g);
+    w->sw_pass[i]  = (uint8_t)(0xa3 + 12 * g);
+    w->sw_ctr[i]   = 0;
+    if (rem == 0) {                 /* loaded as the SOLID variant */
+        w->sw_state[i] = 2;
+        soi_set_cell(w, col, row, (uint32_t)w->sw_solid[i] + 0x300u);   /* PERMANENT|SUPPORTIVE */
+    } else {                        /* rem == 6: loaded as the PASSABLE variant */
+        w->sw_state[i] = 1;
+        soi_set_cell(w, col, row, (uint32_t)w->sw_pass[i] + 0x100u);    /* PERMANENT, no 0x200 */
+    }
+}
+
+/* Scan the whole grid after a board load and register every switch block. Mirrors
+ * the asm post-load pass (FUN_1002de00: skip door 0x800 / badguy 0x400 / empty, then
+ * FUN_1001604c(cell & 0xff, col, row) -- the LOW byte, so a raw 0x3a9 registers as 0xa9). */
+void soi_switch_load_scan(SoiWorld *w)
+{
+    int r, c;
+    w->sw_count = 0;
+    for (r = 0; r < SOI_GRID_ROWS; r++)
+        for (c = 0; c < SOI_GRID_COLS; c++) {
+            uint32_t cell = w->cell[r][c];
+            if (cell == 0) continue;
+            if (cell & (SOI_CELL_DOOR | 0x400u)) continue;   /* door / badguy spawn */
+            soi_switch_register(w, (int)(cell & 0xffu), c, r);
+        }
+}
+
+/* Toggle every switch block in the group a stepped-on switch TILE selects (asm
+ * FUN_10016544 -> FUN_100166b8 state flip). The switch SOUND is played by the caller
+ * on entry (asm FUN_1002bc64 plays FUN_1002b020(0x2c,10) unconditionally after this),
+ * so it is NOT emitted here. Solidity is updated per-frame by soi_switch_animate. */
+void soi_switch_toggle(SoiWorld *w, int tile_low)
+{
+    int g = (tile_low - 0x24) / 2;
+    int i;
+    for (i = 0; i < w->sw_count; i++) {
+        if (w->sw_group[i] != g) continue;
+        switch (w->sw_state[i]) {
+            case 1: w->sw_state[i] = 4; w->sw_ctr[i] = 8; break;  /* passable -> closing */
+            case 2: w->sw_state[i] = 3; w->sw_ctr[i] = 0; break;  /* solid    -> opening */
+            case 3: w->sw_state[i] = 4; break;                    /* opening  -> closing (reverse) */
+            case 4: w->sw_state[i] = 3; break;                    /* closing  -> opening (reverse) */
+            default: break;
+        }
+    }
+}
+
+/* Advance every switch block's open/close animation one frame (asm FUN_10016784).
+ * OPENING (state 3): stays SOLID for the whole ~9-frame swing, then settles PASSABLE.
+ * CLOSING (state 4): SOLID immediately, counts the swing down, then settles SOLID.
+ * So a block is passable ONLY once an open fully completes -- solid at all other times. */
+void soi_switch_animate(SoiWorld *w)
+{
+    int i;
+    for (i = 0; i < w->sw_count; i++) {
+        int col = w->sw_col[i], row = w->sw_row[i];
+        if (w->sw_state[i] == 3) {                 /* opening */
+            if (w->sw_ctr[i] == 0)
+                soi_set_cell(w, col, row, (uint32_t)w->sw_pass[i] + 0x300u); /* still solid while opening */
+            w->sw_ctr[i]++;
+            if (w->sw_ctr[i] >= 9) {
+                w->sw_state[i] = 1;
+                soi_set_cell(w, col, row, (uint32_t)w->sw_pass[i] + 0x100u); /* now passable */
+            }
+        } else if (w->sw_state[i] == 4) {          /* closing */
+            soi_set_cell(w, col, row, (uint32_t)w->sw_solid[i] + 0x300u);    /* solid at once */
+            if (w->sw_ctr[i] > 0) w->sw_ctr[i]--;
+            if (w->sw_ctr[i] == 0) w->sw_state[i] = 2;
+        }
+    }
+}
+
 /* Walk-over goodie pickup for the player's current cell (FUN_1002bc64).
  * Coin/gem values are CONFIRMED; the rest are first-draft (TODO(oracle)). */
 void soi_pickup_check(SoiWorld *w, int player)
@@ -39,6 +140,25 @@ void soi_pickup_check(SoiWorld *w, int player)
     if (!soi_in_bounds(pcol, prow)) return;
     c = w->cell[prow][pcol];
     t = SOI_CELL_TYPE(c);
+
+    /* Stop/Go switch (b41): step onto a switch TILE (low 0x24-0x2d) to toggle its paired
+     * block GROUP. The toggle fires ONLY on the frame the player ENTERS a new cell (asm
+     * FUN_1002bc64 bVar12 = cell changed this frame), so a switch held under a standing
+     * player does not re-fire. Track the collision-centre cell every frame -- BEFORE the
+     * key/door/teleport early-returns below -- so the edge is never lost. */
+    {
+        int entered = (pcol != p->prev_pcol || prow != p->prev_prow);
+        p->prev_pcol = (int16_t)pcol;
+        p->prev_prow = (int16_t)prow;
+        if (t >= 0x24u && t <= 0x2Du) {
+            if (entered) {
+                soi_switch_toggle(w, (int)t);
+                soi_sfx_emit(w, SOI_SFX_SWITCH);  /* asm FUN_1002bc64 plays evt 0x2c on entry, always */
+                w->cell[prow][pcol] = c ^ 1u;   /* flip the Stop<->Go sign (low bit) in place */
+            }
+            return;                             /* a switch tile is walk-on, never collected */
+        }
+    }
 
     /* KEY (0x0B, CONFIRMED docs §0): collect to open the door. */
     if (t == SOI_TILE_KEY) {
@@ -139,20 +259,9 @@ void soi_pickup_check(SoiWorld *w, int player)
         return;                               /* OUT marker (odd): no teleport */
     }
 
-    /* Stop/Go switches (0x24-0x2D = 5 pairs), each paired with a BLOCK GROUP
-     * (0x9d-0xd3; group g: even 0x9d+12g / odd 0xa3+12g). CONFIRMED (asm FUN_10016544 /
-     * 100166b8 / 10016784 / 1001604c + a full board scan, 2026-07-06): each toggle
-     * stamps the block cell (code | 0x300) in BOTH states, and NO collision code
-     * special-cases 0x9d-0xd3 -- so both states are SOLID walls and the switch is a
-     * COSMETIC sprite swap (Stop-sign <-> Go-sign) with NO gameplay effect on player OR
-     * enemy pathing. The port therefore treats it as a gameplay NO-OP (blocks stay solid
-     * as loaded; boards are 152/152 winnable that way). The port previously mis-modeled
-     * it as a global enemy-freeze, which the asm has no basis for -- enemies_frozen is
-     * now vestigial. TODO(cosmetic-only, low pri): the animated sprite swap + switch
-     * sound (evt 0x2c) -- needs edge-detection (pickup runs every player tick) and has
-     * zero gameplay impact, so it is deferred. */
-    if (t >= 0x24u && t <= 0x2Du)
-        return;
+    /* Stop/Go switch TILES (low 0x24-0x2d) are now handled at the TOP of this function
+     * (entry-edge toggle of the paired block group); control never reaches here for them.
+     * The prior "cosmetic no-op" assumption was WRONG -- see the switch code in this file. */
     /* Solid blocks (0x2xx/0x3xx) carry the 0x200 SUPPORTIVE bit and are never
      * "collected" — bail before the goodie switch so a block whose low byte
      * happens to collide with a goodie type is not consumed. Goodies/coins are
