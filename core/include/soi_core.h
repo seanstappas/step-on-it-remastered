@@ -22,7 +22,7 @@ extern "C" {
 
 /* ---- canonical constants (from the RE, docs/original_game) ---- */
 #define SOI_MAX_PLAYERS   4     /* slots 0(reserved),1(P1),2(P2),3(P3 = remaster co-op) */
-#define SOI_MAX_ENEMIES   32    /* enemy entity pool (original array is fixed-size) */
+#define SOI_MAX_ENEMIES   64    /* enemy entity pool (the original's FUN_100058ac pool holds 59) */
 #define SOI_MAX_PROJECTILES 8   /* fired Magic Arrows in flight (pool) */
 #define SOI_GRID_COLS     19    /* playable columns (X, 0x13 loop bound) */
 #define SOI_GRID_ROWS     13    /* playable rows   (Y, 0x0d loop bound) */
@@ -127,7 +127,7 @@ typedef enum {
 } SoiSfx;
 
 #define SOI_SFX_QUEUE_MAX 32   /* per-tick sound-event capacity */
-#define SOI_DEATH_QUEUE_MAX 32 /* per-tick enemy-death effect capacity (== SOI_MAX_ENEMIES) */
+#define SOI_DEATH_QUEUE_MAX 64 /* per-tick enemy-death effect capacity (== SOI_MAX_ENEMIES) */
 
 /* Opaque world state. Allocate soi_world_size() bytes; the core never mallocs. */
 typedef struct SoiWorld SoiWorld;

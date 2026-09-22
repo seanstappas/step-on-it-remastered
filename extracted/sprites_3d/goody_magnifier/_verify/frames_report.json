@@ -1,0 +1,29 @@
+{
+ "family": "goody_magnifier",
+ "source": "goody_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "failed": [],
+ "iou_min": 0.9345,
+ "iou_mean": 0.9345,
+ "de_mean": 9.027,
+ "de_max": 9.027,
+ "rows": [
+  {
+   "frame": 48,
+   "iou": 0.9345,
+   "de": 9.027,
+   "de_raw": 16.736,
+   "best_src": 48,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.7389
+   ]
+  }
+ ]
+}

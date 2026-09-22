@@ -10,7 +10,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _star_poly(name, r_out, r_in, points, z, thick, mat, rot_deg=90.0):
@@ -81,3 +81,13 @@ def render(args):
     build_star()
     C.setup_scene(px, world_strength=0.18, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_star()
+    C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_star", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

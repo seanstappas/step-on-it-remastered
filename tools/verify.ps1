@@ -8,9 +8,11 @@ Stages:
   1. core: mechanic unit tests          (tests/test_mechanics.c)
   2. core: harness + determinism        (tests/harness.c)
   3. core: fixture-replay selftest       (tools/fixture_replay.py vs board_401)
-  4. bridge: GDExtension build           (bridge/build_zig.ps1)
-  5. godot: import clean                 (headless editor import, no script errors)
-  6. godot: run + screenshot             (--shot render, off-screen -> media/screenshots/; no popup)
+  4. core: creeper chain simulation      (tools/verify_creepers.c over every Creeper board)
+  5. art: 3D sprite frames               (tools/soi3d/framematch.py --check: published sets vs the SD frames)
+  6. bridge: GDExtension build           (bridge/build_zig.ps1)
+  7. godot: import clean                 (headless editor import, no script errors)
+  8. godot: run + screenshot             (--shot render, off-screen -> media/screenshots/; no popup)
 
 Godot stages are skipped automatically if the editor isn't present (or -SkipGodot).
 
@@ -62,6 +64,23 @@ Stage 'core: fixture-replay selftest' {
     }
     $out = & py tools/fixture_replay.py --lib soi_core.dll --bord extracted/levels/board_401.bord --selftest
     [bool]($out -match 'SELFTEST: PASS')
+}
+
+Stage 'core: creeper chain simulation' {
+    & $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tools/verify_creepers.c -o soi_creepers.exe 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $out = & .\soi_creepers.exe (Get-ChildItem extracted/levels/*.bord | ForEach-Object FullName)
+    $code = $LASTEXITCODE
+    Remove-Item soi_creepers.exe, soi_creepers.pdb -ErrorAction SilentlyContinue
+    $out | Where-Object { $_ -match '^(FAIL|===)' } | ForEach-Object { Write-Host "   $_" }
+    [bool]($code -eq 0 -and ($out -match ' 0 FAILED'))
+}
+
+Stage 'art: 3D sprite frames' {
+    $out = & py tools/soi3d/framematch.py --check
+    $code = $LASTEXITCODE
+    $out | Where-Object { $_ -match '^(verify|check: (STRAY|PASS|FAIL))' } | ForEach-Object { Write-Host "   $_" }
+    [bool]($code -eq 0 -and ($out -match '^check: PASS'))
 }
 
 Stage 'bridge: GDExtension build' {

@@ -1,0 +1,17 @@
+{
+  "status": "wip",
+  "note": "FAILS the gate (IoU 0.66, dE 32): the builder shows the turnstile from above with thin diagonal bars; the source is a FRONT view (camera level with the bars, green base a wide flat slab across the bottom, chunky red bars filling the width). Rework build_spinner's proportions/tilt before publishing.",
+  "source": "spinner_sprites",
+  "frames": "all",
+  "mode": "spinner",
+  "opts": {"tilt": 10.0},
+  "sweep": [{"param": "spin", "start": 0, "stop": 180, "step": 1.5, "period": 180}],
+  "smooth": {"spin": "loop"},
+  "scale": 4,
+  "samples": {"sweep": 16, "final": 256},
+  "look": {"frames": 6, "passes": 2, "samples": 64,
+           "params": {"world": [0.06, 0.12, 0.18], "fill": [0.05, 0.10, 0.16], "key": [3.0, 3.8, 4.6],
+                      "tilt": [4.0, 10.0, 16.0]}},
+  "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
+  "fps": 30
+}

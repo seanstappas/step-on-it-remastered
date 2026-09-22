@@ -1,0 +1,29 @@
+{
+ "family": "goody_coin_silver",
+ "source": "goody_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "failed": [],
+ "iou_min": 0.9917,
+ "iou_mean": 0.9917,
+ "de_mean": 7.214,
+ "de_max": 7.214,
+ "rows": [
+  {
+   "frame": 11,
+   "iou": 0.9917,
+   "de": 7.214,
+   "de_raw": 12.144,
+   "best_src": 11,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.6918
+   ]
+  }
+ ]
+}

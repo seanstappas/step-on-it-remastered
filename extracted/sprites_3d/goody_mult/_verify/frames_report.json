@@ -1,0 +1,73 @@
+{
+ "family": "goody_mult",
+ "source": "goody_sprites",
+ "frames": 4,
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "failed": [
+  13,
+  14,
+  15,
+  16
+ ],
+ "iou_min": 0.9709,
+ "iou_mean": 0.9722,
+ "de_mean": 17.725,
+ "de_max": 18.698,
+ "rows": [
+  {
+   "frame": 13,
+   "iou": 0.9709,
+   "de": 18.698,
+   "de_raw": 25.29,
+   "best_src": 13,
+   "rank_dist": 0,
+   "pass": false,
+   "hd_iou_de": [
+    1.0,
+    1.4355
+   ]
+  },
+  {
+   "frame": 14,
+   "iou": 0.9722,
+   "de": 17.729,
+   "de_raw": 24.866,
+   "best_src": 14,
+   "rank_dist": 0,
+   "pass": false,
+   "hd_iou_de": [
+    1.0,
+    1.4321
+   ]
+  },
+  {
+   "frame": 15,
+   "iou": 0.9736,
+   "de": 16.923,
+   "de_raw": 24.815,
+   "best_src": 15,
+   "rank_dist": 0,
+   "pass": false,
+   "hd_iou_de": [
+    1.0,
+    1.3284
+   ]
+  },
+  {
+   "frame": 16,
+   "iou": 0.9722,
+   "de": 17.549,
+   "de_raw": 26.026,
+   "best_src": 14,
+   "rank_dist": 2,
+   "pass": false,
+   "hd_iou_de": [
+    1.0,
+    1.3404
+   ]
+  }
+ ]
+}

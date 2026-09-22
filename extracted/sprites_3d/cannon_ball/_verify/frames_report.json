@@ -1,0 +1,260 @@
+{
+ "family": "cannon_ball",
+ "source": "cannon_sprites",
+ "frames": 20,
+ "gate": {
+  "iou": 0.85,
+  "de": 17.0,
+  "rank_tol": 1,
+  "note": "16x16 source: the 3 frames where a gore seam crosses the centre sit at dE 16.5 (the rest 11-15)"
+ },
+ "failed": [],
+ "iou_min": 0.9286,
+ "iou_mean": 0.9474,
+ "de_mean": 13.898,
+ "de_max": 16.643,
+ "rows": [
+  {
+   "frame": 4,
+   "iou": 0.9286,
+   "de": 12.718,
+   "de_raw": 19.065,
+   "best_src": 4,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 5,
+   "iou": 0.9412,
+   "de": 13.926,
+   "de_raw": 19.529,
+   "best_src": 5,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 6,
+   "iou": 0.9541,
+   "de": 15.556,
+   "de_raw": 20.69,
+   "best_src": 6,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 7,
+   "iou": 0.9498,
+   "de": 15.735,
+   "de_raw": 21.867,
+   "best_src": 7,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 8,
+   "iou": 0.9541,
+   "de": 13.751,
+   "de_raw": 20.341,
+   "best_src": 8,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 9,
+   "iou": 0.9498,
+   "de": 10.926,
+   "de_raw": 19.003,
+   "best_src": 9,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 10,
+   "iou": 0.9412,
+   "de": 9.584,
+   "de_raw": 18.044,
+   "best_src": 10,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.3793
+   ]
+  },
+  {
+   "frame": 11,
+   "iou": 0.9412,
+   "de": 10.233,
+   "de_raw": 17.057,
+   "best_src": 11,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.2973
+   ]
+  },
+  {
+   "frame": 12,
+   "iou": 0.9455,
+   "de": 12.967,
+   "de_raw": 18.155,
+   "best_src": 12,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.0883
+   ]
+  },
+  {
+   "frame": 13,
+   "iou": 0.9541,
+   "de": 15.501,
+   "de_raw": 20.959,
+   "best_src": 13,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.3515
+   ]
+  },
+  {
+   "frame": 14,
+   "iou": 0.9541,
+   "de": 16.414,
+   "de_raw": 22.211,
+   "best_src": 14,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.3144
+   ]
+  },
+  {
+   "frame": 15,
+   "iou": 0.9541,
+   "de": 14.517,
+   "de_raw": 21.01,
+   "best_src": 15,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.7252
+   ]
+  },
+  {
+   "frame": 16,
+   "iou": 0.9455,
+   "de": 13.182,
+   "de_raw": 21.76,
+   "best_src": 16,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.0785
+   ]
+  },
+  {
+   "frame": 17,
+   "iou": 0.9412,
+   "de": 12.777,
+   "de_raw": 19.078,
+   "best_src": 17,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.4271
+   ]
+  },
+  {
+   "frame": 18,
+   "iou": 0.9412,
+   "de": 14.072,
+   "de_raw": 20.363,
+   "best_src": 18,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.1016
+   ]
+  },
+  {
+   "frame": 19,
+   "iou": 0.9541,
+   "de": 15.587,
+   "de_raw": 21.687,
+   "best_src": 19,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.3285
+   ]
+  },
+  {
+   "frame": 20,
+   "iou": 0.9541,
+   "de": 16.643,
+   "de_raw": 22.797,
+   "best_src": 20,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.3058
+   ]
+  },
+  {
+   "frame": 21,
+   "iou": 0.9498,
+   "de": 16.364,
+   "de_raw": 22.704,
+   "best_src": 21,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.1463
+   ]
+  },
+  {
+   "frame": 22,
+   "iou": 0.9541,
+   "de": 14.596,
+   "de_raw": 21.097,
+   "best_src": 22,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.4291
+   ]
+  },
+  {
+   "frame": 23,
+   "iou": 0.9412,
+   "de": 12.904,
+   "de_raw": 20.415,
+   "best_src": 23,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.9257
+   ]
+  }
+ ]
+}

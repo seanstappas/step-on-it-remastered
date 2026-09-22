@@ -1,0 +1,31 @@
+{
+ "family": "goody_potion",
+ "source": "goody_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "failed": [
+  18
+ ],
+ "iou_min": 0.8571,
+ "iou_mean": 0.8571,
+ "de_mean": 26.925,
+ "de_max": 26.925,
+ "rows": [
+  {
+   "frame": 18,
+   "iou": 0.8571,
+   "de": 26.925,
+   "de_raw": 36.226,
+   "best_src": 18,
+   "rank_dist": 0,
+   "pass": false,
+   "hd_iou_de": [
+    1.0,
+    1.5581
+   ]
+  }
+ ]
+}

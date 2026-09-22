@@ -239,6 +239,7 @@ void     soi_player_update(SoiWorld *w, int player);
 /* ---- enemies (soi_enemies.c) ---- */
 int16_t  soi_enemy_points(SoiEnemyType t);
 int      soi_enemy_spawn(SoiWorld *w, SoiEnemyType t, int col, int row);
+void     soi_creeper_init(SoiWorld *w, int idx);   /* solidify + arm a Creeper segment (FUN_10008618 init) */
 SoiEnemyType soi_bord_badguy_type(uint8_t bord_type);
 int      soi_bord_is_spawner(uint8_t bord_type);
 void     soi_enemies_update(SoiWorld *w);

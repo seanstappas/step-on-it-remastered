@@ -9,6 +9,13 @@ Class: **A** spinning prop · **B** static/simple prop · **C** HUD/text · **D*
 Only **A/B** get 3D; **C/D** stay 2D (UHD / Times‑Bold). See the classification rationale in
 [3D_ANIMATED_REMASTER_PLAN.md](3D_ANIMATED_REMASTER_PLAN.md).
 
+**Frame-matched 3D (the publishing path since 2026-09-22):** a family is DONE only when its
+`frames.json` is `published` and `py tools/soi3d/framematch.py --check` passes (gate stage 5); see
+[SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md). Published: `disk_sprites` (24),
+`cannon_ball` (cannon f04-f23), `goody_coin` (f24), `goody_coin_silver` (f11), `goody_magnifier`
+(f48), `goody_star` (f12). WIP with a failing-gate note: `smiley_sprites`, `spinner_sprites`, `weapons`,
+`goody_mult`, `goody_1up`, `goody_potion`, `goody_clock`, `goody_goldbar`. The stills in the table below are look-dev.
+
 | Family (`extracted/sprites/…`) | Class | Status | Deliverables (`extracted/sprites_3d/…`) |
 |---|---|---|---|
 | `disk_sprites` | A | **DONE** | `disk_sprites/disk.png`, `disk_sprites/_verify/2d_vs_3d.{mp4,gif}` |

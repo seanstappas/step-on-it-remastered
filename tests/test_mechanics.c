@@ -1867,29 +1867,87 @@ int main(void)
 
     soi_world_init(w, 1);
     w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 1, 1);
     {
         int ci = soi_enemy_spawn(w, SOI_ENEMY_CREEPER, 4, 6);   /* mid-board, open cells */
+        int t, k, maxseg = 0, leak = 0, head = 0;
         CHECK(ci >= 0, "creeper: spawned");
         w->enemies[ci].state = 0;          /* 0 = horizontal axis */
-        w->enemies[ci].dir   = 2;          /* stepping right */
-        w->enemies[ci].fire_period = 1;    /* short step interval for the test */
-        w->enemies[ci].fire_cd = 1;
-        soi_set_cell(w, 6, 6, 0x197);      /* a background tile in its path (passable, not solid) */
-        {
-            int t;
-            for (t = 0; t < 8; t++) soi_tick(w, 0, 0);
-            CHECK(soi_enemy_x(w, ci) >= soi_cell_x(7),
-                  "creeper: traverses a background (0x197) tile instead of getting stuck");
-            CHECK(soi_projectile_count(w) == 0, "creeper: never fires a projectile");
-            /* Moving SOLID block: its cell is solid; the cells it covered are restored
-             * -- including the 0x197 background (asm captures +0x70), so nothing erases. */
-            CHECK(soi_get_cell(w, 8, 6) & SOI_CELL_SUPPORTIVE,
-                  "creeper: temp-solidifies the cell it occupies");
-            CHECK(soi_get_cell(w, 6, 6) == 0x197,
-                  "creeper: restores the background tile it covered (capture/restore)");
-            CHECK((soi_get_cell(w, 4, 6) & SOI_CELL_SUPPORTIVE) == 0,
-                  "creeper: restores the cell it left (temporary trail)");
+        w->enemies[ci].dir   = 2;          /* growing to the right */
+        w->enemies[ci].fire_period = 1;    /* StartDelay 1 -> grow timer 3 steps */
+        soi_creeper_init(w, ci);
+        CHECK(soi_get_cell(w, 4, 6) & SOI_CELL_SUPPORTIVE, "creeper: solidifies the cell it occupies");
+        soi_set_cell(w, 6, 6, 0x197);      /* a background tile in its path (enterable, not solid) */
+        for (t = 0; t < 200; t++) {
+            int nseg = 0, c;
+            soi_tick(w, 0, 0);
+            for (k = 0; k < SOI_MAX_ENEMIES; k++)
+                if (w->enemies[k].active && w->enemies[k].type == SOI_ENEMY_CREEPER) {
+                    nseg++;
+                    c = (w->enemies[k].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+                    if (c > head) head = c;
+                }
+            if (nseg > maxseg) maxseg = nseg;
+            for (c = 1; c < 17; c++) {     /* every solid cell on row 6 is a live segment */
+                int seg = 0;
+                if (!(soi_get_cell(w, c, 6) & SOI_CELL_SUPPORTIVE)) continue;
+                for (k = 0; k < SOI_MAX_ENEMIES; k++)
+                    if (w->enemies[k].active && w->enemies[k].type == SOI_ENEMY_CREEPER &&
+                        (w->enemies[k].x - SOI_ORIGIN_X) / SOI_CELL_PX == c) seg = 1;
+                if (!seg) leak = 1;
+            }
         }
+        CHECK(head >= 7, "creeper: the chain crosses a background (0x197) tile");
+        CHECK(maxseg >= 2, "creeper: a new segment grows before the old one shrinks away (a chain)");
+        CHECK(!leak, "creeper: every solid cell it leaves behind is restored (no leaked wall)");
+        CHECK(soi_get_cell(w, 6, 6) == 0x197 || (soi_get_cell(w, 6, 6) & SOI_CELL_SUPPORTIVE),
+              "creeper: the covered background tile comes back when the segment leaves");
+        CHECK(soi_projectile_count(w) == 0, "creeper: never fires a projectile");
+    }
+    /* 16b. Creeper timeline (asm FUN_10008618): a step every 3rd frame; +0x6e = StartDelay*3
+     * counts down while the segment grows (+0x56 0xf -> 1), at 0 it spawns the next segment
+     * one cell ahead, then shrinks back to 0xf and dies, restoring the covered tile. Blocked
+     * -> it reverses and retries the other way on the next step. */
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 1, 1);
+    {
+        int ci = soi_enemy_spawn(w, SOI_ENEMY_CREEPER, 8, 6), t, k, n20 = 0, n21 = 0, n38 = 0, n39 = 0;
+        int child = -1;
+        w->enemies[ci].state = 0; w->enemies[ci].dir = 2; w->enemies[ci].fire_period = 2;
+        soi_creeper_init(w, ci);
+        for (t = 1; t <= 39; t++) {
+            int n = 0;
+            soi_tick(w, 0, 0);
+            for (k = 0; k < SOI_MAX_ENEMIES; k++)
+                if (w->enemies[k].active && w->enemies[k].type == SOI_ENEMY_CREEPER) {
+                    n++;
+                    if (k != ci && child < 0) child = k;
+                }
+            if (t == 20) n20 = n;
+            if (t == 21) n21 = n;
+            if (t == 38) n38 = n;
+            if (t == 39) n39 = n;
+            if (t == 18) CHECK(w->enemies[ci].anim == 9, "creeper: grows one frame per step (0xf -> 9 in 6 steps)");
+        }
+        CHECK(n20 == 1 && n21 == 2, "creeper: spawns the next segment on step StartDelay*3 + 1");
+        CHECK(child >= 0 && soi_enemy_x(w, child) == soi_cell_x(9), "creeper: the new segment is one cell ahead");
+        CHECK(n38 == 2 && n39 == 1 && !w->enemies[ci].active, "creeper: the parent shrinks back and dies");
+        CHECK((soi_get_cell(w, 8, 6) & SOI_CELL_SUPPORTIVE) == 0, "creeper: the parent's cell is restored");
+    }
+    soi_world_init(w, 1);
+    w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 1, 1);
+    {
+        int ci = soi_enemy_spawn(w, SOI_ENEMY_CREEPER, 8, 6), t;
+        w->enemies[ci].state = 0; w->enemies[ci].dir = 2; w->enemies[ci].fire_period = 1;
+        soi_creeper_init(w, ci);
+        soi_set_cell(w, 9, 6, SOI_WALL);   /* blocked ahead */
+        for (t = 0; t < 12; t++) soi_tick(w, 0, 0);    /* step 4 = the spawn attempt */
+        CHECK(w->enemies[ci].active && w->enemies[ci].dir == 1 && w->enemies[ci].fire_cd == 0,
+              "creeper: blocked -> reverses and waits (no shrink)");
+        for (t = 0; t < 3; t++) soi_tick(w, 0, 0);
+        CHECK((soi_get_cell(w, 7, 6) & SOI_WALL) == SOI_WALL, "creeper: then grows the other way");
     }
 
     /* ---- 17. A hostile shot's src_type is LOGICAL state -- a Gargoyle shot

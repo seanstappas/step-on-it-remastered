@@ -9,7 +9,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _spike(name, ang_deg, r_base, r_tip, half_w, base_z, apex_z, mat):
@@ -133,7 +133,8 @@ def _star_stud(name, angles, r_out, r_valley, z_base, z_apex, mat, bevel=0.03):
     return obj
 
 
-def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.0):
+def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.0,
+               green_rgb=(0, 104, 0), red_rgb=(206, 16, 16), glint_energy=450.0):
     """FAITHFUL Step-On-It goody disk: a GREEN ball with FOUR raised RED half-cone blades. The blades
     are SYMMETRIC (even 90 deg) because in the remaster this disk is ANIMATED: the blades are parented
     to a pivot at the ball centre and SPUN (rotation about the pivot Z). Pass explicit blade_angles /
@@ -143,16 +144,16 @@ def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.
     # MATTE 'playdough' green ball: soft diffuse form so the top-left reads bright and the
     # bottom-right falls into a DARK, shadowy green (like the source) -> no glossy halo/rim. A faint
     # flat green emission keeps the deepest shadow a dark GREEN rather than a neutral grey/black.
-    green = C._mat("green", C._srgb(0, 104, 0), rough=0.6, spec=0.1, coat=0.0)
+    green = C._mat("green", C._srgb(*green_rgb), rough=0.6, spec=0.1, coat=0.0)
     gb = green.node_tree.nodes.get("Principled BSDF")
     ec = gb.inputs.get("Emission Color")
     es = gb.inputs.get("Emission Strength")
     if ec is not None:
-        ec.default_value = C._srgb(0, 92, 0)
+        ec.default_value = C._srgb(green_rgb[0], int(green_rgb[1] * 92 / 104), green_rgb[2])
     if es is not None:
         es.default_value = 0.06
     # MATTE 'playdough' red blades: high roughness + zero specular -> soft clay, not glossy plastic.
-    red = C._mat("red", C._srgb(206, 16, 16), rough=0.95, spec=0.0)
+    red = C._mat("red", C._srgb(*red_rgb), rough=0.95, spec=0.0)
     bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=96, ring_count=48)
     ball = bpy.context.active_object
     ball.name = "ball"
@@ -162,7 +163,7 @@ def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.
     bpy.ops.object.light_add(type='POINT', location=(-2.9, 3.4, 2.3))   # higher + further top-left
     glint = bpy.context.active_object
     glint.name = "glint"
-    glint.data.energy = 450
+    glint.data.energy = glint_energy
     glint.data.shadow_soft_size = 0.35
     # pivot empty at the ball centre; the blade assembly tilts+spins about it as one rigid body
     bpy.ops.object.empty_add(location=(0, 0, 0))
@@ -190,3 +191,24 @@ def render(args):
     # ambient lifted so the shadowed centre stays dark GREEN, not black
     C.setup_scene(px, world_strength=0.19, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_disk(green_rgb=tuple(opts.get("green", (0, 104, 0))), red_rgb=tuple(opts.get("red", (206, 16, 16))),
+               glint_energy=float(opts.get("glint_energy", 450.0)))
+    C.setup_scene(256, world_strength=0.19, fill_energy=0.16)
+    C.apply_look(opts)
+    return {"pivot": bpy.data.objects["pivot"]}
+
+
+def _frames_pose(ctx, pose):
+    # pose {"spin": deg, "tilt_x": deg, "tilt_y": deg}: the blade assembly's rotation about the view
+    # axis (CCW positive) and its tilt across the ball face (the hub drifts as the disk wobbles).
+    # 'ZYX' applies the spin FIRST (about the hub's own axis), then tilts that spinning hub.
+    ctx["pivot"].rotation_mode = 'ZYX'
+    ctx["pivot"].rotation_euler = (math.radians(float(pose.get("tilt_x", 0.0))),
+                                   math.radians(float(pose.get("tilt_y", 0.0))),
+                                   math.radians(float(pose.get("spin", 0.0))))
+
+
+register_frames("disk", _frames_setup, _frames_pose)

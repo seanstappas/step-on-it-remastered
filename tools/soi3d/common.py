@@ -196,6 +196,21 @@ def setup_scene(px=256, add_cam=True, world_strength=0.11, fill_energy=0.14):
     scn.render.image_settings.color_mode = 'RGBA'
 
 
+def apply_look(opts):
+    """Frame-matched look knobs shared by every builder (tools/soi3d/framematch.py "look" stage):
+    "world" (ambient strength), "key" (top-left key sun energy), "fill" (lower-right fill energy).
+    Call AFTER setup_scene; absent keys keep setup_scene's values."""
+    scn = bpy.context.scene
+    if "world" in opts and scn.world is not None:
+        scn.world.node_tree.nodes["Background"].inputs["Strength"].default_value = float(opts["world"])
+    suns = sorted((o for o in bpy.data.objects if o.type == 'LIGHT' and o.data.type == 'SUN'),
+                  key=lambda o: -o.data.energy)
+    if suns and "key" in opts:
+        suns[0].data.energy = float(opts["key"])
+    if len(suns) > 1 and "fill" in opts:
+        suns[-1].data.energy = float(opts["fill"])
+
+
 def render(out):
     """Point the scene at `out` and render one still (prints RENDERED, the success sentinel)."""
     bpy.context.scene.render.filepath = out

@@ -10,7 +10,7 @@ import bpy
 from mathutils import Euler, Vector
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def build_goldbar():
@@ -57,3 +57,13 @@ def render(args):
     build_goldbar()
     C.setup_scene(px, world_strength=0.15, fill_energy=0.10)
     return out
+
+
+def _frames_setup(opts):
+    build_goldbar()
+    C.setup_scene(256, world_strength=0.15, fill_energy=0.10)
+    C.apply_look(opts)
+    return {}
+
+
+register_frames("goody_goldbar", _frames_setup, lambda ctx, pose: None)   # static goody (fixed frame)

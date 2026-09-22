@@ -60,6 +60,7 @@ Pass after `--`, e.g. `"<Godot>" --path godot_project -- --hd --board=board_450`
 | Flag | Effect |
 |---|---|
 | `--hd` | Load the AI-upscaled sprites + full-screen art and render the 640×480 canvas at the window's resolution. |
+| `--3d` | `--hd` plus the **frame-matched 3D sprites** (`extracted/sprites_3d_frames`, each frame fitted to and gated against its SD original); sheets/frames without a 3D render stay HD. **F3** toggles HD ↔ 3D in game. |
 | `--mode=retro` \| `--mode=remastered` | Start in the flat retro or the remastered look (also **M** in game). |
 | `--players=3` | Enable the remaster's 3rd co-op player. |
 | `--board=board_NNN` | Load a specific board. |
@@ -82,6 +83,7 @@ Assets are decoded out of the original into `extracted/`, and optionally AI-upsc
 | Asset | Faithful (SD) | Remaster (HD) | Tool |
 |---|---|---|---|
 | Sprites | `extracted/sprites/` | `sprites_hd` (4×) · `sprites_uhd` (8×) — Real-ESRGAN anime / hqx per sheet | `tools/upscale_sprites.py` |
+| 3D sprites | `extracted/sprites/` (the per-frame reference) | `sprites_3d_frames` (4×, same `fNN` per frame) — procedural Blender models, pose fitted per frame | `tools/soi3d/framematch.py` |
 | Full-screen art | `extracted/pict/` | `pict_hd` · `pict_hd_v2` (text panels re-rendered crisp) | `tools/upscale_picts.py`, `render_text_picts.py` |
 | Music | `extracted/music/*.mid` | `*.ogg` (per-screen mapping) | `tools/render_music*.py`, `qtma_to_midi.py` |
 | SFX | `extracted/audio/wav/` | `wav_hd` (deterministic clean-up) · `wav_ai` (AudioSR super-res) | `tools/enhance_sfx.py`, `ai_super_sfx.py` |

@@ -1,0 +1,29 @@
+{
+ "family": "goody_coin",
+ "source": "goody_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "failed": [],
+ "iou_min": 0.9771,
+ "iou_mean": 0.9771,
+ "de_mean": 9.994,
+ "de_max": 9.994,
+ "rows": [
+  {
+   "frame": 24,
+   "iou": 0.9771,
+   "de": 9.994,
+   "de_raw": 19.323,
+   "best_src": 24,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.6587
+   ]
+  }
+ ]
+}

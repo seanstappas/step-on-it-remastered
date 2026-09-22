@@ -4,11 +4,15 @@ The texture is projected front-on via OBJECT coordinates, so rotating the ball a
 spiral in place (the in-game animation).
 """
 import math
+import os
 
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
+
+_TEX = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                    "extracted", "sprites_3d", "weapons", "spiral_texture.png")
 
 
 def build_spiral(tex_path, spin=0.0):
@@ -52,3 +56,18 @@ def render(args):
     build_spiral(tex, sp)
     C.setup_scene(px)
     return out
+
+
+def _frames_setup(opts):
+    build_spiral(opts.get("tex", _TEX))
+    C.setup_scene(256)
+    C.apply_look(opts)
+    return {"ball": bpy.data.objects["spiral"]}
+
+
+def _frames_pose(ctx, pose):
+    # pose {"spin": deg}: the swirl turns in place about the view axis
+    ctx["ball"].rotation_euler = (0.0, 0.0, math.radians(float(pose.get("spin", 0.0))))
+
+
+register_frames("spiral", _frames_setup, _frames_pose)
