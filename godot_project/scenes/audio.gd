@@ -109,6 +109,8 @@ func _ready() -> void:
 		add_child(p)
 		_players.append(p)
 	_init_music()
+	if "--music" in OS.get_cmdline_user_args():
+		_music_enabled = true   # launch with Sound -> Music on (the original defaults it off)
 	print("audio: loaded %d SFX (variant=%s, %d enhanced), mapped %d events, music=%s" % [_streams.size(), _sfx_variant, _sfx_variant_hits, _by_event.size(), has_music()])
 
 ## Play the sound mapped to a SoiSfx event id (round-robin over a player pool).
@@ -160,6 +162,12 @@ func _music_path(track: String) -> String:
 		var op := _music_dir.path_join("original").path_join(track + ".ogg")
 		if FileAccess.file_exists(op):
 			return op
+		# No capture of the sparser "_thin" (Sound->Music Light) arrangement: stay on the ORIGINAL
+		# recording's full arrangement rather than switching soundtrack to the remaster's thin one.
+		if "_thin" in track:
+			var full := _music_dir.path_join("original").path_join(track.replace("_thin", "") + ".ogg")
+			if FileAccess.file_exists(full):
+				return full
 		# A "_hurry" request whose ORIGINAL base recording exists but has no pre-rendered
 		# original hurry: do NOT cross to the remaster (that jumps timbre mid-track). Return the
 		# (absent) original path so _load_music yields null and set_music_hurry degrades via
@@ -203,26 +211,35 @@ func play_music(track: String) -> void:
 		_music_player.play()
 
 ## Choose the soundtrack: "remaster" (synth default) or "original" (your recordings
-## in extracted/music/original/). Reloads the current track. See music-tracks.md.
+## in extracted/music/original/). Reloads the current track at the SAME playback position:
+## both soundtracks are one loop of the same tune clock (tools/build_original_music.py aligns
+## the captures to it), so an A/B swap continues the same passage. See music-tracks.md.
 func set_music_variant(v: String) -> void:
 	if (v != "remaster" and v != "original") or v == _music_variant:
 		return
 	_music_variant = v
 	if _music_player != null:
 		var was_playing := _music_player.playing
+		var pos := _music_player.get_playback_position() if was_playing else 0.0
+		var was_hurry_stream := _music_hurry and is_equal_approx(_music_player.pitch_scale, 1.0)
 		# Honor an active "hurry" speedup across the soundtrack swap (the asm re-rates the one
 		# shared movie regardless of which recording is loaded): prefer this track's pre-rendered
 		# "_hurry" variant; if the chosen soundtrack has none, fall back to base + pitch_scale.
 		var s: AudioStream = _load_music(_current_track + "_hurry") if _music_hurry else null
 		if s != null:
 			_music_player.pitch_scale = 1.0
+			if not was_hurry_stream:
+				pos /= HURRY_RATE                # base-time position -> the re-timed hurry stream
 		else:
 			s = _load_music(_current_track)
 			_music_player.pitch_scale = HURRY_RATE if _music_hurry else 1.0
+			if was_hurry_stream:
+				pos *= HURRY_RATE                # hurry-stream position -> base time
 		if s != null:
 			_music_player.stream = s
 			if was_playing and _music_enabled:
-				_music_player.play()
+				var slen := s.get_length()
+				_music_player.play(fmod(pos, slen) if slen > 0.0 else 0.0)
 		_load_music(_current_track + "_hurry")   # pre-warm the new soundtrack's hurry variant (as play_music does) so the first hurry after a swap never disk-loads mid-tick
 
 func get_music_variant() -> String:

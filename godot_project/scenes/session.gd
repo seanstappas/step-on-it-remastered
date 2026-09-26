@@ -10,6 +10,39 @@ var mode: int = 0          # 0 = Cooperate (shared board), 1 = Compete (separate
                            # wins), 2 = Alternate (two solo games taking turns; game.gd owns the pools)
 var speed: int = 2         # Options->Speed: 0=Really Fast 1=Fast 2=Medium(default) 3=Slow (local, About 8)
 
+# --- ORIGINAL <-> REMASTERED presentation, flipped live with F2 (title menu + in game) ---
+# ORIGINAL = the 1996 SD sprites/PICTs + the 8-bit SFX + the original game's music (captures in
+# extracted/music/original, tools/build_original_music.py). REMASTERED = the frame-matched 3D
+# sprites over the HD sheets + the HD PICTs + remastered SFX + the studio music remaster.
+# Launching with --3d or --hd starts REMASTERED. Gameplay is identical in both.
+var remastered := false
+var remaster_sfx := "ai"    # SFX set for REMASTERED (audio.gd SFX_VARIANTS); --sfx-variant= overrides
+var presentation_hint_shown := false   # the game shows its "F2 switches" label once per launch
+var _presentation_ready := false
+
+## Apply the launch presentation once (whichever scene comes first calls it). An explicit
+## --sfx-variant= / SOI_SFX_VARIANT picks REMASTERED's SFX set (ORIGINAL is always "original").
+func init_presentation() -> void:
+	if _presentation_ready:
+		return
+	_presentation_ready = true
+	var ua := OS.get_cmdline_user_args()
+	remastered = "--3d" in ua or "--hd" in ua
+	var ov: String = Audio._sfx_variant_override()
+	if ov != "":
+		remaster_sfx = ov
+	Audio.set_sfx_variant(remaster_sfx if remastered else "original")
+	Audio.set_music_variant("remaster" if remastered else "original")
+
+## Switch the whole audio side of the presentation (the scenes swap their own art).
+func set_remastered(on: bool) -> void:
+	var t0 := Time.get_ticks_msec()
+	remastered = on
+	Audio.set_sfx_variant(remaster_sfx if on else "original")
+	Audio.set_music_variant("remaster" if on else "original")
+	print("presentation: %s (sfx %s, %d enhanced; music %s; %d ms)" % ["REMASTERED" if on else "ORIGINAL",
+		Audio.get_sfx_variant(), Audio._sfx_variant_hits, Audio.get_music_variant(), Time.get_ticks_msec() - t0])
+
 ## Advance to the next board in the picked list. Returns false at the end.
 func advance() -> bool:
 	if board_index >= 0 and board_index + 1 < board_list.size():
