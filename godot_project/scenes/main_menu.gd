@@ -15,7 +15,9 @@ var _overlay: TextureRect = null
 var _overlay_hint: Label = null
 var _overlay_pages: Array = []
 var _overlay_idx := 0
-var _hd := false   # --hd: prefer extracted/pict_hd + render the canvas at the window's resolution
+var _hd := false   # REMASTERED presentation: prefer extracted/pict_hd_v2|pict_hd (linear-filtered)
+var _bg: TextureRect = null           # the title art (re-textured on an F2 switch)
+var _view_label: Label = null         # "F2: ORIGINAL / REMASTERED" status in the bottom strip
 var _music_menu: PopupMenu = null
 var _menushot := -1
 var _splash: Control = null
@@ -34,18 +36,17 @@ func _pict(pict_name: String) -> Texture2D:
 
 func _ready() -> void:
 	_apply_window_mode()
+	Session.init_presentation()   # ORIGINAL, or REMASTERED when launched with --3d / --hd
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3") or a.begins_with("--script="):
 			get_tree().change_scene_to_file.call_deferred("res://scenes/menu.tscn")
 			return
 	if Session.num_players <= 0:
 		Session.num_players = 2
-	# --hd (or --3d, which is HD + the 3D sprite overlay): prefer the 4x AI-upscaled PICT art
-	# (tools/upscale_picts.py) + linear filtering. The window's canvas_items stretch (project.godot)
-	# renders the 640x480 canvas at window res so the extra detail shows. (SD default unchanged.)
-	var _ua := OS.get_cmdline_user_args()
-	if ("--hd" in _ua or "--3d" in _ua) and (DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd_v2")) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/pict_hd"))):
-		_hd = true
+	# REMASTERED prefers the 4x AI-upscaled PICT art (tools/upscale_picts.py) + linear filtering.
+	# The window's canvas_items stretch (project.godot) renders the 640x480 canvas at window res
+	# so the extra detail shows. (ORIGINAL = the SD art, unchanged.) F2 flips it live.
+	_hd = Session.remastered and _hd_available()
 
 	# title art fills the 640x480 screen (2x nearest-neighbour for the retro look)
 	var bg := TextureRect.new()
@@ -56,6 +57,7 @@ func _ready() -> void:
 	bg.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR if _hd else CanvasItem.TEXTURE_FILTER_NEAREST
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+	_bg = bg
 
 	_build_menu_bar()
 	_build_buttons()
@@ -245,6 +247,11 @@ func _build_buttons() -> void:
 	modeb.item_selected.connect(func(i: int) -> void:
 		Session.mode = modeb.get_item_id(i))
 	sel.add_child(modeb)
+	_view_label = Label.new()
+	_view_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	_view_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	sel.add_child(_view_label)
+	_update_view_label()
 
 	# bottom row: the action buttons
 	var row := HBoxContainer.new()
@@ -264,6 +271,30 @@ func _label(parent: Control, text: String) -> void:
 	l.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	parent.add_child(l)
+
+func _hd_available() -> bool:
+	for sub in ["pict_hd_v2", "pict_hd"]:
+		if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + sub)):
+			return true
+	return false
+
+## F2: flip ORIGINAL <-> REMASTERED (Session carries it into the game). The title art swaps
+## SD <-> HD here; Session.set_remastered swaps the SFX set + soundtrack (the tune keeps its place).
+func _toggle_presentation() -> void:
+	Session.set_remastered(not Session.remastered)
+	_hd = Session.remastered and _hd_available()
+	var filt := CanvasItem.TEXTURE_FILTER_LINEAR if _hd else CanvasItem.TEXTURE_FILTER_NEAREST
+	if _bg != null:
+		_bg.texture = _pict("401_Title.png")
+		_bg.texture_filter = filt
+	if _overlay != null and _overlay.visible:
+		_overlay.texture = _pict(_overlay_pages[_overlay_idx])
+		_overlay.texture_filter = filt
+	_update_view_label()
+
+func _update_view_label() -> void:
+	if _view_label != null:
+		_view_label.text = "     F2:  %s" % ("REMASTERED" if Session.remastered else "ORIGINAL 1996")
 
 func _button(parent: Control, text: String, cb: Callable) -> void:
 	var b := Button.new()
@@ -360,6 +391,10 @@ func _show_hs_entries(show_it: bool) -> void:
 	_hs_entries.visible = show_it
 
 func _input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_F2:
+		get_viewport().set_input_as_handled()
+		_toggle_presentation()
+		return
 	if _splash != null:
 		if (e is InputEventKey and e.pressed) or (e is InputEventMouseButton and e.pressed):
 			get_viewport().set_input_as_handled()

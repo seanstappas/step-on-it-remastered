@@ -1,0 +1,18 @@
+# ORIGINAL <-> REMASTERED live switch (F2) + 3D <-> HD (F3). Run on a busy board, e.g.
+#   "<Godot>" --path godot_project --resolution 1280x960 -- --script=tools/verify_scripts/presentation_switch.txt --board=board_486
+# (add --3d to start REMASTERED). Shots: start, after F2 (other presentation, with its label), after
+# F3 (HD sprites if REMASTERED; a no-op in ORIGINAL), back after F3+F2. The log prints each switch's
+# "presentation: ... (sfx ..., music ...)" line; the board keeps playing throughout.
+0 90
+SHOT pres_0_start
+F2
+R 40
+SHOT pres_1_switched
+F3
+0 20
+SHOT pres_2_f3
+F3
+F2
+0 30
+SHOT pres_3_back
+QUIT

@@ -94,6 +94,11 @@ regressing the green gates for no gameplay benefit._
 - Pipeline built and gated: `tools/soi3d/framematch.py` + `frames_blender.py`; the game's `--3d`
   overlay with F3 toggle; gate stage 5. Process and status are in
   [SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md).
+- Play-testable: `.\play.ps1` starts REMASTERED with music; **F2** switches the whole presentation live
+  (title menu + mid-board): ORIGINAL = SD art, 8-bit SFX, the original game's music (captures cut to
+  aligned loops by `tools/build_original_music.py`) ↔ REMASTERED = 3D over HD, remastered SFX, studio
+  music (same playback position). Not captured yet: `Angel_Pie` and the `_thin` (Light) arrangements
+  of the original music (they fall back as documented in `docs/original_game/music-tracks.md`).
 - Published (1079 frames): the Robo (80), both players' run f02-f49 (48 + 48) and f50-f117 (68 + 68), the speed indicator's winged shoe (30), board blocks (150) and the '?' tile (6), every goody (51: coins, clocks,
   mult, keys, doors, arrow and switch tiles, turtle, gift, shield, helmet, shoe, ...), the speed
   indicator's spinning shield (30), Teeth (49), the Walker (48), the

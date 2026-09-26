@@ -5,7 +5,7 @@ This project has **two** soundtracks, both driven by the same 9 extracted tunes:
 | Soundtrack | What it is | Where it lives | Who makes it |
 |---|---|---|---|
 | **Remaster** | A studio render of the faithful note data through **FluidSynth + premium SoundFonts** (per-channel stems, real instruments, pitch-bend, stereo, convolution reverb, mastered to -14 LUFS). | `extracted/music/*.ogg` | `tools/render_music_studio.py` (current set **studio8**) |
-| **Original** | Your real recordings captured from the actual game. | `extracted/music/original/*.ogg` | **You** (see below) |
+| **Original** | Your real recordings captured from the actual game. | `extracted/music/original/*.ogg` | **You** — built from your captures in `refs/music/gameplay/` by `tools/build_original_music.py` (see below) |
 | _First pass_ | The initial "dead"-sounding mono synth, kept for historical tracking. | `extracted/music/first_pass/*.ogg` | archived; code in git history |
 
 The faithful source MIDI is `extracted/music/*.mid` (from `tools/qtma_to_midi.py`).
@@ -73,10 +73,28 @@ clean loop iteration**:
 - Don't worry about matching the remaster's exact length — just make your own file a
   clean single loop.
 
+### Built from the gameplay captures (current set)
+
+`py tools/build_original_music.py` turns the emulator captures in `refs/music/gameplay/`
+(`6lit.wav`, `bass_for_lunch.wav`, `Cminor.wav`, `Spooky.wav`) into `6lilt`, `bass_for_lunch`,
+`Cminor` and `spooky` here, each **exactly one QuickTime loop** (the movie's `mdhd` duration):
+
+- the capture is aligned to the tune's own note onsets (parsed from the movie), which pins the loop
+  start to ~5 ms and the capture's clock drift — the first note of every capture sounds ~0.14 s late
+  (QuickTime synth start-up), so the loop starts on the tune clock, *before* the first audible sound;
+- Spooky's capture speeds up near the end (the low-Bonus hurry, 1.25× tempo): the fitted hurry
+  point (tune time ~60.6 s) is restored to 1.0× with `atempo`, so the loop is whole;
+- loudness-matched to the remaster (−14 LUFS) so an A/B switch is fair.
+
+Then `powershell -ExecutionPolicy Bypass -File tools/render_music_hurry.ps1 -Dir extracted/music/original`
+builds their `_hurry` variants. `Angel_Pie` and the `_thin` (Light) arrangements were not captured:
+Light falls back to the original **full** arrangement, `Angel_Pie` to the remaster.
+
 ### Using them in-game
 
-Once your files are in `extracted/music/original/`, select the original soundtrack
-with the Audio autoload:
+**F2** (title menu or in game) switches the whole presentation ORIGINAL ↔ REMASTERED, which swaps
+the soundtrack live at the **same playback position** (both are one loop of the same tune clock).
+From script, select the original soundtrack with the Audio autoload:
 
 ```gdscript
 Audio.set_music_variant("original")   # "remaster" (default) | "original"
@@ -84,8 +102,7 @@ Audio.set_music_variant("original")   # "remaster" (default) | "original"
 
 `set_music_variant` loads from `extracted/music/original/` when set to `"original"`
 (falling back to the remaster for any track you didn't supply), and from
-`extracted/music/` for `"remaster"`. A user-facing **Original / Remaster** music
-toggle in the Sound menu is a natural follow-up (it can call this).
+`extracted/music/` for `"remaster"`. `Session.set_remastered` (the F2 switch) calls it.
 
 > Which tune plays on which screen is now **pinned from the original binary** (no
 > longer a guess) — see **Per-screen mapping** below. The port implements it in

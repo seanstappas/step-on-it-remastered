@@ -175,13 +175,16 @@ var _harness_run := false            # a capture/demo run (--shot/--demo/--play/
 
 # --- real sprite pipeline (decoded from the original sssf, tools/sssf_decode.py) ---
 const SPRITES_DIR := "res://../extracted/sprites"
-var _sprites_dir := SPRITES_DIR    # --hd repoints this at extracted/sprites_hd (4x AI-upscaled sheets)
+var _sprites_dir := SPRITES_DIR    # REMASTERED repoints this at extracted/sprites_hd (4x AI-upscaled sheets)
 var _sprite_scale := 1             # loaded sprites are this many x the logical (SD 640x480) footprint
-# --3d: the frame-matched 3D renders (tools/soi3d/framematch.py) OVERLAY the HD sheets frame by frame
-# (same fNN index, same 4x footprint), so the game's own frame logic drives them; a frame or sheet
-# without a 3D render falls back to its HD frame. F3 toggles HD <-> 3D live (HD/3D sessions only).
+# REMASTERED: the frame-matched 3D renders (tools/soi3d/framematch.py) OVERLAY the HD sheets frame by
+# frame (same fNN index, same 4x footprint), so the game's own frame logic drives them; a frame or sheet
+# without a 3D render falls back to its HD frame. F2 flips the whole ORIGINAL <-> REMASTERED
+# presentation live (_apply_presentation); F3 toggles HD <-> 3D sprites within REMASTERED.
 const SPRITES_3D_DIR := "res://../extracted/sprites_3d_frames"
 var _use_3d := false
+var _remastered := false   # presentation: false = ORIGINAL (1996 SD art), true = REMASTERED (Session.remastered)
+var _pres_toast := 0       # frames left to show the presentation label (after F2/F3, and at the first board)
 # Player (Ted) animation frames into BP_sprites / GP_sprites (CONFIRMED: the sheet
 # has SEPARATE left/right blocks — idle 61 right / 52 left; run cycles follow each
 # idle; jump 133; land 26). Frames are directional, so run/idle are NOT flipped.
@@ -318,7 +321,7 @@ func _folder_index(folder: String) -> Dictionary:
 		return _sprite_index[folder]
 	var idx := {}
 	var dirs: Array = [ProjectSettings.globalize_path("%s/%s" % [_sprites_dir, folder])]
-	if _use_3d:                              # the 3D overlay wins frame by frame
+	if _use_3d and _remastered:              # the 3D overlay wins frame by frame
 		dirs.append(ProjectSettings.globalize_path("%s/%s" % [SPRITES_3D_DIR, folder]))
 	for dir in dirs:
 		var da := DirAccess.open(dir)
@@ -351,9 +354,20 @@ func _sprite(folder: String, frame: int, flip: bool = false, red: bool = false) 
 				_redden(img)
 			if flip:
 				img.flip_x()
+			if _sprite_scale > 1:
+				_prep_hd(img)
 			tex = ImageTexture.create_from_image(img)
 	_tex_cache[key] = tex
 	return tex
+
+## 4x art is drawn DOWN into its 1x logical footprint with linear+mipmap filtering (set in
+## _apply_presentation): bleed edge colours into the transparent texels (no dark fringe under
+## filtering) and build the mipmaps that filter samples.
+func _prep_hd(img: Image) -> void:
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	img.fix_alpha_edges()
+	img.generate_mipmaps()
 
 ## Recolour the BLUE player's shirt (its blue-dominant pixels) to RED, in place, for
 ## the remaster's 3rd co-op player -- the original ships no red sprite sheet. Skin,
@@ -438,7 +452,7 @@ func _draw_arrow(i: int, c: Vector2, pp: Vector2) -> void:
 
 # --- decoded PICT full-screen art (tools/pict_decode.py) ---
 const PICT_DIR := "res://../extracted/pict"
-var _pict_dir := PICT_DIR       # --hd repoints this at extracted/pict_hd (4x AI-upscaled art)
+var _pict_dir := PICT_DIR       # REMASTERED repoints this at extracted/pict_hd_v2|pict_hd (4x AI-upscaled art)
 var _pict_scale := 1            # loaded PICTs are this many x the logical (SD 640x480) footprint
 var _pict_cache := {}
 func _pict(name_substr: String) -> Texture2D:
@@ -452,6 +466,8 @@ func _pict(name_substr: String) -> Texture2D:
 			if f.ends_with(".png") and name_substr in f:
 				var img := Image.load_from_file(dir + "/" + f)
 				if img:
+					if _pict_scale > 1:
+						_prep_hd(img)
 					tex = ImageTexture.create_from_image(img)
 				break
 	_pict_cache[name_substr] = tex
@@ -695,9 +711,9 @@ func _win_clip_path(w: int) -> String:
 		_: clip = "no_winner"
 	if clip == "":
 		return ""
-	# Prefer the AI-upscaled HD clip (extracted/movies_hd, tools/upscale_win_movies.py);
-	# fall back to the faithful SD extraction (extracted/movies).
-	for sub in ["movies_hd", "movies"]:
+	# Prefer the AI-upscaled HD clip (extracted/movies_hd, tools/upscale_win_movies.py) when
+	# REMASTERED; ORIGINAL (and a missing HD clip) plays the faithful SD extraction (extracted/movies).
+	for sub in (["movies_hd", "movies"] if _remastered else ["movies"]):
 		var p := ProjectSettings.globalize_path("res://../extracted/%s/%s.ogv" % [sub, clip])
 		if FileAccess.file_exists(p):
 			return p
@@ -930,20 +946,16 @@ func _ready() -> void:
 		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3"):
 			_harness_run = true
 	if "--hd" in ua or "--3d" in ua:      # opt-in HD: load the 4x AI-upscaled sheets and render the 640x480
-		_use_3d = "--3d" in ua             # (--3d also overlays the frame-matched 3D renders)
-		_sprites_dir = "res://../extracted/sprites_hd"   # canvas at the window's higher resolution so the extra
-		_sprite_scale = 4                  # detail shows. The SD default is byte-for-byte unchanged (gate = SD).
-		# Prefer the newest HD PICT set (pict_hd_v2), else pict_hd. Deleting the
-		# pict_hd_v2 folder reverts to the previous set (tools/upscale_picts.py --out).
-		for hd in ["pict_hd_v2", "pict_hd"]:
-			if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + hd)):
-				_pict_dir = "res://../extracted/" + hd   # 4x AI-upscaled PICT art (tools/upscale_picts.py)
-				_pict_scale = 4
-				break
-		var win := get_window()
-		win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-		win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
-		win.content_scale_size = Vector2i(640, 480)
+		var win := get_window()            # canvas at the window's higher resolution so the extra detail shows
+		win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS   # (project.godot already sets
+		win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP       # the same stretch, so a live F2
+		win.content_scale_size = Vector2i(640, 480)                        # switch needs no window change)
+	# ORIGINAL <-> REMASTERED presentation: starts REMASTERED with --3d / --hd (Session), F2 flips it
+	# live. REMASTERED shows the 3D overlay unless launched with plain --hd (HD sheets only; F3 toggles).
+	# The ORIGINAL (default) path is the byte-for-byte SD one the gate captures.
+	Session.init_presentation()
+	_use_3d = "--3d" in ua or not ("--hd" in ua)
+	_apply_presentation(Session.remastered)
 	_num_players = Session.num_players if Session.num_players > 0 else 2
 	_mode_compete = Session.mode == 1
 	_alt = Session.mode == 2
@@ -966,6 +978,9 @@ func _ready() -> void:
 		_alt_lives = [3, 3]; _alt_ammo = [[1, 1], [1, 1]]; _alt_score = [0, 0]; _alt_active = 0
 		_alt_out = [false, false]; _alt_prev_alive = true; _alt_state = "play"
 	_start()
+	if not _harness_run and not Session.presentation_hint_shown:
+		Session.presentation_hint_shown = true
+		_pres_toast = 240   # once per launch: say which presentation this is + that F2 switches it
 
 	print("SoiCore ready: P1=(%d,%d) bonus=%d hash=%d" %
 		[_core.player_x(1), _core.player_y(1), _core.bonus_time(), _core.state_hash()])
@@ -1036,6 +1051,44 @@ func _exit_tree() -> void:
 	_tex_cache.clear()
 	_pict_cache.clear()
 	_core = null
+
+
+## Switch the whole presentation live (F2): ORIGINAL = the 1996 SD sprite sheets + PICTs;
+## REMASTERED = the 4x HD sheets under the frame-matched 3D overlay (_folder_index) + the HD
+## PICTs. Gameplay is untouched -- only what is drawn (and, via Session.set_remastered, the
+## SFX set + soundtrack) changes, so a switch mid-board is seamless.
+func _apply_presentation(on: bool) -> void:
+	_remastered = on
+	_sprites_dir = "res://../extracted/sprites_hd" if on else SPRITES_DIR
+	_sprite_scale = 4 if on else 1
+	_pict_dir = PICT_DIR
+	_pict_scale = 1
+	if on:
+		# Prefer the newest HD PICT set (pict_hd_v2), else pict_hd. Deleting the
+		# pict_hd_v2 folder reverts to the previous set (tools/upscale_picts.py --out).
+		for hd in ["pict_hd_v2", "pict_hd"]:
+			if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + hd)):
+				_pict_dir = "res://../extracted/" + hd
+				_pict_scale = 4
+				break
+	# 4x art resamples smoothly into its 1x footprint at any window size (mipmapped, _prep_hd);
+	# the 1996 pixel art stays nearest-neighbour -- crisp pixels, the project default.
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if on else CanvasItem.TEXTURE_FILTER_NEAREST
+	_tex_cache.clear()
+	_sprite_index.clear()
+	_pict_cache.clear()
+	if Session.remastered != on:
+		Session.set_remastered(on)
+
+## The presentation label, shown briefly after F2/F3 (and once at the first board).
+func _draw_presentation_toast() -> void:
+	var a := clampf(float(_pres_toast) / 30.0, 0.0, 1.0)
+	var label := "ORIGINAL  -  1996 art, sound and music      [F2: remastered]"
+	if _remastered:
+		label = "REMASTERED  -  %s sprites, remastered sound and music      [F2: original   F3: %s]" % [
+			"3D" if _use_3d else "HD", "HD" if _use_3d else "3D"]
+	draw_rect(Rect2(0, 454, 640, 22), Color(0, 0, 0, 0.72 * a))
+	draw_string(_font, Vector2(0, 470), label, HORIZONTAL_ALIGNMENT_CENTER, 640, 13, Color(1, 1, 1, a))
 
 
 ## The core play mode (asm FUN_100263d8 numbering): 1 One Player, 2 Alternate, 3 Cooperate
@@ -1217,6 +1270,8 @@ func _physics_process(_delta: float) -> void:
 			Audio.play_snd(1501)   # high-score entry jingle (asm event 0x36 -> snd 1501, FUN_10022dfc)
 	if _save_flash > 0:
 		_save_flash -= 1
+	if _pres_toast > 0:
+		_pres_toast -= 1
 	if _challenge_intro > 0:
 		_challenge_intro -= 1
 	# Music "hurry-up" tempo is an ACTIVE-PLAY property. The original re-rates the one shared
@@ -1261,7 +1316,8 @@ func _physics_process(_delta: float) -> void:
 
 ## --script=FILE (verification runs): one segment per line, `<p1> <frames> [p2]`, where an input
 ## is a bitmask or letters L R J H(block high) W(block low) A(arrow) O(ball) and 0 = none.
-## `ENTER` presses Enter, `SHOT <name>` saves media/screenshots/verify_<name>.png, `QUIT` ends,
+## `ENTER` presses Enter, `F2` / `F3` press those keys (presentation switch),
+## `SHOT <name>` saves media/screenshots/verify_<name>.png, `QUIT` ends,
 ## `SPEED <n>` fast-forwards n physics frames per rendered frame (so a movie skips a long wait).
 ## Frames count physics frames (they keep running through intros / result screens).
 func _load_script(path: String) -> void:
@@ -1277,7 +1333,7 @@ func _load_script(path: String) -> void:
 			continue
 		var parts := line.split(" ", false)
 		var cmd := parts[0].to_upper()
-		if cmd == "ENTER" or cmd == "SHOT" or cmd == "QUIT" or cmd == "SPEED":
+		if cmd == "ENTER" or cmd == "SHOT" or cmd == "QUIT" or cmd == "SPEED" or cmd == "F2" or cmd == "F3":
 			_script.append([0, 1, 0, cmd, parts[1] if parts.size() > 1 else ""])
 		else:
 			var frames := int(parts[1]) if parts.size() > 1 else 1
@@ -1318,6 +1374,8 @@ func _script_step() -> void:
 		if _script_f == acc and seg[3] != "":
 			match seg[3]:
 				"ENTER": _press_enter()
+				"F2": _press_f2()
+				"F3": _press_f3()
 				"SHOT": _snap("verify_" + str(seg[4]))
 				"QUIT": total = _script_f
 				"SPEED":
@@ -1375,16 +1433,30 @@ func _input(e: InputEvent) -> void:
 				_paused = not _paused   # pause (the original pauses on Tab; P also works)
 		KEY_M:
 			_mode = 1 - _mode   # toggle Retro <-> Remastered display
+		KEY_F2:
+			if not e.echo:
+				_press_f2()
 		KEY_F3:
-			if _sprite_scale == 4:   # HD <-> frame-matched 3D sprites (both are 4x sets)
-				_use_3d = not _use_3d
-				_tex_cache.clear()
-				_sprite_index.clear()
+			if not e.echo:
+				_press_f3()
 		KEY_S:
 			if (e as InputEventKey).ctrl_pressed:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
 		KEY_ENTER, KEY_KP_ENTER:
 			_press_enter()
+
+## F2: ORIGINAL <-> REMASTERED -- art + SFX + music, live.
+func _press_f2() -> void:
+	_apply_presentation(not _remastered)
+	_pres_toast = 150
+
+## F3 (REMASTERED only): HD <-> frame-matched 3D sprites (both are 4x sets).
+func _press_f3() -> void:
+	if _remastered:
+		_use_3d = not _use_3d
+		_tex_cache.clear()
+		_sprite_index.clear()
+		_pres_toast = 150
 
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
 func _press_enter() -> void:
@@ -1590,6 +1662,8 @@ func _draw() -> void:
 		draw_string(_font, Vector2(0, 232), "GAME SAVED", HORIZONTAL_ALIGNMENT_CENTER, 640, 26, Color(0.5, 1.0, 0.6, clampf(float(_save_flash) / 45.0, 0.0, 1.0)))
 	if _challenge_intro > 0:
 		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
+	if _pres_toast > 0:
+		_draw_presentation_toast()
 
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))

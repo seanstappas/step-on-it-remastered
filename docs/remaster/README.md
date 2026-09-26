@@ -31,11 +31,16 @@ powershell -ExecutionPolicy Bypass -File tools/verify.ps1      # the gate: 6 sta
 
 Stages: core mechanic tests → core harness + determinism → fixture-replay selftest → GDExtension
 build → clean Godot import → rendered `--shot` screenshot. Run it after any core / bridge / GDScript
-change. To play, open `godot_project/` in Godot 4.3 and press F5 (or `"<Godot>" --path godot_project`).
+change. To play: `.\play.ps1` (REMASTERED + music, window sized to the monitor), or open
+`godot_project/` in Godot 4.3 and press F5 (or `"<Godot>" --path godot_project`).
 
 **Controls** — P1: arrows + Z (block-high) / X (block-low) / C (arrow) / V (ball); P2: WASD + F/G/H/J.
-**M** toggles Retro ↔ Remastered display; **Tab** or **P** pauses; **Esc** → menu; **Enter** advances a
-cleared board / retries after game over; **Ctrl-S** quick-saves.
+**F2** switches the whole presentation live (title menu + in game): **ORIGINAL** = SD sprites/PICTs,
+8-bit SFX (`wav`), the original game's music (`extracted/music/original`) ↔ **REMASTERED** = the 3D
+overlay over the HD sheets, HD PICTs, remastered SFX, studio music remaster (`Session.remastered`;
+`game.gd _apply_presentation`; the music keeps its playback position). **F3** toggles 3D ↔ HD sprites
+within REMASTERED. **M** toggles Retro ↔ Remastered display; **Tab** or **P** pauses; **Esc** → menu;
+**Enter** advances a cleared board / retries after game over; **Ctrl-S** quick-saves.
 
 ### Front-end flags (after `--`)
 
@@ -43,8 +48,9 @@ cleared board / retries after game over; **Ctrl-S** quick-saves.
 
 | Flag | Effect |
 |---|---|
-| `--hd` | Prefer the AI-upscaled `sprites_hd`/`sprites_uhd` + `pict_hd_v2`/`pict_hd`, and render the 640×480 canvas at the window's resolution (via `content_scale`) so the extra detail shows. SD default is byte-for-byte unchanged. |
-| `--3d` | `--hd` plus the frame-matched 3D sprite overlay `extracted/sprites_3d_frames/<sheet>/fNN_WxH.png` (4×, same frame index as the original, so the game's own frame logic drives it). A frame with no 3D render falls back to HD. **F3** toggles HD ↔ 3D live. See `plan/SPRITE_REMASTER_PROCESS.md` §F. |
+| `--3d` | Start **REMASTERED**: the frame-matched 3D sprite overlay `extracted/sprites_3d_frames/<sheet>/fNN_WxH.png` (4×, same frame index as the original, so the game's own frame logic drives it) over `sprites_hd`, + `pict_hd_v2`/`pict_hd`, remastered SFX + music; the 640×480 canvas renders at the window's resolution (`canvas_items` stretch) and 4× art is mipmapped + linear-filtered. A frame with no 3D render falls back to HD. See `plan/SPRITE_REMASTER_PROCESS.md` §F. The SD (ORIGINAL) default is byte-for-byte unchanged. |
+| `--hd` | As `--3d` but on the HD sheets only until **F3**. |
+| `--music` | Start with Sound → Music on (the original defaults it off). |
 | `--mode=retro` / `--mode=remastered` | Start in the flat retro or the remastered look (also **M** in game). |
 | `--players=3` | Enable the remaster's 3rd (red) co-op player. |
 | `--board=board_NNN` | Load a specific board (harness / capture). |
@@ -53,7 +59,7 @@ cleared board / retries after game over; **Ctrl-S** quick-saves.
 | `--demo` | Play a scripted showcase (for movie capture), then quit. |
 | `--play=N` | Play the loaded real board for `N` frames (movie capture), then quit. |
 | `--hidden` / `--visible` | Force off-screen (hidden) / on-screen rendering. |
-| `--sfx-variant=original` / `light` / `ai` | Pick the SFX set: faithful 8-bit (`wav`), cleaned 16-bit (`wav_hd`), or AudioSR super-res (`wav_ai`); env `SOI_SFX_VARIANT` also works. |
+| `--sfx-variant=light` / `ai` / `original` | The SFX set REMASTERED uses: AudioSR super-res `wav_ai` (default), cleaned 16-bit `wav_hd` (`light`); env `SOI_SFX_VARIANT` also works. ORIGINAL always plays the faithful 8-bit `wav`. |
 
 ### Hidden / headless-style capture
 

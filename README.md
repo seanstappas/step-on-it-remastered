@@ -50,25 +50,30 @@ powershell -ExecutionPolicy Bypass -File tools/verify.ps1
 Six stages must PASS: core mechanic unit tests, core harness + determinism, fixture-replay selftest,
 the GDExtension build, a clean Godot import, and a rendered `--shot` screenshot.
 
-**Play:** open `godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
-Controls — P1: arrows + Z/X/C/V, P2: WASD + F/G/H/J. **M** toggles Retro ↔ Remastered; **Tab** pauses.
+**Play:** `.\play.ps1` (starts REMASTERED with music on, window sized to your monitor), or open
+`godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
+Controls — P1: arrows + Z/X/C/V, P2: WASD + F/G/H/J. **F2** switches the whole presentation live —
+**ORIGINAL** (1996 art, 8-bit SFX, the original game's music) ↔ **REMASTERED** (frame-matched 3D
+sprites, remastered SFX, studio music remaster) — on the title menu and mid-board. **F3** toggles 3D ↔
+HD sprites within REMASTERED, **M** toggles the Retro ↔ Remastered display effects; **Tab** pauses.
 
 ### Front-end flags
 
-Pass after `--`, e.g. `"<Godot>" --path godot_project -- --hd --board=board_450`:
+Pass after `--`, e.g. `"<Godot>" --path godot_project -- --3d --music`:
 
 | Flag | Effect |
 |---|---|
-| `--hd` | Load the AI-upscaled sprites + full-screen art and render the 640×480 canvas at the window's resolution. |
-| `--3d` | `--hd` plus the **frame-matched 3D sprites** (`extracted/sprites_3d_frames`, each frame fitted to and gated against its SD original); sheets/frames without a 3D render stay HD. **F3** toggles HD ↔ 3D in game. |
+| `--3d` | Start in the **REMASTERED** presentation: the **frame-matched 3D sprites** (`extracted/sprites_3d_frames`, each frame fitted to and gated against its SD original) over the AI-upscaled HD sheets (frames without a 3D render stay HD), the HD full-screen art, remastered SFX + music; the 640×480 canvas renders at the window's resolution. **F2** switches ORIGINAL ↔ REMASTERED, **F3** 3D ↔ HD. |
+| `--hd` | As `--3d` but starting on the HD sheets only (no 3D overlay until **F3**). |
+| `--music` | Start with Sound → Music on (the original defaults it off). |
 | `--mode=retro` \| `--mode=remastered` | Start in the flat retro or the remastered look (also **M** in game). |
 | `--players=3` | Enable the remaster's 3rd co-op player. |
-| `--board=board_NNN` | Load a specific board. |
+| `--board=board_NNN` | Load a specific board (capture runs). |
 | `--shot` \| `--shotat=N` | Screenshot after N frames → `media/screenshots/`, then quit. |
 | `--menushot=N` | Screenshot the main menu after N frames. |
 | `--demo` \| `--play=N` | Scripted play for movie capture (see `tools/record_video.ps1`). |
 | `--hidden` \| `--visible` | Render **off-screen** (no window pops up — for agents/CI) / force on-screen. |
-| `--sfx-variant=original\|light\|ai` | Pick the SFX set: faithful 8-bit (`wav`), cleaned 16-bit (`wav_hd`), or AI super-res (`wav_ai`). |
+| `--sfx-variant=light\|ai\|original` | The SFX set REMASTERED uses (default `ai` = AudioSR super-res `wav_ai`; `light` = cleaned 16-bit `wav_hd`). ORIGINAL always plays the faithful 8-bit `wav`. |
 
 > **Headless-style capture.** Godot's own `--headless` renders **blank**, so screenshot / movie runs
 > instead render **off-screen**: the window sits at `(9000, 9000)`, off the visible desktop, but still
@@ -85,7 +90,7 @@ Assets are decoded out of the original into `extracted/`, and optionally AI-upsc
 | Sprites | `extracted/sprites/` | `sprites_hd` (4×) · `sprites_uhd` (8×) — Real-ESRGAN anime / hqx per sheet | `tools/upscale_sprites.py` |
 | 3D sprites | `extracted/sprites/` (the per-frame reference) | `sprites_3d_frames` (4×, same `fNN` per frame) — procedural Blender models, pose fitted per frame | `tools/soi3d/framematch.py` |
 | Full-screen art | `extracted/pict/` | `pict_hd` · `pict_hd_v2` (text panels re-rendered crisp) | `tools/upscale_picts.py`, `render_text_picts.py` |
-| Music | `extracted/music/*.mid` | `*.ogg` (per-screen mapping) | `tools/render_music*.py`, `qtma_to_midi.py` |
+| Music | `extracted/music/original/*.ogg` — the original game's music (emulator captures cut to one aligned loop) | `*.ogg` studio render of the extracted notes (per-screen mapping) | `tools/build_original_music.py`; `render_music*.py`, `qtma_to_midi.py` |
 | SFX | `extracted/audio/wav/` | `wav_hd` (deterministic clean-up) · `wav_ai` (AudioSR super-res) | `tools/enhance_sfx.py`, `ai_super_sfx.py` |
 | Win animations | `extracted/movies/*.ogv` | `movies_hd` (Real-ESRGAN 4×) | `tools/extract_win_movies.py`, `upscale_win_movies.py` |
 
