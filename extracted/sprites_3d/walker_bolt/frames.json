@@ -1,0 +1,41 @@
+{
+ "status": "published",
+ "source": "walker_sprites",
+ "frames": {"range": [50, 65]},
+ "mode": "bolt",
+ "note": "PASS (16 frames, IoU min 0.863, dE mean 8.1 max 12.7): a red capsule orbiting the horizontal axis (radius 5.5 px), tilted 32 deg out of the orbit plane, ~24 deg/frame (f65 = f50). The source was a PERSPECTIVE render (the rod is ~17% bigger on the near half: persp_d 70 px) keyed against black (a dark rim: post fringe 2 px); per-frame angles (optim) and 1 px offsets on f56-f59.",
+ "place_iou_w": 200,
+ "shift": {"56": [-1, 0], "57": [-1, 1], "58": [-1, 1], "59": [-1, 1]},
+ "shift_range": 1,
+ "opts": {"world": 0.08, "key": 3.35, "fill": 0.29, "length": 11.75, "radius": 3.05, "orbit_r": 5.5, "tilt": 32.0,
+          "rough": 0.15, "spec": 0.025, "key_dir": [-0.5, 0.5, 0.7], "red": [200, 0, 0], "gamma": 0.9,
+          "persp_d": 70.0, "axis_roll": 0.0},
+ "sweep": [{"param": "phi", "start": 0, "stop": 360, "step": 3, "period": 360}],
+ "smooth": {"phi": "free"},
+ "optim": {"params": {"phi": {"step": 3, "min": -30, "max": 390}}, "rounds": 5, "scale": 4, "samples": 16},
+ "scale": 4,
+ "samples": {"sweep": 16, "final": 256},
+ "look": {
+  "frames": 16,
+  "iou_w": 400,
+  "iou_margin": 0.04,
+  "passes": 2,
+  "samples": 64,
+  "params": {
+   "red": [[200, 0, 0], [240, 0, 0], [255, 20, 20]],
+   "key_dir": [[-3.2, 3.2, 3.0], [-0.26, 0.70, 0.66], [-0.5, 0.5, 0.7]]
+  },
+  "refine": {
+   "rough": {"step": 0.1, "min": 0.05, "max": 0.9},
+   "spec": {"step": 0.1, "min": 0.0, "max": 0.8},
+   "gamma": {"step": 0.1, "min": 0.5, "max": 1.2, "init": 1.0},
+   "key": {"step": 0.6, "min": 1.5, "max": 7.0},
+   "world": {"step": 0.04, "min": 0.0, "max": 0.4},
+   "fill": {"step": 0.06, "min": 0.0, "max": 0.5}
+  },
+  "refine_rounds": 8
+ },
+ "post": [{"fringe": {"px": 2}}],
+ "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
+ "fps": 30
+}

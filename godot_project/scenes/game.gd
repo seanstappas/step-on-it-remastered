@@ -274,6 +274,7 @@ const ENEMY_WALK := {
 	11: { "r": [2, 12],  "l": [2, 12],  "flip": true  },   # teeth: symmetric chomp cycle, mirror to face
 }
 var _sprite_index := {}   # folder -> { frame:int -> absolute path }
+var _FRAME_RE := RegEx.create_from_string("^f(\\d+)_\\d+x\\d+\\.png$")
 # The asm's own walk frames: each nasty's update sets frame = TABLE[x & 31] (x = its asm x),
 # so the legs are planted to position. Tables from the PEF data section (DBASE 0x100337f0):
 # ant 0x100341f0/0230, beanie 0270/02b0, hammer 0370/0330, hippo 03b0/03f0, ostrich 0430/0470, piggy 04b0/04f0,
@@ -310,28 +311,23 @@ var _p_stuck := {}        # player idx -> frames held-but-not-moving (run-in-pla
 var _p_prevst := {}       # player idx -> ground_state last frame (to detect the jump start)
 var _p_jumptick := {}     # player idx -> core tick at the last jump start (somersault phase origin)
 
-## Build (once) a frame->path map for a sprite folder by parsing "fNN_WxH.png".
+## Build (once) a frame->path map for a sprite folder by parsing "fNN_WxH.png" (strictly: stray
+## files such as "f02_24x24_x16.png" inspection zooms must not shadow the real frame).
 func _folder_index(folder: String) -> Dictionary:
 	if _sprite_index.has(folder):
 		return _sprite_index[folder]
 	var idx := {}
-	var dir := ProjectSettings.globalize_path("%s/%s" % [_sprites_dir, folder])
-	var da := DirAccess.open(dir)
-	if da:
+	var dirs: Array = [ProjectSettings.globalize_path("%s/%s" % [_sprites_dir, folder])]
+	if _use_3d:                              # the 3D overlay wins frame by frame
+		dirs.append(ProjectSettings.globalize_path("%s/%s" % [SPRITES_3D_DIR, folder]))
+	for dir in dirs:
+		var da := DirAccess.open(dir)
+		if da == null:
+			continue
 		for f in da.get_files():
-			if f.begins_with("f") and f.ends_with(".png"):
-				var us := f.find("_")
-				if us > 1:
-					idx[int(f.substr(1, us - 1))] = dir + "/" + f
-	if _use_3d:
-		var d3 := ProjectSettings.globalize_path("%s/%s" % [SPRITES_3D_DIR, folder])
-		var da3 := DirAccess.open(d3)
-		if da3:
-			for f in da3.get_files():
-				if f.begins_with("f") and f.ends_with(".png"):
-					var us3 := f.find("_")
-					if us3 > 1:
-						idx[int(f.substr(1, us3 - 1))] = d3 + "/" + f
+			var m := _FRAME_RE.search(f)
+			if m != null:
+				idx[int(m.get_string(1))] = dir + "/" + f
 	_sprite_index[folder] = idx
 	return idx
 
@@ -1528,8 +1524,9 @@ func _draw() -> void:
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
 					draw_circle(c, 2.5, Color(1, 0.55, 1))
 			elif _core.projectile_kind(i) == 3:
-				# Gargoyle BADGUY EGG in flight (asm FUN_1000b6a0 cycles master's objects 0x2e..0x3c)
-				if not _blit_clip("master_s_objects", 47 + int(_core.tick_count()) % 13, pp, pf):
+				# Gargoyle BADGUY EGG in flight (asm FUN_1000b6a0: counter +1 per tick, past 0x3c back to
+				# 0x2e = 15 frames, f47-f61 in the PNGs)
+				if not _blit_clip("master_s_objects", 47 + int(_core.tick_count()) % 15, pp, pf):
 					draw_circle(c, 6.0, Color(0.6, 0.1, 0.1))
 			elif _core.projectile_kind(i) == 2:
 				# Knight GIFT in flight (enemy_knight_gift / FUN_1000c8bc): the asm mover FUN_1000c544

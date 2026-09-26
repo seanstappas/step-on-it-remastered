@@ -13,6 +13,13 @@ Config (the family's own file, no shared writes): extracted/sprites_3d/<family>/
     "mode": "disk", "opts": {},            # builder with a soi3d.register_frames() interface
     "sweep": [{"param": "spin", "start": 0, "stop": 90, "step": 0.5, "period": 90}],
     "fit": "linear",                       # linear (pose = a + b*i, i = frame order) | free
+    "place_iou_w": 40,                     # silhouette weight of the placement fit (cost = dE + w*(1-IoU))
+    "place_frames": [21, 33],              # optional: fit the shared placement on these frames only
+    "shift": "auto",                       # optional per-frame integer SD-px sprite offsets: "auto" (fitted,
+                                           # +-"shift_range" px) or {"NN": [dx, dy]}; applied via the camera
+    "prior": [{"frames": [2, 17], "param": "yaw", "value": 0, "tol": 25, "period": 360}],
+                                           # optional soft pull of a frame range's sweep pick toward a known
+                                           # pose (+ w*(dist/tol)^2, w default 20) -- e.g. a walk drawn side-on
     "scale": 4,                            # overlay scale (== extracted/sprites_hd)
     "samples": {"sweep": 16, "final": 256},
     "post": [{"glint": {"cx": 0.32, "cy": 0.20, "rad": 0.14, "color": [165, 250, 165]}}],
@@ -21,12 +28,24 @@ Config (the family's own file, no shared writes): extracted/sprites_3d/<family>/
   }
 
 Stages (default = all, in order):
-  py tools/soi3d/framematch.py <family> [sweep] [fit] [look] [final] [verify]
+  py tools/soi3d/framematch.py <family> [sweep] [fit] [optim] [look] [final] [verify]
   sweep  render a pose sweep (one Blender run, GPU when present)
   fit    fit the 2D placement (scale/offset) + each frame's pose to the SD frames ("smooth" per param:
-         loop / linear / fourier:N / const / free over the frame order)
+         loop / linear / fourier:N / const / mode / fixed:A:B / free over the frame order)
+  optim  optional ("optim" block): per-frame multi-parameter refinement from the fitted pose -- the
+         path for articulated models (joint angles) that no grid sweep can cover
+  optimfail  the optim restricted to the frames the last verify FAILED (from _verify/frames_report.json),
+         scored exactly as verify sees them (the final scale + samples; low-sample edges shift the IoU by ~0.005),
+         with a steep IoU weight, neighbour-pose reseeds and basin-hopping restarts (random pose hops, then
+         +-1 px shift hops, repeated once after a gain; optim "shift_hops": false to skip); passing frames keep their poses.
+         optim "probe" = [{param: [values], ...}, ...] first tries every combination of each grid on each failing
+         frame (a limb swung far from where the descent sits, e.g. an arm raised to horizontal)
+  bake   fold work/look.json's options into frames.json "opts" (and the look refine "init"s): `look` always
+         starts from "opts", so bake between look passes or each pass restarts from the old values
   look   optional ("look" block): coordinate-descent the builder's colour/light options against the
-         SD frames at the fitted poses (work/look.json overrides "opts")
+         SD frames at the fitted poses (work/look.json overrides "opts"); "params" = {opt: [candidates]},
+         "refine" = {opt: {step, min, max}} continuous +-step refinement of numeric opts afterwards;
+         "frames": N evenly spaced frames are scored, plus the last verify's failing ones if "add_fails"
   final  render every frame at scale x its SD size with the fitted camera + pose, apply post
          steps, write the game overlay extracted/sprites_3d_frames/<sheet>/fNN_{sW}x{sH}.png
   verify downscale each overlay frame back to SD and gate it: silhouette IoU, blurred dE (discounts the
@@ -42,6 +61,7 @@ import itertools
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,17 +93,36 @@ def load_cfg(family):
     cfg.setdefault("fps", 30)
     if isinstance(cfg["sweep"], dict):
         cfg["sweep"] = [cfg["sweep"]]
+    for st in cfg["post"]:
+        if "occlude" in st:
+            st["occlude"]["_mask"] = _union_mask(family, cfg, int(st["occlude"].get("dilate", 1)))
     return cfg
 
 
+def _union_mask(family, cfg, dilate):
+    """The canvas region ANY source frame draws, dilated by `dilate` SD px: a static occluder in front of
+    the sprite (the Beenie over its own downward shot) hides the rest in every frame."""
+    from PIL import ImageFilter
+    u = None
+    for _, p, _, _ in sd_frames(cfg):
+        a = rgba(p)[..., 3] > 0.5
+        u = a if u is None else (u | a if u.shape == a.shape else u)
+    m = Image.fromarray((u * 255).astype(np.uint8))
+    if dilate > 0:
+        m = m.filter(ImageFilter.MaxFilter(2 * dilate + 1))
+    path = os.path.join(workdir(family), "occlude_mask.png")
+    m.save(path)
+    return path
+
+
 def sd_frames(cfg):
-    """[(nn, path, W, H)] of the covered source frames, in frame order."""
+    """[(nn, path, W, H)] of the covered source frames, in frame order (strict fNN_WxH.png names)."""
     found = {}
     for p in glob.glob(os.path.join(SD_DIR, cfg["source"], "f*_*x*.png")):
-        b = os.path.basename(p)
-        nn = int(b[1:b.index("_")])
-        w, h = (int(v) for v in b[b.index("_") + 1:-4].split("x"))
-        found[nn] = (nn, p, w, h)
+        m = re.match(r"^f(\d+)_(\d+)x(\d+)\.png$", os.path.basename(p))
+        if m:
+            nn, w, h = (int(v) for v in m.groups())
+            found[nn] = (nn, p, w, h)
     sel = cfg.get("frames", "all")
     if sel == "all":
         keys = sorted(found)
@@ -92,6 +131,18 @@ def sd_frames(cfg):
     else:
         keys = [k for k in sel if k in found]
     return [found[k] for k in keys]
+
+
+def derived(cfg):
+    """{nn: spec} of the DERIVED frames: made from another frame's 3D render, the way the original
+    derives them ("crop" a shatter quarter, "scale" a spawn square, "crack" = the source's crack
+    lines composited onto the 3D block). They skip sweep/fit/look but are verified like the rest."""
+    return {int(k): v for k, v in cfg.get("derive", {}).items()}
+
+
+def base_frames(cfg):
+    dv = derived(cfg)
+    return [f for f in sd_frames(cfg) if f[0] not in dv]
 
 
 def rgba(path):
@@ -204,7 +255,7 @@ def opt_groups(cfg, frames, base=None):
 
 # ------------------------------------------------------------------------------------- stages
 def stage_sweep(family, cfg):
-    frames = sd_frames(cfg)
+    frames = base_frames(cfg)
     R = cfg["scale"] * max(max(w, h) for _, _, w, h in frames)
     poses = sweep_poses(cfg)
     d = workdir(family, "sweep")
@@ -218,6 +269,18 @@ def stage_sweep(family, cfg):
     with open(os.path.join(d, "poses.json"), "w", encoding="utf-8") as fh:
         json.dump({"R": R, "poses": poses, "groups": [g[1] for g in groups]}, fh)
     print("sweep: %d poses x %d option group(s) at %dx%d" % (len(poses), len(groups), R, R))
+    matte = [s for s in cfg["post"] if "matte" in s or "fringe" in s]
+    if matte:                                    # the fit must see the same keyed edges as the finals
+        for it in items:
+            _post(it["out"], matte)
+    clipped = 0
+    for it in items[::max(1, len(items) // 40)]:
+        a = np.asarray(Image.open(it["out"]).convert("RGBA"))[..., 3]
+        clipped += int(max(a[0].max(), a[-1].max(), a[:, 0].max(), a[:, -1].max()) > 8)
+    if clipped:
+        print("sweep: WARNING %d sampled renders touch the canvas edge: the model exceeds the sweep camera "
+              "(+-%.2f units), so the placement fit sees a cropped model -- scale the builder down" %
+              (clipped, ORTHO_DEFAULT / 2))
 
 
 def _bbox(alpha):
@@ -236,7 +299,7 @@ def _to_sd(img_rgba_pil, k, ox, oy, w, h, ss=4):
 
 
 def stage_fit(family, cfg):
-    frames = sd_frames(cfg)
+    frames = base_frames(cfg)
     d = workdir(family, "sweep")
     with open(os.path.join(d, "poses.json"), "r", encoding="utf-8") as fh:
         sw = json.load(fh)
@@ -258,29 +321,77 @@ def stage_fit(family, cfg):
     rcx = np.median([(b[0] + b[2]) / 2 for b in rb]); rcy = np.median([(b[1] + b[3]) / 2 for b in rb])
     ox, oy = float(scx - k * rcx), float(scy - k * rcy)
 
+    shifts = {}                                # nn -> (dx, dy) SD px: per-frame sprite offsets ("shift")
+    if isinstance(cfg.get("shift"), dict):
+        shifts = {int(n): (float(v[0]), float(v[1])) for n, v in cfg["shift"].items()}
+
+    priors = cfg.get("prior", [])             # [{"frames": [a, b], "param", "value", "tol", "period"?, "w"?}]
+
+    def prior_pen(nn, pose):
+        """Soft pull of a frame range's pick toward a known pose (e.g. yaw 0 for the frames that walk left):
+        w * (distance / tol)^2, circular when the prior has a period."""
+        pen = 0.0
+        for pr in priors:
+            if pr["frames"][0] <= nn <= pr["frames"][1] and pr["param"] in pose:
+                dv = float(pose[pr["param"]]) - float(pr["value"])
+                if pr.get("period"):
+                    dv = (dv + pr["period"] / 2) % pr["period"] - pr["period"] / 2
+                pen += float(pr.get("w", 20.0)) * (dv / float(pr["tol"])) ** 2
+        return pen
+
     def match(k, ox, oy):
         cache = {}
         best = {}
         for nn, s, w, h in sds:
             g = gof[nn]
-            if (g, w, h) not in cache:
-                cache[(g, w, h)] = [_to_sd(r, k, ox, oy, w, h) for r in rends[g]]
-            scores = [compare(s, m) for m in cache[(g, w, h)]]
-            order = sorted(range(len(scores)), key=lambda i: scores[i][1] + 40.0 * (1 - scores[i][0]))
+            dx, dy = shifts.get(nn, (0, 0))
+            if (g, w, h, dx, dy) not in cache:
+                cache[(g, w, h, dx, dy)] = [_to_sd(r, k, ox + dx, oy + dy, w, h) for r in rends[g]]
+            scores = [compare(s, m) for m in cache[(g, w, h, dx, dy)]]
+            order = sorted(range(len(scores)), key=lambda i: scores[i][1] + 40.0 * (1 - scores[i][0]) +
+                           prior_pen(nn, poses[i]))
             best[nn] = (order[0], scores)
         return best
 
+    wi = float(cfg.get("place_iou_w", 40.0))  # silhouette weight of the placement (raise it when a
+                                              # still-wrong face/texture would drag the model off its outline)
+    pf = cfg.get("place_frames")               # [a, b]: fit the placement on the frames the model matches best
+    place_sds = [x for x in sds if pf is None or pf[0] <= x[0] <= pf[1]]
+
     def placement_cost(k, ox, oy, picks):
         tot = 0.0
-        for (nn, s, w, h) in sds:
-            m = _to_sd(rends[gof[nn]][picks[nn]], k, ox, oy, w, h)
+        for (nn, s, w, h) in place_sds:
+            dx, dy = shifts.get(nn, (0, 0))
+            m = _to_sd(rends[gof[nn]][picks[nn]], k, ox + dx, oy + dy, w, h)
             iou, de = compare(s, m)
-            tot += de + 40.0 * (1 - iou)
-        return tot / len(sds)
+            tot += de + wi * (1 - iou)
+        return tot / len(place_sds)
+
+    def find_shifts(k, ox, oy, picks, rng):
+        """Each frame's integer SD-px offset (the sheet's own per-frame jitter, e.g. a bob or a
+        2-px alternation), normalised so the most common offset is (0, 0)."""
+        out = {}
+        for nn, s, w, h in sds:
+            r = rends[gof[nn]][picks[nn]]
+            cand = []
+            for dy in range(-rng, rng + 1):
+                for dx in range(-rng, rng + 1):
+                    iou, de = compare(s, _to_sd(r, k, ox + dx, oy + dy, w, h))
+                    cand.append((de + wi * (1 - iou), dx, dy))
+            _, dx, dy = min(cand)
+            out[nn] = (dx, dy)
+        vals, counts = np.unique(np.array(list(out.values())), axis=0, return_counts=True)
+        mx, my = (float(v) for v in vals[int(np.argmax(counts))])
+        return {nn: (dx - mx, dy - my) for nn, (dx, dy) in out.items()}, mx, my
 
     best = match(k, ox, oy)
-    for rnd in range(2):                       # coordinate descent: placement <-> poses
+    rounds = 3 if cfg.get("shift") == "auto" else 2
+    for rnd in range(rounds):                  # coordinate descent: placement <-> poses (<-> shifts)
         picks = {nn: b[0] for nn, b in best.items()}
+        if rnd > 0 and cfg.get("shift") == "auto":
+            shifts, mx, my = find_shifts(k, ox, oy, picks, int(cfg.get("shift_range", 3)))
+            ox, oy = ox + mx, oy + my
+            print("fit: per-frame shifts %s" % json.dumps({str(n): v for n, v in shifts.items() if v != (0, 0)}))
         cur = placement_cost(k, ox, oy, picks)
         for step_k, step_o in ((0.02, 0.5), (0.01, 0.25), (0.005, 0.125)):
             improved = True
@@ -289,6 +400,7 @@ def stage_fit(family, cfg):
                 for dk, dx, dy in ((step_k, 0, 0), (-step_k, 0, 0), (0, step_o, 0), (0, -step_o, 0),
                                    (0, 0, step_o), (0, 0, -step_o)):
                     kk = k * (1 + dk)
+                    dx, dy = dx + (k - kk) * rcx, dy + (k - kk) * rcy   # scale about the model's centre, not the corner
                     c = placement_cost(kk, ox + dx, oy + dy, picks)
                     if c < cur - 1e-6:
                         k, ox, oy, cur, improved = kk, ox + dx, oy + dy, c, True
@@ -332,6 +444,8 @@ def stage_fit(family, cfg):
     for nn, b in best.items():
         iou, de = b[1][b[0]]
         report[nn] = {"pose": fitted[nn], "sweep_pick": poses[b[0]], "iou": round(iou, 4), "de": round(de, 3)}
+        if shifts.get(nn, (0, 0)) != (0, 0):
+            report[nn]["shift"] = list(shifts[nn])
     out = {"R": R, "placement": {"k": k, "ox": ox, "oy": oy}, "model": model, "frames": report}
     with open(os.path.join(workdir(family), "fit.json"), "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=1)
@@ -343,8 +457,9 @@ def stage_fit(family, cfg):
 
 def _smooth(fitted, order, cfg, smooth):
     """Per-parameter smoothing of the raw per-frame sweep picks over the frame order (in place).
-    smooth = {param: "linear" | "loop" | "fourier:N" | "const" | "free"}; "loop" = linear with the slope
-    snapped so the N frames cover whole periods (seamless cycle); "fourier:N" = N harmonics periodic over
+    smooth = {param: "linear" | "loop" | "fourier:N" | "const" | "mode" | "fixed:A:B" | "free"}; "loop" = linear
+    with the slope snapped so the N frames cover whole periods (seamless cycle); "fixed:A:B" = pose A + B*i
+    exactly (a motion known from the sheet's symmetry); "fourier:N" = N harmonics periodic over
     the N frames (a seamless wobble); "const" = one value for every frame (circular mean if periodic)."""
     axes = {ax["param"]: ax for ax in cfg["sweep"]}
     x = np.arange(len(order), dtype=float)
@@ -372,6 +487,10 @@ def _smooth(fitted, order, cfg, smooth):
                 a = float(math.atan2(np.sin(ang).mean(), np.cos(ang).mean()) * per / (2 * math.pi))
             val = a + b * x
             model[pname] = {"how": how, "a": a, "b": b}
+        elif how.startswith("fixed:"):                    # a KNOWN motion: pose = A + B*i (e.g. a turn whose
+            _, fa, fb = how.split(":")                      # rate is fixed by the sheet's own symmetry)
+            val = float(fa) + float(fb) * x
+            model[pname] = {"how": how, "a": float(fa), "b": float(fb)}
         elif how.startswith("fourier"):
             nh = int(how.split(":")[1]) if ":" in how else 1
             cols = [np.ones_like(x)]
@@ -389,6 +508,11 @@ def _smooth(fitted, order, cfg, smooth):
                 c = float(np.median(raw))
             val = np.full_like(raw, c)
             model[pname] = {"how": how, "value": float(c)}
+        elif how == "mode":                                # a categorical axis (e.g. a layout code)
+            vals, counts = np.unique(raw, return_counts=True)
+            c = float(vals[int(np.argmax(counts))])
+            val = np.full_like(raw, c)
+            model[pname] = {"how": how, "value": c}
         else:
             continue
         res = wrap(raw - val)
@@ -407,14 +531,45 @@ def _post(path, steps):
             g = st["glint"]
             add_glint(path, path, cx=g.get("cx", 0.32), cy=g.get("cy", 0.20), rad=g.get("rad", 0.14),
                       color=tuple(g.get("color", (165, 250, 165))), core=g.get("core", 0.55))
+        if "matte" in st:
+            # the originals were anti-aliased against BLACK and keyed: their edge pixels are opaque dark
+            # fringe. alpha' = min(1, alpha / thresh) keeps the premultiplied (over-black) colour.
+            t = float(st["matte"].get("thresh", 0.3))
+            im = rgba(path)
+            a = im[..., 3:4]
+            a2 = np.clip(a / t, 0.0, 1.0)
+            rgb = np.where(a2 > 0, im[..., :3] * a / np.maximum(a2, 1e-6), 0.0)
+            out = np.concatenate([np.clip(rgb, 0, 1), a2], -1)
+            Image.fromarray((out * 255 + 0.5).astype(np.uint8), "RGBA").save(path)
+        if "fringe" in st:
+            # ... and their keyed edge keeps a dark rim about half an SD px wide: grow the alpha by `px`
+            # render px, the new pixels black (premultiplied colour unchanged)
+            from PIL import ImageFilter
+            k = int(st["fringe"].get("px", 2))
+            im = rgba(path)
+            a = im[..., 3]
+            grown = np.asarray(Image.fromarray((a * 255).astype(np.uint8)).filter(
+                ImageFilter.MaxFilter(2 * k + 1))).astype(np.float64) / 255.0
+            a2 = np.maximum(a, grown)
+            rgb = np.where(a2[..., None] > 0, im[..., :3] * a[..., None] / np.maximum(a2, 1e-6)[..., None], 0.0)
+            out = np.concatenate([np.clip(rgb, 0, 1), a2[..., None]], -1)
+            Image.fromarray((out * 255 + 0.5).astype(np.uint8), "RGBA").save(path)
+        if "occlude" in st:
+            im = rgba(path)
+            m = Image.open(st["occlude"]["_mask"]).convert("L").resize((im.shape[1], im.shape[0]), Image.NEAREST)
+            k = np.asarray(m).astype(np.float64)[..., None] / 255.0
+            Image.fromarray((np.clip(im * k, 0, 1) * 255 + 0.5).astype(np.uint8), "RGBA").save(path)
 
 
-def _final_cam(fit, w, h):
-    """Ortho camera that puts the fitted placement on a (w, h)-SD-px canvas (any output scale)."""
+def _final_cam(fit, w, h, nn=None, extra=(0.0, 0.0)):
+    """Ortho camera that puts the fitted placement on a (w, h)-SD-px canvas (any output scale); with a
+    frame number, that frame's fitted sprite offset (fit.json frames[nn].shift, SD px) is applied too."""
     R, pl = fit["R"], fit["placement"]
     k, ox, oy = pl["k"], pl["ox"], pl["oy"]
+    dx, dy = fit["frames"].get(str(nn), {}).get("shift", (0, 0)) if nn is not None else (0, 0)
+    dx, dy = dx + extra[0], dy + extra[1]
     u_sd = (ORTHO_DEFAULT / R) / k                   # world units per SD pixel
-    p0x, p0y = k * R / 2 + ox, k * R / 2 + oy         # SD px where the world origin lands
+    p0x, p0y = k * R / 2 + ox + dx, k * R / 2 + oy + dy   # SD px where the world origin lands
     return {"ortho_scale": max(w, h) * u_sd, "x": (w / 2 - p0x) * u_sd, "y": -(h / 2 - p0y) * u_sd}
 
 
@@ -428,6 +583,14 @@ def _opts(family, cfg):
     return o
 
 
+def _look_frame_opts(family):
+    lp = os.path.join(WORK, family, "look.json")
+    if os.path.exists(lp):
+        with open(lp, "r", encoding="utf-8") as fh:
+            return json.load(fh).get("frame_opts", {})
+    return {}
+
+
 def stage_look(family, cfg):
     """Calibrate the builder's LOOK options (colours / lights) to the SD frames at the fitted poses:
     coordinate descent over cfg["look"]["params"] = {opt: [candidates...]} scoring the mean blurred dE
@@ -436,12 +599,20 @@ def stage_look(family, cfg):
     if not look:
         print("look: no \"look\" block, skipping")
         return
-    frames = sd_frames(cfg)
+    frames = base_frames(cfg)
     with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
         fit = json.load(fh)
     s = cfg["scale"]
     nsub = int(look.get("frames", 6))
     sub = [frames[int(i * len(frames) / nsub)] for i in range(min(nsub, len(frames)))]
+    if look.get("add_fails"):           # also score the last verify's failing frames (weights them in)
+        rp = os.path.join(FAM_DIR, family, "_verify", "frames_report.json")
+        if os.path.exists(rp):
+            with open(rp, "r", encoding="utf-8") as fh:
+                failed = set(json.load(fh).get("failed", []))
+            have = {f[0] for f in sub}
+            sub += [f for f in frames if f[0] in failed and f[0] not in have]
+    print("look: %d frames %s" % (len(sub), [f[0] for f in sub]))
     d = workdir(family, "look")
     best = dict(cfg["opts"])
 
@@ -451,7 +622,7 @@ def stage_look(family, cfg):
             for nn, _, w, h in sub:
                 out = os.path.join(d, "v%03d_f%02d.png" % (vi, nn))
                 items.append({"out": out, "pose": fit["frames"][str(nn)]["pose"],
-                              "opts": frame_opts(cfg, nn, base=opts)})
+                              "opts": frame_opts(cfg, nn, base=opts), "camera": _final_cam(fit, w, h, nn)})
                 keys.append((vi, nn, out))
         groups = {}
         for it, key in zip(items, keys):
@@ -466,7 +637,7 @@ def stage_look(family, cfg):
         for vi, nn, out in keys:
             _post(out, cfg["post"])
             p = next(pp for fn, pp, _, _ in sub if fn == nn)
-            tot[vi] += compare_blur(premul(rgba(p)), box_down(premul(rgba(out)), s)) / len(sub)
+            tot[vi] += _look_score(cfg, premul(rgba(p)), box_down(premul(rgba(out)), s)) / len(sub)
         return tot
 
     cur = score_many([best])[0]
@@ -490,24 +661,424 @@ def stage_look(family, cfg):
                 print("look: %s -> %s  dE %.3f" % (pname, json.dumps(best[pname]), cur))
         if not moved:
             break
+    if look.get("refine"):
+        best, cur = _look_refine(family, cfg, fit, best, cur, sub, d)
+    look_fo = _look_per_kind(family, cfg, fit, best, frames, d) if look.get("per_kind") else {}
     with open(os.path.join(workdir(family), "look.json"), "w", encoding="utf-8") as fh:
-        json.dump({"opts": best, "de_start": start, "de": cur}, fh, indent=1)
+        json.dump({"opts": best, "de_start": start, "de": cur, "frame_opts": look_fo}, fh, indent=1)
     print("look: dE %.3f -> %.3f with %s" % (start, cur, json.dumps(best)))
 
 
+def _look_refine(family, cfg, fit, best, cur, sub, d):
+    """Continuous refinement of numeric look options after the candidate passes: look "refine" =
+    {opt: {"step": s, "min": a, "max": b}} (+ "refine_rounds", default 8). Each round tries +-step on
+    every option (one batched Blender job), applies all improving moves, keeps the combination only if
+    it beats the best single move, and halves the step of an option that found nothing."""
+    look = cfg["look"]
+    ref = {}
+    best = dict(best)
+    for k, spec in look["refine"].items():
+        if k not in best and "init" not in spec:
+            print("look: refine %s skipped (not in opts and no \"init\": its builder default is unknown)" % k)
+            continue
+        best.setdefault(k, float(spec["init"]) if k not in best else best[k])
+        ref[k] = spec
+    steps = {k: float(v["step"]) for k, v in ref.items()}
+    cur = _score_trials(cfg, fit, [(("start",), fr, frame_opts(cfg, fr[0], base=best)) for fr in sub], d,
+                        "%s_ref_s" % family)[("start",)]
+
+    def clamp(k, v):
+        return max(float(ref[k].get("min", -1e9)), min(float(ref[k].get("max", 1e9)), v))
+
+    for rnd in range(int(look.get("refine_rounds", 8))):
+        trials, moves = [], {}
+        for k in ref:
+            if steps[k] < float(ref[k]["step"]) * 0.12:
+                continue
+            for sgn in (1, -1):
+                v = clamp(k, float(best[k]) + sgn * steps[k])
+                if v != best[k]:
+                    o = dict(best, **{k: round(v, 4)})
+                    trials += [((k, sgn), fr, frame_opts(cfg, fr[0], base=o)) for fr in sub]
+        if not trials:
+            break
+        sc = _score_trials(cfg, fit, trials, d, "%s_ref%d" % (family, rnd))
+        for k in ref:
+            cand = [(sc[(k, sg)], sg) for sg in (1, -1) if (k, sg) in sc]
+            good = [c for c in cand if c[0] < cur - 0.02]
+            if good:
+                v, sg = min(good)
+                moves[k] = (v, round(clamp(k, float(best[k]) + sg * steps[k]), 4))
+            else:
+                steps[k] *= 0.5
+        if moves:
+            k1, (v1, x1) = min(moves.items(), key=lambda kv: kv[1][0])
+            if len(moves) > 1:
+                o = dict(best, **{k: m[1] for k, m in moves.items()})
+                sc2 = _score_trials(cfg, fit, [(("combo",), fr, frame_opts(cfg, fr[0], base=o)) for fr in sub],
+                                    d, "%s_ref%dc" % (family, rnd))[("combo",)]
+                if sc2 <= v1:
+                    best, cur = o, sc2
+                else:
+                    best, cur = dict(best, **{k1: x1}), v1
+            else:
+                best, cur = dict(best, **{k1: x1}), v1
+        print("look: refine round %d -> dE %.3f %s" % (rnd, cur, json.dumps({k: best[k] for k in ref})))
+    return best, cur
+
+
+def _score_trials(cfg, fit, trials, d, tag):
+    """trials = [(tid, (nn, path, w, h), opts)] -> {tid: mean blurred dE over its frames}; one Blender
+    job per frame size renders every trial."""
+    s = cfg["scale"]
+    by_size, keys = {}, []
+    for k, (tid, fr, opts) in enumerate(trials):
+        nn, _, w, h = fr
+        out = os.path.join(d, "%s_%04d_f%02d.png" % (tag, k, nn))
+        by_size.setdefault((w, h), []).append({"out": out, "pose": fit["frames"][str(nn)]["pose"], "opts": opts,
+                                               "camera": _final_cam(fit, w, h, nn)})
+        keys.append((tid, fr, out))
+    for (w, h), its in by_size.items():
+        run_blender({"mode": cfg["mode"], "opts": its[0]["opts"], "size": [w * s, h * s],
+                     "camera": _final_cam(fit, w, h), "samples": cfg["look"].get("samples", 64), "items": its},
+                    "%s_%s" % (tag, "look"))
+    tot, cnt = {}, {}
+    for tid, (nn, p, w, h), out in keys:
+        _post(out, cfg["post"])
+        tot[tid] = tot.get(tid, 0.0) + _look_score(cfg, premul(rgba(p)), box_down(premul(rgba(out)), s))
+        cnt[tid] = cnt.get(tid, 0) + 1
+    return {t: tot[t] / cnt[t] for t in tot}
+
+
+def _look_score(cfg, sd_pm, r_pm):
+    """Blurred dE, plus a steep penalty once the silhouette IoU falls toward the gate (so a colour or
+    shape tweak can never buy dE with a worse outline); look "iou_w" / "iou_margin" tune it."""
+    iou, _ = compare(sd_pm, r_pm)
+    lk = cfg.get("look") or {}
+    return compare_blur(sd_pm, r_pm) + float(lk.get("iou_w", 60.0)) * max(
+        0.0, cfg["gate"]["iou"] + float(lk.get("iou_margin", 0.01)) - iou)
+
+
+def _look_per_kind(family, cfg, fit, best, frames, d):
+    """Per option-group calibration (e.g. each tile type's colour gains / feature size): look
+    "per_kind" = {kind or "*": {opt: [candidates]}}, coordinate descent per group, all groups batched
+    into one Blender job per option. Returns {nn: overrides} (stored in look.json "frame_opts")."""
+    look = cfg["look"]
+    groups = opt_groups(cfg, frames)
+    pk = look["per_kind"]
+    state = []
+    for gi, (gopts, nns) in enumerate(groups):
+        params = pk.get(gopts.get("kind", "*"), pk.get("*", {}))
+        subf = [f for f in frames if f[0] in nns][:int(look.get("group_frames", 2))]
+        state.append({"params": params, "frames": subf, "over": {}, "score": None})
+    trials = [((gi, "cur"), fr, frame_opts(cfg, fr[0], base=best)) for gi, st in enumerate(state)
+              for fr in st["frames"]]
+    sc = _score_trials(cfg, fit, trials, d, family + "_pk0")
+    for gi, st in enumerate(state):
+        st["score"] = sc[(gi, "cur")]
+    names = []
+    for st in state:
+        for p in st["params"]:
+            if p not in names:
+                names.append(p)
+    for ps in range(int(look.get("passes", 2))):
+        moved = False
+        for pname in names:
+            trials = []
+            for gi, st in enumerate(state):
+                for ci, c in enumerate(st["params"].get(pname, [])):
+                    if st["over"].get(pname) == c:
+                        continue
+                    ov = dict(st["over"], **{pname: c})
+                    for fr in st["frames"]:
+                        eo = frame_opts(cfg, fr[0], base=best)
+                        eo.update(ov)
+                        trials.append(((gi, ci), fr, eo))
+            if not trials:
+                continue
+            sc = _score_trials(cfg, fit, trials, d, "%s_pk%d_%s" % (family, ps, pname))
+            for gi, st in enumerate(state):
+                cand = {ci: v for (g, ci), v in sc.items() if g == gi}
+                if not cand:
+                    continue
+                ci = min(cand, key=cand.get)
+                if cand[ci] < st["score"] - 0.05:
+                    st["over"][pname] = st["params"][pname][ci]
+                    st["score"] = cand[ci]
+                    moved = True
+        if not moved:
+            break
+    out = {}
+    for (gopts, nns), st in zip(groups, state):
+        for nn in nns:
+            out[str(nn)] = st["over"]
+        print("look: group %s -> dE %.2f %s" % (nns[0], st["score"], json.dumps(st["over"])))
+    return out
+
+
+def _render_score(cfg, fit, trials, d, tag, scale, samples):
+    """trials = [(tid, (nn, path, w, h), pose, opts)] rendered at `scale` x SD -> {tid: look score}."""
+    by_size, keys = {}, []
+    for k, (tid, fr, pose, opts) in enumerate(trials):
+        nn, _, w, h = fr
+        out = os.path.join(d, "%s_%05d.png" % (tag, k))
+        by_size.setdefault((w, h), []).append({"out": out, "pose": pose, "opts": opts,
+                                               "camera": _final_cam(fit, w, h, nn, (pose.get("_dx", 0.0), pose.get("_dy", 0.0)))})
+        keys.append((tid, fr, out))
+    for (w, h), its in by_size.items():
+        run_blender({"mode": cfg["mode"], "opts": its[0]["opts"], "size": [w * scale, h * scale],
+                     "camera": _final_cam(fit, w, h), "samples": samples, "items": its}, tag)
+    sc = {}
+    for tid, (nn, p, w, h), out in keys:
+        _post(out, cfg["post"])
+        sc[tid] = _look_score(cfg, premul(rgba(p)), box_down(premul(rgba(out)), scale))
+    return sc
+
+
+def stage_optim(family, cfg, only=None):
+    """Per-frame MULTI-parameter pose refinement for articulated models (characters): starting from the
+    fitted pose, each round tries +-step on every "optim" param for every frame (all frames batched into
+    one Blender job), applies every improving move, keeps the combined pose only if it beats the best
+    single move, and halves the step of a param that found nothing. Writes the poses back to fit.json.
+    The pseudo-params "_dx"/"_dy" (SD px) move the frame's sprite offset (sub-pixel), folded into its shift.
+    "reseed": {"window": w} first scores every frame with the poses of its w neighbours on each side and
+    starts from the best (a frame stuck in the wrong walk-phase basin jumps to a neighbour's pose).
+    "optim": {"params": {name: {"step": s, "min": a, "max": b, "init": v}}, "rounds": 8, "scale": 2,
+              "samples": 8, "min_step": 0.1 (fraction of the start step),
+              "finish": {"rounds": 3, "scale": 4, "samples": 32, "step_f": 0.5}} -- the optional finish re-scores
+    every frame at full fidelity and polishes it with steps restarted at step_f x the start step."""
+    op = cfg.get("optim")
+    if not op:
+        print("optim: no \"optim\" block, skipping")
+        return
+    frames = base_frames(cfg)
+    if only is not None:
+        frames = [fr for fr in frames if fr[0] in only]
+        op = dict(op, scale=int(cfg["scale"]), samples=int(cfg["samples"].get("final", 256)))   # = what verify sees
+        lk = cfg.get("look") or {}      # verify-fidelity scores: a steep IoU weight, and a small margin is safe
+        cfg = dict(cfg, look=dict(lk, iou_w=max(400.0, float(lk.get("iou_w", 60.0))),
+                                  iou_margin=min(0.01, float(lk.get("iou_margin", 0.01)))))
+        if not frames:
+            print("optim: no frames to refine")
+            return
+        print("optim: refining only frames %s" % [fr[0] for fr in frames])
+    fp = os.path.join(workdir(family), "fit.json")
+    with open(fp, "r", encoding="utf-8") as fh:
+        fit = json.load(fh)
+    params = op["params"]
+    sc_ = int(op.get("scale", 2))
+    smp = int(op.get("samples", 8))
+    base = _opts(family, cfg)
+    lfo = _look_frame_opts(family)
+    d = workdir(family, "optim")
+    for f in glob.glob(os.path.join(d, "*.png")):
+        os.remove(f)
+    st = {}
+    for fr in frames:
+        nn = fr[0]
+        pose = dict(fit["frames"][str(nn)]["pose"])
+        for k, spec in params.items():
+            pose.setdefault(k, float(spec.get("init", 0.0)))
+        st[nn] = {"fr": fr, "pose": pose, "step": {k: float(v["step"]) for k, v in params.items()},
+                  "score": None, "opts": dict(frame_opts(cfg, nn, base=base), **lfo.get(str(nn), {}))}
+
+    def clamp(k, v):
+        return max(float(params[k].get("min", -1e9)), min(float(params[k].get("max", 1e9)), v))
+
+    if op.get("reseed") or only is not None:
+        win = 2 if only is not None else int(op["reseed"].get("window", 3))
+        order = [fr[0] for fr in base_frames(cfg)]          # neighbours come from the FULL frame order
+        snap = {nn: dict(fit["frames"][str(nn)]["pose"]) for nn in order}
+        for nn in st:
+            snap[nn] = dict(st[nn]["pose"])
+        trials = []
+        for i, nn in enumerate(order):
+            if nn not in st:
+                continue
+            trials.append(((nn, "base"), st[nn]["fr"], dict(snap[nn]), st[nn]["opts"]))
+            for j in range(max(0, i - win), min(len(order), i + win + 1)):
+                if j != i:
+                    seed = dict(snap[order[j]])
+                    for k, spec in params.items():
+                        seed.setdefault(k, float(spec.get("init", 0.0)))
+                    trials.append(((nn, "seed", order[j]), st[nn]["fr"], seed, st[nn]["opts"]))
+        sc = _render_score(cfg, fit, trials, d, "%s_seed" % family, sc_, smp)
+        moved = 0
+        for nn in st:
+            cands = [(v, key) for key, v in sc.items() if key[0] == nn]
+            v, key = min(cands, key=lambda t: t[0])
+            st[nn]["score"] = v
+            if key[1] == "seed":
+                st[nn]["pose"] = dict(snap[key[2]], **{k: st[nn]["pose"][k] for k in ("_dx", "_dy") if k in st[nn]["pose"]})
+                for k, spec in params.items():
+                    st[nn]["pose"].setdefault(k, float(spec.get("init", 0.0)))
+                moved += 1
+        print("optim: reseed moved %d of %d frames to a neighbour's pose" % (moved, len(st)))
+
+    for pr in (op.get("probe") or []) if only is not None else []:   # coarse grids: jumps no +-step descent makes
+        names = list(pr.keys())
+        combos = list(itertools.product(*[pr[k] for k in names]))
+        trials = []
+        for nn, s in st.items():
+            trials.append(((nn, "base"), s["fr"], dict(s["pose"]), s["opts"]))
+            for ci, vals in enumerate(combos):
+                trials.append(((nn, "probe", ci), s["fr"],
+                               dict(s["pose"], **{k: clamp(k, v) for k, v in zip(names, vals)}), s["opts"]))
+        sc = _render_score(cfg, fit, trials, d, "%s_probe" % family, sc_, smp)
+        for nn, s in st.items():
+            v, key = min(((v, key) for key, v in sc.items() if key[0] == nn), key=lambda t: t[0])
+            if key[1] == "probe":
+                s["pose"].update({k: clamp(k, val) for k, val in zip(names, combos[key[2]])})
+                print("optim: probe moved f%02d to %s" % (nn, dict(zip(names, combos[key[2]]))))
+            s["score"] = v
+
+    first = None
+
+    def run_rounds(nrounds, sc_, smp, tagp):
+        nonlocal first
+        for rnd in range(nrounds):
+            trials = []
+            for nn, s in st.items():
+                if s["score"] is None:
+                    trials.append(((nn, "base"), s["fr"], dict(s["pose"]), s["opts"]))
+                for k in params:
+                    if s["step"][k] < float(params[k]["step"]) * float(op.get("min_step", 0.1)):
+                        continue
+                    for sgn in (1, -1):
+                        v = clamp(k, s["pose"][k] + sgn * s["step"][k])
+                        if v != s["pose"][k]:
+                            trials.append(((nn, k, sgn), s["fr"], dict(s["pose"], **{k: v}), s["opts"]))
+            if not trials:
+                break
+            sc = _render_score(cfg, fit, trials, d, "%s_%s%d" % (family, tagp, rnd), sc_, smp)
+            combos = []
+            for nn, s in st.items():
+                if (nn, "base") in sc:
+                    s["score"] = sc[(nn, "base")]
+                moves, best1 = {}, None
+                for k in params:
+                    cand = [(sc[(nn, k, sg)], sg) for sg in (1, -1) if (nn, k, sg) in sc]
+                    good = [c for c in cand if c[0] < s["score"] - 1e-3]
+                    if good:
+                        v, sg = min(good)
+                        moves[k] = clamp(k, s["pose"][k] + sg * s["step"][k])
+                        if best1 is None or v < best1[0]:
+                            best1 = (v, k, moves[k])
+                    else:
+                        s["step"][k] *= 0.5
+                s["best1"] = best1
+                if len(moves) > 1:
+                    combos.append(((nn, "combo"), s["fr"], dict(s["pose"], **moves), s["opts"]))
+                elif best1:
+                    s["pose"][best1[1]] = best1[2]
+                    s["score"] = best1[0]
+            if combos:
+                csc = _render_score(cfg, fit, combos, d, "%s_%s%dc" % (family, tagp, rnd), sc_, smp)
+                for tid, fr, pose, _ in combos:
+                    nn = tid[0]
+                    s = st[nn]
+                    if csc[tid] <= s["best1"][0]:
+                        s["pose"], s["score"] = pose, csc[tid]
+                    else:
+                        s["pose"][s["best1"][1]] = s["best1"][2]
+                        s["score"] = s["best1"][0]
+            mean = float(np.mean([s["score"] for s in st.values()]))
+            first = mean if first is None else first
+            print("optim: %s round %d, %d renders, mean score %.3f" % (tagp, rnd, len(trials) + len(combos), mean))
+
+    run_rounds(int(op.get("rounds", 8)), sc_, smp, "opt")
+    fin = op.get("finish")
+    if fin:                                   # low-sample edges hide 1 px gains: re-score and polish at full fidelity
+        for s in st.values():
+            s["score"] = None
+            s["step"] = {k: float(v["step"]) * float(fin.get("step_f", 0.5)) for k, v in params.items()}
+        first = None
+        run_rounds(int(fin.get("rounds", 3)), int(fin.get("scale", 4)), int(fin.get("samples", 32)), "fin")
+    if only is not None:                      # basin hopping: a failing frame is often a local minimum
+        rng = np.random.default_rng(7)
+        for hop in range(int(op.get("hops", 4))):
+            keep = {nn: (dict(s["pose"]), s["score"]) for nn, s in st.items()}
+            for s in st.values():
+                for k, spec in params.items():
+                    s["pose"][k] = clamp(k, s["pose"][k] + rng.uniform(-2.0, 2.0) * float(spec["step"]))
+                s["score"] = None
+                s["step"] = {k: float(v["step"]) * 0.5 for k, v in params.items()}
+            run_rounds(3, sc_, smp, "hop%d" % hop)
+            for nn, s in st.items():
+                if s["score"] >= keep[nn][1]:
+                    s["pose"], s["score"] = keep[nn]
+                else:
+                    print("optim: hop %d improved f%02d %.3f -> %.3f" % (hop, nn, keep[nn][1], s["score"]))
+        # shift hops: a fitted 1 px offset the pose then adapted to (BP_cheer f125's legs stretched on
+        # tiptoe to reach a frame shifted up a row) -- move it +-1 px and let the pose re-adapt; a second
+        # pass (only after a gain) reaches +-2 px
+        dirs = ((0, -1), (0, 1), (-1, 0), (1, 0)) if op.get("shift_hops", True) else ()
+        for sp in range(2):
+            gained = False
+            for hop, (ddx, ddy) in enumerate(dirs):
+                keep = {nn: (dict(s["pose"]), s["score"]) for nn, s in st.items()}
+                for s in st.values():
+                    s["pose"]["_dx"] = s["pose"].get("_dx", 0.0) + ddx
+                    s["pose"]["_dy"] = s["pose"].get("_dy", 0.0) + ddy
+                    s["score"] = None
+                    s["step"] = {k: float(v["step"]) for k, v in params.items()}
+                run_rounds(4, sc_, smp, "shift%d%d" % (sp, hop))
+                for nn, s in st.items():
+                    if s["score"] >= keep[nn][1]:
+                        s["pose"], s["score"] = keep[nn]
+                    else:
+                        gained = True
+                        print("optim: shift %+d,%+d improved f%02d %.3f -> %.3f" % (ddx, ddy, nn, keep[nn][1], s["score"]))
+            if not gained:
+                break
+    for nn, s in st.items():
+        pose = dict(s["pose"])
+        ex = (pose.pop("_dx", 0.0), pose.pop("_dy", 0.0))           # sub-pixel offsets fold into the frame's shift
+        if ex != (0.0, 0.0):
+            sh = fit["frames"][str(nn)].get("shift", [0.0, 0.0])
+            fit["frames"][str(nn)]["shift"] = [sh[0] + ex[0], sh[1] + ex[1]]
+        fit["frames"][str(nn)]["pose"] = pose
+        fit["frames"][str(nn)]["optim_score"] = round(s["score"], 3)
+    with open(fp, "w", encoding="utf-8") as fh:
+        json.dump(fit, fh, indent=1)
+    print("optim: mean score %.3f -> %.3f" % (first or 0, float(np.mean([s["score"] for s in st.values()]))))
+
+
+def stage_bake(family, cfg):
+    lp = os.path.join(WORK, family, "look.json")
+    if not os.path.exists(lp):
+        print("bake: no look.json, skipping")
+        return
+    with open(lp, "r", encoding="utf-8") as fh:
+        lo = json.load(fh)["opts"]
+    p = os.path.join(FAM_DIR, family, "frames.json")
+    with open(p, "r", encoding="utf-8-sig") as fh:
+        raw = json.load(fh)                          # the file as written, not load_cfg's expanded copy
+    raw.setdefault("opts", {}).update(lo)
+    for k, spec in ((raw.get("look") or {}).get("refine") or {}).items():
+        if k in lo and isinstance(lo[k], (int, float)) and not isinstance(lo[k], bool):
+            spec["init"] = lo[k]
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(raw, fh, indent=1)
+    cfg["opts"] = dict(raw["opts"])
+    print("bake: %d look options -> %s opts" % (len(lo), family))
+
+
 def stage_final(family, cfg):
-    frames = sd_frames(cfg)
+    frames = base_frames(cfg)
     with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
         fit = json.load(fh)
     s = cfg["scale"]
     d = workdir(family, "final")
     base = _opts(family, cfg)
+    lfo = _look_frame_opts(family)
     groups = {}
     for nn, _, w, h in frames:
         groups.setdefault((w, h), []).append(nn)
     for (w, h), nns in groups.items():
         items = [{"out": os.path.join(d, "f%02d.png" % nn), "pose": fit["frames"][str(nn)]["pose"],
-                  "opts": frame_opts(cfg, nn, base=base)} for nn in nns]
+                  "opts": dict(frame_opts(cfg, nn, base=base), **lfo.get(str(nn), {})),
+                  "camera": _final_cam(fit, w, h, nn)} for nn in nns]
         run_blender({"mode": cfg["mode"], "opts": items[0]["opts"], "size": [w * s, h * s],
                      "camera": _final_cam(fit, w, h), "samples": cfg["samples"].get("final", 256),
                      "items": items}, "%s_final_%dx%d" % (family, w, h))
@@ -519,7 +1090,43 @@ def stage_final(family, cfg):
         for old in glob.glob(os.path.join(od, "f%02d_*.png" % nn)):
             os.remove(old)
         shutil.copyfile(src, os.path.join(od, "f%02d_%dx%d.png" % (nn, w * s, h * s)))
-    print("final: %d frames -> %s" % (len(frames), os.path.relpath(od, ROOT)))
+    _derive(cfg, d, od, s)
+    print("final: %d frames (+%d derived) -> %s" % (len(frames), len(derived(cfg)), os.path.relpath(od, ROOT)))
+
+
+def _derive(cfg, d, od, s):
+    sd = {nn: (p, w, h) for nn, p, w, h in sd_frames(cfg)}
+    for nn, spec in sorted(derived(cfg).items()):
+        if nn not in sd:
+            continue
+        _, w, h = sd[nn]
+        im = Image.open(os.path.join(d, "f%02d.png" % spec["from"])).convert("RGBA")
+        op = spec["op"]
+        if op == "crop":
+            x0, y0, x1, y1 = spec["box"]
+            out = im.crop((x0 * s, y0 * s, x1 * s, y1 * s))
+        elif op == "scale":
+            sw, sh = spec["size"]
+            out = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
+            small = im.resize((sw * s, sh * s), Image.LANCZOS)
+            at = spec.get("at", [(w - sw) / 2, (h - sh) / 2])
+            out.alpha_composite(small, (int(round(at[0] * s)), int(round(at[1] * s))))
+        elif op == "crack":
+            a = rgba(sd[spec["from"]][0])
+            b = rgba(sd[nn][0])
+            lum = lambda x: x[..., :3] @ np.array([0.299, 0.587, 0.114])
+            crack = (np.abs(a - b)[..., :3].max(-1) > 0.09) & (lum(b) < lum(a) - 0.08) & (b[..., 3] > 0)
+            m = Image.fromarray((crack * 255).astype(np.uint8)).resize((w * s, h * s), Image.BILINEAR)
+            mk = np.clip(np.asarray(m).astype(np.float64) / 255.0 * float(spec.get("strength", 1.6)), 0, 1)
+            ccol = np.asarray(Image.fromarray((b * 255).astype(np.uint8)).resize((w * s, h * s), Image.NEAREST))
+            base = np.asarray(im).astype(np.float64)
+            base[..., :3] = base[..., :3] * (1 - mk[..., None]) + ccol[..., :3] * mk[..., None]
+            out = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
+        else:
+            raise SystemExit("derive: unknown op %r" % op)
+        for old in glob.glob(os.path.join(od, "f%02d_*.png" % nn)):
+            os.remove(old)
+        out.save(os.path.join(od, "f%02d_%dx%d.png" % (nn, w * s, h * s)))
 
 
 def _ffmpeg():
@@ -564,6 +1171,14 @@ def stage_verify(family, cfg, write=True):
         bestm = min(scores, key=scores.get)
         dist = abs(same.index(bestm) - same.index(nn))
         dist = min(dist, len(same) - dist)
+        if bestm != nn and compare_blur(sds[bestm], sd) < 1.0:   # the sheet repeats this very image elsewhere
+            dist = 0
+        if bestm != nn and scores[nn] - scores[bestm] <= float(gate.get("rank_margin", 0.75)):
+            dist = 0                            # a near-tie between look-alike frames (a walk cycle), not a mix-up
+        if bestm != nn and compare_blur(sds[bestm], sd) <= scores[nn]:
+            dist = 0                            # the two source frames differ by less than this render's own error
+        if nn in derived(cfg):                  # a crop/scale/crack of a verified frame: identity is moot
+            dist = 0
         hd = glob.glob(os.path.join(HD_DIR, cfg["source"], "f%02d_*.png" % nn))
         hd_m = None
         if hd:
@@ -574,7 +1189,8 @@ def stage_verify(family, cfg, write=True):
         if not ok:
             fails.append(nn)
         rows.append({"frame": nn, "iou": round(iou, 4), "de": round(deb, 3), "de_raw": round(de, 3),
-                     "best_src": bestm, "rank_dist": dist, "pass": ok, "hd_iou_de": hd_m})
+                     "best_src": bestm, "rank_dist": dist, "rank_gap": round(scores[nn] - scores[bestm], 3),
+                     "pass": ok, "hd_iou_de": hd_m})
     good = [r for r in rows if "iou" in r]
     summ = {"family": family, "source": cfg["source"], "frames": len(frames), "gate": gate,
             "failed": fails, "iou_min": min([r["iou"] for r in good], default=0),
@@ -676,7 +1292,7 @@ def main():
     if sys.argv[1] == "--check":
         return 0 if check_all() else 1
     family = sys.argv[1]
-    stages = sys.argv[2:] or ["sweep", "fit", "look", "final", "verify"]
+    stages = sys.argv[2:] or ["sweep", "fit", "optim", "look", "final", "verify"]
     cfg = load_cfg(family)
     ok = True
     for st in stages:
@@ -684,12 +1300,30 @@ def main():
             stage_sweep(family, cfg)
         elif st == "fit":
             stage_fit(family, cfg)
+        elif st == "optim":
+            stage_optim(family, cfg)
+        elif st == "optimfail":
+            with open(os.path.join(FAM_DIR, family, "_verify", "frames_report.json"), "r", encoding="utf-8") as fh:
+                rep = json.load(fh)
+            stage_optim(family, cfg, only={int(r["frame"]) for r in rep["rows"] if not r["pass"]})
         elif st == "look":
             stage_look(family, cfg)
+        elif st == "bake":
+            stage_bake(family, cfg)
         elif st == "final":
             stage_final(family, cfg)
         elif st == "verify":
-            ok = stage_verify(family, cfg) and ok
+            passed = stage_verify(family, cfg)
+            ok = passed and ok
+            if not passed and cfg.get("status") != "published":
+                # a failing work-in-progress family must never reach the game: drop its overlay frames
+                od = os.path.join(OVERLAY_DIR, cfg["source"])
+                n = 0
+                for nn, _, _, _ in sd_frames(cfg):
+                    for p in glob.glob(os.path.join(od, "f%02d_*.png" % nn)):
+                        os.remove(p)
+                        n += 1
+                print("verify: %s is not published and failed -> removed its %d overlay frames" % (family, n))
         else:
             raise SystemExit("unknown stage %r" % st)
     return 0 if ok else 1

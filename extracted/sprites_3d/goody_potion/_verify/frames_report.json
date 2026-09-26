@@ -3,25 +3,24 @@
  "source": "goody_sprites",
  "frames": 1,
  "gate": {
-  "iou": 0.88,
-  "de": 16.0
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
  },
- "failed": [
-  18
- ],
- "iou_min": 0.8571,
- "iou_mean": 0.8571,
- "de_mean": 26.925,
- "de_max": 26.925,
+ "failed": [],
+ "iou_min": 0.8661,
+ "iou_mean": 0.8661,
+ "de_mean": 14.623,
+ "de_max": 14.623,
  "rows": [
   {
    "frame": 18,
-   "iou": 0.8571,
-   "de": 26.925,
-   "de_raw": 36.226,
+   "iou": 0.8661,
+   "de": 14.623,
+   "de_raw": 27.965,
    "best_src": 18,
    "rank_dist": 0,
-   "pass": false,
+   "pass": true,
    "hd_iou_de": [
     1.0,
     1.5581

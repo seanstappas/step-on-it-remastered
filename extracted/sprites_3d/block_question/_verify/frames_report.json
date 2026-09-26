@@ -1,0 +1,95 @@
+{
+ "family": "block_question",
+ "source": "block_sprites",
+ "frames": 6,
+ "gate": {
+  "iou": 0.9,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 0.9648,
+ "iou_mean": 0.9814,
+ "de_mean": 11.512,
+ "de_max": 14.636,
+ "rows": [
+  {
+   "frame": 146,
+   "iou": 0.9814,
+   "de": 11.155,
+   "de_raw": 18.702,
+   "best_src": 146,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7641
+   ]
+  },
+  {
+   "frame": 147,
+   "iou": 0.9814,
+   "de": 14.636,
+   "de_raw": 22.403,
+   "best_src": 147,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    2.5348
+   ]
+  },
+  {
+   "frame": 148,
+   "iou": 0.9805,
+   "de": 12.198,
+   "de_raw": 20.661,
+   "best_src": 148,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7355
+   ]
+  },
+  {
+   "frame": 149,
+   "iou": 0.9961,
+   "de": 10.407,
+   "de_raw": 19.433,
+   "best_src": 149,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7983
+   ]
+  },
+  {
+   "frame": 150,
+   "iou": 0.9844,
+   "de": 8.076,
+   "de_raw": 15.434,
+   "best_src": 150,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.6304
+   ]
+  },
+  {
+   "frame": 151,
+   "iou": 0.9648,
+   "de": 12.599,
+   "de_raw": 19.267,
+   "best_src": 151,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.828
+   ]
+  }
+ ]
+}

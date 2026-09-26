@@ -1,0 +1,31 @@
+{
+ "family": "emblem_hammer",
+ "source": "hammer_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.9,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 1.0,
+ "iou_mean": 1.0,
+ "de_mean": 9.978,
+ "de_max": 9.978,
+ "rows": [
+  {
+   "frame": 82,
+   "iou": 1.0,
+   "de": 9.978,
+   "de_raw": 13.184,
+   "best_src": 82,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7846
+   ]
+  }
+ ]
+}

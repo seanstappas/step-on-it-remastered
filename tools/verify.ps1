@@ -67,12 +67,16 @@ Stage 'core: fixture-replay selftest' {
 }
 
 Stage 'core: creeper chain simulation' {
-    & $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tools/verify_creepers.c -o soi_creepers.exe 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { return $false }
+    $build = & $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tools/verify_creepers.c -o soi_creepers.exe 2>&1
+    if ($LASTEXITCODE -ne 0) {    # seen to fail silently once in a while right after the other builds: retry once
+        $build = & $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tools/verify_creepers.c -o soi_creepers.exe 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) { Write-Host "   (build failed, exit $LASTEXITCODE)"; $build | Select-Object -Last 15 | ForEach-Object { Write-Host "   $_" }; return $false }
     $out = & .\soi_creepers.exe (Get-ChildItem extracted/levels/*.bord | ForEach-Object FullName)
     $code = $LASTEXITCODE
     Remove-Item soi_creepers.exe, soi_creepers.pdb -ErrorAction SilentlyContinue
     $out | Where-Object { $_ -match '^(FAIL|===)' } | ForEach-Object { Write-Host "   $_" }
+    if (-not ($out -match '===')) { Write-Host "   (no summary line; exit code $code)"; $out | Select-Object -Last 5 | ForEach-Object { Write-Host "   $_" } }
     [bool]($code -eq 0 -and ($out -match ' 0 FAILED'))
 }
 

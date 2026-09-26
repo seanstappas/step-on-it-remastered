@@ -1,0 +1,18 @@
+{
+ "status": "published",
+ "source": "weapons",
+ "frames": [10, 11],
+ "mode": "arrow",
+ "opts": {},
+ "frame_opts": {"10": {"heading": 180}, "11": {"heading": 0}},
+ "sweep": [{"param": "spin", "start": 0, "stop": 0, "step": 1}],
+ "scale": 4,
+ "samples": {"sweep": 16, "final": 256},
+ "look": {"frames": 2, "passes": 2, "samples": 64,
+          "params": {"world": [0.04, 0.08, 0.12], "key": [3.0, 3.8, 4.6], "fill": [0.04, 0.10, 0.16],
+                     "red": [[170, 0, 0], [198, 0, 0], [230, 0, 0]], "shaft": [[150, 150, 150], [190, 190, 190], [230, 230, 230]],
+                     "rough": [0.3, 0.5, 0.7], "spec": [0.1, 0.3, 0.6]}},
+ "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
+ "fps": 30,
+ "note": "Straight arrow measured on f11 (round grey shaft, flat red triangular head, two 45-deg red fletches); f10 = the same arrow turned about the vertical axis."
+}

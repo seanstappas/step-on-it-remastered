@@ -1,0 +1,213 @@
+{
+ "status": "published",
+ "source": "master_s_objects",
+ "frames": {
+  "range": [
+   47,
+   61
+  ]
+ },
+ "mode": "egg",
+ "note": "Gargoyle egg (master_s_objects f47-f61; game.gd egg frame 47 + tick % 15): a rounded striped cushion; diagonal bands dark red / red line / grey / white line (period ~27 px of u = x - y) scroll -1.8 px of u per frame (smooth loop: the 15 frames are one period). Not modelled: the top-right corner cap that takes the colour of the band reaching it. Reproduce: sweep fit look final verify.",
+ "place_iou_w": 200,
+ "opts": {
+  "half_x": 11.2,
+  "half_y": 12.8,
+  "half_z": 5.0,
+  "bevel": 2.25,
+  "w_dark": 10.5,
+  "w_red": 3.625,
+  "w_grey": 10.25,
+  "w_white": 2.25,
+  "dark": [
+   55,
+   0,
+   0
+  ],
+  "red": [
+   230,
+   20,
+   20
+  ],
+  "grey": [
+   62,
+   62,
+   62
+  ],
+  "white": [
+   250,
+   250,
+   245
+  ],
+  "world": 0.275,
+  "key": 1.2,
+  "fill": 0.0,
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "rough": 0.6,
+  "spec": 0.1,
+  "shadows": false,
+  "gamma": 1.075
+ },
+ "sweep": [
+  {
+   "param": "scroll",
+   "start": 0,
+   "stop": 27,
+   "step": 1,
+   "period": 27
+  }
+ ],
+ "smooth": {
+  "scroll": "loop"
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 16,
+  "final": 256
+ },
+ "look": {
+  "frames": 8,
+  "passes": 2,
+  "samples": 32,
+  "params": {
+   "grey": [
+    [
+     62,
+     62,
+     62
+    ],
+    [
+     100,
+     100,
+     100
+    ],
+    [
+     140,
+     140,
+     140
+    ],
+    [
+     180,
+     180,
+     180
+    ]
+   ],
+   "dark": [
+    [
+     55,
+     0,
+     0
+    ],
+    [
+     90,
+     0,
+     0
+    ],
+    [
+     130,
+     8,
+     8
+    ]
+   ],
+   "red": [
+    [
+     230,
+     20,
+     20
+    ],
+    [
+     255,
+     50,
+     50
+    ]
+   ],
+   "world": [
+    0.3,
+    0.6,
+    1.0
+   ],
+   "key": [
+    0.8,
+    1.5,
+    3.0
+   ]
+  },
+  "refine": {
+   "w_dark": {
+    "step": 1.0,
+    "min": 4,
+    "max": 16
+   },
+   "w_red": {
+    "step": 0.5,
+    "min": 1,
+    "max": 6
+   },
+   "w_grey": {
+    "step": 1.0,
+    "min": 4,
+    "max": 16
+   },
+   "w_white": {
+    "step": 0.5,
+    "min": 1,
+    "max": 6
+   },
+   "half_x": {
+    "step": 0.4,
+    "min": 9,
+    "max": 13
+   },
+   "half_y": {
+    "step": 0.4,
+    "min": 9,
+    "max": 13
+   },
+   "bevel": {
+    "step": 0.5,
+    "min": 0.5,
+    "max": 5
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.1,
+    "max": 0.9
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.3
+   },
+   "world": {
+    "step": 0.1,
+    "min": 0.1,
+    "max": 1.5
+   },
+   "key": {
+    "step": 0.3,
+    "min": 0.0,
+    "max": 5.0
+   }
+  },
+  "refine_rounds": 6,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15
+}

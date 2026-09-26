@@ -6,22 +6,20 @@
   "iou": 0.88,
   "de": 16.0
  },
- "failed": [
-  26
- ],
- "iou_min": 0.8667,
- "iou_mean": 0.8667,
- "de_mean": 14.3,
- "de_max": 14.3,
+ "failed": [],
+ "iou_min": 0.8937,
+ "iou_mean": 0.8937,
+ "de_mean": 13.51,
+ "de_max": 13.51,
  "rows": [
   {
    "frame": 26,
-   "iou": 0.8667,
-   "de": 14.3,
-   "de_raw": 24.785,
+   "iou": 0.8937,
+   "de": 13.51,
+   "de_raw": 24.584,
    "best_src": 26,
    "rank_dist": 0,
-   "pass": false,
+   "pass": true,
    "hd_iou_de": [
     1.0,
     3.4752

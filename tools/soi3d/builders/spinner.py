@@ -133,15 +133,108 @@ def render(args):
 
 
 def _frames_setup(opts):
-    build_spinner(tilt=float(opts.get("tilt", 10.0)))
+    pivots = build_spinner_front(opts)
     C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
     C.apply_look(opts)
-    return {"pivot": bpy.data.objects["pivot"], "root": bpy.data.objects["root"]}
+    return {"pivots": pivots, "root": bpy.data.objects["root"]}
+
+
+def _bicone(name, r, length, mat):
+    """Two cones base to base along local X (the blue spindle on a bar end)."""
+    parts = []
+    for sgn in (1, -1):
+        bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=r, radius2=0.0, depth=length / 2,
+                                        location=(sgn * length / 4, 0, 0))
+        c = bpy.context.active_object
+        c.rotation_euler = (0, math.radians(90) * sgn, 0)
+        c.data.materials.append(mat)
+        bpy.ops.object.shade_smooth()
+        parts.append(c)
+    for p in parts[1:]:
+        p.select_set(True)
+    parts[0].select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    parts[0].name = name
+    return parts[0]
+
+
+S = 0.1   # Blender units per SD pixel (frames_setup model; the sprite is 24 x 26 px, post axis at x = 12)
+
+
+def _px(x, y):
+    return ((x - 12.0) * S, (13.0 - y) * S)
+
+
+def _cone(name, r, length, mat):
+    """A cone along local +Z with its BASE at the origin and its tip at z = length."""
+    bpy.ops.mesh.primitive_cone_add(vertices=40, radius1=r, radius2=0.0, depth=length, location=(0, 0, length / 2))
+    c = bpy.context.active_object
+    c.name = name
+    c.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+    return c
+
+
+def build_spinner_front(opts):
+    """The Spinner as the source shows it, measured on f02 (face-on) and f09 (end-on) in SD px: a static
+    GREEN slab base (x 0-23, rows 18-25), a grey POST (4 px wide at x 10-13, axis x = 12) and two RED
+    bars 24 px long, ~7.5 px tall (rows 0-7 and 9-16) and ~2.5 px deep that turn about the post. Each bar
+    carries two BLUE CONES (base ~6.5 px wide, ~7 px long) standing out of OPPOSITE faces at OPPOSITE
+    ends, 7 px from the axis: the upper bar's front cone at +7 (right) and back cone at -7, the lower
+    bar's the other way round. So the prop is 2-fold symmetric: a 180 deg turn looks the same, the 16
+    frames (f17 == f02) are one half turn (12 deg/frame); face-on a front cone is seen tip-on (a blue
+    blob), end-on both cones of a bar stick out sideways (the 'bicone' look of f09/f10). The two bars
+    COUNTER-ROTATE (upper by -spin, lower by +spin): at f07 the upper front cone points left at x 8-14
+    while the lower one points right at x 9-15, which no common rotation produces."""
+    C._clear()
+    green = C._mat("green", C._srgb(*opts.get("green", (0, 140, 0))), rough=float(opts.get("rough", 0.5)),
+                   spec=float(opts.get("spec", 0.15)))
+    red = C._mat("red", C._srgb(*opts.get("red", (210, 0, 0))), rough=float(opts.get("rough", 0.5)),
+                 spec=float(opts.get("spec", 0.15)))
+    blue = C._mat("blue", C._srgb(*opts.get("blue", (10, 10, 230))), rough=float(opts.get("rough", 0.5)),
+                  spec=float(opts.get("spec", 0.15)))
+    grey = C._mat("grey", C._srgb(*opts.get("grey", (200, 200, 200))), rough=0.3, spec=0.4)
+    bpy.ops.object.empty_add(location=(0, 0, 0))
+    root = bpy.context.active_object
+    root.name = "root"
+    bw, bt, bb = float(opts.get("base_w", 23.0)), float(opts.get("base_top", 18.0)), 26.0
+    base = C._box("base", (*_px(bw / 2, (bt + bb) / 2), 0.0), (bw * S, (bb - bt) * S, float(opts.get("base_d", 12.0)) * S),
+                  green, bevel=float(opts.get("base_bevel", 1.2)) * S)
+    pr = float(opts.get("post_r", 2.0)) * S
+    post = _post("post", 0.0, _px(0, bt)[1], _px(0, 0.5)[1], pr, grey)
+    for o in (base, post):
+        _parent_keep_local(o, root)
+    pivots = []
+    bl = float(opts.get("bar_len", 24.0)) * S
+    bh = float(opts.get("bar_h", 7.5)) * S
+    bd = float(opts.get("bar_d", 2.5)) * S
+    cr, cl = float(opts.get("cone_r", 3.25)) * S, float(opts.get("cone_len", 7.0)) * S
+    cx = float(opts.get("cone_x", 7.0)) * S
+    for tag, yc, side in (("up", float(opts.get("up_y", 3.9)), 1), ("lo", float(opts.get("lo_y", 12.9)), -1)):
+        bpy.ops.object.empty_add(location=(0, 0, 0))
+        pivot = bpy.context.active_object
+        pivot.name = "pivot_" + tag
+        _parent_keep_local(pivot, root)
+        pivots.append(pivot)
+        y = _px(0, yc)[1]
+        bar = C._box("bar_" + tag, (0, y, 0), (bl, bh, bd), red, bevel=float(opts.get("bar_bevel", 0.5)) * S)
+        _parent_keep_local(bar, pivot)
+        for face in (1, -1):                              # front cone at +side*cx, back cone at -side*cx
+            c = _cone("cone_%s_%d" % (tag, face), cr, cl, blue)
+            c.location = (face * side * cx, y, face * bd / 2)
+            c.rotation_euler = (0.0 if face > 0 else math.pi, 0.0, 0.0)
+            _parent_keep_local(c, pivot)
+    root.rotation_euler = (math.radians(float(opts.get("tilt", 0.0))), 0, 0)
+    return pivots
 
 
 def _frames_pose(ctx, pose):
-    # pose {"spin": deg about the post (Y)} [+ "tilt": the whole prop's lean toward the camera]
-    ctx["pivot"].rotation_euler = (0.0, math.radians(float(pose.get("spin", 0.0))), 0.0)
+    # pose {"spin": deg}: the upper bar turns by -spin, the lower by +spin (counter-rotating)
+    sp = math.radians(float(pose.get("spin", 0.0)))
+    ctx["pivots"][0].rotation_euler = (0.0, -sp, 0.0)
+    ctx["pivots"][1].rotation_euler = (0.0, sp, 0.0)
     if "tilt" in pose:
         ctx["root"].rotation_euler = (math.radians(float(pose["tilt"])), 0.0, 0.0)
 

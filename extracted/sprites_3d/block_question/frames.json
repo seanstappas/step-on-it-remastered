@@ -1,0 +1,49 @@
+{
+ "status": "published",
+ "source": "block_sprites",
+ "frames": [146, 147, 148, 149, 150, 151],
+ "mode": "tile",
+ "note": "PASS (6 frames, IoU min 0.965, dE mean 11.5 max 14.6): the '?' in Arial Black stretched 1.21x tall / 0.89x wide in a shallow inset well, a matte blue tile (base_spec 0.09); f147 = its crack, f148-f151 = its quarters.",
+ "opts": {"kind": "symbol", "base": [0, 0, 206], "color": [220, 0, 0], "symbol": "?", "well": true, "inner": 0.435,
+          "depth": 0.05, "sym_size": 1.8, "sym_extrude": 0.08, "sym_font": "verdana", "sym_sx": 0.8875, "sym_sy": 1.21,
+          "sym_x": 0.015, "sym_y": 0.0675, "gamma": 0.9, "key": 4.625, "world": 0.01, "fill": 0.08},
+ "derive": {"147": {"from": 146, "op": "crack"},
+            "148": {"from": 146, "op": "crop", "box": [0, 0, 16, 16]},
+            "149": {"from": 146, "op": "crop", "box": [16, 0, 32, 16]},
+            "150": {"from": 146, "op": "crop", "box": [16, 16, 32, 32]},
+            "151": {"from": 146, "op": "crop", "box": [0, 16, 16, 32]}},
+ "sweep": [{"param": "none", "start": 0, "stop": 0, "step": 1}],
+ "scale": 4,
+ "samples": {"sweep": 32, "final": 256},
+ "look": {
+  "frames": 1,
+  "passes": 2,
+  "samples": 96,
+  "params": {
+   "sym_font": ["verdana", "arial", "arialblack"],
+   "color": [[190, 0, 0], [220, 0, 0], [250, 20, 20]],
+   "base": [[0, 0, 170], [0, 0, 190], [0, 0, 206]],
+   "well_col": [[0, 0, 60], [0, 0, 93], [0, 0, 130]]
+  },
+  "refine": {
+   "base_spec": {"step": 0.08, "min": 0.0, "max": 0.6, "init": 0.25},
+   "rough": {"step": 0.1, "min": 0.1, "max": 0.9, "init": 0.4},
+   "bevel": {"step": 0.03, "min": 0.04, "max": 0.3, "init": 0.16},
+   "sym_size": {"step": 0.1, "min": 0.8, "max": 2.6},
+   "sym_sx": {"step": 0.06, "min": 0.6, "max": 1.5, "init": 1.0},
+   "sym_sy": {"step": 0.06, "min": 0.6, "max": 1.5, "init": 1.0},
+   "sym_x": {"step": 0.03, "min": -0.3, "max": 0.3, "init": 0.0},
+   "sym_y": {"step": 0.03, "min": -0.3, "max": 0.3, "init": 0.0},
+   "sym_extrude": {"step": 0.02, "min": 0.01, "max": 0.2},
+   "inner": {"step": 0.03, "min": 0.4, "max": 0.8},
+   "depth": {"step": 0.03, "min": 0.03, "max": 0.3},
+   "gamma": {"step": 0.1, "min": 0.5, "max": 1.2, "init": 1.0},
+   "key": {"step": 0.6, "min": 1.5, "max": 7.0, "init": 3.8},
+   "world": {"step": 0.04, "min": 0.0, "max": 0.4, "init": 0.11},
+   "fill": {"step": 0.06, "min": 0.0, "max": 0.5, "init": 0.14}
+  },
+  "refine_rounds": 10
+ },
+ "gate": {"iou": 0.9, "de": 16.0, "rank_tol": 1},
+ "fps": 10
+}

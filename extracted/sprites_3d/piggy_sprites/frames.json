@@ -1,0 +1,336 @@
+{
+ "status": "published",
+ "source": "piggy_sprites",
+ "frames": {
+  "range": [
+   2,
+   33
+  ]
+ },
+ "mode": "quadruped",
+ "note": "Piggy (no separate head): flattened body ellipsoid, eyeballs with blue pupils on the body front-top, a trumpet snout (neck + flare + rim) going up-forward, a striped tail cone at the back, four long capsule legs. Per frame yaw + phase + per-leg angles (optim). Reproduce: sweep fit look optim final verify (then bake look.json into opts; a second sweep fit optim final verify with baked opts also passes).",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 3,
+ "opts": {
+  "species": "piggy",
+  "world": 0.1,
+  "key": 3.8,
+  "fill": 0.02,
+  "body": [
+   240,
+   35,
+   115
+  ],
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "body_rx": 11.4,
+  "body_ry": 6.375,
+  "body_rz": 8.25,
+  "body_x": 0.0,
+  "snout_tilt": 43.0,
+  "snout_l": 8.2,
+  "snout_r": 2.5,
+  "neck_r": 1.25,
+  "flare_l": 2.5,
+  "snout_fx": 0.74,
+  "snout_fy": 0.425,
+  "rim_t": 0.6,
+  "eye_r": 3.15,
+  "eye_fx": 0.7,
+  "eye_fy": 0.6875,
+  "eye_z": 3.9,
+  "pupil_r": 1.3,
+  "tail_tilt": 70.0,
+  "tail_l": 6.0,
+  "tail_fx": 0.71,
+  "tail_fy": 0.6,
+  "tail_r": 3.0,
+  "tail_r1": 1.4,
+  "tail_bands": 2.5,
+  "leg_l": 12.0,
+  "leg_r": 2.4375,
+  "front_x": -5.4,
+  "rear_x": 6.2,
+  "hip_y": 1.875,
+  "leg_z": 5.2,
+  "swing": 22.0,
+  "tilt": 0.0,
+  "rough": 0.6,
+  "spec": 0.25,
+  "gamma": 0.9
+ },
+ "sweep": [
+  {
+   "param": "yaw",
+   "start": 0,
+   "stop": 360,
+   "step": 10,
+   "period": 360
+  },
+  {
+   "param": "phase",
+   "start": 0,
+   "stop": 360,
+   "step": 60,
+   "period": 360
+  }
+ ],
+ "smooth": {
+  "yaw": "free",
+  "phase": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 5,
+    "min": -60,
+    "max": 420
+   },
+   "a_fn": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_ff": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_rn": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_rf": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   }
+  },
+  "rounds": 8,
+  "scale": 2,
+  "samples": 16
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 12,
+  "final": 256
+ },
+ "look": {
+  "frames": 10,
+  "passes": 2,
+  "samples": 48,
+  "params": {
+   "body": [
+    [
+     220,
+     30,
+     105
+    ],
+    [
+     240,
+     35,
+     115
+    ],
+    [
+     255,
+     50,
+     135
+    ]
+   ],
+   "key_dir": [
+    [
+     -0.26,
+     0.7,
+     0.66
+    ],
+    [
+     -0.5,
+     0.5,
+     0.7
+    ],
+    [
+     0.0,
+     0.7,
+     0.7
+    ]
+   ]
+  },
+  "refine": {
+   "body_rx": {
+    "step": 0.8,
+    "min": 9,
+    "max": 16
+   },
+   "body_ry": {
+    "step": 0.5,
+    "min": 4,
+    "max": 9
+   },
+   "body_rz": {
+    "step": 0.5,
+    "min": 4,
+    "max": 10
+   },
+   "snout_tilt": {
+    "step": 8,
+    "min": 15,
+    "max": 80
+   },
+   "snout_l": {
+    "step": 0.8,
+    "min": 5,
+    "max": 13
+   },
+   "snout_r": {
+    "step": 0.3,
+    "min": 1.2,
+    "max": 3.5
+   },
+   "neck_r": {
+    "step": 0.2,
+    "min": 0.6,
+    "max": 2.0
+   },
+   "snout_fx": {
+    "step": 0.08,
+    "min": 0.4,
+    "max": 1.0
+   },
+   "snout_fy": {
+    "step": 0.1,
+    "min": 0.0,
+    "max": 1.0
+   },
+   "eye_r": {
+    "step": 0.3,
+    "min": 2,
+    "max": 4
+   },
+   "eye_fx": {
+    "step": 0.08,
+    "min": 0.3,
+    "max": 0.9
+   },
+   "eye_fy": {
+    "step": 0.1,
+    "min": 0.3,
+    "max": 1.1
+   },
+   "eye_z": {
+    "step": 0.4,
+    "min": 1.5,
+    "max": 6
+   },
+   "tail_tilt": {
+    "step": 8,
+    "min": 30,
+    "max": 110
+   },
+   "tail_l": {
+    "step": 0.6,
+    "min": 3,
+    "max": 9
+   },
+   "tail_fx": {
+    "step": 0.08,
+    "min": 0.4,
+    "max": 1.0
+   },
+   "tail_r": {
+    "step": 0.25,
+    "min": 1.0,
+    "max": 3.0
+   },
+   "leg_l": {
+    "step": 0.6,
+    "min": 8,
+    "max": 16
+   },
+   "leg_r": {
+    "step": 0.25,
+    "min": 1.6,
+    "max": 3.6
+   },
+   "front_x": {
+    "step": 0.8,
+    "min": -12,
+    "max": -3
+   },
+   "rear_x": {
+    "step": 0.8,
+    "min": 3,
+    "max": 12
+   },
+   "hip_y": {
+    "step": 0.5,
+    "min": -2,
+    "max": 4
+   },
+   "leg_z": {
+    "step": 0.4,
+    "min": 2,
+    "max": 6.5
+   },
+   "swing": {
+    "step": 3,
+    "min": 8,
+    "max": 35
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9
+   },
+   "spec": {
+    "step": 0.1,
+    "min": 0,
+    "max": 0.8
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2
+   },
+   "key": {
+    "step": 0.6,
+    "min": 1.5,
+    "max": 7
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0,
+    "max": 0.4
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0,
+    "max": 0.5
+   }
+  },
+  "refine_rounds": 8,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15
+}

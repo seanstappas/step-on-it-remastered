@@ -94,14 +94,20 @@ regressing the green gates for no gameplay benefit._
 - Pipeline built and gated: `tools/soi3d/framematch.py` + `frames_blender.py`; the game's `--3d`
   overlay with F3 toggle; gate stage 5. Process and status are in
   [SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md).
-- Published: Wheelie (24), cannon ball (20), gold/silver coin, magnifier, star.
-- WIP with notes: Smiley, Spinner, weapons swirl, multiplier, 1UP, potion, clock, gold bars.
+- Published (1079 frames): the Robo (80), both players' run f02-f49 (48 + 48) and f50-f117 (68 + 68), the speed indicator's winged shoe (30), board blocks (150) and the '?' tile (6), every goody (51: coins, clocks,
+  mult, keys, doors, arrow and switch tiles, turtle, gift, shield, helmet, shoe, ...), the speed
+  indicator's spinning shield (30), Teeth (49), the Walker (48), the
+  Beenie spread shot (48, three of its four directions), Smiley (48), Stop/Go
+  (40), Hippo (32), Piggy (32), Wheelie (24), cannon ball (20) and barrel (2), Spinner (16), Walker bolt
+  (16), the M block collapse (15), the Gargoyle egg (15), Gargoyle pierce puff (15) and green puff (15),
+  Knight's gift box (15), the transporter zap (15), the player's swirl ball (8) and arrow (2), all seven
+  nasties' spawner blocks (7), and both players' cheer (9 + 9).
+- WIP with notes: the
+  Ostrich, the Ant, the players' tumble (`BP_tumble`, then a green clone), the
+  Hammer walk, the Beenie's down shot, the Knight, the Beenie character, the Gargoyle.
 - Not started:
-  - Props: Stop/Go flip (40, needs a flip pose + bezel colour per group), transporter (15), Creeper
-    `bigger_mblock` (15), blocks/`block_sprites` (209), `master_s_objects` (63), `spin_ind` (60),
-    cannon barrel f02/f03.
-  - Characters (players, Ant, Hippo, Ostrich, Piggy, Robo, Walker, Hammer, Teeth, Beanie, Knight,
-    Gargoyle): these need rigged models with per-frame joint fitting, a larger step than the props.
+  - The Hammer's swing: a rigged procedural model with per-limb pose keys fitted
+    per frame by `optim`, as for the Hippo and Piggy (`quadruped.py`).
 
 ---
 

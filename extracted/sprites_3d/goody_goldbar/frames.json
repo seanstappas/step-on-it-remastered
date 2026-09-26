@@ -1,55 +1,65 @@
-﻿{
-    "status":  "wip",
-    "source":  "goody_sprites",
-    "frames":  [
-                   26
-               ],
-    "mode":  "goody_goldbar",
-    "opts":  {
-
-             },
-    "sweep":  [
-                  {
-                      "param":  "spin",
-                      "start":  0,
-                      "stop":  0,
-                      "step":  1
-                  }
-              ],
-    "scale":  4,
-    "samples":  {
-                    "sweep":  32,
-                    "final":  256
-                },
-    "look":  {
-                 "frames":  4,
-                 "passes":  2,
-                 "samples":  128,
-                 "params":  {
-                                "world":  [
-                                              0.06,
-                                              0.12,
-                                              0.18
-                                          ],
-                                "key":  [
-                                            3.0,
-                                            3.8,
-                                            4.6
-                                        ],
-                                "fill":  [
-                                             0.06,
-                                             0.12,
-                                             0.18
-                                         ]
-                            }
-             },
-    "post":  [
-
-             ],
-    "gate":  {
-                 "iou":  0.88,
-                 "de":  16.0
-             },
-    "fps":  30,
-    "note":  "FAILS the gate: IoU 0.867 \u003c 0.88 (ingot stack silhouette)"
+{
+ "status": "published",
+ "source": "goody_sprites",
+ "frames": [
+  26
+ ],
+ "mode": "goody_goldbar",
+ "opts": {
+  "turn": -5,
+  "bar_len": 1.16,
+  "gold": [
+   160,
+   125,
+   0
+  ],
+  "world": 0.08,
+  "glint_energy": 200
+ },
+ "sweep": [
+  {
+   "param": "spin",
+   "start": 0,
+   "stop": 0,
+   "step": 1
+  }
+ ],
+ "scale": 4,
+ "samples": {
+  "sweep": 32,
+  "final": 256
+ },
+ "look": {
+  "frames": 4,
+  "passes": 3,
+  "samples": 128,
+  "params": {
+   "tilt": [
+    4,
+    14,
+    24
+   ],
+   "bar_h": [
+    0.24,
+    0.28,
+    0.32
+   ],
+   "bar_len": [
+    1.05,
+    1.16,
+    1.3
+   ],
+   "turn": [
+    -10,
+    -5,
+    0
+   ]
+  }
+ },
+ "post": [],
+ "gate": {
+  "iou": 0.88,
+  "de": 16.0
+ },
+ "fps": 30
 }

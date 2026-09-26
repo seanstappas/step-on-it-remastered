@@ -1,0 +1,157 @@
+{
+ "family": "goody_switch",
+ "source": "goody_sprites",
+ "frames": 10,
+ "gate": {
+  "iou": 0.9,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 0.9883,
+ "iou_mean": 0.9883,
+ "de_mean": 9.372,
+ "de_max": 11.67,
+ "rows": [
+  {
+   "frame": 37,
+   "iou": 0.9883,
+   "de": 8.083,
+   "de_raw": 13.225,
+   "best_src": 37,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7617
+   ]
+  },
+  {
+   "frame": 38,
+   "iou": 0.9883,
+   "de": 10.221,
+   "de_raw": 16.423,
+   "best_src": 38,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7698
+   ]
+  },
+  {
+   "frame": 39,
+   "iou": 0.9883,
+   "de": 9.41,
+   "de_raw": 14.631,
+   "best_src": 39,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.8769
+   ]
+  },
+  {
+   "frame": 40,
+   "iou": 0.9883,
+   "de": 11.67,
+   "de_raw": 18.043,
+   "best_src": 40,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.9211
+   ]
+  },
+  {
+   "frame": 41,
+   "iou": 0.9883,
+   "de": 7.865,
+   "de_raw": 13.632,
+   "best_src": 41,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.6994
+   ]
+  },
+  {
+   "frame": 42,
+   "iou": 0.9883,
+   "de": 9.739,
+   "de_raw": 16.363,
+   "best_src": 42,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7407
+   ]
+  },
+  {
+   "frame": 43,
+   "iou": 0.9883,
+   "de": 8.285,
+   "de_raw": 13.515,
+   "best_src": 43,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.8708
+   ]
+  },
+  {
+   "frame": 44,
+   "iou": 0.9883,
+   "de": 10.672,
+   "de_raw": 16.844,
+   "best_src": 44,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.892
+   ]
+  },
+  {
+   "frame": 45,
+   "iou": 0.9883,
+   "de": 7.774,
+   "de_raw": 12.61,
+   "best_src": 45,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7391
+   ]
+  },
+  {
+   "frame": 46,
+   "iou": 0.9883,
+   "de": 10.004,
+   "de_raw": 15.835,
+   "best_src": 46,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.7014
+   ]
+  }
+ ]
+}

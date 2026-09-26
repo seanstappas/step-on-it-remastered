@@ -1,0 +1,548 @@
+{
+ "status": "wip",
+ "source": "ant_sprites",
+ "frames": {
+  "range": [
+   2,
+   50
+  ]
+ },
+ "mode": "ant",
+ "note": "WIP: ant.py = glossy red BALLS + thin slanted splayed leg bars: IoU 0.858 / dE 12.1, 17 fails, mostly the turn f20-f35 (the fit wandered: yaw 326 at f21, 132 at f35) -> a linear yaw prior 0 -> 180 over f19-f32. Round 10: a yaw x phase probe changed nothing (33.61 -> 33.48); a look that also scored the failing turn frames (add_fails) lowered their dE by ~0.6 but cost 3 frames of IoU (39 -> 36 passing) -> reverted. The turn frames render the white legs pinkish-grey (126,92,92 for a 210 grey): leg/body overlap in the front views. Shift hops: 39 -> 40/49 (f35). Round legs (leg_d = leg_w, as wide front-on as side-on) cut the turn frames IoU by up to 0.047 (37 passing) -> reverted: the source legs are not wider in the front views.",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 5,
+ "opts": {
+  "world": 0.05,
+  "key": 2.625,
+  "fill": 0.115,
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "tilt": 0.0,
+  "rough": 0.4,
+  "spec": 0.8,
+  "gamma": 0.8,
+  "body": [
+   230,
+   25,
+   30
+  ],
+  "leg": [
+   230,
+   230,
+   230
+  ],
+  "head_x": -8.125,
+  "head_hx": 3.3,
+  "head_hy": 3.625,
+  "thx_hx": 5.4,
+  "thx_hy": 4.0875,
+  "abd_x": 4.0,
+  "abd_hx": 3.4,
+  "abd_hy": 2.5,
+  "body_hz": 3.9,
+  "body_bevel": 1.0,
+  "jaw_l": 3.1,
+  "jaw_y": -0.45,
+  "jaw_h": 0.8,
+  "jaw_w": 1.2,
+  "ant_l": 4.3,
+  "ant_dx": -0.3,
+  "ant_w": 0.8,
+  "leg_w": 1.1125,
+  "leg_d": 0.8,
+  "leg_z": 4.5,
+  "leg_top": 3.9,
+  "ground": 8.5,
+  "foot_x1": -9.125,
+  "foot_x2": 0.875,
+  "foot_x3": 12.5,
+  "swing": 3.05,
+  "lift": 0.4,
+  "body_shape": "ball",
+  "coat": 0.5,
+  "knee_x1": -5.4375,
+  "knee_x2": 0.8125,
+  "knee_x3": 6.4375,
+  "knee_swing": 0.4,
+  "splay": 0.5
+ },
+ "sweep": [
+  {
+   "param": "yaw",
+   "start": 0,
+   "stop": 360,
+   "step": 10,
+   "period": 360
+  },
+  {
+   "param": "phase",
+   "start": 0,
+   "stop": 360,
+   "step": 30,
+   "period": 360
+  }
+ ],
+ "smooth": {
+  "yaw": "free",
+  "phase": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 5,
+    "min": -60,
+    "max": 420
+   },
+   "phase": {
+    "step": 20,
+    "min": -360,
+    "max": 720
+   },
+   "l1": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   },
+   "l2": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   },
+   "l3": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   },
+   "r1": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   },
+   "r2": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   },
+   "r3": {
+    "step": 2,
+    "min": -8,
+    "max": 8,
+    "init": 0
+   }
+  },
+  "rounds": 4,
+  "scale": 4,
+  "samples": 32
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 12,
+  "final": 256
+ },
+ "look": {
+  "frames": 10,
+  "passes": 2,
+  "samples": 48,
+  "params": {
+   "splay": [
+    0.0,
+    2.0,
+    4.0,
+    6.0
+   ]
+  },
+  "refine": {
+   "head_x": {
+    "step": 0.5,
+    "min": -12,
+    "max": -5,
+    "init": -8.125
+   },
+   "head_hx": {
+    "step": 0.3,
+    "min": 1.5,
+    "max": 4,
+    "init": 3.3
+   },
+   "head_hy": {
+    "step": 0.3,
+    "min": 1.8,
+    "max": 4,
+    "init": 3.625
+   },
+   "thx_hx": {
+    "step": 0.4,
+    "min": 2.5,
+    "max": 6,
+    "init": 5.4
+   },
+   "thx_hy": {
+    "step": 0.3,
+    "min": 2,
+    "max": 4.5,
+    "init": 4.0875
+   },
+   "abd_x": {
+    "step": 0.5,
+    "min": 4,
+    "max": 11,
+    "init": 4.0
+   },
+   "abd_hx": {
+    "step": 0.4,
+    "min": 2.5,
+    "max": 6,
+    "init": 3.4
+   },
+   "abd_hy": {
+    "step": 0.3,
+    "min": 2,
+    "max": 4.5,
+    "init": 2.5
+   },
+   "body_hz": {
+    "step": 0.3,
+    "min": 2,
+    "max": 4.5,
+    "init": 3.9
+   },
+   "jaw_l": {
+    "step": 0.4,
+    "min": 1.5,
+    "max": 6,
+    "init": 3.1
+   },
+   "jaw_y": {
+    "step": 0.3,
+    "min": -3,
+    "max": 0,
+    "init": -0.45
+   },
+   "ant_l": {
+    "step": 0.4,
+    "min": 1.5,
+    "max": 6,
+    "init": 4.3
+   },
+   "ant_dx": {
+    "step": 0.4,
+    "min": -2,
+    "max": 2,
+    "init": -0.3
+   },
+   "leg_w": {
+    "step": 0.15,
+    "min": 0.6,
+    "max": 1.6,
+    "init": 1.1125
+   },
+   "leg_z": {
+    "step": 0.3,
+    "min": 3,
+    "max": 6,
+    "init": 4.5
+   },
+   "leg_top": {
+    "step": 0.4,
+    "min": 1,
+    "max": 5,
+    "init": 3.9
+   },
+   "ground": {
+    "step": 0.4,
+    "min": 7,
+    "max": 11,
+    "init": 8.5
+   },
+   "foot_x1": {
+    "step": 0.5,
+    "min": -13,
+    "max": -3,
+    "init": -9.125
+   },
+   "foot_x2": {
+    "step": 0.5,
+    "min": -4,
+    "max": 5,
+    "init": 0.875
+   },
+   "foot_x3": {
+    "step": 0.5,
+    "min": 6,
+    "max": 15,
+    "init": 12.5
+   },
+   "swing": {
+    "step": 0.4,
+    "min": 0.5,
+    "max": 6,
+    "init": 3.05
+   },
+   "lift": {
+    "step": 0.2,
+    "min": 0,
+    "max": 2,
+    "init": 0.4
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9,
+    "init": 0.4
+   },
+   "spec": {
+    "step": 0.1,
+    "min": 0,
+    "max": 0.8,
+    "init": 0.8
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2,
+    "init": 0.8
+   },
+   "key": {
+    "step": 0.5,
+    "min": 1.5,
+    "max": 7,
+    "init": 2.625
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0,
+    "max": 0.4,
+    "init": 0.05
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0,
+    "max": 0.5,
+    "init": 0.115
+   },
+   "coat": {
+    "step": 0.1,
+    "min": 0.0,
+    "max": 1.0,
+    "init": 0.5
+   },
+   "knee_x1": {
+    "step": 0.5,
+    "min": -10,
+    "max": -2,
+    "init": -5.4375
+   },
+   "knee_x2": {
+    "step": 0.5,
+    "min": -3,
+    "max": 4,
+    "init": 0.8125
+   },
+   "knee_x3": {
+    "step": 0.5,
+    "min": 3,
+    "max": 11,
+    "init": 6.4375
+   },
+   "knee_swing": {
+    "step": 0.4,
+    "min": 0,
+    "max": 3,
+    "init": 0.4
+   },
+   "splay": {
+    "step": 0.5,
+    "min": 0.0,
+    "max": 8.0,
+    "init": 0.5
+   }
+  },
+  "refine_rounds": 8,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "prior": [
+  {
+   "frames": [
+    2,
+    17
+   ],
+   "param": "yaw",
+   "value": 0,
+   "tol": 20,
+   "period": 360
+  },
+  {
+   "frames": [
+    35,
+    50
+   ],
+   "param": "yaw",
+   "value": 180,
+   "tol": 20,
+   "period": 360
+  },
+  {
+   "frames": [
+    20,
+    20
+   ],
+   "param": "yaw",
+   "value": 13.8,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    21,
+    21
+   ],
+   "param": "yaw",
+   "value": 27.7,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    22,
+    22
+   ],
+   "param": "yaw",
+   "value": 41.5,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    23,
+    23
+   ],
+   "param": "yaw",
+   "value": 55.4,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    24,
+    24
+   ],
+   "param": "yaw",
+   "value": 69.2,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    25,
+    25
+   ],
+   "param": "yaw",
+   "value": 83.1,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    26,
+    26
+   ],
+   "param": "yaw",
+   "value": 96.9,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    27,
+    27
+   ],
+   "param": "yaw",
+   "value": 110.8,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    28,
+    28
+   ],
+   "param": "yaw",
+   "value": 124.6,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    29,
+    29
+   ],
+   "param": "yaw",
+   "value": 138.5,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    30,
+    30
+   ],
+   "param": "yaw",
+   "value": 152.3,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    31,
+    31
+   ],
+   "param": "yaw",
+   "value": 166.2,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    32,
+    32
+   ],
+   "param": "yaw",
+   "value": 180.0,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    33,
+    33
+   ],
+   "param": "yaw",
+   "value": 193.8,
+   "tol": 25,
+   "period": 360
+  }
+ ]
+}

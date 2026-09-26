@@ -45,10 +45,11 @@ def _pie_sector(name, fill, radius, z, mat, n=96, dome=0.11):
     return obj
 
 
-def build_clock(fill=0.25):
+def build_clock(fill=0.25, opts=None):
     """Blue pie-timer disc with a red wedge of fraction ``fill`` and a white pearl-stud bezel."""
+    opts = opts or {}
     C._clear()
-    blue = C._mat("clk_blue", C._srgb(0, 0, 189), rough=0.42, spec=0.3, coat=0.2)
+    blue = C._mat("clk_blue", C._srgb(*opts.get("blue", (0, 0, 189))), rough=0.42, spec=0.3, coat=0.2)
     # faint dark-blue emission keeps the disc from going black in shadow (matches (0,0,57) darks)
     bb = blue.node_tree.nodes.get("Principled BSDF")
     ec = bb.inputs.get("Emission Color"); es = bb.inputs.get("Emission Strength")
@@ -56,7 +57,7 @@ def build_clock(fill=0.25):
         ec.default_value = C._srgb(0, 0, 60)
     if es is not None:
         es.default_value = 0.05
-    red = C._mat("clk_red", C._srgb(183, 4, 6), rough=0.46, spec=0.22, coat=0.12)
+    red = C._mat("clk_red", C._srgb(*opts.get("red", (183, 4, 6))), rough=0.46, spec=0.22, coat=0.12)
     pearl = C._mat("clk_pearl", C._srgb(212, 212, 218), rough=0.3, spec=0.45, coat=0.35)
 
     # blue base disc (flat cylinder facing the camera; default cyl axis = +Z = toward cam), beveled rim
@@ -68,7 +69,8 @@ def build_clock(fill=0.25):
     bpy.ops.object.shade_smooth()
 
     # red pie wedge, laid just in front of the blue face (disc front face is at z = +0.10)
-    _pie_sector("clk_pie", fill, radius=0.80, z=0.12, mat=red)
+    _pie_sector("clk_pie", fill, radius=float(opts.get("pie_r", 0.80)), z=0.12, mat=red,
+                dome=float(opts.get("dome", 0.11)))
 
     # 12 white pearl studs around the rim, proud of the front face (frontmost layer)
     n_studs = 12
@@ -86,7 +88,7 @@ def build_clock(fill=0.25):
     bpy.ops.object.light_add(type='POINT', location=(-2.6, 3.0, 3.0))
     gl = bpy.context.active_object
     gl.name = "clk_glint"
-    gl.data.energy = 320
+    gl.data.energy = float(opts.get("glint_energy", 320))
     gl.data.shadow_soft_size = 0.5
 
 
@@ -102,7 +104,7 @@ def render(args):
 
 
 def _frames_setup(opts):
-    build_clock(float(opts.get("fill", 0.25)))       # per-frame option: f20 1/4 .. f23 full
+    build_clock(float(opts.get("fill", 0.25)), opts)  # per-frame option: f20 1/4 .. f23 full
     C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
     C.apply_look(opts)
     return {}

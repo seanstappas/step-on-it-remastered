@@ -12,7 +12,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 NBARS = 6                                    # a full creeper body = 6 stacked bars
 HALF = 1.0                                   # stack fills the full tile height (source f02 = full bleed)
@@ -108,3 +108,25 @@ def render(args):
     build_mblock(phase=phase)
     C.setup_scene(px, world_strength=0.15, fill_energy=0.16)
     return out
+
+
+def _frames_setup(opts):
+    build_mblock(phase=0.0)
+    C.setup_scene(256, world_strength=0.15, fill_energy=0.16)
+    C.apply_look(opts)
+    return {"opts": opts, "phase": 0.0}
+
+
+def _frames_pose(ctx, pose):
+    # the collapse is geometry (bars detach into balls), so each phase rebuilds the scene
+    p = float(pose.get("phase", 0.0))
+    if ctx["phase"] == p:
+        return False
+    ctx["phase"] = p
+    build_mblock(phase=p)
+    C.setup_scene(256, world_strength=0.15, fill_energy=0.16)
+    C.apply_look(ctx["opts"])
+    return True
+
+
+register_frames("mblock", _frames_setup, _frames_pose)

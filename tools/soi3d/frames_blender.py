@@ -48,8 +48,11 @@ def _settings(job):
     scn.render.use_persistent_data = True       # keep the BVH/kernels between the job's renders
     scn.render.image_settings.file_format = 'PNG'
     scn.render.image_settings.color_mode = 'RGBA'
-    cam = scn.camera
-    camj = job.get("camera", {})
+    _camera(job.get("camera", {}))
+
+
+def _camera(camj):
+    cam = bpy.context.scene.camera
     if "ortho_scale" in camj:
         cam.data.ortho_scale = float(camj["ortho_scale"])
     cam.location.x = float(camj.get("x", cam.location.x))
@@ -80,6 +83,7 @@ def main():
         if pose(ctx, it["pose"]) is True:                 # the pose REBUILT the scene (a phase-driven
             _use_gpu()                                    # builder): re-apply the job's render/camera
             _settings(job)
+        _camera(it.get("camera", job.get("camera", {})))   # a per-frame camera (sprite offset), else the job's
         scn.render.filepath = it["out"]
         bpy.ops.render.render(write_still=True)
     print("FRAMES_DONE %d" % len(job["items"]))

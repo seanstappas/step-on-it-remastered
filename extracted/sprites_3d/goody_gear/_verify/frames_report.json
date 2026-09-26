@@ -1,0 +1,45 @@
+{
+ "family": "goody_gear",
+ "source": "goody_sprites",
+ "frames": 2,
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 0.8816,
+ "iou_mean": 0.9113,
+ "de_mean": 11.058,
+ "de_max": 14.433,
+ "rows": [
+  {
+   "frame": 49,
+   "iou": 0.941,
+   "de": 7.683,
+   "de_raw": 10.868,
+   "best_src": 49,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.2614
+   ]
+  },
+  {
+   "frame": 50,
+   "iou": 0.8816,
+   "de": 14.433,
+   "de_raw": 20.973,
+   "best_src": 50,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    1.2811
+   ]
+  }
+ ]
+}

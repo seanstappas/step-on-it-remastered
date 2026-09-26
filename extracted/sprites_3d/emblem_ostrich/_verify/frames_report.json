@@ -1,0 +1,31 @@
+{
+ "family": "emblem_ostrich",
+ "source": "ostrich_sprites",
+ "frames": 1,
+ "gate": {
+  "iou": 0.9,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 1.0,
+ "iou_mean": 1.0,
+ "de_mean": 7.912,
+ "de_max": 7.912,
+ "rows": [
+  {
+   "frame": 34,
+   "iou": 1.0,
+   "de": 7.912,
+   "de_raw": 11.586,
+   "best_src": 34,
+   "rank_dist": 0,
+   "rank_gap": 0.0,
+   "pass": true,
+   "hd_iou_de": [
+    1.0,
+    0.9279
+   ]
+  }
+ ]
+}

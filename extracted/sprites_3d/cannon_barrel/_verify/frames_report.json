@@ -1,0 +1,37 @@
+{
+ "family": "cannon_barrel",
+ "source": "cannon_sprites",
+ "frames": 2,
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "failed": [],
+ "iou_min": 0.9726,
+ "iou_mean": 0.9726,
+ "de_mean": 14.652,
+ "de_max": 15.656,
+ "rows": [
+  {
+   "frame": 2,
+   "iou": 0.9726,
+   "de": 13.649,
+   "de_raw": 16.799,
+   "best_src": 2,
+   "rank_dist": 0,
+   "pass": true,
+   "hd_iou_de": null
+  },
+  {
+   "frame": 3,
+   "iou": 0.9726,
+   "de": 15.656,
+   "de_raw": 18.892,
+   "best_src": 2,
+   "rank_dist": 1,
+   "pass": true,
+   "hd_iou_de": null
+  }
+ ]
+}

@@ -1,0 +1,38 @@
+{
+ "status": "wip",
+ "source": "spin_ind_sprite_family",
+ "frames": {"range": [2, 31]},
+ "mode": "shield",
+ "note": "FAILS (IoU down to 0.53 edge-on). Motion solved: one turn over 30 frames, 12 deg/frame from f02 (widths match |cos|). Shape not: edge-on (f09/f10, f24/f25) the source is a uniform ~3 px wide from top to tip, yet at 60 deg (f27) the dips between the horns and the dome stay open -- neither a flat 3 px slab (fills the dips) nor a plate curved about the vertical axis (edge-on wedge) fits. Next: a LENS-thick plate (thick along the vertical centre line, thin at the left/right edges), or a winged-helmet reading of the object (the sheet's other half, f32-f61, is a winged shoe).",
+ "place_iou_w": 200,
+ "opts": {"world": 0.08, "key": 3.8, "fill": 0.1, "silver": [180, 180, 180], "thick": 0.7, "curve_r": 11.0},
+ "sweep": [{"param": "spin", "start": 0, "stop": 360, "step": 2, "period": 360}],
+ "smooth": {"spin": "fixed:0:12"},
+ "scale": 4,
+ "samples": {"sweep": 16, "final": 256},
+ "look": {
+  "frames": 10,
+  "passes": 2,
+  "samples": 64,
+  "params": {
+   "silver": [[180, 180, 180], [210, 210, 210], [235, 235, 235]],
+   "gold": [[164, 152, 115], [190, 150, 40], [220, 180, 60]],
+   "key_dir": [[-3.2, 3.2, 3.0], [-0.26, 0.70, 0.66], [-0.5, 0.5, 0.7]]
+  },
+  "refine": {
+   "thick": {"step": 0.15, "min": 0.3, "max": 1.6},
+   "curve_r": {"step": 1.0, "min": 7.5, "max": 30.0},
+   "bevel": {"step": 0.08, "min": 0.02, "max": 0.4, "init": 0.2},
+   "stud_r": {"step": 0.15, "min": 0.4, "max": 1.6, "init": 0.9},
+   "rough": {"step": 0.1, "min": 0.05, "max": 0.9, "init": 0.3},
+   "spec": {"step": 0.1, "min": 0.0, "max": 0.8, "init": 0.4},
+   "gamma": {"step": 0.1, "min": 0.5, "max": 1.2, "init": 1.0},
+   "key": {"step": 0.6, "min": 1.5, "max": 7.0},
+   "world": {"step": 0.04, "min": 0.0, "max": 0.4},
+   "fill": {"step": 0.06, "min": 0.0, "max": 0.5}
+  },
+  "refine_rounds": 8
+ },
+ "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
+ "fps": 15
+}
