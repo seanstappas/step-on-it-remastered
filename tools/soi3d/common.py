@@ -189,6 +189,7 @@ def setup_scene(px=256, add_cam=True, world_strength=0.11, fill_energy=0.14):
     # Standard view transform (NOT Blender 4.x's default AgX, which crushes/desaturates highlights &
     # colours) -> bright specular glints stay bright and hues stay saturated like the source pixel art.
     scn.view_settings.view_transform = 'Standard'
+    scn.view_settings.gamma = 1.0    # reset: apply_look's "gamma" must not leak into the next option group
     scn.render.film_transparent = True
     scn.render.resolution_x = px
     scn.render.resolution_y = px
@@ -198,17 +199,34 @@ def setup_scene(px=256, add_cam=True, world_strength=0.11, fill_energy=0.14):
 
 def apply_look(opts):
     """Frame-matched look knobs shared by every builder (tools/soi3d/framematch.py "look" stage):
-    "world" (ambient strength), "key" (top-left key sun energy), "fill" (lower-right fill energy).
-    Call AFTER setup_scene; absent keys keep setup_scene's values."""
+    "world" (ambient strength), "key" (top-left key sun energy), "fill" (lower-right fill energy),
+    "key_dir" ([x, y, z] direction TO the key sun; default (-3.2, 3.2, 3.0) = 45 deg top-left; measure a
+    source's with a Lambert fit on a plain sphere region), "gamma" (display gamma; < 1 = the harder
+    light falloff of some originals), "shadows" (false = no cast shadows). Call AFTER setup_scene; absent
+    keys keep setup_scene's values."""
     scn = bpy.context.scene
     if "world" in opts and scn.world is not None:
         scn.world.node_tree.nodes["Background"].inputs["Strength"].default_value = float(opts["world"])
     suns = sorted((o for o in bpy.data.objects if o.type == 'LIGHT' and o.data.type == 'SUN'),
                   key=lambda o: -o.data.energy)
+    if suns and "key_dir" in opts:
+        d = [float(v) for v in opts["key_dir"]]
+        n = math.sqrt(sum(v * v for v in d)) or 1.0
+        suns[0].location = tuple(v / n * 5.0 for v in d)
     if suns and "key" in opts:
         suns[0].data.energy = float(opts["key"])
     if len(suns) > 1 and "fill" in opts:
         suns[-1].data.energy = float(opts["fill"])
+    if "gamma" in opts:
+        scn.view_settings.gamma = float(opts["gamma"])
+    if not opts.get("shadows", True):
+        # "shadows": false = no CAST shadows (shading still follows N.L). Some originals were rendered
+        # without them: the ostrich's thin neck and legs stay lit under its head and body.
+        for o in bpy.data.objects:
+            if o.type == 'LIGHT':
+                o.data.use_shadow = False
+            elif o.type == 'MESH':
+                o.visible_shadow = False
 
 
 def render(out):

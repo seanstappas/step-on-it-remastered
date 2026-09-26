@@ -20,7 +20,7 @@ import math
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _faceted_gem(name, mats, r_eq=1.02, h_top=1.16, h_bot=1.16, girdle=0.13, n=4, offset=0.0,
@@ -137,3 +137,20 @@ def render(args):
     # are kept in-hue by the materials' own emission, not by white fill. Standard view transform.
     C.setup_scene(px, world_strength=0.07, fill_energy=0.09)
     return out
+
+
+def _frames_setup(opts):
+    build_gem(n=int(opts.get("n", 4)), offset=float(opts.get("offset", 0.0)), scheme=opts.get("scheme", "caps"),
+              h_cap=float(opts.get("h_cap", 1.0)), girdle=float(opts.get("girdle", 0.5)))
+    C.setup_scene(256, world_strength=0.07, fill_energy=0.09)
+    C.apply_look(opts)
+    return {"pivot": bpy.data.objects["pivot"]}
+
+
+def _frames_pose(ctx, pose):
+    # pose {"spin": deg about the vertical axis, "tilt_x": lean toward the camera}
+    ctx["pivot"].rotation_euler = (math.radians(float(pose.get("tilt_x", 0.0))),
+                                   math.radians(float(pose.get("spin", 0.0))), 0.0)
+
+
+register_frames("gem", _frames_setup, _frames_pose)

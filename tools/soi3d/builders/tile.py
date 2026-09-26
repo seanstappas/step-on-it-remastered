@@ -1,0 +1,408 @@
+"""soi3d.builders.tile -- every board BLOCK tile of block_sprites (one builder, `kind` per block type).
+
+A tile is a rounded, bevelled square slab lit from the top left like the originals. On top of it:
+  solid     nothing (white / red / green / blue / pink blocks)
+  ball      a glossy sphere of `color` sitting in a white frame tile
+  donut     a glossy torus of `color` in a white frame tile
+  inset     a recessed square panel of `color` in a white frame tile
+  texture   the top face carries an albedo image (`tex`, e.g. the camo / marble HD frame)
+  porthole  a grey metal tile with a round hole through it (black inside)
+  symbol    a raised red glyph (`symbol`, e.g. '?') on a `base`-coloured tile
+  arrows    the goody arrow tiles: four raised white arrows on an inset `color` panel, pointing "out"
+            (a '+' with heads at its ends) or "in" (heads meeting at the centre), `arrows_dir`
+  switch    the goody switch tiles: a raised white plate on an inset `color` panel with four gold studs and
+            a toggle (dark slot, white lever, gold U bracket, pin) at the bottom (`switch` "down") or,
+            mirrored, at the top ("up")
+  emblem    an enemy SPAWNER block (the last 32x32 frame of each nasty's sheet): a `base` red slab with a
+            silver bas-relief of the nasty; the relief's height field is the source frame's (`mask`, a PNG)
+            unsaturated "statue" pixels, blurred, so the statue keeps its exact outline
+  mesh      the cross-hatch net (0x197): two layers of diagonal bars over a dark backing
+Cracked frames, the four shatter quarters and the spawn squares are DERIVED from these renders by
+tools/soi3d/framematch.py ("derive"), exactly as the originals derive them from the whole block.
+"""
+import math
+import os
+
+import bpy
+
+from .. import common as C
+from .. import register, register_frames
+
+
+def _rgb(opts, key, default):
+    g = float(opts.get("gain", 1.0)) * float(opts.get(key + "_gain", 1.0))
+    c = opts.get(key, default)
+    return tuple(max(0, min(255, int(round(v * g)))) for v in c)
+
+
+def _slab(name, half, height, bevel, mat):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
+    tile = bpy.context.active_object
+    tile.name = name
+    tile.scale = (2 * half, 2 * half, height)
+    bev = tile.modifiers.new("bev", 'BEVEL')
+    bev.width = bevel
+    bev.segments = 6
+    tile.data.materials.append(mat)
+    return tile
+
+
+def _glossy(name, rgb, opts):
+    return C._mat(name, C._srgb(*rgb), rough=float(opts.get("f_rough", 0.25)), spec=0.5,
+                  coat=float(opts.get("f_coat", 0.5)))
+
+
+def _textured(name, path, opts):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    bsdf.inputs["Roughness"].default_value = 0.45
+    si = bsdf.inputs.get("Specular IOR Level")
+    if si is not None:
+        si.default_value = 0.2
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = bpy.data.images.load(path)
+    tex.extension = 'EXTEND'
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Location"].default_value = (0.5, 0.5, 0.0)          # the unit cube's local xy [-0.5, 0.5] -> uv
+    mp.inputs["Scale"].default_value = (1.0, 1.0, 1.0)
+    nt.links.new(coord.outputs["Object"], mp.inputs["Vector"])
+    nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
+    gain = nt.nodes.new("ShaderNodeMixRGB")
+    gain.blend_type = 'MULTIPLY'
+    gain.inputs["Fac"].default_value = 1.0
+    g = float(opts.get("tex_gain", 1.0))
+    gain.inputs["Color2"].default_value = (g, g, g, 1.0)
+    nt.links.new(tex.outputs["Color"], gain.inputs["Color1"])
+    nt.links.new(gain.outputs["Color"], bsdf.inputs["Base Color"])
+    emit = float(opts.get("tex_emit", 0.0))       # the source texture already carries its own shading
+    if emit > 0 and bsdf.inputs.get("Emission Color") is not None:
+        nt.links.new(gain.outputs["Color"], bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = emit
+    return mat
+
+
+def build_tile(opts):
+    C._clear()
+    kind = opts.get("kind", "solid")
+    half = float(opts.get("half", 0.96))
+    height = float(opts.get("height", 0.62))
+    bevel = float(opts.get("bevel", 0.16))
+    top = height / 2
+    base = _rgb(opts, "base", (214, 214, 214))
+    if kind == "texture" and opts.get("tex"):
+        body_mat = _textured("tex", opts["tex"], opts)
+    else:
+        body_mat = C._mat("base", C._srgb(*base), rough=float(opts.get("rough", 0.4)),
+                          spec=float(opts.get("base_spec", 0.25)))
+    if kind == "porthole":
+        tile = _slab("tile", half, height, bevel, body_mat)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=float(opts.get("hole_r", 0.62)), depth=4.0)
+        cut = bpy.context.active_object
+        m = tile.modifiers.new("hole", 'BOOLEAN')
+        m.operation = 'DIFFERENCE'
+        m.object = cut
+        bpy.context.view_layer.objects.active = tile
+        bpy.ops.object.modifier_apply(modifier="bev")
+        bpy.ops.object.modifier_apply(modifier="hole")
+        bpy.data.objects.remove(cut, do_unlink=True)
+        C._box("well", (0, 0, -top - 0.05), (2 * half - 0.1, 2 * half - 0.1, 0.05),
+               C._mat("dark", C._srgb(0, 0, 0), rough=1.0, spec=0.0), bevel=0.0)
+        return
+    if kind == "mesh":
+        C._box("backing", (0, 0, -0.2), (2 * half, 2 * half, 0.1),
+               C._mat("dark", C._srgb(*_rgb(opts, "back", (16, 16, 16))), rough=1.0, spec=0.0), bevel=0.0)
+        grey = C._mat("bar", C._srgb(*_rgb(opts, "color", (150, 150, 150))), rough=0.35, spec=0.4)
+        pitch = 2 * half / float(opts.get("cells", 2.0))
+        r = float(opts.get("bar_r", 0.07))
+        n = int(math.ceil(2 * half / pitch)) + 1
+        for layer, sgn in enumerate((1.0, -1.0)):          # lines y = sgn*x + c, clipped to the square
+            for i in range(-n, n + 1):
+                c = i * pitch * (1 if sgn > 0 else 1)
+                pts = []
+                for x in (-half, half):
+                    y = sgn * x + c
+                    if -half <= y <= half:
+                        pts.append((x, y))
+                for y in (-half, half):
+                    x = (y - c) * sgn
+                    if -half <= x <= half:
+                        pts.append((x, y))
+                pts = sorted(set((round(px, 6), round(py, 6)) for px, py in pts))
+                if len(pts) < 2:
+                    continue
+                (x0, y0), (x1, y1) = pts[0], pts[-1]
+                ln = math.hypot(x1 - x0, y1 - y0)
+                if ln < 1e-3:
+                    continue
+                bpy.ops.mesh.primitive_cylinder_add(vertices=20, radius=r, depth=ln,
+                                                    location=((x0 + x1) / 2, (y0 + y1) / 2, 0.06 * layer))
+                bar = bpy.context.active_object
+                bar.rotation_euler = (0, math.radians(90), math.atan2(y1 - y0, x1 - x0))
+                bar.data.materials.append(grey)
+                bpy.ops.object.shade_smooth()
+        return
+    tile = _slab("tile", half, height, bevel, body_mat)
+    col = _rgb(opts, "color", (200, 0, 0))
+    if kind == "emblem":
+        _emblem(opts, top, half)
+        return
+    if kind == "ball":
+        r = float(opts.get("ball_r", 0.6))
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=64, ring_count=32,
+                                             location=(0, 0, top - r * float(opts.get("sink", 0.35))))
+        ball = bpy.context.active_object
+        ball.data.materials.append(_glossy("feature", col, opts))
+        bpy.ops.object.shade_smooth()
+    elif kind == "donut":
+        R, t = float(opts.get("torus_R", 0.46)), float(opts.get("torus_r", 0.22))
+        bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=t, major_segments=64, minor_segments=24,
+                                         location=(0, 0, top))
+        tor = bpy.context.active_object
+        tor.data.materials.append(_glossy("feature", col, opts))
+        bpy.ops.object.shade_smooth()
+    elif kind in ("inset", "arrows", "switch") or (kind == "symbol" and opts.get("well")):
+        inner = float(opts.get("inner", 0.56))
+        floor_z = top - float(opts.get("depth", 0.22))
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, floor_z + 1.0))
+        cut = bpy.context.active_object
+        cut.scale = (2 * inner, 2 * inner, 2.0)
+        m = tile.modifiers.new("cut", 'BOOLEAN')
+        m.operation = 'DIFFERENCE'
+        m.object = cut
+        bpy.context.view_layer.objects.active = tile
+        bpy.ops.object.modifier_apply(modifier="bev")
+        bpy.ops.object.modifier_apply(modifier="cut")
+        bpy.data.objects.remove(cut, do_unlink=True)
+        pc = col if kind in ("inset", "arrows", "switch") else _rgb(opts, "well_col", tuple(int(v * 0.45) for v in base))
+        C._box("panel", (0, 0, floor_z - 0.02), (2 * inner - 0.02, 2 * inner - 0.02, 0.1),   # top 0.03 above the floor
+               C._mat("panel", C._srgb(*pc), rough=0.45, spec=0.15), bevel=0.02)
+        if kind == "symbol":
+            _glyph(opts, floor_z + 0.03, col)
+        elif kind == "arrows":
+            _arrows(opts, floor_z + 0.03, inner)
+        elif kind == "switch":
+            _switch(opts, floor_z + 0.03)
+    elif kind == "symbol":
+        _glyph(opts, top, col)
+
+
+SYM_FONTS = {"arial": r"C:\Windows\Fonts\arialbd.ttf", "arialblack": r"C:\Windows\Fonts\ariblk.ttf",
+             "verdana": r"C:\Windows\Fonts\verdanab.ttf", "georgia": r"C:\Windows\Fonts\georgiab.ttf"}
+
+
+def _glyph(opts, z, col):
+    """The raised symbol; optional sym_font / sym_x / sym_y / sym_sx / sym_sy (defaults = Times Bold, centred)."""
+    fp = SYM_FONTS.get(str(opts.get("sym_font", "")), C.DEFAULT_SIGN_FONT)
+    font = fp if os.path.exists(fp) else None
+    t = C._text(opts.get("symbol", "?"), z=z, mat=C._mat("sym", C._srgb(*col), rough=0.5, spec=0.2),
+                extrude=float(opts.get("sym_extrude", 0.06)), size=float(opts.get("sym_size", 1.5)), font=font)
+    t.location.x, t.location.y = float(opts.get("sym_x", 0.0)), float(opts.get("sym_y", 0.0))
+    t.scale = (float(opts.get("sym_sx", 1.0)), float(opts.get("sym_sy", 1.0)), 1.0)
+
+
+def _blur(m, s):
+    """Separable gaussian blur (sigma `s` px, zero padded) of a 2D numpy array."""
+    import numpy as np
+    r = int(math.ceil(2.5 * s))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / s) ** 2)
+    k /= k.sum()
+    h, w = m.shape
+    pad = np.pad(m, ((0, 0), (r, r)))
+    m = sum(k[i] * pad[:, i:i + w] for i in range(2 * r + 1))
+    pad = np.pad(m, ((r, r), (0, 0)))
+    return sum(k[i] * pad[i:i + h] for i in range(2 * r + 1))
+
+
+def _sfs_height(m, lum):
+    """Shape from shading for a statue lit from the top left: a bright pixel faces the light, so the height
+    RISES toward the lower right there. Integrates (luminance - the statue's mean) along every down-right
+    diagonal, each run of statue pixels starting and ending at the base (its drift spread linearly).
+    Returns the height in px per unit of luminance (2D numpy array, 0 outside the statue)."""
+    import numpy as np
+    h, w = m.shape
+    s = (lum - float(lum[m > 0].mean())) * math.sqrt(2.0) if m.any() else lum * 0
+    out = np.zeros_like(lum)
+    for k in range(-(h - 1), w):
+        ys = np.arange(max(0, -k), min(h, w - k))
+        run = []
+        for yy in list(ys) + [None]:
+            if yy is not None and m[yy, yy + k] > 0:
+                run.append((yy, yy + k))
+                continue
+            if run:
+                v = np.cumsum([s[p] for p in run])
+                n = len(run)
+                for i, p in enumerate(run):
+                    out[p] = v[i] - v[-1] * (i + 1) / n
+                run = []
+    return out
+
+
+def _emblem(opts, z0, half):
+    """The silver relief: a fine grid over the tile top whose outline is the source's statue mask (`mask`,
+    blurred by `relief_sigmas`[0], cut at `relief_thr`). Its height = `relief_h` x the mask blurred at every
+    `relief_sigmas` (an inflated, rounded bas-relief) + `sfs_gain` x a shape-from-shading height (_sfs_height)
+    of the statue's own shading, so the relief lit from the top left reproduces the original's light pattern."""
+    import bmesh
+    import numpy as np
+    img = bpy.data.images.load(opts["mask"])
+    w, h = img.size
+    px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1]      # row 0 = top
+    sat = px[..., :3].max(-1) - px[..., :3].min(-1)
+    m = ((sat < float(opts.get("statue_sat", 0.25))) & (px[..., 3] > 0.5)).astype(np.float32)
+    sig = [float(s) for s in opts.get("relief_sigmas", [0.7, 1.5, 3.0])]
+    cut = _blur(m, sig[0])
+    hf = sum(_blur(m, s) for s in sig) / len(sig)
+    hf /= max(float(hf.max()), 1e-3)
+    unit = 2 * half / max(w, h)                                                  # scene units per SD px
+    sfs = _blur(_sfs_height(m, px[..., :3].mean(-1)), float(opts.get("sfs_blur", 0.6))) * unit
+    n = int(opts.get("relief_res", 4)) * max(w, h)
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=n, y_subdivisions=n, size=2 * half, location=(0, 0, z0))
+    g = bpy.context.active_object
+    g.name = "relief"
+    hgt, thr, h0 = (float(opts.get("relief_h", 0.22)), float(opts.get("relief_thr", 0.4)),
+                    float(opts.get("relief_base", 0.15)))
+    sg = float(opts.get("sfs_gain", 2.0))
+
+    def at(a, u, t):
+        i, j = min(max(int(math.floor(t)), 0), h - 2), min(max(int(math.floor(u)), 0), w - 2)
+        fy, fx = min(max(t - i, 0.0), 1.0), min(max(u - j, 0.0), 1.0)
+        return (a[i, j] * (1 - fx) * (1 - fy) + a[i, j + 1] * fx * (1 - fy) + a[i + 1, j] * (1 - fx) * fy
+                + a[i + 1, j + 1] * fx * fy)
+
+    bm = bmesh.new()
+    bm.from_mesh(g.data)
+    drop = []
+    for v in bm.verts:
+        u, t = (v.co.x / (2 * half) + 0.5) * w - 0.5, (0.5 - v.co.y / (2 * half)) * h - 0.5   # pixel centres
+        if at(cut, u, t) < thr:
+            drop.append(v)
+        v.co.z = max(0.0, hgt * (h0 + (1 - h0) * at(hf, u, t)) + sg * at(sfs, u, t))
+    bmesh.ops.delete(bm, geom=drop, context='VERTS')
+    bm.to_mesh(g.data)
+    bm.free()
+    g.data.materials.append(C._mat("silver", C._srgb(*_rgb(opts, "silver", (225, 225, 230))),
+                                   rough=float(opts.get("silver_rough", 0.3)), spec=float(opts.get("silver_spec", 0.6))))
+    bpy.ops.object.shade_smooth()
+
+
+
+def _prism(name, pts, z0, h, mat, bevel):
+    """A flat polygon (xy points, counter-clockwise) extruded from z0 by h, with rounded edges."""
+    n = len(pts)
+    verts = [(x, y, z0) for x, y in pts] + [(x, y, z0 + h) for x, y in pts]
+    faces = [tuple(range(n - 1, -1, -1)), tuple(range(n, 2 * n))] + [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mat)
+    if bevel > 0:
+        m = o.modifiers.new("bev", 'BEVEL')
+        m.width = bevel
+        m.segments = 3
+        m.limit_method = 'ANGLE'
+    return o
+
+
+def _arrows(opts, z0, inner):
+    """Four raised arrows along +-x / +-y: "out" = shafts from the centre, heads at the panel edge;
+    "in" = shafts from the edge, heads meeting near the centre."""
+    f = lambda k, d: float(opts.get(k, d))
+    mat = C._mat("arrow", C._srgb(*_rgb(opts, "arrow_col", (235, 235, 235))), rough=f("arrow_rough", 0.35), spec=0.35)
+    sw, hw, hl, h = f("shaft_w", 0.18), f("head_w", 0.44), f("head_l", 0.3), f("arrow_h", 0.08)
+    reach, gap = inner * f("arrow_reach", 0.92), f("arrow_gap", 0.1)
+    out = opts.get("arrows_dir", "out") == "out"
+    for ang in (0.0, 90.0, 180.0, 270.0):
+        a = math.radians(ang)
+        ux, uy, vx, vy = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+        tip, back = (reach, 0.0) if out else (gap, reach)
+        neck = tip - hl if out else tip + hl                      # where the head meets the shaft
+        p = lambda r, s: (r * ux + s * vx, r * uy + s * vy)
+        r0, r1 = min(back, neck), max(back, neck)
+        _prism("shaft", [p(r0, -sw / 2), p(r1, -sw / 2), p(r1, sw / 2), p(r0, sw / 2)], z0, h, mat, h * 0.35)
+        head = [p(tip, 0.0), p(neck, hw / 2), p(neck, -hw / 2)] if out else [p(tip, 0.0), p(neck, -hw / 2), p(neck, hw / 2)]
+        _prism("head", head, z0, h, mat, h * 0.35)
+
+
+P = 0.06                                                   # units per SD pixel of a 32 px tile (half 0.96 = 16 px)
+
+
+def _pbox(name, c, half, bevel, mat):
+    """A rounded box centred at c with half-sizes `half` and edge radius `bevel`, all in SD pixels."""
+    bpy.ops.mesh.primitive_cube_add(size=2.0, location=tuple(v * P for v in c))
+    o = bpy.context.active_object
+    o.name = name
+    o.scale = tuple(v * P for v in half)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    m = o.modifiers.new("bevel", 'BEVEL')
+    m.width = min(bevel, *half) * P * 0.98
+    m.segments = 3
+    o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
+
+
+def _stud(name, c, r, fz, mat):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=r * P, segments=24, ring_count=12, location=tuple(v * P for v in c))
+    o = bpy.context.active_object
+    o.name = name
+    o.scale = (1.0, 1.0, fz)
+    o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
+
+
+def _switch(opts, z0):
+    """The switch plate and toggle, in SD pixels (x = column - 15.5, y = 15.5 - row). s = -1 puts the toggle
+    at the bottom ("down", e.g. f37), +1 mirrors it to the top ("up", f38); the studs mirror with it."""
+    f = lambda k, d: float(opts.get(k, d))
+    white = C._mat("plate", C._srgb(*_rgb(opts, "plate_col", (235, 235, 235))), rough=0.35, spec=0.35)
+    dark = C._mat("slot", C._srgb(*_rgb(opts, "slot_col", (22, 22, 22))), rough=0.7, spec=0.1)
+    gold = C._mat("gold", C._srgb(*_rgb(opts, "gold", (215, 175, 10))), rough=0.3, spec=0.6)
+    s = -1.0 if opts.get("switch", "down") == "down" else 1.0
+    z = z0 / P                                             # the panel top, in px
+    ph = f("plate_h", 2.0)
+    px, pw, phh = f("plate_x", 0.5), f("plate_hw", 8.3), f("plate_hh", 11.6)
+    _pbox("plate", (px, 0.0, z + ph / 2), (pw, phh, ph / 2), f("plate_bevel", 1.0), white)
+    top = z + ph
+    sx, sy, shw, shh = f("slot_x", 1.5), s * f("slot_y", 7.0), f("slot_hw", 5.0), f("slot_hh", 5.5)
+    _pbox("slot", (sx, sy, top + 0.02), (shw, shh, 0.05), 0.0, dark)
+    _pbox("lever", (f("lever_x", 1.0), s * f("lever_y", 3.5), top + 0.6), (f("lever_hw", 2.7), f("lever_hh", 2.0), 0.6), 0.5, white)
+    bx0, bx1, by0, by1, br = f("br_x0", -4.5), f("br_x1", 5.5), f("br_y0", 1.5), f("br_y1", 6.5), f("br_r", 0.6)
+    for bx in (bx0, bx1):
+        _pbox("bracket", (bx, s * (by0 + by1) / 2, top + br), (br, (by1 - by0) / 2 + br, br), br, gold)
+    _pbox("bracket", ((bx0 + bx1) / 2, s * by1, top + br), ((bx1 - bx0) / 2 + br, br, br), br, gold)
+    _stud("pin", ((bx0 + bx1) / 2, s * f("pin_y", 8.0), top + 0.3), f("pin_r", 1.0), 0.6, gold)
+    sr = f("stud_r", 1.4)
+    for bx in (bx0, bx1):
+        for yy in (0.0, -s * f("stud_y", 6.0)):
+            _stud("stud", (bx, yy, top + 0.2), sr, 0.55, gold)
+
+
+def _frames_setup(opts):
+    build_tile(opts)
+    C.setup_scene(256)
+    C.apply_look(opts)
+    return {}
+
+
+@register("tile")
+def render(args):
+    # tile <out.png> [px] [kind] [base r,g,b] [color r,g,b]
+    out = args[0]
+    px = int(args[1]) if len(args) > 1 else 256
+    o = {"kind": args[2] if len(args) > 2 else "solid"}
+    if len(args) > 3:
+        o["base"] = [int(v) for v in args[3].split(",")]
+    if len(args) > 4:
+        o["color"] = [int(v) for v in args[4].split(",")]
+    build_tile(o)
+    C.setup_scene(px)
+    return out
+
+
+register_frames("tile", _frames_setup, lambda ctx, pose: None)   # tiles are static (fixed frames)

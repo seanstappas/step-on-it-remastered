@@ -21,9 +21,10 @@ the X (phase 1). A soft emission gives the glow; a view-locked POST glint (apply
 import math
 
 import bpy
+import mathutils
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 SKIN = (233, 226, 215)
 SKIN_SHADOW = (150, 120, 96)
@@ -94,12 +95,15 @@ def _ring(name, tilt_deg, roll_deg, emit):
     return o
 
 
-def build_transporter(phase=None):
-    """Build the red teleport zap. phase None => the open-orbit hero still (f08); else drive the cycle."""
+def build_transporter(phase=None, open_frac=None, spread=50.0):
+    """Build the red teleport zap. phase None => the open-orbit hero still (f08); else drive the cycle.
+    `open_frac` (0 edge-on X .. 1 open orbit) overrides `phase` for the frame fit."""
     C._clear()
 
     # `open_frac` 0 -> edge-on crossed X ; 1 -> fully open orbit. phase 0..1 goes X->open->X.
-    if phase is None:
+    if open_frac is not None:
+        open_frac = max(0.0, min(1.0, open_frac))
+    elif phase is None:
         open_frac = 1.0
     else:
         phase = max(0.0, min(1.0, phase))
@@ -113,9 +117,82 @@ def build_transporter(phase=None):
 
     # edge-on (open 0): both tori stand vertical, rolled +/-45 -> a crossed X.
     # open (open 1):    both tori tilt forward toward the camera -> thick crossed ellipses (the orbit).
-    tilt = 90.0 - 50.0 * open_frac                     # 90 (edge-on) -> 40 (open, fat overlapping band)
+    tilt = 90.0 - spread * open_frac                   # 90 (edge-on) -> 40 (open, fat overlapping band)
     _ring("ringA", tilt, 45, emit)
     _ring("ringB", tilt, -45, emit)
+
+
+def _frames_setup(opts):
+    ctx = build_zap_px(opts)
+    C.setup_scene(256)
+    C.apply_look(opts)
+    return ctx
+
+
+def _frames_pose(ctx, pose):
+    # pose {"spin": deg, both rings about the vertical axis (0 = the edge-on X), "dim": head brightness}
+    th = math.radians(float(pose.get("spin", 0.0)))
+    for ring, sy, sgn in ctx["rings"]:
+        a = th * (sgn if ctx["counter"] else 1.0)
+        n = (math.cos(a), sy, -math.sin(a))
+        ring.rotation_euler = mathutils.Vector((0, 0, 1)).rotation_difference(mathutils.Vector(n).normalized()).to_euler()
+    dim = float(pose.get("dim", 1.0))
+    for mat, rgb, strength in ctx["head_mats"]:
+        b = mat.node_tree.nodes.get("Principled BSDF")
+        b.inputs["Base Color"].default_value = C._srgb(*(v * dim for v in rgb))
+        es = b.inputs.get("Emission Strength")
+        if es is not None:
+            es.default_value = strength * dim
+
+
+S = 0.05  # Blender units per SD pixel: the 40 px wide zap must fit the sweep camera's +-1.07 units
+
+
+def build_zap_px(opts):
+    """The zap measured on f02 (crossed) and f09 (open): a HEAD (radius ~9 px: skin face, brown hair on
+    top, blue eyes at (-4, +1.5) / (+5, +1.5) px, a RED smile ~7 px below the centre) inside two red TORI
+    (major ~17 px, tube ~3 px) whose normals are (cos t, +-1, -sin t)/sqrt2: at t = 0 both are edge-on
+    along the diagonals (the X), at t = 90 both are tilted 45 deg about X and outline the same wide
+    ellipse (40 x 31); 15 frames = a half turn. The head DIMS (dithered in the source) as the rings close."""
+    C._clear()
+    skin_rgb = tuple(opts.get("skin", SKIN))
+    skin = _emit(C._mat("tp_skin", C._srgb(*skin_rgb), rough=0.55, spec=0.15), skin_rgb,
+                 float(opts.get("skin_emit", 0.35)))
+    hr = float(opts.get("head_r", 9.0)) * S
+    _sphere("head", (0, 0, 0), hr, skin, squash=(1.0, float(opts.get("head_sy", 1.05)), 0.85))
+    hair_rgb = tuple(opts.get("hair", HAIR))
+    hair = C._mat("tp_hair", C._srgb(*hair_rgb), rough=0.7, spec=0.15)
+    _sphere("hair", (0, float(opts.get("hair_y", 2.2)) * S, -0.8 * S), hr * 1.0, hair,
+            squash=(1.02, float(opts.get("hair_sy", 0.8)), 0.95))
+    eye_rgb = tuple(opts.get("eye", (40, 40, 230)))
+    eye = _emit(C._mat("tp_eye", C._srgb(*eye_rgb), rough=0.3, spec=0.4), eye_rgb, 0.2)
+    ey, er = float(opts.get("eye_y", 1.5)) * S, float(opts.get("eye_r", 1.6)) * S
+    for ex in (-4.0, 5.0):
+        x = (ex + float(opts.get("eye_dx", 0.0))) * S
+        _sphere("eye", (x, ey, math.sqrt(max(0.0, hr * hr * 0.72 - x * x - ey * ey))), er, eye, squash=(1.2, 1, 0.6))
+    mouth_rgb = tuple(opts.get("mouth", (200, 0, 0)))
+    mouth = C._mat("tp_mouth", C._srgb(*mouth_rgb), rough=0.5, spec=0.2)
+    my = -float(opts.get("mouth_y", 7.0)) * S
+    _sphere("mouth", (-0.5 * S, my, math.sqrt(max(0.0, hr * hr * 0.72 - my * my))), 3.2 * S, mouth,
+            squash=(1.3, 0.45, 0.4))
+    ring_rgb = tuple(opts.get("ring", RING))
+    ring_mat = _emit(C._mat("tp_ring", C._srgb(*ring_rgb), rough=float(opts.get("ring_rough", 0.35)), spec=0.1),
+                     ring_rgb, float(opts.get("ring_emit", 0.05)))
+    rings = []
+    for sy, sgn in ((1.0, 1.0), (-1.0, -1.0)):
+        bpy.ops.mesh.primitive_torus_add(major_radius=float(opts.get("ring_R", 17.0)) * S,
+                                         minor_radius=float(opts.get("ring_r", 3.0)) * S,
+                                         major_segments=72, minor_segments=20, location=(0, 0, 0))
+        o = bpy.context.active_object
+        bpy.ops.object.shade_smooth()
+        o.data.materials.append(ring_mat)
+        rings.append((o, sy, sgn))
+    return {"rings": rings, "counter": bool(opts.get("counter", False)),
+            "head_mats": [(skin, skin_rgb, float(opts.get("skin_emit", 0.35))), (hair, hair_rgb, 0.0),
+                          (eye, eye_rgb, 0.2), (mouth, mouth_rgb, 0.0)]}
+
+
+register_frames("transporter", _frames_setup, _frames_pose)
 
 
 @register("transporter")

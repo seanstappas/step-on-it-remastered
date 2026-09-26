@@ -10,7 +10,7 @@ import os
 import bpy
 
 from .. import common as C
-from .. import register
+from .. import register, register_frames
 
 
 def _octagon(name, radius, depth, z, mat, bevel=0.03, rot=math.pi / 8):
@@ -130,3 +130,54 @@ def render(args):
     build_sign(kind, accent, font)
     C.setup_scene(px)
     return out
+
+
+def build_flip_sign(opts):
+    """The Stop/Go FLIP tile (Stop_Go_sprite_family, 5 groups x 8 frames): a static square bezel in the
+    group's colour around a black well, and inside it a thick point-top OCTAGONAL disc on a vertical
+    hinge -- white edge, red 'Stop' face in front, green 'Go' face on the back. Returns the disc pivot."""
+    C._clear()
+    font = C.DEFAULT_SIGN_FONT if os.path.exists(C.DEFAULT_SIGN_FONT) else None
+    bez = C._mat("frame", C._srgb(*opts.get("bezel", (198, 0, 0))), rough=0.5, spec=0.05)
+    black = C._mat("black", C._srgb(0, 0, 0), rough=1.0, spec=0.0)
+    white = C._mat("white", C._srgb(*opts.get("white", (235, 235, 235))), rough=0.3, spec=0.35)
+    stop = C._mat("stop", C._srgb(*opts.get("stop", (198, 0, 0))), rough=0.45, spec=0.0)
+    go = C._mat("go", C._srgb(*opts.get("go", (0, 150, 0))), rough=0.45, spec=0.0)
+    txt = C._mat("txt", C._srgb(255, 255, 255), rough=0.4, spec=0.2)
+    C._box("field", (0, 0, 0.0), (1.72, 1.72, 0.36), mat=black, bevel=0.02)
+    _border("bezel", half=1.10, thick=float(opts.get("bezel_thick", 0.32)), z0=0.0, ztop=0.58, mat=bez, bevel=0.03)
+    bpy.ops.object.empty_add(location=(0, 0, float(opts.get("disc_z", 0.34))))
+    pivot = bpy.context.active_object
+    pivot.name = "pivot"
+    r = float(opts.get("disc_r", 0.70))
+    t = float(opts.get("disc_t", 0.20))
+    inset = float(opts.get("rim", 0.08))
+    parts = [_octagon("disc", radius=r, depth=t, z=0.0, mat=white, bevel=0.03, rot=0.0),
+             _octagon("stopface", radius=r - inset, depth=0.02, z=t / 2 + 0.005, mat=stop, bevel=0.0, rot=0.0),
+             _octagon("goface", radius=r - inset, depth=0.02, z=-t / 2 - 0.005, mat=go, bevel=0.0, rot=0.0)]
+    st = C._text("Stop", z=t / 2 + 0.015, mat=txt, extrude=0.02, size=float(opts.get("stop_size", 0.5)), font=font)
+    gt = C._text("Go", z=0.0, mat=txt, extrude=0.02, size=float(opts.get("go_size", 0.62)), font=font)
+    gt.rotation_euler = (0.0, math.pi, 0.0)            # reads correctly once the disc has flipped
+    gt.location = (0.0, 0.0, -t / 2 - 0.015)
+    parts += [st, gt]
+    for o in parts:
+        o.parent = pivot
+        o.matrix_parent_inverse.identity()
+        if o.name.startswith("disc") or o.name.endswith("face"):
+            o.location = (0.0, 0.0, o.location.z)
+    return pivot
+
+
+def _flip_setup(opts):
+    pivot = build_flip_sign(opts)
+    C.setup_scene(256)
+    C.apply_look(opts)
+    return {"pivot": pivot}
+
+
+def _flip_pose(ctx, pose):
+    # pose {"flip": deg about the vertical hinge; 0 = Stop face-on, 180 = Go face-on}
+    ctx["pivot"].rotation_euler = (0.0, math.radians(float(pose.get("flip", 0.0))), 0.0)
+
+
+register_frames("sign_flip", _flip_setup, _flip_pose)
