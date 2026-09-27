@@ -1,47 +1,286 @@
 {
  "status": "published",
  "source": "transporter",
- "frames": {"range": [2, 16]},
+ "frames": {
+  "range": [
+   2,
+   16
+  ]
+ },
  "mode": "transporter",
  "note": "PASS (15 frames, IoU min 0.858, dE mean 11.8 max 14.8): two tori (major 17 px, tube 2.5 px) round a head, normals (cos t, +-1, -sin t)/sqrt2 turning 12 deg/frame -- the edge-on X at f02 opens into one wide ellipse at f09/f10 and closes again; the head's brightness per frame (optim 'dim') stands in for the source's dither fade. The model had been larger than the sweep camera (cropped renders broke the first fit).",
  "place_iou_w": 200,
- "opts": {"world": 0.1, "key": 3.8, "fill": 0.1},
- "sweep": [{"param": "spin", "start": 0, "stop": 180, "step": 2, "period": 180}],
- "smooth": {"spin": "loop"},
- "optim": {"params": {"dim": {"step": 0.15, "min": 0.3, "max": 1.2, "init": 1.0}}, "rounds": 6, "scale": 2, "samples": 16},
+ "opts": {
+  "world": 0.06,
+  "key": 3.875,
+  "fill": 0.04,
+  "ring": [
+   200,
+   0,
+   0
+  ],
+  "skin": [
+   240,
+   210,
+   190
+  ],
+  "ring_R": 17.4,
+  "ring_r": 2.5,
+  "head_r": 10.125,
+  "head_sy": 1.0,
+  "hair_y": 3.95,
+  "hair_sy": 0.71,
+  "eye_y": 1.75,
+  "eye_r": 1.45,
+  "mouth_y": 6.0,
+  "skin_emit": 0.1,
+  "ring_emit": 0.0563,
+  "ring_rough": 0.05,
+  "gamma": 0.8625,
+  "eye_dx": -0.25,
+  "hair_z": -2.2
+ },
+ "sweep": [
+  {
+   "param": "spin",
+   "start": 0,
+   "stop": 180,
+   "step": 2,
+   "period": 180
+  }
+ ],
+ "smooth": {
+  "spin": "loop"
+ },
+ "optim": {
+  "params": {
+   "dim": {
+    "step": 0.15,
+    "min": 0.3,
+    "max": 1.2,
+    "init": 1.0
+   }
+  },
+  "rounds": 6,
+  "scale": 2,
+  "samples": 16
+ },
  "scale": 4,
- "samples": {"sweep": 16, "final": 256},
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "samples": {
+  "sweep": 16,
+  "final": 256
+ },
  "look": {
   "frames": 6,
   "passes": 2,
   "samples": 64,
+  "detail_w": 0.5,
   "params": {
-   "counter": [false, true],
-   "ring": [[200, 0, 0], [240, 0, 0], [255, 20, 20]],
-   "skin": [[233, 226, 215], [240, 210, 190], [250, 235, 220]],
-   "hair": [[110, 74, 46], [80, 50, 30], [140, 95, 60]],
-   "key_dir": [[-3.2, 3.2, 3.0], [-0.26, 0.70, 0.66], [-0.5, 0.5, 0.7]]
+   "counter": [
+    false,
+    true
+   ],
+   "ring": [
+    [
+     200,
+     0,
+     0
+    ],
+    [
+     240,
+     0,
+     0
+    ],
+    [
+     255,
+     20,
+     20
+    ]
+   ],
+   "skin": [
+    [
+     233,
+     226,
+     215
+    ],
+    [
+     240,
+     210,
+     190
+    ],
+    [
+     250,
+     235,
+     220
+    ]
+   ],
+   "hair": [
+    [
+     110,
+     74,
+     46
+    ],
+    [
+     80,
+     50,
+     30
+    ],
+    [
+     140,
+     95,
+     60
+    ]
+   ],
+   "key_dir": [
+    [
+     -3.2,
+     3.2,
+     3.0
+    ],
+    [
+     -0.26,
+     0.7,
+     0.66
+    ],
+    [
+     -0.5,
+     0.5,
+     0.7
+    ]
+   ]
   },
   "refine": {
-   "ring_R": {"step": 0.8, "min": 13.0, "max": 21.0, "init": 17.0},
-   "ring_r": {"step": 0.4, "min": 1.5, "max": 5.0, "init": 3.0},
-   "head_r": {"step": 0.5, "min": 6.0, "max": 11.0, "init": 9.0},
-   "head_sy": {"step": 0.05, "min": 0.8, "max": 1.3, "init": 1.05},
-   "hair_y": {"step": 0.5, "min": 0.0, "max": 5.0, "init": 2.2},
-   "hair_sy": {"step": 0.06, "min": 0.5, "max": 1.1, "init": 0.8},
-   "eye_y": {"step": 0.5, "min": -1.0, "max": 4.0, "init": 1.5},
-   "eye_r": {"step": 0.3, "min": 0.8, "max": 2.6, "init": 1.6},
-   "mouth_y": {"step": 0.5, "min": 4.0, "max": 9.0, "init": 7.0},
-   "skin_emit": {"step": 0.1, "min": 0.0, "max": 1.0, "init": 0.35},
-   "ring_emit": {"step": 0.05, "min": 0.0, "max": 0.4, "init": 0.05},
-   "ring_rough": {"step": 0.1, "min": 0.05, "max": 0.9, "init": 0.35},
-   "gamma": {"step": 0.1, "min": 0.5, "max": 1.2, "init": 1.0},
-   "key": {"step": 0.6, "min": 1.5, "max": 7.0},
-   "world": {"step": 0.04, "min": 0.0, "max": 0.4},
-   "fill": {"step": 0.06, "min": 0.0, "max": 0.5}
+   "ring_R": {
+    "step": 0.8,
+    "min": 13.0,
+    "max": 21.0,
+    "init": 17.4
+   },
+   "ring_r": {
+    "step": 0.4,
+    "min": 1.5,
+    "max": 5.0,
+    "init": 2.5
+   },
+   "head_r": {
+    "step": 0.5,
+    "min": 6.0,
+    "max": 11.0,
+    "init": 10.125
+   },
+   "head_sy": {
+    "step": 0.05,
+    "min": 0.8,
+    "max": 1.3,
+    "init": 1.0
+   },
+   "hair_y": {
+    "step": 0.5,
+    "min": 0.0,
+    "max": 8.0,
+    "init": 3.95
+   },
+   "hair_sy": {
+    "step": 0.06,
+    "min": 0.4,
+    "max": 1.1,
+    "init": 0.71
+   },
+   "eye_dx": {
+    "step": 0.5,
+    "min": -2.5,
+    "max": 2.5,
+    "init": -0.25
+   },
+   "hair_z": {
+    "step": 0.8,
+    "min": -6.0,
+    "max": 0.0,
+    "init": -2.2
+   },
+   "eye_y": {
+    "step": 0.5,
+    "min": -1.0,
+    "max": 4.0,
+    "init": 1.75
+   },
+   "eye_r": {
+    "step": 0.3,
+    "min": 0.8,
+    "max": 2.6,
+    "init": 1.45
+   },
+   "mouth_y": {
+    "step": 0.5,
+    "min": 4.0,
+    "max": 9.0,
+    "init": 6.0
+   },
+   "skin_emit": {
+    "step": 0.1,
+    "min": 0.0,
+    "max": 1.0,
+    "init": 0.1
+   },
+   "ring_emit": {
+    "step": 0.05,
+    "min": 0.0,
+    "max": 0.4,
+    "init": 0.0563
+   },
+   "ring_rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9,
+    "init": 0.05
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2,
+    "init": 0.8625
+   },
+   "key": {
+    "step": 0.6,
+    "min": 1.5,
+    "max": 7.0,
+    "init": 3.875
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0.0,
+    "max": 0.4,
+    "init": 0.06
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0.0,
+    "max": 0.5,
+    "init": 0.04
+   }
   },
   "refine_rounds": 8
  },
- "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
- "fps": 15
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "tweens": {
+  "n": 2,
+  "cycles": [
+   [
+    2,
+    14
+   ]
+  ]
+ }
 }

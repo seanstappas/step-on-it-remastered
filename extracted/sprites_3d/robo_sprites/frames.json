@@ -8,7 +8,7 @@
   ]
  },
  "mode": "robo",
- "note": "WIP: robo.py cylinders plateau at IoU 0.856 / dE 16.6-16.9 over many variants (glossy/saturated reds rejected; bigger white face plate, hips and knee pads chosen by the look but no IoU gain). The renders are not thinner or fatter (1 px dilation/erosion only lowers IoU; pixel counts match), so the misfit is pose/shape: next compare per-frame limb masks. Round 10: TWO EYES (robo.py visor_split: white boxes at +-eye_z with a red gap, face-on f58) replace the wide visor, look-tuned (eye_z 1.8, eye_dy 1.2, eye_rx 0.7, eye_ry 1.6, eye_rz 0.7); with the +-1 px shift hops optimfail went 57 -> 74/80. A colour-only look (red 185-245, white 200-245, light + specular refine, failing frames scored) moved nothing (15.048 -> 15.048): the washed-out red in f46 (175,0,1 -> 124,46,46) is the downsample mixing our white rings/eyes/fists into pixels the source keeps pure red, not the material. PUBLISHED round 10 (80 frames; IoU min 0.861, dE mean 14.4). Documented gate dE 17.5 (as BP_run): f46 (17.1), f60, f61, f68 (16.5) keep the downsample mix of the white rings/eyes/fists into pixels the source keeps pure red after the shift hops, the IoU-margin fix and a colour-only look; the other 76 frames are <= 16.0.",
+ "note": "WIP: robo.py cylinders plateau at IoU 0.856 / dE 16.6-16.9 over many variants (glossy/saturated reds rejected; bigger white face plate, hips and knee pads chosen by the look but no IoU gain). The renders are not thinner or fatter (1 px dilation/erosion only lowers IoU; pixel counts match), so the misfit is pose/shape: next compare per-frame limb masks. Round 10: TWO EYES (robo.py visor_split: white boxes at +-eye_z with a red gap, face-on f58) replace the wide visor, look-tuned (eye_z 1.8, eye_dy 1.2, eye_rx 0.7, eye_ry 1.6, eye_rz 0.7); with the +-1 px shift hops optimfail went 57 -> 74/80. A colour-only look (red 185-245, white 200-245, light + specular refine, failing frames scored) moved nothing (15.048 -> 15.048): the washed-out red in f46 (175,0,1 -> 124,46,46) is the downsample mixing our white rings/eyes/fists into pixels the source keeps pure red, not the material. PUBLISHED round 10 (80 frames; IoU min 0.861, dE mean 14.4). Documented gate dE 17.5 (as BP_run): f46 (17.1), f60, f61, f68 (16.5) keep the downsample mix of the white rings/eyes/fists into pixels the source keeps pure red after the shift hops, the IoU-margin fix and a colour-only look; the other 76 frames are <= 16.0. Round 11 (detail audit): the head is a red helmet with a WHITE FACE PLATE carrying a red T (centre stripe from the crown + crossbar) and a white ear stud each side (face-on f58, side views f02/f20) -> robo.py face_plate (face-only look via SOI3D_LOOK_KEYS), red neck: missed-detail px 596 -> 326, dE mean 14.39 -> 14.05, max 16.93.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 3,
@@ -99,18 +99,27 @@
   "torso_h": 8.8,
   "torso_r": 3.375,
   "collar_h": 0.8,
+  "neck_red": true,
   "head_h": 7.625,
   "head_bevel": 1.8375,
   "visor_ry": 2.1,
   "visor_rz": 2.9,
   "ring_h": 1.8,
+  "face_plate": true,
   "visor_split": true,
   "eye_z": 1.8,
   "eye_fx": 1.0,
   "eye_dy": 1.2,
   "eye_rx": 0.7,
   "eye_ry": 1.6,
-  "eye_rz": 0.7
+  "eye_rz": 0.7,
+  "face_h": 5.0,
+  "face_dy": 0.0,
+  "face_deg": 44.0,
+  "stripe_deg": 8.0,
+  "bar_dy": -0.5,
+  "bar_h": 1.8,
+  "bar_deg": 36.0
  },
  "sweep": [
   {
@@ -244,6 +253,48 @@
    ]
   },
   "refine": {
+   "face_h": {
+    "step": 0.5,
+    "min": 3.0,
+    "max": 7.0,
+    "init": 5.0
+   },
+   "face_dy": {
+    "step": 0.3,
+    "min": -1.5,
+    "max": 1.0,
+    "init": 0.0
+   },
+   "face_deg": {
+    "step": 8.0,
+    "min": 35.0,
+    "max": 85.0,
+    "init": 44.0
+   },
+   "stripe_deg": {
+    "step": 3.0,
+    "min": 3.0,
+    "max": 20.0,
+    "init": 8.0
+   },
+   "bar_dy": {
+    "step": 0.3,
+    "min": -2.0,
+    "max": 1.0,
+    "init": -0.5
+   },
+   "bar_h": {
+    "step": 0.3,
+    "min": 0.6,
+    "max": 3.0,
+    "init": 1.8
+   },
+   "bar_deg": {
+    "step": 6.0,
+    "min": 12.0,
+    "max": 60.0,
+    "init": 36.0
+   },
    "neck_y": {
     "step": 0.4,
     "min": 9,
@@ -507,5 +558,32 @@
   "de": 17.5,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 4,
+  "cycles": [
+   [
+    34,
+    49
+   ],
+   [
+    66,
+    81
+   ]
+  ],
+  "runs": [
+   [
+    50,
+    65
+   ],
+   [
+    2,
+    17
+   ],
+   [
+    18,
+    33
+   ]
+  ]
+ }
 }

@@ -15,7 +15,7 @@ from .. import common as C
 from .. import register, register_frames
 
 
-def _rim_ring(name, r_out, r_minor, z, mat, seg=48, ring=12):
+def _rim_ring(name, r_out, r_minor, z, mat, seg=48, ring=12, fz=0.5):
     """A raised torus rim hugging the front face -> the coin's proud border ring."""
     bpy.ops.mesh.primitive_torus_add(major_radius=r_out - r_minor, minor_radius=r_minor,
                                      major_segments=seg, minor_segments=ring,
@@ -23,15 +23,19 @@ def _rim_ring(name, r_out, r_minor, z, mat, seg=48, ring=12):
     obj = bpy.context.active_object
     obj.name = name
     obj.rotation_euler = (0, 0, 0)     # torus lies in XY -> ring faces the camera
-    obj.scale = (1, 1, 0.5)            # flatten so it sits low on the face, not a fat donut
+    obj.scale = (1, 1, fz)             # flatten so it sits low on the face, not a fat donut
     obj.data.materials.append(mat)
     bpy.ops.object.shade_smooth()
     return obj
 
 
-def build_coin(color=(183, 150, 0), spin=0.0, kind="gold"):
+def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
     """A `kind` ('gold'|'silver') coin, `color` = its base metal RGB (0..255). `spin` = degrees about
-    the vertical Y axis for the flip animation (0 = face-on)."""
+    the vertical Y axis for the flip animation (0 = face-on). opts: "glyph_size", "glyph_extrude",
+    "glyph_dark" (the '$' / rim metal gain) and "groove_r" (> 0 adds a dark engraved ring of that radius,
+    "groove_w" wide, "groove_dark" gain, inside the rim)."""
+    opts = opts or {}
+    f = lambda k, d: float(opts.get(k, d))
     C._clear()
     # Semi-matte metal token: dielectric base (no black metallic wash under the dim world) + a light
     # clearcoat for a controlled sheen. A faint in-hue emission keeps the shadowed half dark-METAL,
@@ -46,7 +50,7 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold"):
     if es is not None:
         es.default_value = 0.05
     # a slightly DARKER engraved-face metal for the '$' and rim so they read as relief
-    face_dark = C._mat("coin_dk", C._srgb(*tuple(int(c * 0.72) for c in color)),
+    face_dark = C._mat("coin_dk", C._srgb(*tuple(int(c * f("glyph_dark", 0.72)) for c in color)),
                        rough=0.42, metal=0.0, spec=0.15, coat=0.2)
 
     pivot = None
@@ -65,13 +69,25 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold"):
     bpy.ops.object.shade_smooth()
 
     # raised outer RIM ring on the FRONT face (z = +half depth)
-    rim = _rim_ring("coin_rim", r_out=0.86, r_minor=0.07, z=0.085, mat=face_dark)
+    rim = _rim_ring("coin_rim", r_out=0.86, r_minor=f("rim_minor", 0.07), z=0.085, mat=face_dark, fz=f("rim_fz", 0.5))
 
     # embossed Times-Bold '$' on the front face
     font = C.DEFAULT_SIGN_FONT if os.path.exists(C.DEFAULT_SIGN_FONT) else None
-    glyph = C._text("$", z=0.085, mat=face_dark, extrude=0.05, size=1.15, font=font)
+    glyph = C._text("$", z=0.085, mat=face_dark, extrude=f("glyph_extrude", 0.05), size=f("glyph_size", 1.15),
+                    font=font)
+    parts = [body, rim, glyph]
+    if f("groove_r", 0.0) > 0:                                        # the engraved ring inside the rim
+        gm = C._mat("coin_groove", C._srgb(*tuple(int(c * f("groove_dark", 0.35)) for c in color)),
+                    rough=0.6, metal=0.0, spec=0.05)
+        bpy.ops.mesh.primitive_torus_add(major_radius=f("groove_r", 0.7), minor_radius=f("groove_w", 0.03),
+                                         major_segments=64, minor_segments=8, location=(0, 0, 0.085))
+        groove = bpy.context.active_object
+        groove.name = "coin_groove"
+        groove.scale = (1, 1, 0.3)
+        groove.data.materials.append(gm)
+        parts.append(groove)
 
-    for o in (body, rim, glyph):
+    for o in parts:
         o.parent = pivot
         o.matrix_parent_inverse.identity()
     pivot.rotation_euler = (0, math.radians(spin), 0)
@@ -100,7 +116,7 @@ def render(args):
 def _frames_setup(opts):
     kind = opts.get("kind", "gold")
     color = tuple(opts.get("color", (172, 172, 172) if kind == "silver" else (185, 150, 0)))
-    build_coin(color=color, kind=kind)
+    build_coin(color=color, kind=kind, opts=opts)
     C.setup_scene(256, world_strength=0.17, fill_energy=0.18)
     C.apply_look(opts)
     return {"pivot": bpy.data.objects["pivot"]}

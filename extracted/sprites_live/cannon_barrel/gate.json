@@ -1,0 +1,13 @@
+{
+ "sheet": "cannon_sprites",
+ "family": "cannon_barrel",
+ "frames": [
+  2,
+  3
+ ],
+ "pass": true,
+ "iou_min": 0.9687,
+ "de_mean": 13.858,
+ "de_max": 15.009,
+ "cycles_de_mean": 14.653
+}

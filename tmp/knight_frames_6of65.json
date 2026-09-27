@@ -1,0 +1,344 @@
+{
+ "status": "wip",
+ "source": "knight_sprites",
+ "frames": {
+  "range": [
+   2,
+   66
+  ]
+ },
+ "mode": "knight",
+ "note": "Knight f02-f66 (knight.py), WIP: re-proportioned from f02 per-row extents (arms 24 px to the gauntlets, helmet 9 rows, flat pauldrons inside the arms, legs to y -22) + leg stance. Best: sweep fit optim look optim -> IoU 0.739 / dE 20.6 (standing f02-f13 0.80-0.84; the turned sword swing f14-f50 0.62-0.75; the orb f51-f65 dE 22-32). The placement is right (the fixed scale descent moved k only 2%); the swing arm/sword and the 3/4 turn are the gap. Round 10: fm_diag f02 -- the source armour is full of bright vertical highlight strokes (177-209 grey, 25% + 16% of the dE) that the render (flat 70-102) lacks; a fresh look again chose a weak key (1.75) because the model has no surfaces that catch those highlights. Needs fluted/ridged plates (or an anisotropic streak shader) before lighting can help.",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 3,
+ "opts": {
+  "steel": [
+   190,
+   190,
+   195
+  ],
+  "blade": [
+   240,
+   240,
+   245
+  ],
+  "rough": 0.2,
+  "spec": 0.5,
+  "metal": 1.0,
+  "world": 0.08,
+  "key": 1.75,
+  "fill": 0.14,
+  "key_dir": [
+   -0.4,
+   0.6,
+   0.7
+  ],
+  "model_scale": 0.32,
+  "torso_hw": 7.0,
+  "gamma": 0.95
+ },
+ "sweep": [
+  {
+   "param": "s_r",
+   "start": 0,
+   "stop": 180,
+   "step": 45
+  },
+  {
+   "param": "e_r",
+   "start": 0,
+   "stop": 120,
+   "step": 60
+  },
+  {
+   "param": "sw",
+   "start": 0,
+   "stop": 300,
+   "step": 60,
+   "period": 360
+  },
+  {
+   "param": "glow",
+   "start": 0,
+   "stop": 14,
+   "step": 7
+  }
+ ],
+ "smooth": {
+  "s_r": "free",
+  "e_r": "free",
+  "sw": "free",
+  "glow": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 3,
+    "min": -8,
+    "max": 8
+   },
+   "s_r": {
+    "step": 12,
+    "min": -30,
+    "max": 200,
+    "init": 0.0
+   },
+   "s_l": {
+    "step": 12,
+    "min": -30,
+    "max": 200,
+    "init": 0
+   },
+   "a_r": {
+    "step": 8,
+    "min": -20,
+    "max": 90,
+    "init": 0
+   },
+   "a_l": {
+    "step": 8,
+    "min": -20,
+    "max": 90,
+    "init": 0
+   },
+   "e_r": {
+    "step": 12,
+    "min": -10,
+    "max": 140,
+    "init": 0
+   },
+   "e_l": {
+    "step": 12,
+    "min": -10,
+    "max": 140,
+    "init": 0
+   },
+   "sw": {
+    "step": 12,
+    "min": -360,
+    "max": 720
+   },
+   "glow": {
+    "step": 1.5,
+    "min": 0,
+    "max": 18
+   },
+   "stance": {
+    "step": 2,
+    "min": 0,
+    "max": 6,
+    "init": 0.0
+   },
+   "l_r": {
+    "step": 4,
+    "min": -30,
+    "max": 30,
+    "init": 0.0
+   },
+   "l_l": {
+    "step": 4,
+    "min": -30,
+    "max": 30,
+    "init": 0.0
+   }
+  },
+  "rounds": 6,
+  "scale": 2,
+  "samples": 8,
+  "finish": {
+   "rounds": 3,
+   "scale": 4,
+   "samples": 32,
+   "step_f": 0.5
+  }
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 10,
+  "final": 256
+ },
+ "look": {
+  "frames": 12,
+  "passes": 2,
+  "samples": 32,
+  "params": {
+   "metal": [
+    0.0,
+    0.5,
+    1.0
+   ],
+   "steel": [
+    [
+     190,
+     190,
+     195
+    ],
+    [
+     215,
+     215,
+     220
+    ],
+    [
+     235,
+     235,
+     240
+    ]
+   ]
+  },
+  "refine": {
+   "helmet_y": {
+    "step": 0.5,
+    "min": 32,
+    "max": 39
+   },
+   "helmet_r": {
+    "step": 0.3,
+    "min": 4,
+    "max": 7
+   },
+   "helmet_h": {
+    "step": 0.5,
+    "min": 8,
+    "max": 14
+   },
+   "torso_y": {
+    "step": 0.5,
+    "min": 14,
+    "max": 20
+   },
+   "torso_hw": {
+    "step": 0.4,
+    "min": 5,
+    "max": 11
+   },
+   "torso_hh": {
+    "step": 0.4,
+    "min": 8,
+    "max": 13
+   },
+   "shoulder_x": {
+    "step": 0.4,
+    "min": 8,
+    "max": 13
+   },
+   "shoulder_y": {
+    "step": 0.5,
+    "min": 23,
+    "max": 30
+   },
+   "pauldron_r": {
+    "step": 0.3,
+    "min": 4,
+    "max": 7.5
+   },
+   "skirt_hw": {
+    "step": 0.4,
+    "min": 11,
+    "max": 16
+   },
+   "skirt_hh": {
+    "step": 0.3,
+    "min": 2.5,
+    "max": 6
+   },
+   "uarm_l": {
+    "step": 0.4,
+    "min": 6,
+    "max": 10
+   },
+   "farm_l": {
+    "step": 0.4,
+    "min": 5.5,
+    "max": 10
+   },
+   "arm_r": {
+    "step": 0.2,
+    "min": 1.6,
+    "max": 3.4
+   },
+   "hip_x": {
+    "step": 0.3,
+    "min": 2.5,
+    "max": 6
+   },
+   "thigh_l": {
+    "step": 0.4,
+    "min": 7,
+    "max": 11
+   },
+   "shin_l": {
+    "step": 0.4,
+    "min": 7,
+    "max": 12
+   },
+   "leg_r": {
+    "step": 0.2,
+    "min": 2.4,
+    "max": 4.2
+   },
+   "blade_l": {
+    "step": 1,
+    "min": 14,
+    "max": 30
+   },
+   "model_dy": {
+    "step": 0.5,
+    "min": -16,
+    "max": -8
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.1,
+    "max": 0.8,
+    "init": 0.25
+   },
+   "spec": {
+    "step": 0.1,
+    "min": 0.1,
+    "max": 0.9,
+    "init": 0.5
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.6,
+    "max": 1.3,
+    "init": 0.95
+   },
+   "key": {
+    "step": 0.5,
+    "min": 1.5,
+    "max": 7,
+    "init": 1.75
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0,
+    "max": 0.4,
+    "init": 0.08
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0,
+    "max": 0.5,
+    "init": 0.14
+   }
+  },
+  "refine_rounds": 6,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15
+}

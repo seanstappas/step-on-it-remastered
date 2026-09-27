@@ -1,0 +1,228 @@
+{
+ "status": "wip",
+ "source": "beenie_sprites",
+ "frames": {
+  "range": [
+   50,
+   65
+  ]
+ },
+ "mode": "rods",
+ "note": "WIP: the down set (f50-f65) flies TOWARD the camera: the rods are 1 px thin at the apex (bottom) and ~5 px at their far ends (perspective), f53 shows a single rod, and the Beenie in front hides a band and the lower-left (post occlude clips to the union silhouette). The plain in-plane cone reaches IoU 0.54. Next: axis_tilt ~60-80 deg + rods tapered thin at the apex (emulated perspective).",
+ "place_iou_w": 200,
+ "opts": {
+  "dir": 90.0,
+  "half": 29.25,
+  "rod_r": 2.0562,
+  "red": [
+   200,
+   10,
+   10
+  ],
+  "blue": [
+   40,
+   40,
+   255
+  ],
+  "green": [
+   20,
+   200,
+   20
+  ],
+  "world": 0.14,
+  "key": 1.875,
+  "fill": 0.0,
+  "key_dir": [
+   0.4,
+   0.7,
+   0.6
+  ],
+  "rough": 0.35,
+  "spec": 0.0,
+  "gamma": 0.75,
+  "mirror": false,
+  "r_red": 1.025,
+  "r_blue": 1.05,
+  "r_green": 1.0,
+  "l_red": 1.0126,
+  "l_blue": 1.0,
+  "l_green": 0.9875,
+  "axis_tilt": 0.0,
+  "a_red": -0.75,
+  "a_green": 0.0,
+  "taper": 0.7
+ },
+ "sweep": [
+  {
+   "param": "roll",
+   "start": 0,
+   "stop": 360,
+   "step": 15,
+   "period": 360
+  },
+  {
+   "param": "length",
+   "start": 3,
+   "stop": 39,
+   "step": 3
+  },
+  {
+   "param": "axis_tilt",
+   "start": -75,
+   "stop": 75,
+   "step": 25
+  }
+ ],
+ "smooth": {
+  "roll": "linear",
+  "length": "free",
+  "axis_tilt": "mode"
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 12,
+  "final": 256
+ },
+ "look": {
+  "frames": 8,
+  "passes": 2,
+  "samples": 48,
+  "params": {},
+  "refine": {
+   "rod_r": {
+    "step": 0.15,
+    "min": 1.0,
+    "max": 2.6
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9
+   },
+   "spec": {
+    "step": 0.15,
+    "min": 0,
+    "max": 1.0
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2
+   },
+   "key": {
+    "step": 0.5,
+    "min": 1.5,
+    "max": 7
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0,
+    "max": 0.4
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0,
+    "max": 0.5
+   },
+   "r_red": {
+    "step": 0.1,
+    "min": 0.6,
+    "max": 1.6,
+    "init": 1.0
+   },
+   "r_blue": {
+    "step": 0.1,
+    "min": 0.6,
+    "max": 1.6,
+    "init": 1.0
+   },
+   "r_green": {
+    "step": 0.1,
+    "min": 0.6,
+    "max": 1.6,
+    "init": 1.0
+   },
+   "l_red": {
+    "step": 0.05,
+    "min": 0.8,
+    "max": 1.25,
+    "init": 1.0
+   },
+   "l_blue": {
+    "step": 0.05,
+    "min": 0.8,
+    "max": 1.25,
+    "init": 1.0
+   },
+   "l_green": {
+    "step": 0.05,
+    "min": 0.8,
+    "max": 1.25,
+    "init": 1.0
+   },
+   "a_red": {
+    "step": 6,
+    "min": -40,
+    "max": 40,
+    "init": 0.0
+   },
+   "a_green": {
+    "step": 6,
+    "min": -40,
+    "max": 40,
+    "init": 0.0
+   }
+  },
+  "refine_rounds": 8,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  },
+  {
+   "occlude": {
+    "dilate": 1
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "optim": {
+  "params": {
+   "roll": {
+    "step": 6,
+    "min": -720,
+    "max": 720
+   },
+   "length": {
+    "step": 1.5,
+    "min": 1,
+    "max": 40
+   },
+   "half": {
+    "step": 3,
+    "min": 2,
+    "max": 45,
+    "init": 15.0
+   },
+   "axis_tilt": {
+    "step": 5,
+    "min": -85,
+    "max": 85
+   }
+  },
+  "rounds": 8,
+  "scale": 4,
+  "samples": 24
+ },
+ "shift": "auto",
+ "shift_range": 3
+}

@@ -22,6 +22,7 @@
   "spin": "loop"
  },
  "scale": 4,
+ "post": [{"fringe": {"px": 2}}],
  "samples": {
   "sweep": 16,
   "final": 256
@@ -46,10 +47,50 @@
     0.1,
     0.16
    ],
-   "red": [[190, 0, 0], [210, 0, 0], [235, 10, 10]],
-   "white": [[210, 210, 210], [235, 235, 235], [250, 250, 250]],
-   "rough": [0.3, 0.45, 0.65],
-   "spec": [0.1, 0.3, 0.6]
+   "red": [
+    [
+     190,
+     0,
+     0
+    ],
+    [
+     210,
+     0,
+     0
+    ],
+    [
+     235,
+     10,
+     10
+    ]
+   ],
+   "white": [
+    [
+     210,
+     210,
+     210
+    ],
+    [
+     235,
+     235,
+     235
+    ],
+    [
+     250,
+     250,
+     250
+    ]
+   ],
+   "rough": [
+    0.3,
+    0.45,
+    0.65
+   ],
+   "spec": [
+    0.1,
+    0.3,
+    0.6
+   ]
   }
  },
  "gate": {
@@ -58,5 +99,14 @@
   "rank_tol": 1
  },
  "fps": 30,
- "note": "Peppermint ball: 4 red + 4 white spiral arms (alpha = -(a + b psi^2), a -19.2 deg, b 82 deg/rad^2, measured on the SD frames) turning 11.25 deg/frame about the view axis."
+ "note": "Peppermint ball: 4 red + 4 white spiral arms (alpha = -(a + b psi^2), a -19.2 deg, b 82 deg/rad^2, measured on the SD frames) turning 11.25 deg/frame about the view axis.",
+ "tweens": {
+  "n": 2,
+  "cycles": [
+   [
+    2,
+    9
+   ]
+  ]
+ }
 }

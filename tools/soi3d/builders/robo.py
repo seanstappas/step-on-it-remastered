@@ -1,7 +1,9 @@
 """soi3d.builders.robo -- the Robo (robo_sprites f02-f81): a red robot of cylinders with white joint rings.
 
 In SD pixel units (origin = the hip joint, facing left (-X) at yaw 0): a red cylinder HEAD with a white visor
-on its front ("visor_split": two eyes at +-"eye_z" instead), a white NECK, a red cylinder TORSO with a white collar, white HIPS, two LEGS (red thigh, white
+on its front ("visor_split": two eyes at +-"eye_z" instead; "face_plate": the original's face -- a white
+plate over the front of the helmet with a red T, a centre stripe from the crown and a crossbar -- plus a white
+ear stud on each side), a white NECK, a red cylinder TORSO with a white collar, white HIPS, two LEGS (red thigh, white
 knee ring, red shin, white foot) and two ARMS (white shoulder ball, red upper arm, white elbow ring, red
 forearm, white FIST).
 Arm "n" is the near arm (+Z at yaw 0), "f" the far one. Pose (deg unless noted): "yaw", "phase" (walk),
@@ -45,6 +47,38 @@ def _cyl(name, c, r, h, mat, bevel=0.5, parent=None):
     return o
 
 
+def _arc(name, c, r, h, deg, mat, parent, thick=0.25, seg=16):
+    """A curved panel on a vertical cylinder of radius r (px) centred at c: +-deg around the front (-X),
+    height h, `thick` px thick outward."""
+    import bmesh
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    a = math.radians(deg)
+    ring = []
+    for i in range(seg + 1):
+        t = -a + 2 * a * i / seg
+        x, z = -math.cos(t) * r * S, math.sin(t) * r * S
+        ring.append((bm.verts.new((x, -h / 2 * S, z)), bm.verts.new((x, h / 2 * S, z))))
+    for i in range(seg):
+        bm.faces.new((ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1]))   # normal outward (-X side)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.location = tuple(v * S for v in c)
+    sol = o.modifiers.new("solid", 'SOLIDIFY')
+    sol.thickness = thick * S
+    sol.offset = 1.0
+    bev = o.modifiers.new("bevel", 'BEVEL')
+    bev.width = thick * 0.45 * S
+    bev.segments = 2
+    for p in me.polygons:
+        p.use_smooth = True
+    o.data.materials.append(mat)
+    o.parent = parent
+    return o
+
+
 def build(opts):
     C._clear()
     f = lambda k, d: float(opts.get(k, d))
@@ -59,11 +93,26 @@ def build(opts):
     _cyl("hips", (0, 0, 0), f("hip_r", 3.2), f("hip_h", 2.6), white, 0.8, root)
     ty, th, tr = f("torso_y", 6.0), f("torso_h", 7.5), f("torso_r", 4.0)
     _cyl("torso", (0, ty, 0), tr, th, red, 0.8, root)
-    _cyl("collar", (0, ty + th / 2 - f("collar_h", 1.2) / 2, 0), tr * 1.04, f("collar_h", 1.2), white, 0.3, root)
-    _cyl("neck", (0, f("neck_y", 11.0), 0), f("neck_r", 2.0), 1.6, white, 0.3, root)
+    if f("collar_h", 1.2) > 0:
+        _cyl("collar", (0, ty + th / 2 - f("collar_h", 1.2) / 2, 0), tr * 1.04, f("collar_h", 1.2), white, 0.3, root)
+    _cyl("neck", (0, f("neck_y", 11.0), 0), f("neck_r", 2.0), 1.6, red if opts.get("neck_red", False) else white, 0.3, root)
     hy, hh, hr = f("head_y", 15.5), f("head_h", 7.0), f("head_r", 3.8)
     _cyl("head", (0, hy, 0), hr, hh, red, f("head_bevel", 1.5), root)
-    if opts.get("visor_split", False):      # two white eyes with a red gap (face-on f58: white at x 14 and x 17)
+    if opts.get("face_plate", False):       # face-on f58: white | red stripe | white over rows 2-3, red bar row 4-5
+        fy = hy + f("face_dy", -0.3)
+        _arc("face", (0, fy, 0), hr, f("face_h", 5.0), f("face_deg", 60.0), white, root, f("face_t", 0.25))
+        ro = hr + f("face_t", 0.25)
+        _arc("face_stripe", (0, fy + f("stripe_dy", 1.5), 0), ro, f("stripe_h", 3.0), f("stripe_deg", 8.0), red, root, 0.15, 4)
+        _arc("face_bar", (0, fy + f("bar_dy", -0.5), 0), ro, f("bar_h", 1.5), f("bar_deg", 30.0), red, root, 0.15, 8)
+        for sz in (1.0, -1.0):              # side views f02/f20: a white stud mid-head
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=f("ear_r", 0.9) * S, depth=f("ear_len", 0.8) * S)
+            e = bpy.context.active_object
+            e.name = "ear_" + ("n" if sz > 0 else "f")
+            e.location = (0, (hy + f("ear_dy", -0.3)) * S, sz * (hr + f("ear_len", 0.8) * 0.3) * S)
+            e.data.materials.append(white)
+            bpy.ops.object.shade_smooth()
+            e.parent = root
+    elif opts.get("visor_split", False):    # two white eyes with a red gap (face-on f58: white at x 14 and x 17)
         ez = f("eye_z", 1.5)
         ex = -math.sqrt(max(hr * hr - ez * ez, 0.0)) * f("eye_fx", 1.0)   # centred on the head's surface
         for sz in (1.0, -1.0):

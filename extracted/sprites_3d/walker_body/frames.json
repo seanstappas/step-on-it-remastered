@@ -8,7 +8,7 @@
   ]
  },
  "mode": "walker",
- "note": "Walker body f02-f49: walker.py block legs (leg_shape block), per-leg thigh/knee optim at full fidelity (scale 4 / 32 samples), knees down to -60 deg, per-frame pitch. Documented gate IoU 0.845: f36 (a stride frame) sits at 0.847 after the verify-accurate optimfail (neighbour reseeds + basin hopping); its residual is the crotch/foot outline. Reproduce: sweep fit optim look optim final verify, then optimfail final verify.",
+ "note": "Walker body f02-f49: walker.py block legs (leg_shape block), per-leg thigh/knee optim at full fidelity (scale 4 / 32 samples), knees down to -60 deg, per-frame pitch. Documented gate IoU 0.845: f36 (a stride frame) sits at 0.847 after the verify-accurate optimfail (neighbour reseeds + basin hopping); its residual is the crotch/foot outline. Reproduce: sweep fit optim look optim final verify, then optimfail final verify. Round 11 (detail audit): the source draws a dark EYE each side of the face (f04 row 6, f22 rows 5-7) -> walker.py eyes, placed by a look with the detail term (look detail_w 0.5; the blurred dE alone shrank them to nothing): missed-detail px 178 -> 167, dE mean 10.33.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -88,7 +88,11 @@
   "gamma": 0.625,
   "leg_shape": "block",
   "leg_w": 1.5,
-  "leg_d": 1.45
+  "leg_d": 1.45,
+  "eyes": true,
+  "eye_fx": 0.67,
+  "eye_dy": -0.1,
+  "eye_r": 0.8
  },
  "sweep": [
   {
@@ -205,6 +209,7 @@
   "frames": 12,
   "passes": 2,
   "samples": 32,
+  "detail_w": 0.5,
   "params": {
    "white": [
     [
@@ -220,145 +225,191 @@
    ]
   },
   "refine": {
+   "eye_fx": {
+    "step": 0.12,
+    "min": 0.0,
+    "max": 1.0,
+    "init": 0.67
+   },
+   "eye_dy": {
+    "step": 0.5,
+    "min": -3.0,
+    "max": 4.0,
+    "init": -0.1
+   },
+   "eye_r": {
+    "step": 0.15,
+    "min": 0.4,
+    "max": 1.6,
+    "init": 0.8
+   },
    "body_hx": {
     "step": 0.5,
     "min": 10,
-    "max": 17
+    "max": 17,
+    "init": 11.625
    },
    "body_hy": {
     "step": 0.4,
     "min": 3.5,
-    "max": 8
+    "max": 8,
+    "init": 6.35
    },
    "body_hz": {
     "step": 0.3,
     "min": 3.0,
-    "max": 4.4
+    "max": 4.4,
+    "init": 4.1
    },
    "body_bevel": {
     "step": 0.4,
     "min": 1,
-    "max": 5
+    "max": 5,
+    "init": 4.4
    },
    "head_x": {
     "step": 0.5,
     "min": -13,
-    "max": -6
+    "max": -6,
+    "init": -7.625
    },
    "head_y": {
     "step": 0.3,
     "min": 1.0,
-    "max": 5.0
+    "max": 5.0,
+    "init": 3.2
    },
    "head_hx": {
     "step": 0.4,
     "min": 3.5,
-    "max": 7.5
+    "max": 7.5,
+    "init": 4.5
    },
    "head_hy": {
     "step": 0.2,
     "min": 4.5,
-    "max": 7.5
+    "max": 7.5,
+    "init": 6.4
    },
    "head_hz": {
     "step": 0.4,
     "min": 3,
-    "max": 6.5
+    "max": 6.5,
+    "init": 3.85
    },
    "head_bevel": {
     "step": 0.4,
     "min": 1,
-    "max": 5
+    "max": 5,
+    "init": 3.4
    },
    "nose_y": {
     "step": 0.4,
     "min": -6,
-    "max": 0
+    "max": 0,
+    "init": -1.75
    },
    "thigh_l": {
     "step": 0.3,
     "min": 3,
-    "max": 7
+    "max": 7,
+    "init": 5.25
    },
    "shin_l": {
     "step": 0.3,
     "min": 3,
-    "max": 7
+    "max": 7,
+    "init": 5.1
    },
    "front_x": {
     "step": 0.5,
     "min": -11,
-    "max": -2
+    "max": -2,
+    "init": -5.5625
    },
    "rear_x": {
     "step": 0.5,
     "min": 3,
-    "max": 12
+    "max": 12,
+    "init": 7.125
    },
    "hip_y": {
     "step": 0.4,
     "min": 2,
-    "max": 7
+    "max": 7,
+    "init": 4.0
    },
    "leg_z": {
     "step": 0.3,
     "min": 1.5,
-    "max": 5
+    "max": 5,
+    "init": 3.95
    },
    "foot_rx": {
     "step": 0.3,
     "min": 1,
-    "max": 3.5
+    "max": 3.5,
+    "init": 1.0
    },
    "swing": {
     "step": 3,
     "min": 10,
-    "max": 45
+    "max": 45,
+    "init": 38.25
    },
    "knee_amp": {
     "step": 5,
     "min": 0,
-    "max": 60
+    "max": 60,
+    "init": 25.0
    },
    "rough": {
     "step": 0.1,
     "min": 0.05,
-    "max": 0.9
+    "max": 0.9,
+    "init": 0.45
    },
    "spec": {
     "step": 0.1,
     "min": 0,
-    "max": 0.8
+    "max": 0.8,
+    "init": 0.8
    },
    "gamma": {
     "step": 0.1,
     "min": 0.5,
-    "max": 1.2
+    "max": 1.2,
+    "init": 0.625
    },
    "key": {
     "step": 0.5,
     "min": 1.5,
-    "max": 7
+    "max": 7,
+    "init": 3.9375
    },
    "world": {
     "step": 0.04,
     "min": 0,
-    "max": 0.4
+    "max": 0.4,
+    "init": 0.08
    },
    "fill": {
     "step": 0.06,
     "min": 0,
-    "max": 0.5
+    "max": 0.5,
+    "init": 0.0
    },
    "leg_w": {
     "step": 0.1,
     "min": 0.8,
-    "max": 2.0
+    "max": 2.0,
+    "init": 1.5
    },
    "leg_d": {
     "step": 0.1,
     "min": 0.8,
-    "max": 2.0
+    "max": 2.0,
+    "init": 1.45
    }
   },
   "refine_rounds": 8,
@@ -377,5 +428,24 @@
   "de": 16.0,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 6,
+  "cycles": [
+   [
+    34,
+    49
+   ],
+   [
+    2,
+    17
+   ]
+  ],
+  "runs": [
+   [
+    17,
+    34
+   ]
+  ]
+ }
 }

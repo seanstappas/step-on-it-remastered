@@ -1,0 +1,323 @@
+{
+ "status": "published",
+ "source": "hippo_sprites",
+ "frames": {
+  "range": [
+   2,
+   33
+  ]
+ },
+ "mode": "quadruped",
+ "note": "PASS (32 frames, IoU min 0.857, dE mean 9.5 max 11.7): quadruped rig (ellipsoid body + head with a black mouth, ears, eyes, 4 capsule legs with grey hooves); per frame yaw + walk phase from the sweep, then each LEG's angle per frame by the optimiser (a_fn/a_ff/a_rn/a_rf). The side views are ~25-30 deg toward the camera. f34 (the spawner icon) is not part of this family.",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 3,
+ "opts": {
+  "species": "hippo",
+  "world": 0.08,
+  "key": 3.2,
+  "fill": 0.04,
+  "body": [
+   0,
+   120,
+   0
+  ],
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "body_rx": 11.1,
+  "body_ry": 4.7,
+  "body_rz": 6.0,
+  "body_x": 3.8,
+  "head_x": -9.6,
+  "head_y": 0.7,
+  "head_rx": 5.4,
+  "head_ry": 4.0,
+  "mouth_h": 1.525,
+  "leg_l": 5.0,
+  "leg_r": 2.0,
+  "front_x": -0.1,
+  "rear_x": 10.1,
+  "hip_y": 2.625,
+  "leg_z": 3.0,
+  "tilt": 0.0,
+  "rough": 0.3,
+  "spec": 0.0,
+  "gamma": 1.0
+ },
+ "sweep": [
+  {
+   "param": "yaw",
+   "start": 0,
+   "stop": 360,
+   "step": 10,
+   "period": 360
+  },
+  {
+   "param": "phase",
+   "start": 0,
+   "stop": 360,
+   "step": 30,
+   "period": 360
+  }
+ ],
+ "smooth": {
+  "yaw": "free",
+  "phase": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 5,
+    "min": -60,
+    "max": 420
+   },
+   "phase": {
+    "step": 15,
+    "min": -360,
+    "max": 720
+   },
+   "a_fn": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_ff": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_rn": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   },
+   "a_rf": {
+    "step": 8,
+    "min": -40,
+    "max": 40,
+    "init": 0
+   }
+  },
+  "rounds": 8,
+  "scale": 2,
+  "samples": 16
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 12,
+  "final": 256
+ },
+ "look": {
+  "frames": 10,
+  "passes": 2,
+  "samples": 48,
+  "params": {
+   "body": [
+    [
+     0,
+     120,
+     0
+    ],
+    [
+     0,
+     150,
+     0
+    ],
+    [
+     20,
+     180,
+     20
+    ]
+   ],
+   "key_dir": [
+    [
+     -3.2,
+     3.2,
+     3.0
+    ],
+    [
+     -0.26,
+     0.7,
+     0.66
+    ],
+    [
+     -0.5,
+     0.5,
+     0.7
+    ]
+   ]
+  },
+  "refine": {
+   "body_rx": {
+    "step": 0.8,
+    "min": 8.0,
+    "max": 15.0,
+    "init": 11.5
+   },
+   "body_ry": {
+    "step": 0.4,
+    "min": 3.0,
+    "max": 7.0,
+    "init": 4.8
+   },
+   "body_rz": {
+    "step": 0.5,
+    "min": 3.5,
+    "max": 9.0,
+    "init": 6.0
+   },
+   "body_x": {
+    "step": 0.8,
+    "min": -2.0,
+    "max": 8.0,
+    "init": 3.0
+   },
+   "head_x": {
+    "step": 0.8,
+    "min": -14.0,
+    "max": -4.0,
+    "init": -8.0
+   },
+   "head_y": {
+    "step": 0.4,
+    "min": -2.0,
+    "max": 3.0,
+    "init": 0.3
+   },
+   "head_rx": {
+    "step": 0.4,
+    "min": 3.0,
+    "max": 7.0,
+    "init": 5.0
+   },
+   "head_ry": {
+    "step": 0.4,
+    "min": 2.5,
+    "max": 6.0,
+    "init": 4.0
+   },
+   "mouth_h": {
+    "step": 0.3,
+    "min": 0.5,
+    "max": 3.0,
+    "init": 1.6
+   },
+   "leg_l": {
+    "step": 0.5,
+    "min": 4.0,
+    "max": 9.0,
+    "init": 6.5
+   },
+   "leg_r": {
+    "step": 0.25,
+    "min": 1.2,
+    "max": 3.0,
+    "init": 2.0
+   },
+   "front_x": {
+    "step": 0.8,
+    "min": -7.0,
+    "max": 2.0,
+    "init": -2.5
+   },
+   "rear_x": {
+    "step": 0.8,
+    "min": 5.0,
+    "max": 14.0,
+    "init": 9.5
+   },
+   "hip_y": {
+    "step": 0.5,
+    "min": 0.0,
+    "max": 5.0,
+    "init": 2.5
+   },
+   "leg_z": {
+    "step": 0.4,
+    "min": 1.5,
+    "max": 5.5,
+    "init": 3.4
+   },
+   "tilt": {
+    "step": 3.0,
+    "min": -5.0,
+    "max": 25.0,
+    "init": 0.0
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9,
+    "init": 0.4
+   },
+   "spec": {
+    "step": 0.1,
+    "min": 0.0,
+    "max": 0.8,
+    "init": 0.25
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2,
+    "init": 1.0
+   },
+   "key": {
+    "step": 0.6,
+    "min": 1.5,
+    "max": 7.0
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0.0,
+    "max": 0.4
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0.0,
+    "max": 0.5
+   }
+  },
+  "refine_rounds": 8,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "tweens": {
+  "n": 4,
+  "cycles": [
+   [
+    26,
+    33
+   ],
+   [
+    2,
+    9
+   ]
+  ],
+  "runs": [
+   [
+    9,
+    26
+   ]
+  ]
+ }
+}

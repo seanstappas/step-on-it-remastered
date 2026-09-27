@@ -1,0 +1,49 @@
+== cannon_ball [final verify tweens live livecal livegate] (13 s, exit 0)
+final: 20 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
+verify cannon_ball: 20 frames, IoU min 0.956 mean 0.960, dE mean 13.89 max 16.64 -> PASS
+tweens: 20/20 pairs x 1 in-betweens -> extracted\sprites_3d_frames\cannon_sprites\tw
+LIVE_DONE 20
+live: 20 frames -> extracted\sprites_live\cannon_ball
+livecal cannon_ball: sun x0.900, ambient x1.350 -> dE mean 14.16 (unscaled 14.27) -> extracted\sprites_live\cannon_ball\live.json
+livegate cannon_ball (20 frames, gate IoU >= 0.850, dE <= 17.0):
+  live  : IoU min 0.956 mean 0.960, dE mean 14.16 max 16.69, pass 20 (20 as good as the published frame)
+  cycles: IoU min 0.956 mean 0.960, dE mean 13.89 max 16.64, pass 20
+  live vs cycles: dE mean 2.35 max 2.74
+  worst live frames: f14 (IoU 0.956 dE 16.7), f20 (IoU 0.956 dE 16.5), f21 (IoU 0.960 dE 16.1), f19 (IoU 0.956 dE 16.0), f13 (IoU 0.956 dE 15.9)
+== smiley_sprites [final verify tweens live livecal livegate] (43 s, exit 0)
+final: 48 frames (+0 derived) -> extracted\sprites_3d_frames\smiley_sprites
+verify smiley_sprites: 48 frames, IoU min 0.951 mean 0.959, dE mean 9.84 max 11.92 -> PASS
+tweens: 48/48 pairs x 3 in-betweens -> extracted\sprites_3d_frames\smiley_sprites\tw
+LIVE_DONE 48
+live: 48 frames -> extracted\sprites_live\smiley_sprites
+livecal smiley_sprites: sun x0.725, ambient x0.250 -> dE mean 11.61 (unscaled 17.31) -> extracted\sprites_live\smiley_sprites\live.json
+livegate smiley_sprites (48 frames, gate IoU >= 0.900, dE <= 16.0):
+  live  : IoU min 0.951 mean 0.960, dE mean 11.61 max 14.34, pass 48 (48 as good as the published frame)
+  cycles: IoU min 0.951 mean 0.959, dE mean 9.84 max 11.92, pass 48
+  live vs cycles: dE mean 3.72 max 4.21
+  worst live frames: f06 (IoU 0.960 dE 14.3), f05 (IoU 0.960 dE 14.0), f07 (IoU 0.955 dE 13.9), f04 (IoU 0.964 dE 13.3), f08 (IoU 0.962 dE 13.0)
+== weapons [final verify tweens live livecal livegate] (7 s, exit 1)
+final: 8 frames (+0 derived) -> extracted\sprites_3d_frames\weapons
+verify weapons: 8 frames, IoU min 0.966 mean 0.971, dE mean 9.02 max 9.39 -> PASS
+tweens: 8/8 pairs x 1 in-betweens -> extracted\sprites_3d_frames\weapons\tw
+LIVE_DONE 8
+live: 8 frames -> extracted\sprites_live\weapons
+livecal weapons: sun x0.725, ambient x0.300 -> dE mean 29.35 (unscaled 32.45) -> extracted\sprites_live\weapons\live.json
+livegate weapons (8 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.966 mean 0.970, dE mean 29.35 max 29.46, pass 0 (0 as good as the published frame)
+  cycles: IoU min 0.966 mean 0.971, dE mean 9.02 max 9.39, pass 8
+  live vs cycles: dE mean 25.93 max 26.40
+  worst live frames: f05 (IoU 0.972 dE 29.5), f08 (IoU 0.966 dE 29.4), f06 (IoU 0.974 dE 29.4), f09 (IoU 0.966 dE 29.4), f04 (IoU 0.970 dE 29.4)
+== master_giftbox [final verify tweens live livecal livegate] (10 s, exit 1)
+final: 15 frames (+0 derived) -> extracted\sprites_3d_frames\master_s_objects
+verify master_giftbox: 15 frames, IoU min 0.965 mean 0.983, dE mean 11.59 max 13.51 -> PASS
+tweens: 15/15 pairs x 1 in-betweens -> extracted\sprites_3d_frames\master_s_objects\tw
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\master_giftbox
+livecal master_giftbox: sun x0.725, ambient x0.550 -> dE mean 32.70 (unscaled 33.82) -> extracted\sprites_live\master_giftbox\live.json
+livegate master_giftbox (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.850 mean 0.954, dE mean 32.70 max 34.49, pass 0 (0 as good as the published frame)
+  cycles: IoU min 0.965 mean 0.983, dE mean 11.59 max 13.51, pass 15
+  live vs cycles: dE mean 30.91 max 33.36
+  worst live frames: f21 (IoU 0.984 dE 34.5), f22 (IoU 0.998 dE 34.4), f19 (IoU 0.924 dE 33.6), f20 (IoU 0.968 dE 33.5), f18 (IoU 0.860 dE 33.1)
+BATCH DONE

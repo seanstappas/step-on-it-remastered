@@ -1,0 +1,4 @@
+F4
+0 419
+SHOT cmp_pre
+QUIT

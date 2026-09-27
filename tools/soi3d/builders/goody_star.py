@@ -42,8 +42,11 @@ def _star_poly(name, r_out, r_in, points, z, thick, mat, rot_deg=90.0):
     return obj
 
 
-def build_star():
-    """A red ball medallion with a proud gold 5-point star, point-up (source f12)."""
+def build_star(opts=None):
+    """A red ball medallion with a proud gold 5-point star, point-up (source f12). opts "r_out", "r_in"
+    (star tip / valley radius, ball = 1), "thick" (relief height) and "star_z" (rim height) shape the star."""
+    opts = opts or {}
+    f = lambda k, d: float(opts.get(k, d))
     C._clear()
     # matte red 'playdough' ball; faint dark-red emission keeps the shadowed lower-right dark RED
     red = C._mat("star_red", C._srgb(206, 0, 0), rough=0.62, spec=0.12, coat=0.0)
@@ -63,7 +66,8 @@ def build_star():
     ball.data.materials.append(red)
     bpy.ops.object.shade_smooth()
 
-    _star_poly("star", r_out=0.72, r_in=0.30, points=5, z=0.92, thick=0.10, mat=gold, rot_deg=90.0)
+    _star_poly("star", r_out=f("r_out", 0.72), r_in=f("r_in", 0.30), points=5, z=f("star_z", 0.92),
+               thick=f("thick", 0.10), mat=gold, rot_deg=90.0)
 
     # soft top-left catch light for a real highlight under the composited glint
     bpy.ops.object.light_add(type='POINT', location=(-2.7, 3.3, 2.6))
@@ -84,7 +88,7 @@ def render(args):
 
 
 def _frames_setup(opts):
-    build_star()
+    build_star(opts)
     C.setup_scene(256, world_strength=0.18, fill_energy=0.16)
     C.apply_look(opts)
     return {}

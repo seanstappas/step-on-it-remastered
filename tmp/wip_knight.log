@@ -1,0 +1,34 @@
+== knight_sprites [sweep fit optim look final verify] (1,513 s, exit 1)
+look: 12 frames [2, 7, 12, 18, 23, 29, 34, 39, 45, 50, 56, 61]
+look: start dE 58.421
+look: metal -> 0.5  dE 56.238
+look: refine helmet_y skipped (not in opts and no "init": its builder default is unknown)
+look: refine helmet_r skipped (not in opts and no "init": its builder default is unknown)
+look: refine helmet_h skipped (not in opts and no "init": its builder default is unknown)
+look: refine torso_y skipped (not in opts and no "init": its builder default is unknown)
+look: refine torso_hh skipped (not in opts and no "init": its builder default is unknown)
+look: refine shoulder_x skipped (not in opts and no "init": its builder default is unknown)
+look: refine shoulder_y skipped (not in opts and no "init": its builder default is unknown)
+look: refine pauldron_r skipped (not in opts and no "init": its builder default is unknown)
+look: refine skirt_hw skipped (not in opts and no "init": its builder default is unknown)
+look: refine skirt_hh skipped (not in opts and no "init": its builder default is unknown)
+look: refine uarm_l skipped (not in opts and no "init": its builder default is unknown)
+look: refine farm_l skipped (not in opts and no "init": its builder default is unknown)
+look: refine arm_r skipped (not in opts and no "init": its builder default is unknown)
+look: refine hip_x skipped (not in opts and no "init": its builder default is unknown)
+look: refine thigh_l skipped (not in opts and no "init": its builder default is unknown)
+look: refine shin_l skipped (not in opts and no "init": its builder default is unknown)
+look: refine leg_r skipped (not in opts and no "init": its builder default is unknown)
+look: refine blade_l skipped (not in opts and no "init": its builder default is unknown)
+look: refine model_dy skipped (not in opts and no "init": its builder default is unknown)
+look: refine round 0 -> dE 56.076 {"torso_hw": 7.4, "rough": 0.2, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: refine round 1 -> dE 56.006 {"torso_hw": 7.8, "rough": 0.2, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: refine round 2 -> dE 55.964 {"torso_hw": 7.8, "rough": 0.3, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: refine round 3 -> dE 55.964 {"torso_hw": 7.8, "rough": 0.3, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: refine round 4 -> dE 55.941 {"torso_hw": 7.7, "rough": 0.3, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: refine round 5 -> dE 55.941 {"torso_hw": 7.7, "rough": 0.3, "spec": 0.5, "gamma": 0.95, "key": 1.75, "world": 0.08, "fill": 0.14}
+look: dE 58.421 -> 55.941 with {"steel": [190, 190, 195], "blade": [240, 240, 245], "rough": 0.3, "spec": 0.5, "metal": 0.5, "world": 0.08, "key": 1.75, "fill": 0.14, "key_dir": [-0.4, 0.6, 0.7], "model_scale": 0.32, "torso_hw": 7.7, "gamma": 0.95}
+final: 65 frames (+0 derived) -> extracted\sprites_3d_frames\knight_sprites
+verify knight_sprites: 65 frames, IoU min 0.597 mean 0.691, dE mean 20.60 max 32.62 -> FAIL [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66]
+verify: knight_sprites is not published and failed -> removed its 65 overlay frames
+BATCH DONE

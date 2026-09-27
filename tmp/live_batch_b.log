@@ -1,0 +1,82 @@
+== GP_run (13 s, exit 1)
+LIVE_DONE 48
+live: 48 frames -> extracted\sprites_live\GP_run
+livecal GP_run: sun x0.800, ambient x0.550 -> dE mean 12.18 (unscaled 13.55) -> extracted\sprites_live\GP_run\live.json
+livegate GP_run (48 frames, gate IoU >= 0.845, dE <= 17.5):
+  live  : IoU min 0.841 mean 0.868, dE mean 12.18 max 16.10, pass 46
+  cycles: IoU min 0.848 mean 0.869, dE mean 11.93 max 16.27, pass 48
+  live vs cycles: dE mean 2.69 max 3.73
+  worst live frames: f19 (IoU 0.876 dE 16.1), f07 (IoU 0.854 dE 14.3), f04 (IoU 0.877 dE 14.2), f08 (IoU 0.856 dE 14.2), f20 (IoU 0.861 dE 14.1)
+== GP_sprites (16 s, exit 1)
+LIVE_DONE 68
+live: 68 frames -> extracted\sprites_live\GP_sprites
+livecal GP_sprites: sun x0.925, ambient x0.300 -> dE mean 11.08 (unscaled 12.70) -> extracted\sprites_live\GP_sprites\live.json
+livegate GP_sprites (68 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.849 mean 0.879, dE mean 11.08 max 14.61, pass 67
+  cycles: IoU min 0.851 mean 0.878, dE mean 11.11 max 14.66, pass 68
+  live vs cycles: dE mean 2.16 max 2.96
+  worst live frames: f76 (IoU 0.875 dE 14.6), f88 (IoU 0.879 dE 13.9), f75 (IoU 0.887 dE 13.8), f69 (IoU 0.880 dE 13.8), f77 (IoU 0.849 dE 13.3)
+== GP_cheer (6 s, exit 0)
+LIVE_DONE 9
+live: 9 frames -> extracted\sprites_live\GP_cheer
+livecal GP_cheer: sun x1.275, ambient x0.450 -> dE mean 12.16 (unscaled 12.35) -> extracted\sprites_live\GP_cheer\live.json
+livegate GP_cheer (9 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.863 mean 0.871, dE mean 12.16 max 13.54, pass 9
+  cycles: IoU min 0.861 mean 0.872, dE mean 12.49 max 13.53, pass 9
+  live vs cycles: dE mean 2.90 max 3.25
+  worst live frames: f118 (IoU 0.875 dE 13.5), f122 (IoU 0.871 dE 12.8), f126 (IoU 0.864 dE 12.7), f123 (IoU 0.865 dE 12.7), f120 (IoU 0.863 dE 12.2)
+== spin_ind_shield (7 s, exit 0)
+LIVE_DONE 30
+live: 30 frames -> extracted\sprites_live\spin_ind_shield
+livecal spin_ind_shield: sun x0.850, ambient x0.150 -> dE mean 5.11 (unscaled 10.47) -> extracted\sprites_live\spin_ind_shield\live.json
+livegate spin_ind_shield (30 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.868 mean 0.902, dE mean 5.12 max 6.56, pass 30
+  cycles: IoU min 0.875 mean 0.903, dE mean 4.36 max 5.88, pass 30
+  live vs cycles: dE mean 2.18 max 3.97
+  worst live frames: f25 (IoU 0.895 dE 6.6), f30 (IoU 0.929 dE 6.4), f29 (IoU 0.914 dE 6.3), f20 (IoU 0.868 dE 6.2), f24 (IoU 0.938 dE 5.9)
+== spin_ind_shoe (7 s, exit 1)
+LIVE_DONE 30
+live: 30 frames -> extracted\sprites_live\spin_ind_shoe
+livecal spin_ind_shoe: sun x0.875, ambient x0.100 -> dE mean 12.03 (unscaled 15.97) -> extracted\sprites_live\spin_ind_shoe\live.json
+livegate spin_ind_shoe (30 frames, gate IoU >= 0.830, dE <= 16.5):
+  live  : IoU min 0.826 mean 0.879, dE mean 12.03 max 17.00, pass 27
+  cycles: IoU min 0.836 mean 0.882, dE mean 11.61 max 16.17, pass 30
+  live vs cycles: dE mean 7.10 max 9.59
+  worst live frames: f42 (IoU 0.915 dE 17.0), f38 (IoU 0.887 dE 16.6), f44 (IoU 0.826 dE 16.0), f39 (IoU 0.850 dE 15.8), f43 (IoU 0.895 dE 15.2)
+== master_cluster (6 s, exit 0)
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\master_cluster
+livecal master_cluster: sun x0.900, ambient x0.550 -> dE mean 5.79 (unscaled 8.17) -> extracted\sprites_live\master_cluster\live.json
+livegate master_cluster (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.876 mean 0.910, dE mean 5.80 max 6.73, pass 15
+  cycles: IoU min 0.883 mean 0.910, dE mean 5.76 max 6.76, pass 15
+  live vs cycles: dE mean 1.36 max 1.54
+  worst live frames: f35 (IoU 0.891 dE 6.7), f43 (IoU 0.911 dE 6.7), f36 (IoU 0.916 dE 6.6), f44 (IoU 0.915 dE 6.5), f34 (IoU 0.911 dE 6.2)
+== master_compound (6 s, exit 0)
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\master_compound
+livecal master_compound: sun x0.900, ambient x0.950 -> dE mean 11.30 (unscaled 11.44) -> extracted\sprites_live\master_compound\live.json
+livegate master_compound (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.899 mean 0.940, dE mean 11.32 max 13.06, pass 15
+  cycles: IoU min 0.902 mean 0.941, dE mean 10.62 max 12.14, pass 15
+  live vs cycles: dE mean 5.83 max 9.35
+  worst live frames: f12 (IoU 0.914 dE 13.1), f09 (IoU 0.899 dE 12.9), f13 (IoU 0.910 dE 12.4), f14 (IoU 0.930 dE 12.4), f11 (IoU 0.927 dE 12.3)
+== master_egg (5 s, exit 1)
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\master_egg
+livecal master_egg: sun x1.275, ambient x1.650 -> dE mean 24.58 (unscaled 26.13) -> extracted\sprites_live\master_egg\live.json
+livegate master_egg (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.898 mean 0.921, dE mean 24.56 max 26.10, pass 0
+  cycles: IoU min 0.898 mean 0.921, dE mean 14.93 max 15.58, pass 15
+  live vs cycles: dE mean 21.89 max 22.25
+  worst live frames: f54 (IoU 0.898 dE 26.1), f55 (IoU 0.902 dE 26.0), f56 (IoU 0.906 dE 25.3), f53 (IoU 0.923 dE 25.3), f57 (IoU 0.930 dE 24.9)
+== master_giftbox (5 s, exit 1)
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\master_giftbox
+livecal master_giftbox: sun x0.725, ambient x0.550 -> dE mean 32.86 (unscaled 33.97) -> extracted\sprites_live\master_giftbox\live.json
+livegate master_giftbox (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.798 mean 0.942, dE mean 32.86 max 34.62, pass 0
+  cycles: IoU min 0.946 mean 0.978, dE mean 11.61 max 13.53, pass 15
+  live vs cycles: dE mean 31.22 max 33.50
+  worst live frames: f21 (IoU 0.988 dE 34.6), f22 (IoU 0.998 dE 34.4), f20 (IoU 0.938 dE 34.1), f19 (IoU 0.929 dE 33.8), f18 (IoU 0.862 dE 33.2)
+BATCH DONE

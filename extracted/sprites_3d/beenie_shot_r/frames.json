@@ -224,5 +224,14 @@
   "samples": 24
  },
  "shift": "auto",
- "shift_range": 2
+ "shift_range": 2,
+ "tweens": {
+  "n": 4,
+  "runs": [
+   [
+    34,
+    49
+   ]
+  ]
+ }
 }

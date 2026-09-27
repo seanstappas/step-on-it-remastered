@@ -1,0 +1,29 @@
+{
+ "opts": {
+  "key_dir": [
+   -0.4,
+   0.6,
+   0.7
+  ],
+  "gain": 0.85,
+  "world": 0.19,
+  "color_gain": 0.9,
+  "gold_gain": 1.25,
+  "white_gain": 1.02,
+  "gamma": 0.75,
+  "shoe_roll": 51.125,
+  "shoe_yaw": -6.25,
+  "shoe_tilt": 2.5,
+  "stripe_gain": 1.1,
+  "stripe": [
+   90,
+   100,
+   240
+  ],
+  "heel_f": 0.385,
+  "heel_h": 5.375
+ },
+ "de_start": 24.392688155984366,
+ "de": 17.186299017373518,
+ "frame_opts": {}
+}

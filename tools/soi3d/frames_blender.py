@@ -7,6 +7,10 @@ The job names a builder mode that registered a frames interface (soi3d.register_
 the render size, the camera placement and a list of {"out": png, "pose": {...}} items. The model is
 built ONCE, then each item is posed and rendered -- a whole pose sweep or a family's full frame
 sequence in one Blender run. Cycles uses the GPU (OptiX, else CUDA) when present, else the CPU.
+An IN-BETWEEN item (framematch.py `tweens`) also carries "pose_a", "pose_b" and "t": both poses are
+applied and every object's local transform is set t of the way from A's to B's (rotations slerped),
+so a rig tweens joint by joint whatever its pose parameterisation; a builder that rebuilds its scene
+per pose renders the lerped parameters ("pose") instead.
 Prints `FRAMES_DONE <n>` on success.
 """
 import json
@@ -16,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bpy  # noqa: E402
+import mathutils  # noqa: E402
 
 import soi3d  # noqa: E402
 
@@ -59,6 +64,38 @@ def _camera(camj):
     cam.location.y = float(camj.get("y", cam.location.y))
 
 
+def _snap():
+    return {o.name: o.matrix_basis.copy() for o in bpy.data.objects if o.type != 'CAMERA'}
+
+
+def _blend(sa, sb, t):
+    for o in bpy.data.objects:
+        a, b = sa.get(o.name), sb.get(o.name)
+        if a is None or b is None or a == b:
+            continue
+        la, ra, ka = a.decompose()
+        lb, rb, kb = b.decompose()
+        if ra.dot(rb) < 0.0:
+            rb.negate()
+        o.matrix_basis = mathutils.Matrix.LocRotScale(la.lerp(lb, t), ra.slerp(rb, t), ka.lerp(kb, t))
+
+
+def _pose_item(ctx, pose, it):
+    """Pose one item; True when the builder rebuilt the scene (render/camera settings must be redone)."""
+    if "pose_a" not in it:
+        return pose(ctx, it["pose"]) is True
+    ra = pose(ctx, it["pose_a"]) is True
+    sa = _snap()
+    rb = pose(ctx, it["pose_b"]) is True
+    sb = _snap()
+    if ra or rb:
+        return pose(ctx, it["pose"]) is True or ra or rb
+    if float(it["t"]) < 0.5:
+        pose(ctx, it["pose_a"])                          # A's non-transform state for the first half
+    _blend(sa, sb, float(it["t"]))
+    return False
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:]
     with open(argv[0], "r", encoding="utf-8") as fh:
@@ -80,7 +117,7 @@ def main():
             ctx = setup(cur_opts)
             _use_gpu()
             _settings(job)
-        if pose(ctx, it["pose"]) is True:                 # the pose REBUILT the scene (a phase-driven
+        if _pose_item(ctx, pose, it):                     # the pose REBUILT the scene (a phase-driven
             _use_gpu()                                    # builder): re-apply the job's render/camera
             _settings(job)
         _camera(it.get("camera", job.get("camera", {})))   # a per-frame camera (sprite offset), else the job's

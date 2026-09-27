@@ -63,6 +63,77 @@ overlay frame no published family owns. It is gate stage 5 (`tools/verify.ps1`).
 is set to `wip` and its overlay frames are deleted**, so `--3d` never shows an unverified frame.
 
 **Runtime:** `--3d` = `--hd` + the overlay (per-frame fallback to HD); **F3** toggles HD ↔ 3D live.
+**F2** switches the whole presentation ORIGINAL ↔ REMASTERED (`game.gd _apply_presentation`).
+
+**Smooth rendering (REMASTERED only, 2026-09-26).** The engine keeps the original tick (60 Hz at Medium);
+the picture redraws at the monitor's rate. Every entity sprite goes through `game.gd _isprite`, which keeps
+a per-tick history and draws the state `SMOOTH_DELAY` = 2 ticks back: its position lerped between the two
+keyframes around that time, and its pose the rendered **in-between** of the two frames (`_tween_sprite`).
+Without an in-between, a pose tied to ground travel (walk, run, roll) steps with its keyframe instead
+of gliding. The board is drawn from the same delayed tick. ORIGINAL draws once per tick, as before.
+In-betweens come from `framematch.py <family> tweens` (after `final`): the frame pairs the game
+animates between are listed in frames.json `"tweens"` (`cycles` / `runs` / `pairs`, `n` = poses per
+step). Each in-between poses both neighbours in Blender and sets every object's local transform part of
+the way between them (rotations slerped), so a rig tweens joint by joint. Lerping the fitted pose
+*parameters* instead fails for rigs: the run's per-frame fits trade `phase` against the joint offsets
+(`phase` 0 → 200 → 0 → 304 over f38–f41), so halfway parameters swing the limbs through the body. A
+pair is dropped (and stepped in game) when an in-between's silhouette is further from both neighbours
+than they are from each other. Output: `sprites_3d_frames/<sheet>/tw/fLO-HI_KofN.png`, checked by
+`--check`. `final` deletes a family's in-betweens, so re-run `tweens` after it. 28 families, 3 min on the
+4090; 4 pairs dropped (Walker f25–27 mid-turn, Hippo f10–11, shield spin f09–10).
+
+**Real-time 3D (REMASTERED 3D, F4; 2026-09-26).** Instead of drawing rendered frames, the game poses a
+family's own 3D rig between any two frames and renders it live, per entity, at the monitor's rate — a
+continuous pose instead of 4 fixed in-betweens per step. Pipeline:
+`framematch.py <family> live` (`tools/soi3d/live_blender.py`) builds the fitted model in Blender, poses
+every frame and exports `extracted/sprites_live/<family>/model.glb` + `live.json` (each frame's
+transforms of the moving nodes, its fitted camera, the lights, world and Principled materials);
+`livecal` fits the sun vs ambient balance (Godot's ambient light is not shadowed by the model the way
+Cycles' world light is, so it needs ~0.35× — sun-only and ambient-only passes mixed in linear light,
+grid-searched by dE → `key_scale` / `amb_scale`); `livegate` renders every frame through the game's own
+renderer (`godot_project/scenes/live_check.tscn`) and scores it like `verify`, next to the Cycles
+frames (`_verify/live_sheet.png` = SD | Cycles | live), and writes `gate.json`. The game draws a sheet
+live only from rigs whose `gate.json` passed (`game.gd _scan_live` indexes them by sheet; a pose between
+frames of two different rigs, e.g. a player's run → idle, falls back to the frames). `live3d.gd`
+(`Live3D`) interpolates every node's transform (rotations slerped) and the fitted canvas placement,
+renders into a viewport of the family's largest frame at the window's scale (MSAA 8×, filtered sun
+shadows — Godot's soft PCSS reads as a dot pattern at sprite size); a 2D pass applies the family's
+`matte` / `fringe` post steps, mirrors left-facing entities and recolours P3. Robo: live IoU min 0.860,
+dE 14.37 / 16.80 vs the Cycles frames' 0.861, 14.39 / 17.11. Cost: 6 live Robos at 2560×1920 run
+uncapped at ~900 fps (1.1 ms/frame) vs ~1700 fps with pre-rendered frames. **F4** toggles live 3D ↔
+pre-rendered frames. Live (27, 2026-09-27): both players' run / action / cheer / tumble sets, Robo, Hippo,
+Piggy, the Ant, the Ostrich, Smiley, Teeth, Walker and its bolt, Spinner, Wheelie, transporter, cannon ball
+and barrel, the Beenie's left/up shots, the Gargoyle's puffs, the spinning shield. Pre-rendered: the procedural-texture families
+(weapons swirl, egg bands, gift box glyphs, M block — glTF carries no shader textures) and two near-misses
+(Beenie right shot f34, winged shoe). Clip: `media/video/live3d_robo_remastered_20260926_165721.mp4`.
+
+**Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
+can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)
+compares a detail layer (Lab pre-smoothed 0.6 px, so a 1 px dither checker averages out, minus its masked
+1.2 px surroundings) between each SD frame and its 3D frame with 1 px tolerance and writes
+`_verify/detail_sheet.png` (worst frames: SD | 3D | SD with the misses marked); look `"detail_w"` adds
+that term to the look score so a look can place such features. Fixed from it: the Robo's white face plate
+with the red T and ear studs, the Hippo's open mouth, teeth, claws and tail stub, the Walker's eyes, the
+Spinner's light peg under the lower bar, the Wheelie's dark hub recess with its bright axle knob, the
+transporter face's forehead (hair set back), cracks across blue tiles and balls (the crack derive keyed on
+luma, which barely moves on blue), and the dark keyed rim on 13 families that had no `fringe` (their 3D
+silhouette edges measured 8-20 L* brighter than the source's; e.g. the Gargoyle puff's misses 18% -> 1%).
+Tried and rejected by verify: T-shirt sleeves on the Hammer, a box snout on the Hippo. Goodies (2026-09-27,
+looks re-run with `detail_w`): the star's relief is thicker (its dark-red lower facets; dE 15.1 -> 12.3),
+the coin's rim taller, so its shadowed inner arc shows (detail misses 31 -> 12 px, dE -> 8.3), the
+potion's swirl less wound (dE 14.6 -> 14.3).
+
+**Publishing near-miss characters (2026-09-27).** The Ant (42 -> 49/49) and both players' tumbles
+(8 -> 32/32 each) passed with three moves: (1) after a look that changes proportions, `bake` it and
+re-run `optim` so the poses adapt to the new body, then continue the look (BP_tumble 8 -> 31); (2) seed a
+failing frame with the pose of the most similar PASSING source frame by source-vs-source IoU, which can be
+far away in the sheet (Ant f33 <- f42, f35 <- f43; optimfail's own reseed only tries +-2 neighbours);
+(3) give the last geometric miss its own pose key (Ant `kt`, a per-frame knee height, default 0).
+The green tumble is a clone of the blue one (`tmp/clone_gp.py`) and passed on its first verify.
+The Ostrich (20 -> 30/32 from move 1) is published under a documented colour gate of dE 17.75 (Robo and
+BP_run use 17.5): its last two frames, f28 16.6 and f32 17.7, are source twins of each other with no
+passing twin, and a yaw x phase probe, a per-frame body pitch and seeding f32 from f28 all converged on
+the same pose.
 
 **Status (2026-09-25, 1079 frames published):**
 

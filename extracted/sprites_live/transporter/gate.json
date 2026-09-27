@@ -1,0 +1,26 @@
+{
+ "sheet": "transporter",
+ "family": "transporter",
+ "frames": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16
+ ],
+ "pass": true,
+ "iou_min": 0.8759,
+ "de_mean": 11.502,
+ "de_max": 14.073,
+ "cycles_de_mean": 11.11
+}

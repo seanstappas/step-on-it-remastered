@@ -1,0 +1,16 @@
+{
+  "status": "published",
+  "source": "goody_sprites",
+  "frames": [24],
+  "mode": "goody_coin",
+  "opts": {"kind": "gold"},
+  "sweep": [{"param": "spin", "start": 0, "stop": 0, "step": 1}],
+  "scale": 4,
+  "samples": {"sweep": 32, "final": 256},
+  "look": {"frames": 1, "passes": 2, "samples": 128,
+           "params": {"color": [[150, 120, 0], [185, 150, 0], [215, 180, 20]],
+                      "world": [0.06, 0.12, 0.17], "key": [3.0, 3.8, 4.6], "fill": [0.06, 0.12, 0.18]}},
+  "post": [{"glint": {"cx": 0.32, "cy": 0.22, "rad": 0.12, "color": [255, 240, 170], "core": 0.5}}, {"fringe": {"px": 2}}],
+  "gate": {"iou": 0.88, "de": 16.0},
+  "fps": 30
+}

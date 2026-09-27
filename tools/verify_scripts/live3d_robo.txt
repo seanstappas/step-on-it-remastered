@@ -1,0 +1,15 @@
+# Real-time 3D (REMASTERED 3D, F4) on a Robo board. Run e.g.
+#   "<Godot>" --path godot_project --resolution 2560x1920 --position 9000,9000 -- --3d --script=tools/verify_scripts/live3d_robo.txt --board=board_432
+# Shots: live 3D Robos, a moment later (other poses), after F4 (the same Robos as pre-rendered
+# frames), back after F4 again.
+0 150
+SHOT live3d_0_on
+0 7
+SHOT live3d_1_on
+F4
+0 20
+SHOT live3d_2_prerendered
+F4
+0 20
+SHOT live3d_3_on
+QUIT

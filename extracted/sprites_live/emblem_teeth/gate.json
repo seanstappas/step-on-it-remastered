@@ -1,0 +1,12 @@
+{
+ "sheet": "teeth_sprites",
+ "family": "emblem_teeth",
+ "frames": [
+  51
+ ],
+ "pass": false,
+ "iou_min": 0.9324,
+ "de_mean": 16.629,
+ "de_max": 16.629,
+ "cycles_de_mean": 15.295
+}

@@ -1,17 +1,79 @@
 {
-  "status": "published",
-  "source": "cannon_sprites",
-  "frames": {"range": [4, 23]},
-  "mode": "beachball",
-  "opts": {},
-  "sweep": [{"param": "spin", "start": 0, "stop": 180, "step": 1.5, "period": 180}],
-  "smooth": {"spin": "loop"},
-  "scale": 4,
-  "samples": {"sweep": 16, "final": 256},
-  "look": {"frames": 5, "passes": 2, "samples": 64,
-           "params": {"world": [0.0, 0.02, 0.04, 0.08], "key": [2.2, 2.6, 3.0, 3.8], "fill": [0.04, 0.10, 0.16],
-                      "spec": [0.05, 0.25], "rough": [0.3, 0.45, 0.7]}},
-  "gate": {"iou": 0.85, "de": 17.0, "rank_tol": 1,
-           "note": "16x16 source: the 3 frames where a gore seam crosses the centre sit at dE 16.5 (the rest 11-15)"},
-  "fps": 30
+ "status": "published",
+ "source": "cannon_sprites",
+ "frames": {
+  "range": [
+   4,
+   23
+  ]
+ },
+ "mode": "beachball",
+ "opts": {},
+ "sweep": [
+  {
+   "param": "spin",
+   "start": 0,
+   "stop": 180,
+   "step": 1.5,
+   "period": 180
+  }
+ ],
+ "smooth": {
+  "spin": "loop"
+ },
+ "scale": 4,
+ "post": [{"fringe": {"px": 2}}],
+ "samples": {
+  "sweep": 16,
+  "final": 256
+ },
+ "look": {
+  "frames": 5,
+  "passes": 2,
+  "samples": 64,
+  "params": {
+   "world": [
+    0.0,
+    0.02,
+    0.04,
+    0.08
+   ],
+   "key": [
+    2.2,
+    2.6,
+    3.0,
+    3.8
+   ],
+   "fill": [
+    0.04,
+    0.1,
+    0.16
+   ],
+   "spec": [
+    0.05,
+    0.25
+   ],
+   "rough": [
+    0.3,
+    0.45,
+    0.7
+   ]
+  }
+ },
+ "gate": {
+  "iou": 0.85,
+  "de": 17.0,
+  "rank_tol": 1,
+  "note": "16x16 source: the 3 frames where a gore seam crosses the centre sit at dE 16.5 (the rest 11-15)"
+ },
+ "fps": 30,
+ "tweens": {
+  "n": 2,
+  "cycles": [
+   [
+    4,
+    23
+   ]
+  ]
+ }
 }

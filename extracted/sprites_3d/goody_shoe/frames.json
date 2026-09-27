@@ -74,17 +74,20 @@
    "shoe_roll": {
     "step": 3,
     "min": 30,
-    "max": 90
+    "max": 90,
+    "init": 51.125
    },
    "shoe_yaw": {
     "step": 5,
     "min": -70,
-    "max": 80
+    "max": 80,
+    "init": -6.25
    },
    "shoe_tilt": {
     "step": 5,
     "min": -30,
-    "max": 60
+    "max": 60,
+    "init": 2.5
    },
    "shoe_x": {
     "step": 0.4,
@@ -114,7 +117,8 @@
    "heel_h": {
     "step": 0.3,
     "min": 3.5,
-    "max": 7
+    "max": 7,
+    "init": 5.375
    },
    "heel_dy": {
     "step": 0.3,
@@ -125,25 +129,25 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.4,
-    "init": 1.0
+    "init": 0.9
    },
    "white_gain": {
     "step": 0.04,
     "min": 0.8,
     "max": 1.1,
-    "init": 1.0
+    "init": 1.02
    },
    "stripe_gain": {
     "step": 0.1,
     "min": 0.5,
     "max": 1.4,
-    "init": 1.0
+    "init": 1.1
    },
    "gamma": {
     "step": 0.1,
     "min": 0.6,
     "max": 1.3,
-    "init": 1.0
+    "init": 0.75
    },
    "stripe_w": {
     "step": 0.2,
@@ -153,12 +157,14 @@
    "heel_f": {
     "step": 0.03,
     "min": 0.2,
-    "max": 0.55
+    "max": 0.55,
+    "init": 0.385
    }
   },
   "refine_rounds": 6,
   "iou_w": 200,
-  "iou_margin": 0.03
+  "iou_margin": 0.03,
+  "detail_w": 0.5
  },
  "post": [
   {

@@ -10,7 +10,9 @@ The source (f11/f20 viewed at 12x): green shorts over the upper thighs, bare kne
 the lower shins, white shoes; the front fist (~184,177,162) at chest height; the handle hidden behind the body with
 only the dark stone head (~44,42,40) showing behind the head. Opts "bare_thighs"/"dark_socks" colour whole segments
 (dE 18.5 -> 20.9) and "split_legs" adds shorts/sock sleeves ("shorts_f"/"socks_f" of the segment; dE 19.5): both
-scored worse than plain green legs, so the legs' positions, not their colours, limit this family.
+scored worse than plain green legs, so the legs' positions, not their colours, limit this family. The same goes
+for the arms: "short_sleeves" (a T-shirt: green caps, bare arms, as f02-f19 show) with kid.py's "mouth" dropped
+the verify from 25/48 to 6/48 frames passing.
 """
 import math
 
@@ -49,6 +51,14 @@ def build(opts):
             _cyl("shorts_" + side, (0, -hl / 2, 0), lr * f("shorts_r", 1.12), hl, shorts, 0.3, hp)
             ql = sl * f("socks_f", 0.65)
             _cyl("sock_" + side, (0, -sl + ql / 2, 0), lr * 0.95 * f("socks_r", 1.1), ql, socks, 0.3, kn)
+    if opts.get("short_sleeves", False):                           # a T-shirt: green sleeve caps, bare arms
+        top = bpy.data.objects["torso"].data.materials[0]
+        ua, ar = f("uarm_l", 3.6), f("arm_r", 1.3)
+        for side in ("n", "f"):
+            for part in ("uarm_", "elbow_ball_", "farm_"):
+                bpy.data.objects[part + side].data.materials[0] = skin
+            sl = ua * f("sleeve_f", 0.45)
+            _cyl("sleeve_" + side, (0, -sl / 2, 0), ar * f("sleeve_r", 1.12), sl, top, 0.3, arms[side][0])
     grip = _empty("grip", (0, -f("hand_r", 1.1) * 0.6, 0), arms["n"][2])
     grip.rotation_mode = 'ZXY'
     handle = C._mat("handle", C._srgb(*rgb("handle", (235, 235, 230))), rough=f("rough", 0.45), spec=f("spec", 0.25))

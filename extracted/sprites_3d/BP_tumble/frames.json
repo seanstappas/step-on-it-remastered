@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "BP_sprites",
  "frames": {
   "range": [
@@ -8,13 +8,13 @@
   ]
  },
  "mode": "kid",
- "note": "WIP: the blue player tumbling (f127-f158): kid.py from a tucked base pose (thighs up, knees bent, arms hugging), sweep yaw x pitch. Round 10: the sheet is FOUR 8-frame forward rolls, 45 deg per frame: f127-f134 facing left (f127 upright, f131 upside down), f135-f142 the mirror image facing right, f143-f150 = f127-f134 and f151-f158 = f135-f142 shifted 2 px. The free yaw x pitch fit had wandered (yaw 88-352); reseeded from that structure with BP_sprites' published look. With a centre pivot (kid.py pivot_x/pivot_y -2.5/4.5), per-frame roll priors and a full optim: IoU 0.72, dE 22 (0/32). The source body in the roll is an ELONGATED crouch (~19 px head to feet, ~10 px wide) and the model a tight ball; the base pose (t 90, k 110) and the look proportions need measuring against f127/f129/f131.",
+ "note": "PUBLISHED 32/32 (IoU min 0.866 mean 0.888, dE mean 13.5 max 15.3): knees less tucked (k_n0/k_f0 40) + a full refit whose look re-proportioned the roll (shorter shins 3.5, thicker legs 2.3 / arms 2.0, small hands) -> 8/32; that look baked into opts, then optim with the new proportions + a continued look -> 31/32 and optimfail f138 -> 32/32. History: WIP: the blue player tumbling (f127-f158): kid.py from a tucked base pose (thighs up, knees bent, arms hugging), sweep yaw x pitch. Round 10: the sheet is FOUR 8-frame forward rolls, 45 deg per frame: f127-f134 facing left (f127 upright, f131 upside down), f135-f142 the mirror image facing right, f143-f150 = f127-f134 and f151-f158 = f135-f142 shifted 2 px. The free yaw x pitch fit had wandered (yaw 88-352); reseeded from that structure with BP_sprites' published look. With a centre pivot (kid.py pivot_x/pivot_y -2.5/4.5), per-frame roll priors and a full optim: IoU 0.72, dE 22 (0/32). The source body in the roll is an ELONGATED crouch (~19 px head to feet, ~10 px wide) and the model a tight ball; the base pose (t 90, k 110) and the look proportions need measuring against f127/f129/f131.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
  "opts": {
   "world": 0.18,
-  "key": 3.575,
+  "key": 4.2,
   "fill": 0.06,
   "key_dir": [
    -0.26,
@@ -46,38 +46,38 @@
    245,
    240
   ],
-  "torso_y": 5.05,
-  "torso_h": 7.8,
+  "torso_y": 5.25,
+  "torso_h": 7.4,
   "torso_r": 4.225,
-  "torso_fx": 0.87,
+  "torso_fx": 0.88,
   "torso_bevel": 1.2,
-  "hip_r": 3.9375,
+  "hip_r": 3.4062,
   "hip_h": 2.4,
-  "head_y": 12.35,
-  "head_r": 3.525,
+  "head_y": 12.8,
+  "head_r": 3.825,
   "head_fy": 1.05,
   "head_fz": 0.95,
-  "hair_dx": 0.4625,
+  "hair_dx": 0.35,
   "hair_dy": 0.675,
-  "hair_f": 0.9438,
+  "hair_f": 0.9938,
   "hair_fy": 0.95,
   "hair_fz": 1.02,
   "neck_y": 9.4,
   "neck_r": 1.3,
-  "shoulder_y": 8.1,
-  "shoulder_z": 4.075,
-  "uarm_l": 4.8625,
-  "farm_l": 3.875,
-  "arm_r": 1.7125,
-  "hand_r": 1.5,
-  "hip_z": 1.275,
-  "thigh_l": 5.4125,
-  "shin_l": 5.375,
-  "leg_r": 1.7937,
-  "foot_rx": 2.0,
-  "foot_ry": 1.2438,
+  "shoulder_y": 7.5,
+  "shoulder_z": 5.125,
+  "uarm_l": 5.1625,
+  "farm_l": 2.7875,
+  "arm_r": 2.0,
+  "hand_r": 0.7,
+  "hip_z": 1.675,
+  "thigh_l": 5.1875,
+  "shin_l": 3.5,
+  "leg_r": 2.3187,
+  "foot_rx": 2.125,
+  "foot_ry": 0.8,
   "foot_rz": 1.6,
-  "foot_dx": 1.35,
+  "foot_dx": 0.825,
   "swing": 30.0,
   "knee_amp": 45.0,
   "arm_swing": 30.0,
@@ -85,14 +85,14 @@
   "tilt": 0.0,
   "rough": 0.25,
   "spec": 0.0,
-  "gamma": 0.8125,
-  "eye_el": 0.75,
+  "gamma": 0.8375,
+  "eye_el": 5.75,
   "eye_r": 1.8,
-  "eye_az": 17.0,
+  "eye_az": 15.0,
   "t_n0": 90.0,
   "t_f0": 90.0,
-  "k_n0": 110.0,
-  "k_f0": 110.0,
+  "k_n0": 40.0,
+  "k_f0": 40.0,
   "s_n0": 60.0,
   "s_f0": 60.0,
   "e_n0": 60.0,
@@ -172,13 +172,13 @@
     "step": 10,
     "min": -35,
     "max": 150,
-    "init": 110.0
+    "init": 40.0
    },
    "k_f": {
     "step": 10,
     "min": -35,
     "max": 150,
-    "init": 110.0
+    "init": 40.0
    },
    "a_n": {
     "step": 12,
@@ -302,9 +302,9 @@
     120.0
    ],
    "k_n0": [
-    80.0,
-    110.0,
-    130.0
+    20.0,
+    40.0,
+    70.0
    ]
   },
   "refine": {
@@ -312,13 +312,13 @@
     "step": 0.4,
     "min": 3,
     "max": 7,
-    "init": 5.05
+    "init": 5.25
    },
    "torso_h": {
     "step": 0.4,
     "min": 6,
     "max": 11,
-    "init": 7.8
+    "init": 7.4
    },
    "torso_r": {
     "step": 0.25,
@@ -330,31 +330,31 @@
     "step": 0.08,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.87
+    "init": 0.88
    },
    "hip_r": {
     "step": 0.25,
     "min": 2,
     "max": 4,
-    "init": 3.9375
+    "init": 3.4062
    },
    "head_y": {
     "step": 0.4,
     "min": 11,
     "max": 15,
-    "init": 12.35
+    "init": 12.8
    },
    "head_r": {
     "step": 0.2,
     "min": 2.8,
     "max": 4.6,
-    "init": 3.525
+    "init": 3.825
    },
    "hair_dx": {
     "step": 0.3,
     "min": -1,
     "max": 2,
-    "init": 0.4625
+    "init": 0.35
    },
    "hair_dy": {
     "step": 0.3,
@@ -366,85 +366,85 @@
     "step": 0.05,
     "min": 0.9,
     "max": 1.25,
-    "init": 0.9438
+    "init": 0.9938
    },
    "shoulder_y": {
     "step": 0.4,
     "min": 6,
     "max": 10,
-    "init": 8.1
+    "init": 7.5
    },
    "shoulder_z": {
     "step": 0.3,
     "min": 2.8,
     "max": 5.2,
-    "init": 4.075
+    "init": 5.125
    },
    "uarm_l": {
     "step": 0.3,
     "min": 2.5,
     "max": 5.5,
-    "init": 4.8625
+    "init": 5.1625
    },
    "farm_l": {
     "step": 0.3,
     "min": 2.5,
     "max": 5.5,
-    "init": 3.875
+    "init": 2.7875
    },
    "arm_r": {
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 1.7125
+    "init": 2.0
    },
    "hand_r": {
     "step": 0.15,
     "min": 0.7,
     "max": 1.8,
-    "init": 1.5
+    "init": 0.7
    },
    "hip_z": {
     "step": 0.2,
     "min": 0.8,
     "max": 2.4,
-    "init": 1.275
+    "init": 1.675
    },
    "thigh_l": {
     "step": 0.3,
     "min": 3.5,
     "max": 6.5,
-    "init": 5.4125
+    "init": 5.1875
    },
    "shin_l": {
     "step": 0.3,
     "min": 3.5,
     "max": 6.5,
-    "init": 5.375
+    "init": 3.5
    },
    "leg_r": {
     "step": 0.15,
     "min": 1,
     "max": 2.4,
-    "init": 1.7937
+    "init": 2.3187
    },
    "foot_rx": {
     "step": 0.25,
     "min": 2,
     "max": 4.2,
-    "init": 2.0
+    "init": 2.125
    },
    "foot_ry": {
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 1.2438
+    "init": 0.8
    },
    "foot_dx": {
     "step": 0.3,
     "min": 0,
     "max": 2.5,
-    "init": 1.35
+    "init": 0.825
    },
    "rough": {
     "step": 0.1,
@@ -462,13 +462,13 @@
     "step": 0.1,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.8125
+    "init": 0.8375
    },
    "key": {
     "step": 0.5,
     "min": 1.5,
     "max": 7,
-    "init": 3.575
+    "init": 4.2
    },
    "world": {
     "step": 0.04,
@@ -486,7 +486,7 @@
     "step": 5,
     "min": -10,
     "max": 45,
-    "init": 0.75
+    "init": 5.75
    },
    "eye_r": {
     "step": 0.15,
@@ -498,7 +498,7 @@
     "step": 4,
     "min": 6,
     "max": 42,
-    "init": 17.0
+    "init": 15.0
    },
    "pivot_x": {
     "step": 0.5,

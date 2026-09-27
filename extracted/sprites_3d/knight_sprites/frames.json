@@ -8,7 +8,7 @@
   ]
  },
  "mode": "knight",
- "note": "Knight f02-f66 (knight.py), WIP: re-proportioned from f02 per-row extents (arms 24 px to the gauntlets, helmet 9 rows, flat pauldrons inside the arms, legs to y -22) + leg stance. Best: sweep fit optim look optim -> IoU 0.739 / dE 20.6 (standing f02-f13 0.80-0.84; the turned sword swing f14-f50 0.62-0.75; the orb f51-f65 dE 22-32). The placement is right (the fixed scale descent moved k only 2%); the swing arm/sword and the 3/4 turn are the gap. Round 10: fm_diag f02 -- the source armour is full of bright vertical highlight strokes (177-209 grey, 25% + 16% of the dE) that the render (flat 70-102) lacks; a fresh look again chose a weak key (1.75) because the model has no surfaces that catch those highlights. Needs fluted/ridged plates (or an anisotropic streak shader) before lighting can help.",
+ "note": "Knight f02-f66 (knight.py), WIP: re-proportioned from f02 per-row extents (arms 24 px to the gauntlets, helmet 9 rows, flat pauldrons inside the arms, legs to y -22) + leg stance. Best: sweep fit optim look optim -> IoU 0.739 / dE 20.6 (standing f02-f13 0.80-0.84; the turned sword swing f14-f50 0.62-0.75; the orb f51-f65 dE 22-32). The placement is right (the fixed scale descent moved k only 2%); the swing arm/sword and the 3/4 turn are the gap. Round 10: fm_diag f02 -- the source armour is full of bright vertical highlight strokes (177-209 grey, 25% + 16% of the dE) that the render (flat 70-102) lacks; a fresh look again chose a weak key (1.75) because the model has no surfaces that catch those highlights. Needs fluted/ridged plates (or an anisotropic streak shader) before lighting can help. Round 13: 6/65 (IoU .69) with yaw held front-on; the source is a slim knight with a V torso (pauldrons +-13 px to a +-5 px waist), a pointed helmet and a narrow banded fauld, ours was a box torso over a 26 px hip slab -> knight.py torso_taper (SimpleDeform TAPER) + helmet_spike, skirt narrowed. Test render (tmp/pose_test): helmet spike + V torso read right; the source holds the sword TWO-HANDED in front and stands in an A-stance -> knight.py pose key spread (feet out), optim spread + probes for the left arm (s_l x e_l) and spread.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 3,
@@ -23,8 +23,9 @@
    240,
    245
   ],
-  "rough": 0.25,
+  "rough": 0.3,
   "spec": 0.5,
+  "metal": 0.5,
   "world": 0.08,
   "key": 1.75,
   "fill": 0.14,
@@ -34,25 +35,26 @@
    0.7
   ],
   "model_scale": 0.32,
-  "gamma": 0.95
+  "torso_hw": 8.5,
+  "gamma": 0.95,
+  "torso_taper": 0.45,
+  "helmet_spike": 5.0,
+  "spike_r": 0.7,
+  "skirt_hw": 8.0,
+  "arm_r": 1.8,
+  "leg_r": 2.6
  },
  "sweep": [
-  {
-   "param": "yaw",
-   "start": -60,
-   "stop": 60,
-   "step": 20
-  },
-  {
-   "param": "stance",
-   "start": 0,
-   "stop": 30,
-   "step": 15
-  },
   {
    "param": "s_r",
    "start": 0,
    "stop": 180,
+   "step": 45
+  },
+  {
+   "param": "e_r",
+   "start": 0,
+   "stop": 120,
    "step": 60
   },
   {
@@ -70,18 +72,17 @@
   }
  ],
  "smooth": {
-  "yaw": "free",
-  "stance": "free",
   "s_r": "free",
+  "e_r": "free",
   "sw": "free",
   "glow": "free"
  },
  "optim": {
   "params": {
    "yaw": {
-    "step": 5,
-    "min": -75,
-    "max": 75
+    "step": 3,
+    "min": -8,
+    "max": 8
    },
    "s_r": {
     "step": 12,
@@ -130,9 +131,9 @@
     "max": 18
    },
    "stance": {
-    "step": 4,
-    "min": -10,
-    "max": 45,
+    "step": 2,
+    "min": 0,
+    "max": 6,
     "init": 0.0
    },
    "l_r": {
@@ -146,6 +147,12 @@
     "min": -30,
     "max": 30,
     "init": 0.0
+   },
+   "spread": {
+    "step": 2,
+    "min": 0,
+    "max": 14,
+    "init": 5.0
    }
   },
   "rounds": 6,
@@ -156,7 +163,30 @@
    "scale": 4,
    "samples": 32,
    "step_f": 0.5
-  }
+  },
+  "probe": [
+   {
+    "s_l": [
+     0,
+     40,
+     80,
+     120
+    ],
+    "e_l": [
+     0,
+     50,
+     100
+    ]
+   },
+   {
+    "spread": [
+     0,
+     4,
+     8,
+     12
+    ]
+   }
+  ]
  },
  "scale": 4,
  "samples": {
@@ -168,6 +198,11 @@
   "passes": 2,
   "samples": 32,
   "params": {
+   "metal": [
+    0.0,
+    0.5,
+    1.0
+   ],
    "steel": [
     [
      190,
@@ -208,9 +243,10 @@
     "max": 20
    },
    "torso_hw": {
-    "step": 0.4,
-    "min": 9,
-    "max": 14
+    "step": 0.5,
+    "min": 6.0,
+    "max": 12.0,
+    "init": 8.5
    },
    "torso_hh": {
     "step": 0.4,
@@ -233,9 +269,10 @@
     "max": 7.5
    },
    "skirt_hw": {
-    "step": 0.4,
-    "min": 11,
-    "max": 16
+    "step": 0.5,
+    "min": 5.0,
+    "max": 13.0,
+    "init": 8.0
    },
    "skirt_hh": {
     "step": 0.3,
@@ -254,8 +291,9 @@
    },
    "arm_r": {
     "step": 0.2,
-    "min": 1.6,
-    "max": 3.4
+    "min": 1.0,
+    "max": 3.0,
+    "init": 1.8
    },
    "hip_x": {
     "step": 0.3,
@@ -274,8 +312,9 @@
    },
    "leg_r": {
     "step": 0.2,
-    "min": 2.4,
-    "max": 4.2
+    "min": 1.8,
+    "max": 3.6,
+    "init": 2.6
    },
    "blade_l": {
     "step": 1,
@@ -291,7 +330,7 @@
     "step": 0.1,
     "min": 0.1,
     "max": 0.8,
-    "init": 0.25
+    "init": 0.3
    },
    "spec": {
     "step": 0.1,
@@ -322,6 +361,24 @@
     "min": 0,
     "max": 0.5,
     "init": 0.14
+   },
+   "torso_taper": {
+    "step": 0.05,
+    "min": 0.0,
+    "max": 0.7,
+    "init": 0.45
+   },
+   "helmet_spike": {
+    "step": 1.0,
+    "min": 0.0,
+    "max": 10.0,
+    "init": 5.0
+   },
+   "spike_r": {
+    "step": 0.1,
+    "min": 0.3,
+    "max": 1.0,
+    "init": 0.7
    }
   },
   "refine_rounds": 6,

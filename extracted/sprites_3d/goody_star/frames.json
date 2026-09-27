@@ -5,7 +5,13 @@
   12
  ],
  "mode": "goody_star",
- "opts": {},
+ "opts": {
+  "key": 3.0,
+  "fill": 0.18,
+  "r_out": 0.72,
+  "r_in": 0.3,
+  "thick": 0.22
+ },
  "sweep": [
   {
    "param": "spin",
@@ -39,9 +45,37 @@
     0.12,
     0.18
    ]
-  }
+  },
+  "refine": {
+   "r_out": {
+    "step": 0.04,
+    "min": 0.6,
+    "max": 0.96,
+    "init": 0.72
+   },
+   "r_in": {
+    "step": 0.03,
+    "min": 0.24,
+    "max": 0.52,
+    "init": 0.3
+   },
+   "thick": {
+    "step": 0.03,
+    "min": 0.04,
+    "max": 0.45,
+    "init": 0.22
+   }
+  },
+  "refine_rounds": 4,
+  "detail_w": 0.5
  },
- "post": [],
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
  "gate": {
   "iou": 0.88,
   "de": 16.0

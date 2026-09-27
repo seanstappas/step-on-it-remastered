@@ -99,6 +99,12 @@ regressing the green gates for no gameplay benefit._
   aligned loops by `tools/build_original_music.py`) ↔ REMASTERED = 3D over HD, remastered SFX, studio
   music (same playback position). Not captured yet: `Angel_Pie` and the `_thin` (Light) arrangements
   of the original music (they fall back as documented in `docs/original_game/music-tracks.md`).
+- REMASTERED renders at the monitor's rate with in-between 3D poses (`framematch.py tweens`, 28
+  families). Still stepped: the WIP families (HD only), the Stop/Go sign flip (drawn with the board),
+  and the 4 pairs the in-between check dropped.
+- Real-time 3D (F4): 23 families render live in game from their rigs (`framematch.py live` / `livecal` /
+  `livegate` -> `gate.json`). Still pre-rendered: the procedural-texture families (weapons, egg, gift
+  box, M block: bake their shader textures for glTF) and the Beenie's right shot / winged shoe.
 - Published (1079 frames): the Robo (80), both players' run f02-f49 (48 + 48) and f50-f117 (68 + 68), the speed indicator's winged shoe (30), board blocks (150) and the '?' tile (6), every goody (51: coins, clocks,
   mult, keys, doors, arrow and switch tiles, turtle, gift, shield, helmet, shoe, ...), the speed
   indicator's spinning shield (30), Teeth (49), the Walker (48), the
@@ -107,9 +113,15 @@ regressing the green gates for no gameplay benefit._
   (16), the M block collapse (15), the Gargoyle egg (15), Gargoyle pierce puff (15) and green puff (15),
   Knight's gift box (15), the transporter zap (15), the player's swirl ball (8) and arrow (2), all seven
   nasties' spawner blocks (7), and both players' cheer (9 + 9).
-- WIP with notes: the
-  Ostrich, the Ant, the players' tumble (`BP_tumble`, then a green clone), the
-  Hammer walk, the Beenie's down shot, the Knight, the Beenie character, the Gargoyle.
+- Published 2026-09-27 (live rigs too): the Ant (49/49), both players' tumble (`BP_tumble`,
+  `GP_tumble`, 32/32 each) and the Ostrich (32/32 under a documented gate dE 17.75: f32 17.7) --
+  27 families now render live under F4.
+- WIP with notes (frames passing / total, 2026-09-27): the Hammer walk (27/48; every fail is colour,
+  dE 16-21, limited by the legs' positions), the Gargoyle (32/73; rebuilt with raised arms, looped horns,
+  the red striped ball and the wings wrapped in front as a cloak for f02-f10 -- refit in progress), the
+  Knight (0/65; refit held front-facing in progress), the Beenie character (0/56; shape now IoU 0.87, the
+  head rendered as all hair -- cap, hair band and face re-laid, look in progress), the Beenie's down shot
+  (0/16; three thick bars tumbling toward the camera, needs per-bar 3D angles).
 - Not started:
   - The Hammer's swing: a rigged procedural model with per-limb pose keys fitted
     per frame by `optim`, as for the Hippo and Piggy (`quadruped.py`).

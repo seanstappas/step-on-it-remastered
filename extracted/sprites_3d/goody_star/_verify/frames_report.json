@@ -7,18 +7,19 @@
   "de": 16.0
  },
  "failed": [],
- "iou_min": 0.9668,
- "iou_mean": 0.9668,
- "de_mean": 15.614,
- "de_max": 15.614,
+ "iou_min": 0.9445,
+ "iou_mean": 0.9445,
+ "de_mean": 12.315,
+ "de_max": 12.315,
  "rows": [
   {
    "frame": 12,
-   "iou": 0.9668,
-   "de": 15.614,
-   "de_raw": 20.436,
+   "iou": 0.9445,
+   "de": 12.315,
+   "de_raw": 17.654,
    "best_src": 12,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,

@@ -8,6 +8,12 @@ Pose: "spread" (deg, both wings about the view axis: -90 = hanging down, 0 = lev
 wings folded forward around the body: 0 = flat), "crouch" (px the upper body sits lower, the legs shortened),
 "egg" (egg scale, 0 = none), "egg_y" (px the egg sits below its place above the head: it rises out of the
 chest over f42-f48), "scroll" (the egg's band scroll, px).
+Optional (default off): opts "arms" adds two-segment stone ARMS at the wing roots (pose "arm", deg about the
+view axis: 0 = hanging, 180 = raised beside the head; "elbow", deg: + bends the raised forearm toward the head);
+"horn_loops" swaps the pointed ears for two looped HORNS (tori facing the camera); "ball" swaps the striped
+cushion for a red SPHERE with vertical dark stripes that spins with "scroll"; "cloak" adds the wings wrapped
+IN FRONT of the body as a curved stone shell hanging from the shoulders (pose "cloak": 0 = none, 1 = its full
+"cloak_h" length); "wing_ribs" > 0 pleats the wing albedo.
 The whole model is scaled by `model_scale` and moved by `model_dy` px to fit the sweep camera.
 """
 import math
@@ -18,7 +24,7 @@ from .. import common as C
 from .. import register_frames
 from .biped import _rbox
 from .egg import build as egg_build
-from .quadruped import S, _ell
+from .quadruped import S, _ell, _stripes
 from .robo import _cyl, _empty
 from .tile import _prism
 
@@ -48,13 +54,40 @@ def _wing_mat(opts, rgb, span):
     nt.links.new(sep.outputs["X"], ab.inputs[0])
     nt.links.new(ab.outputs[0], mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], ramp.inputs["Fac"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    ribs = f("wing_ribs", 0.0)
+    if ribs <= 0:
+        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+        return mat
+    # vertical pleats: the albedo dips to `rib_dark` in `wing_ribs` bands across the span
+    sn, mul, band = nt.nodes.new("ShaderNodeMath"), nt.nodes.new("ShaderNodeMath"), nt.nodes.new("ShaderNodeMapRange")
+    mul.operation, mul.inputs[1].default_value = 'MULTIPLY', 2 * math.pi * ribs / span
+    sn.operation = 'COSINE'
+    band.inputs["From Min"].default_value, band.inputs["From Max"].default_value = -1.0, 1.0
+    band.inputs["To Min"].default_value, band.inputs["To Max"].default_value = f("rib_dark", 0.6), 1.0
+    nt.links.new(ab.outputs[0], mul.inputs[0])
+    nt.links.new(mul.outputs[0], sn.inputs[0])
+    nt.links.new(sn.outputs[0], band.inputs["Value"])
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type, mix.blend_type = 'RGBA', 'MULTIPLY'
+    mix.inputs["Factor"].default_value = 1.0
+    nt.links.new(ramp.outputs["Color"], mix.inputs["A"])
+    comb = nt.nodes.new("ShaderNodeCombineXYZ")
+    for i in range(3):
+        nt.links.new(band.outputs["Result"], comb.inputs[i])
+    nt.links.new(comb.outputs[0], mix.inputs["B"])
+    nt.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
     return mat
 
 
 def build(opts):
     f = lambda k, d: float(opts.get(k, d))
     egg, scroll = egg_build(dict(opts.get("egg", {})))                  # clears the scene; the egg comes first
+    if opts.get("ball"):
+        bpy.data.objects.remove(egg, do_unlink=True)
+        br = f("ball_r", 11.0)
+        egg = _ell("ball", (0, 0, 0), (br, br, br), _stripes(opts.get("ball_dark", (90, 0, 0)),
+                   opts.get("ball_red", (255, 20, 20)), f("ball_freq", 3.0)), 32)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)   # the pose scales it by "egg"
     stone = C._mat("stone", C._srgb(*opts.get("stone", (150, 150, 155))), rough=f("rough", 0.6), spec=f("spec", 0.2))
     gain = lambda k: tuple(max(0, min(255, int(round(v * f(k, 1.0))))) for v in opts.get("stone", (150, 150, 155)))
     body_m = C._mat("body_stone", C._srgb(*gain("body_gain")), rough=f("rough", 0.6), spec=f("spec", 0.2))
@@ -78,6 +111,18 @@ def build(opts):
     _ell("head", (0, hy, 0), (hr, hr * 0.95, hr * 0.9), stone, 32).parent = upper
     for sx in (-1.0, 1.0):
         _ell("socket", (sx * hr * 0.4, hy + 0.5, hr * 0.75), (1.2, 1.0, 0.6), dark, 12).parent = upper
+        if opts.get("horn_loops"):
+            bpy.ops.mesh.primitive_torus_add(major_radius=f("horn_R", 5.0) * S, minor_radius=f("horn_r", 1.4) * S,
+                                             major_segments=32, minor_segments=12)
+            horn = bpy.context.active_object
+            horn.name = "horn"
+            horn.data.materials.append(stone)
+            bpy.ops.object.shade_smooth()
+            horn.parent = upper
+            horn.location = (sx * f("horn_x", 11.0) * S, (hy + f("horn_dy", 2.0)) * S, 0)
+            horn.rotation_euler = (0, 0, sx * math.radians(f("horn_tilt", 0.0)))
+            horn.scale = (f("horn_sx", 1.0), f("horn_sy", 1.0), 1.0)
+            continue
         ear = _prism("ear", [(x * S, y * S) for x, y in (EAR if sx > 0 else [(-x, y) for x, y in EAR][::-1])], -0.8 * S, 1.6 * S, stone, 0.3 * S)
         ear.parent = upper
         ear.location = (sx * hr * 0.8 * S, (hy + f("ear_dy", 0.0)) * S, 0)
@@ -91,6 +136,39 @@ def build(opts):
         w = _prism("wing", [(x * S, y * S) for x, y in pts], -0.4 * S, 0.8 * S, wing_m, 0.2 * S)
         w.parent = sh
         wings.append((sh, sx))
+    arms = []
+    if opts.get("arms"):
+        ar, ua, fa = f("arm_r", 1.3), f("uarm_l", 10.0), f("farm_l", 9.0)
+        for sx in (-1.0, 1.0):
+            sh = _empty("arm", (sx * f("arm_x", 6.0), f("arm_y", 48.0), 1.0), upper)
+            _cyl("uarm", (0, -ua / 2, 0), ar, ua, stone, 0.4, sh)
+            el = _empty("elbow", (0, -ua, 0), sh)
+            _cyl("farm", (0, -fa / 2, 0), ar * 0.9, fa, stone, 0.4, el)
+            _ell("hand", (0, -fa, 0), (ar * 1.4,) * 3, stone, 12).parent = el
+            arms.append((sh, el, sx))
+    cloak = None
+    if opts.get("cloak"):
+        import bmesh
+        me, bm = bpy.data.meshes.new("cloak"), bmesh.new()
+        cr, deg, ch = f("cloak_r", 13.0), f("cloak_deg", 70.0), f("cloak_h", 26.0)
+        ring = []
+        for i in range(17):
+            t = math.radians(-deg + 2 * deg * i / 16)
+            x, z = math.sin(t) * cr * S, (math.cos(t) - f("cloak_back", 0.5)) * cr * S   # front clears body_rz
+            ring.append((bm.verts.new((x, -ch * S, z)), bm.verts.new((x, 0.0, z))))
+        for i in range(16):
+            bm.faces.new((ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1]))
+        bm.to_mesh(me)
+        bm.free()
+        cloak = bpy.data.objects.new("cloak", me)
+        bpy.context.collection.objects.link(cloak)
+        sol = cloak.modifiers.new("solid", 'SOLIDIFY')
+        sol.thickness = 0.8 * S
+        cloak.data.materials.append(wing_m)
+        for p in me.polygons:
+            p.use_smooth = True
+        cloak.parent = upper
+        cloak.location = (0, f("cloak_y", 50.0) * S, 0)
     egg.parent = upper
     k = f("egg_scale", 0.6)
     egg.location = (0, (hy + hr + f("egg_dy", 5.0)) * S, 0)
@@ -98,16 +176,17 @@ def build(opts):
     m = f("model_scale", 0.5)
     root.scale = (m, m, m)
     root.location = (0, f("model_dy", -37.0) * S * m, 0)
-    return root, upper, legs, wings, egg, scroll
+    return root, upper, legs, wings, egg, scroll, arms, cloak
 
 
 def _frames_setup(opts):
-    root, upper, legs, wings, egg, scroll = build(opts)
+    root, upper, legs, wings, egg, scroll, arms, cloak = build(opts)
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
     f = lambda k, d: float(opts.get(k, d))
     return {"upper": upper, "legs": legs, "wings": wings, "egg": egg, "scroll": scroll, "hip_y": f("hip_y", 22.0),
-            "egg_k": f("egg_scale", 0.6), "egg_y0": egg.location.y}
+            "egg_k": f("egg_scale", 0.6), "egg_y0": egg.location.y, "arms": arms, "ball": bool(opts.get("ball")),
+            "spin": f("ball_spin", 12.0), "cloak": cloak}
 
 
 def _frames_pose(ctx, pose):
@@ -124,6 +203,15 @@ def _frames_pose(ctx, pose):
     ctx["egg"].scale = (ctx["egg_k"] * max(e, 0.02),) * 3
     ctx["egg"].location.y = ctx["egg_y0"] - g("egg_y") * S
     ctx["scroll"].outputs[0].default_value = g("scroll")
+    if ctx["ball"]:                                                  # stripes along local Z -> world X, spun about Y
+        ctx["egg"].rotation_euler = (0, math.pi / 2 + math.radians(g("scroll") * ctx["spin"]), 0)
+    for sh, el, sx in ctx["arms"]:
+        sh.rotation_euler = (0, 0, sx * math.radians(g("arm")))
+        el.rotation_euler = (0, 0, sx * math.radians(g("elbow")))
+    if ctx["cloak"] is not None:
+        k = g("cloak")
+        ctx["cloak"].hide_render = k <= 0.02
+        ctx["cloak"].scale = (1.0, max(k, 0.02), 1.0)
 
 
 register_frames("gargoyle", _frames_setup, _frames_pose)

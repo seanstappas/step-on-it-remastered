@@ -10,8 +10,8 @@
  "failed": [],
  "iou_min": 0.9648,
  "iou_mean": 0.9814,
- "de_mean": 11.512,
- "de_max": 14.636,
+ "de_mean": 10.374,
+ "de_max": 12.599,
  "rows": [
   {
    "frame": 146,
@@ -20,6 +20,7 @@
    "de_raw": 18.702,
    "best_src": 146,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -29,10 +30,11 @@
   {
    "frame": 147,
    "iou": 0.9814,
-   "de": 14.636,
-   "de_raw": 22.403,
+   "de": 7.81,
+   "de_raw": 12.588,
    "best_src": 147,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -46,6 +48,7 @@
    "de_raw": 20.661,
    "best_src": 148,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -59,6 +62,7 @@
    "de_raw": 19.433,
    "best_src": 149,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -72,6 +76,7 @@
    "de_raw": 15.434,
    "best_src": 150,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -85,6 +90,7 @@
    "de_raw": 19.267,
    "best_src": 151,
    "rank_dist": 0,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,

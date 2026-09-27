@@ -1,0 +1,925 @@
+{
+ "R": 120,
+ "placement": {
+  "k": 0.3458540414611888,
+  "ox": -6.583041958041957,
+  "oy": 0.058566433566435094
+ },
+ "model": [
+  {}
+ ],
+ "frames": {
+  "66": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7419,
+   "de": 39.462,
+   "shift": [
+    -1.0,
+    2.0
+   ]
+  },
+  "67": {
+   "pose": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 45
+   },
+   "iou": 0.7673,
+   "de": 41.625,
+   "shift": [
+    2.0,
+    3.0
+   ]
+  },
+  "68": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7139,
+   "de": 42.083,
+   "shift": [
+    -1.0,
+    1.0
+   ]
+  },
+  "69": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7314,
+   "de": 43.897,
+   "shift": [
+    2.0,
+    0.0
+   ]
+  },
+  "70": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7247,
+   "de": 43.433
+  },
+  "71": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7381,
+   "de": 42.935,
+   "shift": [
+    2.0,
+    0.0
+   ]
+  },
+  "72": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7067,
+   "de": 40.098,
+   "shift": [
+    -1.0,
+    1.0
+   ]
+  },
+  "73": {
+   "pose": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 45
+   },
+   "iou": 0.7896,
+   "de": 40.16,
+   "shift": [
+    2.0,
+    3.0
+   ]
+  },
+  "74": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7238,
+   "de": 41.669,
+   "shift": [
+    -1.0,
+    2.0
+   ]
+  },
+  "75": {
+   "pose": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 0
+   },
+   "iou": 0.7134,
+   "de": 43.985,
+   "shift": [
+    -1.0,
+    3.0
+   ]
+  },
+  "76": {
+   "pose": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 135
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 120,
+    "prop": 135
+   },
+   "iou": 0.712,
+   "de": 47.458,
+   "shift": [
+    -1.0,
+    0.0
+   ]
+  },
+  "77": {
+   "pose": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 180,
+    "phase": 0,
+    "prop": 0
+   },
+   "iou": 0.7047,
+   "de": 49.882,
+   "shift": [
+    -1.0,
+    0.0
+   ]
+  },
+  "78": {
+   "pose": {
+    "yaw": 60,
+    "phase": 60,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 60,
+    "phase": 60,
+    "prop": 90
+   },
+   "iou": 0.8239,
+   "de": 45.782
+  },
+  "79": {
+   "pose": {
+    "yaw": 60,
+    "phase": 60,
+    "prop": 135
+   },
+   "sweep_pick": {
+    "yaw": 60,
+    "phase": 60,
+    "prop": 135
+   },
+   "iou": 0.8246,
+   "de": 42.309
+  },
+  "80": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7139,
+   "de": 46.49
+  },
+  "81": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7428,
+   "de": 44.301
+  },
+  "82": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7382,
+   "de": 43.353
+  },
+  "83": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.723,
+   "de": 41.82,
+   "shift": [
+    1.0,
+    0.0
+   ]
+  },
+  "84": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7143,
+   "de": 41.424,
+   "shift": [
+    1.0,
+    2.0
+   ]
+  },
+  "85": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7251,
+   "de": 41.277,
+   "shift": [
+    1.0,
+    2.0
+   ]
+  },
+  "86": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 135
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 135
+   },
+   "iou": 0.7038,
+   "de": 42.565,
+   "shift": [
+    1.0,
+    0.0
+   ]
+  },
+  "87": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7143,
+   "de": 42.943,
+   "shift": [
+    1.0,
+    0.0
+   ]
+  },
+  "88": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7368,
+   "de": 44.304
+  },
+  "89": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7402,
+   "de": 44.232
+  },
+  "90": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7461,
+   "de": 42.219
+  },
+  "91": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7615,
+   "de": 41.698
+  },
+  "92": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7674,
+   "de": 43.068,
+   "shift": [
+    0.0,
+    1.0
+   ]
+  },
+  "93": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.788,
+   "de": 43.265,
+   "shift": [
+    0.0,
+    1.0
+   ]
+  },
+  "94": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7753,
+   "de": 42.048,
+   "shift": [
+    0.0,
+    1.0
+   ]
+  },
+  "95": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7536,
+   "de": 41.33,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "96": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7391,
+   "de": 40.447,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "97": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7331,
+   "de": 40.054,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "98": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7123,
+   "de": 41.281,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "99": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7127,
+   "de": 42.916,
+   "shift": [
+    -2.0,
+    2.0
+   ]
+  },
+  "100": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7021,
+   "de": 44.825
+  },
+  "101": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.734,
+   "de": 46.1,
+   "shift": [
+    -3.0,
+    0.0
+   ]
+  },
+  "102": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 0
+   },
+   "iou": 0.7034,
+   "de": 42.955,
+   "shift": [
+    0.0,
+    1.0
+   ]
+  },
+  "103": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7163,
+   "de": 41.055,
+   "shift": [
+    -2.0,
+    2.0
+   ]
+  },
+  "104": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7221,
+   "de": 40.121,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "105": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.744,
+   "de": 40.223,
+   "shift": [
+    -2.0,
+    2.0
+   ]
+  },
+  "106": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.711,
+   "de": 41.256,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "107": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.68,
+   "de": 41.911,
+   "shift": [
+    0.0,
+    2.0
+   ]
+  },
+  "108": {
+   "pose": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 0,
+    "phase": 120,
+    "prop": 45
+   },
+   "iou": 0.7077,
+   "de": 42.836
+  },
+  "109": {
+   "pose": {
+    "yaw": 240,
+    "phase": 60,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 240,
+    "phase": 60,
+    "prop": 90
+   },
+   "iou": 0.7846,
+   "de": 41.482,
+   "shift": [
+    -1.0,
+    0.0
+   ]
+  },
+  "110": {
+   "pose": {
+    "yaw": 60,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 60,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.7834,
+   "de": 37.204
+  },
+  "111": {
+   "pose": {
+    "yaw": 60,
+    "phase": 0,
+    "prop": 135
+   },
+   "sweep_pick": {
+    "yaw": 60,
+    "phase": 0,
+    "prop": 135
+   },
+   "iou": 0.8438,
+   "de": 39.83
+  },
+  "112": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8384,
+   "de": 40.01
+  },
+  "113": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8545,
+   "de": 40.794
+  },
+  "114": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8489,
+   "de": 39.719
+  },
+  "115": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8349,
+   "de": 39.452
+  },
+  "116": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 135
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 135
+   },
+   "iou": 0.8202,
+   "de": 38.921
+  },
+  "117": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 0
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 0
+   },
+   "iou": 0.8446,
+   "de": 40.315
+  },
+  "118": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 45
+   },
+   "iou": 0.8259,
+   "de": 40.068
+  },
+  "119": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 45
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 45
+   },
+   "iou": 0.8495,
+   "de": 41.209
+  },
+  "120": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8511,
+   "de": 40.861
+  },
+  "121": {
+   "pose": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "sweep_pick": {
+    "yaw": 90,
+    "phase": 240,
+    "prop": 90
+   },
+   "iou": 0.8545,
+   "de": 40.794
+  }
+ }
+}

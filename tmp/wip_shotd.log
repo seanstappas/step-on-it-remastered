@@ -1,0 +1,34 @@
+== beenie_shot_d [sweep fit optim look final verify] (337 s, exit 1)
+look: 8 frames [50, 52, 54, 56, 58, 60, 62, 64]
+look: start dE 93.760
+look: refine round 0 -> dE 93.294 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.75, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 1 -> dE 93.163 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 2 -> dE 93.163 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 3 -> dE 92.876 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 4 -> dE 92.720 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0063, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 5 -> dE 92.720 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0063, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: refine round 6 -> dE 92.720 {"rod_r": 2.0562, "rough": 0.35, "spec": 0.0, "gamma": 0.65, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0063, "l_green": 0.9875, "a_red": -0.75, "a_green": 6.0}
+look: dE 93.760 -> 92.720 with {"dir": 90.0, "half": 29.25, "rod_r": 2.0562, "red": [200, 10, 10], "blue": [40, 40, 255], "green": [20, 200, 20], "world": 0.14, "key": 1.875, "fill": 0.0, "key_dir": [0.4, 0.7, 0.6], "rough": 0.35, "spec": 0.0, "gamma": 0.65, "mirror": false, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0063, "l_green": 0.9875, "axis_tilt": 0.0, "a_red": -0.75, "a_green": 6.0, "taper": 0.7}
+final: 16 frames (+0 derived) -> extracted\sprites_3d_frames\beenie_sprites
+verify beenie_shot_d: 16 frames, IoU min 0.250 mean 0.482, dE mean 17.50 max 32.86 -> FAIL [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+verify: beenie_shot_d is not published and failed -> removed its 16 overlay frames
+BATCH DONE
+== beenie_shot_d [sweep fit optim look final verify optimfail final verify] (934 s, exit 1)
+look: 8 frames [50, 52, 54, 56, 58, 60, 62, 64]
+look: start dE 99.699
+look: refine round 0 -> dE 98.692 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.75, "key": 1.875, "world": 0.14, "fill": 0.0, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 1.0126, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -6.0, "persp_d": 50.0}
+look: refine round 1 -> dE 97.881 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 2.375, "world": 0.18, "fill": 0.06, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9876, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -6.0, "persp_d": 50.0}
+look: refine round 2 -> dE 96.943 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 2.375, "world": 0.18, "fill": 0.06, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9876, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -3.0, "persp_d": 50.0}
+look: refine round 3 -> dE 96.661 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 2.375, "world": 0.18, "fill": 0.06, "r_red": 1.025, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9876, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -3.0, "persp_d": 48.75}
+look: refine round 4 -> dE 95.590 {"rod_r": 0.7125, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 2.875, "world": 0.22, "fill": 0.06, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9814, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -1.5, "persp_d": 48.75}
+look: refine round 5 -> dE 95.340 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 2.875, "world": 0.22, "fill": 0.06, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9814, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -1.5, "persp_d": 48.75}
+look: refine round 6 -> dE 95.095 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 3.375, "world": 0.22, "fill": 0.06, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9752, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -1.5, "persp_d": 48.75}
+look: refine round 7 -> dE 94.873 {"rod_r": 0.7, "rough": 0.35, "spec": 0.0, "gamma": 0.85, "key": 3.875, "world": 0.22, "fill": 0.06, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9752, "l_blue": 1.0, "l_green": 0.9875, "a_red": -0.75, "a_green": -0.75, "persp_d": 48.75}
+look: dE 99.699 -> 94.873 with {"dir": 90.0, "half": 29.25, "rod_r": 0.7, "red": [200, 10, 10], "blue": [40, 40, 255], "green": [20, 200, 20], "world": 0.22, "key": 3.875, "fill": 0.06, "key_dir": [0.4, 0.7, 0.6], "rough": 0.35, "spec": 0.0, "gamma": 0.85, "mirror": false, "r_red": 1.0375, "r_blue": 1.05, "r_green": 1.0, "l_red": 0.9752, "l_blue": 1.0, "l_green": 0.9875, "axis_tilt": 0.0, "a_red": -0.75, "a_green": -0.75, "taper": 0.7, "persp_d": 48.75}
+final: 16 frames (+0 derived) -> extracted\sprites_3d_frames\beenie_sprites
+verify beenie_shot_d: 16 frames, IoU min 0.077 mean 0.480, dE mean 23.30 max 36.29 -> FAIL [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+verify: beenie_shot_d is not published and failed -> removed its 16 overlay frames
+final: 16 frames (+0 derived) -> extracted\sprites_3d_frames\beenie_sprites
+verify beenie_shot_d: 16 frames, IoU min 0.447 mean 0.548, dE mean 23.70 max 35.51 -> FAIL [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+verify: beenie_shot_d is not published and failed -> removed its 16 overlay frames
+BATCH DONE

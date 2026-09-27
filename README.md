@@ -55,7 +55,11 @@ the GDExtension build, a clean Godot import, and a rendered `--shot` screenshot.
 Controls — P1: arrows + Z/X/C/V, P2: WASD + F/G/H/J. **F2** switches the whole presentation live —
 **ORIGINAL** (1996 art, 8-bit SFX, the original game's music) ↔ **REMASTERED** (frame-matched 3D
 sprites, remastered SFX, studio music remaster) — on the title menu and mid-board. **F3** toggles 3D ↔
-HD sprites within REMASTERED, **M** toggles the Retro ↔ Remastered display effects; **Tab** pauses.
+HD sprites within REMASTERED, **F4** toggles real-time 3D (the players, most enemies and projectiles are
+posed and rendered live every frame from their 3D rigs) ↔ pre-rendered 3D frames, **M** toggles the Retro ↔ Remastered display effects; **Tab** pauses.
+REMASTERED draws at the monitor's refresh rate: the engine keeps the original tick, and each sprite is
+drawn between its engine states with rendered in-between 3D poses (shown 2 ticks, ~33 ms, behind the
+engine). ORIGINAL draws once per tick, as in 1996.
 
 ### Front-end flags
 
@@ -88,7 +92,7 @@ Assets are decoded out of the original into `extracted/`, and optionally AI-upsc
 | Asset | Faithful (SD) | Remaster (HD) | Tool |
 |---|---|---|---|
 | Sprites | `extracted/sprites/` | `sprites_hd` (4×) · `sprites_uhd` (8×) — Real-ESRGAN anime / hqx per sheet | `tools/upscale_sprites.py` |
-| 3D sprites | `extracted/sprites/` (the per-frame reference) | `sprites_3d_frames` (4×, same `fNN` per frame) — procedural Blender models, pose fitted per frame | `tools/soi3d/framematch.py` |
+| 3D sprites | `extracted/sprites/` (the per-frame reference) | `sprites_3d_frames` (4×, same `fNN` per frame) — procedural Blender models, pose fitted per frame; `tw/` = in-between poses for the smooth REMASTERED rendering; `sprites_live/<family>` = a rig for real-time 3D (Robo) | `tools/soi3d/framematch.py` (`tweens`, `live` stages) |
 | Full-screen art | `extracted/pict/` | `pict_hd` · `pict_hd_v2` (text panels re-rendered crisp) | `tools/upscale_picts.py`, `render_text_picts.py` |
 | Music | `extracted/music/original/*.ogg` — the original game's music (emulator captures cut to one aligned loop) | `*.ogg` studio render of the extracted notes (per-screen mapping) | `tools/build_original_music.py`; `render_music*.py`, `qtma_to_midi.py` |
 | SFX | `extracted/audio/wav/` | `wav_hd` (deterministic clean-up) · `wav_ai` (AudioSR super-res) | `tools/enhance_sfx.py`, `ai_super_sfx.py` |

@@ -134,7 +134,7 @@ def _star_stud(name, angles, r_out, r_valley, z_base, z_apex, mat, bevel=0.03):
 
 
 def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.0,
-               green_rgb=(0, 104, 0), red_rgb=(206, 16, 16), glint_energy=450.0):
+               green_rgb=(0, 104, 0), red_rgb=(206, 16, 16), glint_energy=450.0, hub=None):
     """FAITHFUL Step-On-It goody disk: a GREEN ball with FOUR raised RED half-cone blades. The blades
     are SYMMETRIC (even 90 deg) because in the remaster this disk is ANIMATED: the blades are parented
     to a pivot at the ball centre and SPUN (rotation about the pivot Z). Pass explicit blade_angles /
@@ -176,6 +176,28 @@ def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.
                               mat=red)
         bl.parent = pivot
         bl.matrix_parent_inverse.identity()
+    if hub:     # the source's hub: a dark green recess between the blade bases with a bright green axle knob
+        hr = float(hub.get("hub_r", 0.3))
+        pit = C._mat("pit", C._srgb(*hub.get("pit", (0, 40, 0))), rough=0.9, spec=0.0)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=32, ring_count=16,
+                                             location=(0, 0, math.sqrt(max(0.0, 1.0 - hr * hr)) + 0.005))
+        p = bpy.context.active_object
+        p.name = "pit"
+        p.scale = (hr, hr, 0.02)
+        p.data.materials.append(pit)
+        kr = float(hub.get("knob_r", 0.09))
+        knob = C._mat("knob", C._srgb(*hub.get("knob", (60, 200, 60))), rough=0.5, spec=0.2)
+        kb = knob.node_tree.nodes["Principled BSDF"]
+        kb.inputs["Emission Color"].default_value = C._srgb(*hub.get("knob", (60, 200, 60)))
+        kb.inputs["Emission Strength"].default_value = float(hub.get("knob_emit", 0.3))
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=kr, segments=24, ring_count=12, location=(0, 0, 1.0))
+        k = bpy.context.active_object
+        k.name = "knob"
+        k.data.materials.append(knob)
+        bpy.ops.object.shade_smooth()
+        for o in (p, k):
+            o.parent = pivot
+            o.matrix_parent_inverse.identity()
     pivot.rotation_euler = (math.radians(tilt_x), math.radians(tilt_y), math.radians(spin))
 
 
@@ -195,7 +217,7 @@ def render(args):
 
 def _frames_setup(opts):
     build_disk(green_rgb=tuple(opts.get("green", (0, 104, 0))), red_rgb=tuple(opts.get("red", (206, 16, 16))),
-               glint_energy=float(opts.get("glint_energy", 450.0)))
+               glint_energy=float(opts.get("glint_energy", 450.0)), hub=opts if opts.get("hub") else None)
     C.setup_scene(256, world_strength=0.19, fill_energy=0.16)
     C.apply_look(opts)
     return {"pivot": bpy.data.objects["pivot"]}

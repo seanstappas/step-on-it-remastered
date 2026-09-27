@@ -154,5 +154,14 @@
   "rounds": 6,
   "scale": 4,
   "samples": 16
+ },
+ "tweens": {
+  "n": 4,
+  "runs": [
+   [
+    2,
+    31
+   ]
+  ]
  }
 }

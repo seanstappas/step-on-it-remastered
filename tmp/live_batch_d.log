@@ -1,0 +1,46 @@
+== disk_sprites (9 s, exit 0)
+LIVE_DONE 24
+live: 24 frames -> extracted\sprites_live\disk_sprites
+livecal disk_sprites: sun x1.175, ambient x0.300 -> dE mean 13.34 (unscaled 14.45) -> extracted\sprites_live\disk_sprites\live.json
+livegate disk_sprites (24 frames, gate IoU >= 0.900, dE <= 16.0):
+  live  : IoU min 0.996 mean 0.998, dE mean 13.47 max 14.26, pass 24 (24 as good as the published frame)
+  cycles: IoU min 0.996 mean 0.998, dE mean 12.82 max 13.74, pass 24
+  live vs cycles: dE mean 4.41 max 4.71
+  worst live frames: f25 (IoU 0.997 dE 14.3), f03 (IoU 0.999 dE 14.2), f24 (IoU 0.997 dE 14.1), f05 (IoU 0.999 dE 14.1), f04 (IoU 0.999 dE 14.1)
+== spinner_sprites (6 s, exit 0)
+LIVE_DONE 16
+live: 16 frames -> extracted\sprites_live\spinner_sprites
+livecal spinner_sprites: sun x1.000, ambient x0.500 -> dE mean 11.77 (unscaled 12.42) -> extracted\sprites_live\spinner_sprites\live.json
+livegate spinner_sprites (16 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.866 mean 0.917, dE mean 11.77 max 13.34, pass 16 (16 as good as the published frame)
+  cycles: IoU min 0.866 mean 0.917, dE mean 11.69 max 13.71, pass 16
+  live vs cycles: dE mean 2.40 max 3.09
+  worst live frames: f06 (IoU 0.891 dE 13.3), f14 (IoU 0.900 dE 13.2), f05 (IoU 0.903 dE 13.1), f09 (IoU 0.866 dE 12.9), f13 (IoU 0.904 dE 12.6)
+== transporter (8 s, exit 0)
+LIVE_DONE 15
+live: 15 frames -> extracted\sprites_live\transporter
+livecal transporter: sun x1.050, ambient x0.050 -> dE mean 12.18 (unscaled 14.22) -> extracted\sprites_live\transporter\live.json
+livegate transporter (15 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.858 mean 0.895, dE mean 12.20 max 15.09, pass 15 (15 as good as the published frame)
+  cycles: IoU min 0.858 mean 0.895, dE mean 11.82 max 14.80, pass 15
+  live vs cycles: dE mean 3.84 max 4.50
+  worst live frames: f07 (IoU 0.939 dE 15.1), f12 (IoU 0.938 dE 14.8), f08 (IoU 0.906 dE 14.5), f06 (IoU 0.893 dE 14.3), f11 (IoU 0.909 dE 13.8)
+== emblem_teeth (4 s, exit 1)
+LIVE_DONE 1
+live: 1 frames -> extracted\sprites_live\emblem_teeth
+livecal emblem_teeth: sun x0.725, ambient x0.100 -> dE mean 16.63 (unscaled 26.07) -> extracted\sprites_live\emblem_teeth\live.json
+livegate emblem_teeth (1 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.932 mean 0.932, dE mean 16.63 max 16.63, pass 0 (0 as good as the published frame)
+  cycles: IoU min 0.932 mean 0.932, dE mean 15.29 max 15.29, pass 1
+  live vs cycles: dE mean 6.12 max 6.12
+  worst live frames: f51 (IoU 0.932 dE 16.6)
+== goody_1up (4 s, exit 1)
+LIVE_DONE 1
+live: 1 frames -> extracted\sprites_live\goody_1up
+livecal goody_1up: sun x1.175, ambient x0.050 -> dE mean 22.01 (unscaled 22.09) -> extracted\sprites_live\goody_1up\live.json
+livegate goody_1up (1 frames, gate IoU >= 0.880, dE <= 16.0):
+  live  : IoU min 0.995 mean 0.995, dE mean 22.03 max 22.03, pass 0 (0 as good as the published frame)
+  cycles: IoU min 0.995 mean 0.995, dE mean 13.50 max 13.50, pass 1
+  live vs cycles: dE mean 13.05 max 13.05
+  worst live frames: f17 (IoU 0.995 dE 22.0)
+BATCH DONE

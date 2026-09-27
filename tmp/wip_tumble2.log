@@ -1,0 +1,6 @@
+== BP_tumble [optim look final verify optimfail final verify] (570 s, exit 1)
+look: 26 frames [127, 131, 135, 139, 143, 147, 151, 155, 128, 129, 130, 132, 133, 136, 138, 141, 144, 145, 146, 148, 149, 150, 152, 154, 156, 157]
+look: start dE 14.415
+look: refine round 0 -> dE 14.160 {"torso_y": 5.45, "torso_h": 7.4, "torso_r": 4.225, "torso_fx": 0.87, "hip_r": 3.4062, "head_y": 12.8, "head_r": 3.825, "hair_dx": 0.35, "hair_dy": 0.675, "hair_f": 0.9938, "shoulder_y": 7.5, "shoulder_z": 5.125, "uarm_l": 5.05, "farm_l": 2.8625, "arm_r": 2.0, "hand_r": 0.7, "hip_z": 1.675, "thigh_l": 5.1875, "shin_l": 3.5, "leg_r": 2.3187, "foot_rx": 2.0, "foot_ry": 0.8, "foot_dx": 0.825, "rough": 0.25, "spec": 0.0, "gamma": 0.8375, "key": 4.2, "world": 0.22, "fill": 0.06, "eye_el": 5.75, "eye_r": 1.8, "eye_az": 15.0, "pivot_x": -2.5, "pivot_y": 4.5}
+blender job BP_tumble_ref1_look failed
+BATCH DONE

@@ -1,0 +1,12 @@
+{
+ "sheet": "goody_sprites",
+ "family": "goody_1up",
+ "frames": [
+  17
+ ],
+ "pass": false,
+ "iou_min": 0.9951,
+ "de_mean": 22.031,
+ "de_max": 22.031,
+ "cycles_de_mean": 13.496
+}

@@ -1,0 +1,5 @@
+== ant_sprites [optimfail final verify] (307 s, exit 1)
+final: 49 frames (+0 derived) -> extracted\sprites_3d_frames\ant_sprites
+verify ant_sprites: 49 frames, IoU min 0.841 mean 0.879, dE mean 11.38 max 19.83 -> FAIL [26, 33, 35]
+verify: ant_sprites is not published and failed -> removed its 49 overlay frames
+BATCH DONE

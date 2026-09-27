@@ -196,6 +196,11 @@ def build_spinner_front(opts):
     blue = C._mat("blue", C._srgb(*opts.get("blue", (10, 10, 230))), rough=float(opts.get("rough", 0.5)),
                   spec=float(opts.get("spec", 0.15)))
     grey = C._mat("grey", C._srgb(*opts.get("grey", (200, 200, 200))), rough=0.3, spec=0.4)
+    pe = float(opts.get("post_emit", 0.0))
+    if pe > 0:                        # the source's peg under the lower bar stays light grey, not in its shadow
+        gb = grey.node_tree.nodes["Principled BSDF"]
+        gb.inputs["Emission Color"].default_value = C._srgb(*opts.get("grey", (200, 200, 200)))
+        gb.inputs["Emission Strength"].default_value = pe
     bpy.ops.object.empty_add(location=(0, 0, 0))
     root = bpy.context.active_object
     root.name = "root"

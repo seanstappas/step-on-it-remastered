@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "ant_sprites",
  "frames": {
   "range": [
@@ -8,7 +8,7 @@
   ]
  },
  "mode": "ant",
- "note": "WIP: ant.py = glossy red BALLS + thin slanted splayed leg bars: IoU 0.858 / dE 12.1, 17 fails, mostly the turn f20-f35 (the fit wandered: yaw 326 at f21, 132 at f35) -> a linear yaw prior 0 -> 180 over f19-f32. Round 10: a yaw x phase probe changed nothing (33.61 -> 33.48); a look that also scored the failing turn frames (add_fails) lowered their dE by ~0.6 but cost 3 frames of IoU (39 -> 36 passing) -> reverted. The turn frames render the white legs pinkish-grey (126,92,92 for a 210 grey): leg/body overlap in the front views. Shift hops: 39 -> 40/49 (f35). Round legs (leg_d = leg_w, as wide front-on as side-on) cut the turn frames IoU by up to 0.047 (37 passing) -> reverted: the source legs are not wider in the front views.",
+ "note": "PUBLISHED 49/49 (IoU min 0.851 mean 0.881, dE mean 11.0 max 15.7): the turn needed TWO antennae (ant.py ant_z > 0 = a pair, the source's front views f21-f33 show both) + splay 3.5/4.0 and a full refit (42 -> 46), then the failing frames seeded from their nearly identical passing twins (f33 <- f42, f35 <- f43: source IoU 0.879) -> 48, and the head-on f26 (knees 1 px too high) a per-frame knee height (pose kt, default 0) -> 49. History: ant.py = glossy red BALLS + thin slanted splayed leg bars: IoU 0.858 / dE 12.1, 17 fails, mostly the turn f20-f35 (the fit wandered: yaw 326 at f21, 132 at f35) -> a linear yaw prior 0 -> 180 over f19-f32. Round 10: a yaw x phase probe changed nothing (33.61 -> 33.48); a look that also scored the failing turn frames (add_fails) lowered their dE by ~0.6 but cost 3 frames of IoU (39 -> 36 passing) -> reverted. The turn frames render the white legs pinkish-grey (126,92,92 for a 210 grey): leg/body overlap in the front views. Shift hops: 39 -> 40/49 (f35). Round legs (leg_d = leg_w, as wide front-on as side-on) cut the turn frames IoU by up to 0.047 (37 passing) -> reverted: the source legs are not wider in the front views.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 5,
@@ -52,6 +52,7 @@
   "ant_l": 4.3,
   "ant_dx": -0.3,
   "ant_w": 0.8,
+  "ant_z": 1.5,
   "leg_w": 1.1125,
   "leg_d": 0.8,
   "leg_z": 4.5,
@@ -68,7 +69,7 @@
   "knee_x2": 0.8125,
   "knee_x3": 6.4375,
   "knee_swing": 0.4,
-  "splay": 0.5
+  "splay": 3.5
  },
  "sweep": [
   {
@@ -137,6 +138,12 @@
     "min": -8,
     "max": 8,
     "init": 0
+   },
+   "kt": {
+    "step": 0.5,
+    "min": -2.5,
+    "max": 1.5,
+    "init": 0
    }
   },
   "rounds": 4,
@@ -161,6 +168,12 @@
    ]
   },
   "refine": {
+   "ant_z": {
+    "step": 0.3,
+    "min": 0.0,
+    "max": 2.5,
+    "init": 1.5
+   },
    "head_x": {
     "step": 0.5,
     "min": -12,
@@ -363,7 +376,7 @@
     "step": 0.5,
     "min": 0.0,
     "max": 8.0,
-    "init": 0.5
+    "init": 3.5
    }
   },
   "refine_rounds": 8,

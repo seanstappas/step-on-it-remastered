@@ -29,6 +29,7 @@
   "tilt_x": "const"
  },
  "scale": 4,
+ "post": [{"fringe": {"px": 2}}],
  "samples": {
   "sweep": 16,
   "final": 256
@@ -100,5 +101,14 @@
   "de": 16.0,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 2,
+  "cycles": [
+   [
+    2,
+    16
+   ]
+  ]
+ }
 }

@@ -1,0 +1,9 @@
+# Real-time 3D vs pre-rendered frames (F4) on a Robo board, for a comparison clip, e.g.
+#   powershell -ExecutionPolicy Bypass -File tools/record_video.ps1 -Label live3d_robo -Mode remastered -Board board_432 -Script tools/verify_scripts/live3d_compare.txt -HD -Res 2560x1920 -Fps 120 -Extra "--3d"
+# live 3D, then F4 (pre-rendered in-betweens), then F4 again (live 3D); the label names each.
+0 150
+F4
+0 150
+F4
+0 150
+QUIT

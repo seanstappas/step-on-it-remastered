@@ -8,12 +8,12 @@
   ]
  },
  "mode": "rods",
- "note": "WIP: the down set (f50-f65) flies TOWARD the camera: the rods are 1 px thin at the apex (bottom) and ~5 px at their far ends (perspective), f53 shows a single rod, and the Beenie in front hides a band and the lower-left (post occlude clips to the union silhouette). The plain in-plane cone reaches IoU 0.54. Next: axis_tilt ~60-80 deg + rods tapered thin at the apex (emulated perspective).",
+ "note": "WIP: the down set (f50-f65) flies TOWARD the camera: the rods are 1 px thin at the apex (bottom) and ~5 px at their far ends (perspective), f53 shows a single rod, and the Beenie in front hides a band and the lower-left (post occlude clips to the union silhouette). The plain in-plane cone reaches IoU 0.54. Next: axis_tilt ~60-80 deg + rods tapered thin at the apex (emulated perspective). Round 13: rods.py persp_d (true perspective: each pose re-lays the rod end rings as seen by a camera persp_d px away) replaces the taper stand-in.",
  "place_iou_w": 200,
  "opts": {
   "dir": 90.0,
   "half": 29.25,
-  "rod_r": 2.0562,
+  "rod_r": 0.7,
   "red": [
    200,
    10,
@@ -50,7 +50,8 @@
   "axis_tilt": 0.0,
   "a_red": -0.75,
   "a_green": 0.0,
-  "taper": 0.7
+  "taper": 0.7,
+  "persp_d": 50.0
  },
  "sweep": [
   {
@@ -90,9 +91,10 @@
   "params": {},
   "refine": {
    "rod_r": {
-    "step": 0.15,
-    "min": 1.0,
-    "max": 2.6
+    "step": 0.1,
+    "min": 0.3,
+    "max": 1.6,
+    "init": 0.7
    },
    "rough": {
     "step": 0.1,
@@ -171,6 +173,12 @@
     "min": -40,
     "max": 40,
     "init": 0.0
+   },
+   "persp_d": {
+    "step": 5,
+    "min": 30,
+    "max": 120,
+    "init": 50.0
    }
   },
   "refine_rounds": 8,

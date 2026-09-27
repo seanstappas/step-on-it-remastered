@@ -1,0 +1,21 @@
+{
+ "opts": {
+  "kind": "gold",
+  "color": [
+   150,
+   120,
+   0
+  ],
+  "key": 4.6,
+  "world": 0.06,
+  "glyph_size": 1.15,
+  "glyph_extrude": 0.02,
+  "glyph_dark": 0.9,
+  "groove_r": 0.76,
+  "groove_w": 0.015,
+  "groove_dark": 0.35
+ },
+ "de_start": 19.21319076164301,
+ "de": 13.96123541724163,
+ "frame_opts": {}
+}

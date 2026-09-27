@@ -69,6 +69,7 @@ var _demo_frames := -1
 var _demo_script: Array = DEMO   # which scripted timeline --demo/--bug3 plays
 var _script: Array = []          # --script=FILE: [p1, frames, p2, cmd, arg] segments (verification runs)
 var _script_f := 0               # physics frames elapsed in the --script run
+var _script_hold := false        # --script HOLD: the simulation is frozen
 var _play_frames := -1   # --play=N: play the loaded (real) board for N frames, then quit
 var _enemy_lastpos := {}   # slot -> Vector2, for travel-synced enemy animation
 var _enemy_walk := {}      # slot -> float, accumulated movement distance
@@ -185,6 +186,33 @@ const SPRITES_3D_DIR := "res://../extracted/sprites_3d_frames"
 var _use_3d := false
 var _remastered := false   # presentation: false = ORIGINAL (1996 SD art), true = REMASTERED (Session.remastered)
 var _pres_toast := 0       # frames left to show the presentation label (after F2/F3, and at the first board)
+# REMASTERED smooth rendering (D2R-style): the engine keeps the original tick; the picture redraws at
+# the monitor's rate and shows every entity SMOOTH_DELAY ticks late, between its two engine states
+# around that time -- position lerped, pose tweened (framematch.py `tweens` in-betweens).
+const SMOOTH_DELAY := 2.0     # ticks: the next keyframe of a 2-tick mover is already known
+const SMOOTH_SPAN := 3.0      # a step is drawn over at most this many ticks before its keyframe
+const SMOOTH_SNAP := 48.0     # px: a longer jump (teleport, respawn, slot reuse) restarts the history
+var _smooth := false
+var _core_ticked := false     # the core ticked on the latest physics step (false while frozen)
+var _rtick := 0.0             # render clock in engine ticks
+var _drawn_tick := -1
+var _smooth_t0 := 0           # engine tick when the histories last restarted
+var _new_tick := true         # first draw since an engine tick: per-tick anim state advances
+var _draw_serial := 0
+var _hist := {}               # sprite key -> per-tick samples [tick, dpos, folder, frame, flip, red, planted, hide]
+var _seen := {}               # sprite key -> _draw_serial of its last draw (the rest are drawn as ghosts)
+var _grid_snaps: Array = []   # [[tick, PackedInt32Array]] -- the board as the delayed picture shows it
+var _tween_idx := {}          # folder -> {"lo,hi": [n, {k: path}]} from sprites_3d_frames/<folder>/tw
+var _TWEEN_RE := RegEx.create_from_string("^f(\\d+)-(\\d+)_(\\d+)of(\\d+)\\.png$")
+var _proj_left := {}          # projectile idx -> heading left (per tick)
+var _pop_seq := 0
+# Real-time 3D (REMASTERED 3D, F4): sheets with a live rig (framematch.py `live`) are posed between
+# frames and rendered live per entity instead of drawing pre-rendered frames (live3d.gd).
+const LIVE_DIR := "res://../extracted/sprites_live"
+var _live_on := true
+var _live_index := {}         # sheet -> [[family, {frame: true}], ...] of the rigs that passed livegate
+var _live_scanned := false
+var _live := {}               # family -> Live3D (null when its rig failed to load)
 # Player (Ted) animation frames into BP_sprites / GP_sprites (CONFIRMED: the sheet
 # has SEPARATE left/right blocks — idle 61 right / 52 left; run cycles follow each
 # idle; jump 133; land 26). Frames are directional, so run/idle are NOT flipped.
@@ -417,21 +445,233 @@ func _blit_clip(folder: String, frame: int, pos: Vector2, clip: Rect2) -> bool:
 	var tex := _sprite(folder, frame)
 	if tex == null:
 		return false
+	_dtex_clip(tex, pos + (Vector2(CELL_PX, CELL_PX) - _texsize(tex)) * 0.5, clip)
+	return true
+
+func _dtex_clip(tex: Texture2D, dpos: Vector2, clip: Rect2) -> void:
 	var s := _texsize(tex)
-	var dpos := pos + (Vector2(CELL_PX, CELL_PX) - s) * 0.5
 	var dst := Rect2(dpos, s)
 	if clip.encloses(dst):
 		_dtex(tex, dpos)                       # fully inside: normal path (keeps --hd handling)
-		return true
+		return
 	var vis := dst.intersection(clip)
 	if not vis.has_area():
-		return true                            # fully off the playfield: draw nothing
+		return                                 # fully off the playfield: draw nothing
 	var sc := float(_sprite_scale)             # texture is sc x the logical footprint (--hd)
 	# vis is a subset of dst, so (vis.position - dpos) >= 0 and (offset + size) * sc stays
 	# within tex.get_size() == _texsize(tex) * _sprite_scale -- src never runs off the sheet.
 	var src := Rect2((vis.position - dpos) * sc, vis.size * sc)
 	draw_texture_rect_region(tex, vis, src)
+
+## _blit_clip for a moving sprite: keyed so REMASTERED can draw it between engine ticks.
+func _iblit_clip(key: String, folder: String, frame: int, pos: Vector2, clip: Rect2) -> bool:
+	var tex := _sprite(folder, frame)
+	if tex == null:
+		return false
+	_isprite(key, folder, frame, false, false, pos + (Vector2(CELL_PX, CELL_PX) - _texsize(tex)) * 0.5, false, clip)
 	return true
+
+## Draw an entity's sprite. ORIGINAL: at once, exactly as given. REMASTERED: record it as this
+## tick's sample of `key`, then draw the key's state at the render time (_draw_hist). `planted`
+## = the pose is tied to ground travel (walk/run): without an in-between it steps with its pose
+## instead of gliding. `hide` samples keep the history going while the sprite is not drawn.
+func _isprite(key: String, folder: String, frame: int, flip: bool, red: bool, dpos: Vector2,
+		planted := false, clip := Rect2(), hide := false) -> void:
+	if not _smooth:
+		if not hide:
+			var tex := _sprite(folder, frame, flip, red)
+			if tex != null:
+				_draw_sprite_at(tex, dpos, clip)
+		return
+	_seen[key] = _draw_serial
+	var h: Array = _hist.get(key, [])
+	if h.is_empty() or int(h[-1][0]) != _drawn_tick:
+		var s := [_drawn_tick, dpos, folder, frame, flip, red, planted, hide]
+		if not h.is_empty() and int(h[-1][0]) >= _drawn_tick - 8 and h[-1][2] == folder \
+				and (h[-1][1] as Vector2).distance_to(dpos) <= SMOOTH_SNAP:
+			h.append(s)
+			if h.size() > 8:
+				h.pop_front()
+		else:
+			h = [s]
+		_hist[key] = h
+	# a new entity appears on the delayed timeline; one already there when the histories restarted,
+	# or a player whose history restarts (teleport, respawn), is shown at once instead of vanishing
+	_draw_hist(key, h, clip, key.begins_with("p") or int(h[0][0]) <= _smooth_t0 + 1)
+
+## Entities that left play (killed, collected, spent) stay on the delayed picture until the render
+## time passes their last engine state; then their history is dropped.
+func _draw_ghosts(prefix: String) -> void:
+	if not _smooth:
+		return
+	var tr := _rtick - SMOOTH_DELAY
+	for key in _hist.keys():
+		if not (key as String).begins_with(prefix) or int(_seen.get(key, -1)) == _draw_serial:
+			continue
+		var h: Array = _hist[key]
+		if tr >= float(h[-1][0]) + 1.0:
+			_hist.erase(key)
+			_seen.erase(key)
+			for lv in _live.values():
+				if lv != null:
+					(lv as Live3D).release(key)
+		else:
+			_draw_hist(key, h, Rect2(ORIGIN_X, ORIGIN_Y, GRID_COLS * CELL_PX, GRID_ROWS * CELL_PX) if key.begins_with("j") else Rect2(), false)
+
+## Draw a history at the render time: between the keyframe before it and the next one (a keyframe =
+## a sample whose drawn state changed), the step spread over its last SMOOTH_SPAN ticks.
+func _draw_hist(key: String, h: Array, clip: Rect2, early: bool) -> void:
+	var tr := _rtick - SMOOTH_DELAY
+	if float(h[0][0]) > tr:
+		if early and not bool(h[0][7]) and not _draw_live(key, h[0][2], h[0][3], h[0][3], 0.0, h[0][4], h[0][5], h[0][1], clip):
+			_draw_sprite_at(_sprite(h[0][2], h[0][3], h[0][4], h[0][5]), h[0][1], clip)
+		return                                 # not on the delayed picture yet
+	var ka := 0
+	var kb := -1
+	for i in range(1, h.size()):
+		var p: Array = h[i - 1]
+		var q: Array = h[i]
+		if q[1] != p[1] or q[3] != p[3] or q[4] != p[4] or q[5] != p[5] or q[7] != p[7]:
+			if float(q[0]) > tr:
+				kb = i
+				break
+			ka = i
+	var a: Array = h[ka]
+	if kb < 0:
+		if not bool(a[7]) and not _draw_live(key, a[2], a[3], a[3], 0.0, a[4], a[5], a[1], clip):
+			_draw_sprite_at(_sprite(a[2], a[3], a[4], a[5]), a[1], clip)
+		return
+	var b: Array = h[kb]
+	var span := minf(float(b[0]) - float(a[0]), SMOOTH_SPAN)
+	var f := clampf((tr - (float(b[0]) - span)) / span, 0.0, 1.0)
+	var pos: Vector2 = (a[1] as Vector2).lerp(b[1], f)
+	var near: Array = a if f < 0.5 else b
+	if bool(near[7]):
+		return                                 # hidden (invulnerability blink)
+	if a[2] == b[2] and a[4] == b[4] and a[5] == b[5] and _draw_live(key, a[2], a[3], b[3], f, a[4], a[5], pos, clip):
+		return
+	var tex: Texture2D = null
+	if int(a[3]) != int(b[3]) and a[4] == b[4] and a[5] == b[5]:
+		tex = _tween_sprite(a[2], a[3], b[3], f, a[4], a[5])
+		if tex == null and bool(a[6]) and bool(b[6]):
+			pos = a[1]                         # planted, no in-between: step with the pose
+			near = a
+	if tex == null:
+		tex = _sprite(near[2], near[3], near[4], near[5])
+	_draw_sprite_at(tex, pos, clip)
+
+func _draw_sprite_at(tex: Texture2D, dpos: Vector2, clip: Rect2) -> void:
+	if tex == null:
+		return
+	if clip.has_area():
+		_dtex_clip(tex, dpos, clip)
+	else:
+		_dtex(tex, dpos)
+
+## Draw entity `key` with a live 3D rig of its sheet, posed f of the way from frame a to b, at the
+## display's resolution; false when no gated rig covers both frames (or live 3D is off) -> the frames.
+func _draw_live(key: String, folder: String, a: int, b: int, f: float, flip: bool, red: bool, dpos: Vector2,
+		clip: Rect2) -> bool:
+	if not (_live_on and _use_3d and _remastered):
+		return false
+	if not _live_scanned:
+		_scan_live()
+	var fam := ""
+	for e in _live_index.get(folder, []):
+		if (e[1] as Dictionary).has(a) and (e[1] as Dictionary).has(b):
+			fam = e[0]
+			break
+	if fam == "":
+		return false
+	if not _live.has(fam):
+		_live[fam] = Live3D.load_family(fam, self)
+	var lv: Live3D = _live[fam]
+	if lv == null:
+		return false
+	var ws := get_window().size
+	var s := clampi(int(round(minf(float(ws.x) / 640.0, float(ws.y) / 480.0))), 1, 8)
+	var tex := lv.texture_for(key, a, b, f, s, red, flip)
+	if tex == null:
+		return false
+	var dst := Rect2(dpos, Vector2(lv.frame_size(a, b)))
+	var vis := dst.intersection(clip) if clip.has_area() else dst
+	if vis.has_area():
+		draw_texture_rect_region(tex, vis, Rect2((vis.position - dpos) * s, vis.size * s))
+	return true
+
+## Index the live rigs that passed `framematch.py <family> livegate` (their gate.json) by sheet.
+func _scan_live() -> void:
+	_live_scanned = true
+	var root := ProjectSettings.globalize_path(LIVE_DIR)
+	if not DirAccess.dir_exists_absolute(root):
+		return
+	for fam in DirAccess.get_directories_at(root):
+		var p := "%s/%s/gate.json" % [root, fam]
+		if not FileAccess.file_exists(p):
+			continue
+		var g: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
+		if not (g is Dictionary) or not bool(g.get("pass", false)):
+			continue
+		var frames := {}
+		for n in g["frames"]:
+			frames[int(n)] = true
+		if not _live_index.has(g["sheet"]):
+			_live_index[g["sheet"]] = []
+		_live_index[g["sheet"]].append([fam, frames])
+
+## The rendered in-between poses of a sheet (tools/soi3d/framematch.py `tweens`):
+## sprites_3d_frames/<folder>/tw/fLO-HI_KofN.png = the pose K/N of the way from frame LO to HI.
+func _tween_index(folder: String) -> Dictionary:
+	if _tween_idx.has(folder):
+		return _tween_idx[folder]
+	var idx := {}
+	var dir := ProjectSettings.globalize_path("%s/%s/tw" % [SPRITES_3D_DIR, folder])
+	var da := DirAccess.open(dir)
+	if da != null:
+		for f in da.get_files():
+			var m := _TWEEN_RE.search(f)
+			if m != null:
+				var pk := "%d,%d" % [int(m.get_string(1)), int(m.get_string(2))]
+				if not idx.has(pk):
+					idx[pk] = [int(m.get_string(4)), {}]
+				idx[pk][1][int(m.get_string(3))] = dir + "/" + f
+	_tween_idx[folder] = idx
+	return idx
+
+## The pose `f` of the way from frame a to frame b (3D sprites only), or null without in-betweens.
+func _tween_sprite(folder: String, a: int, b: int, f: float, flip: bool, red: bool) -> Texture2D:
+	if not (_use_3d and _remastered):
+		return null
+	var lo := mini(a, b)
+	var hi := maxi(a, b)
+	var e: Array = _tween_index(folder).get("%d,%d" % [lo, hi], [])
+	if e.is_empty():
+		return null
+	var n: int = e[0]
+	var k := int(round((f if a == lo else 1.0 - f) * float(n)))
+	if k <= 0 or k >= n:
+		return _sprite(folder, lo if k <= 0 else hi, flip, red)
+	var path: String = e[1].get(k, "")
+	if path == "":
+		return null
+	var key := "tw/%s/%d-%d/%d/%s/%s" % [folder, lo, hi, k, flip, red]
+	if _tex_cache.has(key):
+		return _tex_cache[key]
+	var tex: Texture2D = null
+	var img := Image.load_from_file(path)
+	if img:
+		if red:
+			_redden(img)
+		if flip:
+			img.flip_x()
+		_prep_hd(img)
+		tex = ImageTexture.create_from_image(img)
+	_tex_cache[key] = tex
+	return tex
+
+## The board as the delayed REMASTERED picture shows it (the live grid when not smoothing).
+func _grid_at(c: int, r: int, snap: PackedInt32Array) -> int:
+	return snap[r * GRID_COLS + c] if not snap.is_empty() else int(_core.grid_cell(c, r))
 
 ## Draw the Magic Arrow (goody f19, a red arrow whose art points UP) rotated so
 ## it aims along its travel direction, inferred from frame-to-frame movement (the
@@ -653,13 +893,20 @@ func _start_transport_slide() -> void:
 ## TRANSPORT_FRAMES (asm FUN_1002b9bc). Cosmetic; the sim is frozen while it plays.
 func _draw_transport() -> void:
 	var step := TRANSPORT_FRAMES - _tp_frames
-	var t := clampf(float(step) / float(TRANSPORT_FRAMES), 0.0, 1.0)
+	var sub := Engine.get_physics_interpolation_fraction() if _smooth else 0.0   # the sim is frozen: glide on the frame clock
+	var t := clampf((float(step) + sub) / float(TRANSPORT_FRAMES), 0.0, 1.0)
 	var pos := _tp_from.lerp(_tp_to, t)
 	var frame := 2 + (step % 13)             # cycle the transporter/ frames f02..f14 (fast spin)
 	var tex := _sprite("transporter", frame)
 	if tex == null:
 		return
 	var s := _texsize(tex)
+	if _smooth:
+		var tw := _tween_sprite("transporter", frame, 2 + (step + 1) % 13, sub, false, false)
+		if tw != null:
+			tex = tw
+		_dtex(tex, pos + Vector2(CELL_PX, CELL_PX) * 0.5 - s * 0.5)
+		return
 	_dtex(tex, (pos + Vector2(CELL_PX, CELL_PX) * 0.5 - s * 0.5).floor())   # centred on the cell
 
 ## Challenge Round completion ("Your Rewards", asm FUN_10016f80(0)): PICT 301 with the blue tally
@@ -1050,6 +1297,10 @@ func _exit_tree() -> void:
 	_win_video = null
 	_tex_cache.clear()
 	_pict_cache.clear()
+	for lv in _live.values():
+		if lv != null:
+			(lv as Live3D).dispose()
+	_live.clear()
 	_core = null
 
 
@@ -1077,18 +1328,51 @@ func _apply_presentation(on: bool) -> void:
 	_tex_cache.clear()
 	_sprite_index.clear()
 	_pict_cache.clear()
+	_tween_idx.clear()
+	_smooth = on
+	_reset_smoothing()
 	if Session.remastered != on:
 		Session.set_remastered(on)
+
+## Forget the per-entity histories and the delayed board (a new board, or a presentation switch).
+func _reset_smoothing() -> void:
+	_hist.clear()
+	_seen.clear()
+	_grid_snaps.clear()
+	_release_live()
+	_drawn_tick = -1
+	_rtick = float(_core.tick_count()) if _core != null else 0.0
+	_smooth_t0 = int(_rtick)
+
+## REMASTERED redraws every rendered frame (the monitor's rate); the engine keeps its own tick.
+func _process(_delta: float) -> void:
+	if _smooth:
+		queue_redraw()
+	if Engine.get_process_frames() % 60 == 0:
+		for lv in _live.values():
+			if lv != null:
+				(lv as Live3D).release_idle(30)   # killed / off-board entities
+
+## Free every live 3D render (they are re-made on demand).
+func _release_live() -> void:
+	for lv in _live.values():
+		if lv != null:
+			(lv as Live3D).release_all()
 
 ## The presentation label, shown briefly after F2/F3 (and once at the first board).
 func _draw_presentation_toast() -> void:
 	var a := clampf(float(_pres_toast) / 30.0, 0.0, 1.0)
 	var label := "ORIGINAL  -  1996 art, sound and music      [F2: remastered]"
-	if _remastered:
-		label = "REMASTERED  -  %s sprites, remastered sound and music      [F2: original   F3: %s]" % [
-			"3D" if _use_3d else "HD", "HD" if _use_3d else "3D"]
+	if _remastered and _use_3d:
+		label = "REMASTERED  -  %s 3D sprites, remastered sound and music    [F2: original   F3: HD   F4: %s]" % [
+			"live" if _live_on else "pre-rendered", "pre-rendered 3D" if _live_on else "live 3D"]
+	elif _remastered:
+		label = "REMASTERED  -  HD sprites, remastered sound and music      [F2: original   F3: 3D]"
+	var fs := 13
+	while fs > 9 and _font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 632.0:
+		fs -= 1
 	draw_rect(Rect2(0, 454, 640, 22), Color(0, 0, 0, 0.72 * a))
-	draw_string(_font, Vector2(0, 470), label, HORIZONTAL_ALIGNMENT_CENTER, 640, 13, Color(1, 1, 1, a))
+	draw_string(_font, Vector2(0, 470), label, HORIZONTAL_ALIGNMENT_CENTER, 640, fs, Color(1, 1, 1, a))
 
 
 ## The core play mode (asm FUN_100263d8 numbering): 1 One Player, 2 Alternate, 3 Cooperate
@@ -1141,6 +1425,7 @@ func _reset_round_ui() -> void:
 	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
 	_sg_last = [-1, -1, -1, -1]
 	_death_pops.clear()
+	_reset_smoothing()
 	_capture_board_start()
 	if not _harness_run and _core.challenge_round():
 		_challenge_intro = 150   # "Challenge Round" intro before a challenge board
@@ -1176,8 +1461,11 @@ func _update_stopgo() -> void:
 			_sg_last[idx] = -1
 
 func _physics_process(_delta: float) -> void:
+	_core_ticked = false
 	if _tp_frames > 0:
 		_tp_frames -= 1              # transporter slide in progress: FREEZE the sim (skip the core tick)
+	elif _script_hold:
+		pass
 	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0 and (_alt or not _core.challenge_failed()):
 		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
 		for idx in range(1, mini(_num_players, 3) + 1):
@@ -1197,6 +1485,7 @@ func _physics_process(_delta: float) -> void:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
 		var p3 := _read_input(2) if _num_players >= 3 else 0
 		_core.tick3(p1, p2, p3)
+		_core_ticked = true
 		var teleported := false
 		for i in _core.sfx_count():
 			var ev := _core.sfx_get(i)
@@ -1290,7 +1579,8 @@ func _physics_process(_delta: float) -> void:
 		and not (_alt and _alt_state != "play") and _challenge_intro == 0
 	Audio.set_music_hurry(hurry_ok and _core.music_hurry())
 	_update_win_video()
-	queue_redraw()
+	if not _smooth:
+		queue_redraw()                 # (smooth: _process redraws every rendered frame instead)
 	if _demo_frames > 0:
 		_demo_frames -= 1
 		if _demo_frames == 0:
@@ -1316,8 +1606,9 @@ func _physics_process(_delta: float) -> void:
 
 ## --script=FILE (verification runs): one segment per line, `<p1> <frames> [p2]`, where an input
 ## is a bitmask or letters L R J H(block high) W(block low) A(arrow) O(ball) and 0 = none.
-## `ENTER` presses Enter, `F2` / `F3` press those keys (presentation switch),
-## `SHOT <name>` saves media/screenshots/verify_<name>.png, `QUIT` ends,
+## `ENTER` presses Enter, `F2` / `F3` / `F4` press those keys (presentation switch), `HOLD` freezes /
+## resumes the simulation (no pause screen: shoot one instant twice), `SHOT <name>` saves
+## media/screenshots/verify_<name>.png, `QUIT` ends,
 ## `SPEED <n>` fast-forwards n physics frames per rendered frame (so a movie skips a long wait).
 ## Frames count physics frames (they keep running through intros / result screens).
 func _load_script(path: String) -> void:
@@ -1333,7 +1624,7 @@ func _load_script(path: String) -> void:
 			continue
 		var parts := line.split(" ", false)
 		var cmd := parts[0].to_upper()
-		if cmd == "ENTER" or cmd == "SHOT" or cmd == "QUIT" or cmd == "SPEED" or cmd == "F2" or cmd == "F3":
+		if cmd == "ENTER" or cmd == "SHOT" or cmd == "QUIT" or cmd == "SPEED" or cmd == "F2" or cmd == "F3" or cmd == "F4" or cmd == "HOLD":
 			_script.append([0, 1, 0, cmd, parts[1] if parts.size() > 1 else ""])
 		else:
 			var frames := int(parts[1]) if parts.size() > 1 else 1
@@ -1376,6 +1667,8 @@ func _script_step() -> void:
 				"ENTER": _press_enter()
 				"F2": _press_f2()
 				"F3": _press_f3()
+				"F4": _press_f4()
+				"HOLD": _script_hold = not _script_hold
 				"SHOT": _snap("verify_" + str(seg[4]))
 				"QUIT": total = _script_f
 				"SPEED":
@@ -1439,6 +1732,9 @@ func _input(e: InputEvent) -> void:
 		KEY_F3:
 			if not e.echo:
 				_press_f3()
+		KEY_F4:
+			if not e.echo:
+				_press_f4()
 		KEY_S:
 			if (e as InputEventKey).ctrl_pressed:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
@@ -1456,6 +1752,14 @@ func _press_f3() -> void:
 		_use_3d = not _use_3d
 		_tex_cache.clear()
 		_sprite_index.clear()
+		_release_live()
+		_pres_toast = 150
+
+## F4 (REMASTERED 3D only): sheets with a live rig drawn in real-time 3D <-> as pre-rendered frames.
+func _press_f4() -> void:
+	if _remastered and _use_3d:
+		_live_on = not _live_on
+		_release_live()
 		_pres_toast = 150
 
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
@@ -1521,6 +1825,27 @@ func _read_input(which: int) -> int:
 # --- rendering ---------------------------------------------------------------
 
 func _draw() -> void:
+	var tk := int(_core.tick_count())
+	_new_tick = (not _smooth) or tk != _drawn_tick
+	_drawn_tick = tk
+	_draw_serial += 1
+	var snap := PackedInt32Array()
+	if _smooth:
+		if _core_ticked:
+			_rtick = float(tk) + Engine.get_physics_interpolation_fraction()
+		if _new_tick or _grid_snaps.is_empty():
+			var g := PackedInt32Array()
+			g.resize(GRID_COLS * GRID_ROWS)
+			for r in range(GRID_ROWS):
+				for c in range(GRID_COLS):
+					g[r * GRID_COLS + c] = int(_core.grid_cell(c, r))
+			_grid_snaps.append([tk, g])
+			if _grid_snaps.size() > 6:
+				_grid_snaps.pop_front()
+		snap = _grid_snaps[0][1]
+		for gs in _grid_snaps:
+			if float(gs[0]) <= _rtick - SMOOTH_DELAY:
+				snap = gs[1]
 	# black outside the frame (the original sits on a black CRT field)
 	draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
 	var W := GRID_COLS * CELL_PX
@@ -1535,7 +1860,7 @@ func _draw() -> void:
 	for r in range(GRID_ROWS):
 		for c in range(GRID_COLS):
 			var key := r * GRID_COLS + c
-			var cell := int(_core.grid_cell(c, r))
+			var cell := _grid_at(c, r, snap)
 			var prev: int = _grid_prev.get(key, 0)
 			_grid_prev[key] = cell
 			var pos := Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX)
@@ -1544,12 +1869,15 @@ func _draw() -> void:
 			# drew that via the white _draw_block fallback SCALED, and the shrink-FX on the cell it
 			# just LEFT (no sprite over it) flashed white. Skip the FX for low-byte-0 cells.
 			if (cell & CELL_SUPPORTIVE) and not (prev & CELL_SUPPORTIVE) and (cell & 0xff) != 0:
-				_cell_fx[key] = { "grow": true, "cell": cell, "t": 0.0 }
+				_cell_fx[key] = { "grow": true, "cell": cell, "t": 0.0, "t0": _rtick }
 			elif (prev & CELL_SUPPORTIVE) and not (cell & CELL_SUPPORTIVE) and (prev & 0xff) != 0:
-				_cell_fx[key] = { "grow": false, "cell": prev, "t": 0.0 }
+				_cell_fx[key] = { "grow": false, "cell": prev, "t": 0.0, "t0": _rtick }
 			if _cell_fx.has(key):
 				var fx: Dictionary = _cell_fx[key]
-				fx["t"] = float(fx["t"]) + 0.16
+				if _smooth:                    # timed on the render clock: smooth at any frame rate
+					fx["t"] = (_rtick - float(fx["t0"]) + 1.0) * 0.16
+				else:
+					fx["t"] = float(fx["t"]) + 0.16
 				if float(fx["t"]) < 1.0:
 					var sc: float = float(fx["t"]) if fx["grow"] else (1.0 - float(fx["t"]))
 					_draw_cell_scaled(int(fx["cell"]), pos, maxf(sc, 0.05))
@@ -1575,22 +1903,26 @@ func _draw() -> void:
 		if _core.projectile_active(i):
 			var pp := Vector2(_core.projectile_x(i), _core.projectile_y(i))
 			var c := pp + Vector2(16, 16)
-			var going_left: bool = pp.x < float(_proj_lastpos.get(i, pp).x)
+			if _new_tick:
+				_proj_left[i] = pp.x < float(_proj_lastpos.get(i, pp).x)
+				_proj_lastpos[i] = pp
+			var going_left: bool = _proj_left.get(i, false)
+			var jk := "j%d" % i
 			if _core.projectile_hostile(i):
 				if _core.projectile_src_type(i) == 12:    # Cannon ball: asm frames 3..0x16 (f04-23), +1 a
 					var sp := int(_core.tick_count()) % 20  # frame heading right, -1 heading left
 					var bf := (23 - sp) if going_left else (4 + sp)
-					if not _blit_clip("cannon_sprites", bf, pp, pf):
+					if not _iblit_clip(jk, "cannon_sprites", bf, pp, pf):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
 				elif _core.projectile_src_type(i) == 14:  # Gargoyle puff: green cluster, master's objects (sssf 134)
 					# asm FUN_1000b0a4 cycles frames 1..15 for a piercing puff, 0x1f..0x2d otherwise (+1 in the PNGs)
 					var gbase := 2 if _core.projectile_pierce(i) else 32
-					if not _blit_clip("master_s_objects", gbase + int(_core.tick_count()) % 15, pp, pf):
+					if not _iblit_clip(jk, "master_s_objects", gbase + int(_core.tick_count()) % 15, pp, pf):
 						draw_circle(c, 6.0, Color(0.2, 0.7, 0.2))
 				elif _core.projectile_src_type(i) == 10:  # Walker bolt (0x68, FUN_1000e3c0): asm frames
 					var ks := int(_core.tick_count()) % 16  # 0x31..0x40 (f50-65) a frame each, backward left
 					var kf := (65 - ks) if going_left else (50 + ks)
-					if not _blit_clip("walker_sprites", kf, pp, pf):
+					if not _iblit_clip(jk, "walker_sprites", kf, pp, pf):
 						draw_circle(c, 4.5, Color(0.85, 0.15, 0.12))
 				else:                                     # other hostile shot: a generic energy bolt
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
@@ -1598,39 +1930,41 @@ func _draw() -> void:
 			elif _core.projectile_kind(i) == 3:
 				# Gargoyle BADGUY EGG in flight (asm FUN_1000b6a0: counter +1 per tick, past 0x3c back to
 				# 0x2e = 15 frames, f47-f61 in the PNGs)
-				if not _blit_clip("master_s_objects", 47 + int(_core.tick_count()) % 15, pp, pf):
+				if not _iblit_clip(jk, "master_s_objects", 47 + int(_core.tick_count()) % 15, pp, pf):
 					draw_circle(c, 6.0, Color(0.6, 0.1, 0.1))
 			elif _core.projectile_kind(i) == 2:
 				# Knight GIFT in flight (enemy_knight_gift / FUN_1000c8bc): the asm mover FUN_1000c544
 				# cycles master's objects 0x10..0x1e (+1 in the PNGs) -- a harmless tumbling box.
-				if not _blit_clip("master_s_objects", 17 + int(_core.tick_count()) % 15, pp, pf):
+				if not _iblit_clip(jk, "master_s_objects", 17 + int(_core.tick_count()) % 15, pp, pf):
 					_draw_gift_sparkle(c)
 			elif _core.projectile_kind(i) == 1:
 				# The straight shot (asm FUN_1000fd5c type 1, fired by FUN_100110b4) is drawn with the
 				# weapons sheet's ARROW (asm frame 10 heading right / 9 left = f11 / f10, 24x9).
-				var bl: float = pp.x - float(_proj_lastpos.get(i, pp).x)
-				if not _blit_clip("weapons", 11 if bl >= 0.0 else 10, pp, pf):
+				if not _iblit_clip(jk, "weapons", 10 if going_left else 11, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			else:
 				# The rolling swirl ball (types 2/3, FUN_10010d30): +0x5a steps 1..8 every frame,
 				# forward when fired right, backward when fired left (f02..f09).
 				var sp := int(_core.tick_count()) % 8
 				var af := (9 - sp) if _core.projectile_fired_left(i) else (2 + sp)
-				if not _blit_clip("weapons", af, pp, pf):
+				if not _iblit_clip(jk, "weapons", af, pp, pf):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
-			_proj_lastpos[i] = pp
+	_draw_ghosts("j")
 
 	# enemies
 	for i in range(MAX_ENEMIES):
 		if _core.enemy_active(i):
 			_draw_enemy(i, Vector2(_core.enemy_x(i), _core.enemy_y(i)),
 				int(_core.enemy_type(i)), int(_core.enemy_dir(i)))
+	_draw_ghosts("e")
 	_draw_death_pops()   # flying death sprites arcing off after a kill (drawn above the nasties)
+	_draw_ghosts("d")
 
 	# players
 	_draw_player(1, Color(0.15, 0.25, 0.85))
 	_draw_player(2, Color(0.15, 0.6, 0.2))
 	_draw_player(3, Color(0.85, 0.2, 0.15))   # remaster's RED co-op player (drawn only when active)
+	_draw_ghosts("p")
 	if _tp_frames > 0:
 		_draw_transport()                     # transporter warp-slide (over the frozen board)
 	_post_fx()
@@ -1690,7 +2024,7 @@ func _post_fx() -> void:
 # Speed-shoes (goody 0x32) draw a spinning indicator over the player while fast-mode
 # is active (asm FUN_10014ccc sets player +0x6a = sssf 132 'spin ind sprite family';
 # FUN_10014a10 blits it at ~player.x+6, y-0x10). 58 small (16x12) frames.
-func _draw_powerup_overlay(idx: int, pos: Vector2) -> void:
+func _draw_powerup_overlay(idx: int, pos: Vector2, hidden: bool) -> void:
 	if _core.player_fast(idx) <= 0:
 		return
 	var n: int = _folder_index("spin_ind_sprite_family").size()
@@ -1700,7 +2034,8 @@ func _draw_powerup_overlay(idx: int, pos: Vector2) -> void:
 	var tex := _sprite("spin_ind_sprite_family", frame, false)
 	if tex != null:
 		var s := _texsize(tex)
-		_dtex(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5))
+		_isprite("p%d_shoe" % idx, "spin_ind_sprite_family", frame, false, false,
+			Vector2(pos.x + (CELL_PX - s.x) * 0.5, pos.y - s.y * 0.5), false, Rect2(), hidden)
 
 
 # Magnifying-glass reveal marker: a pulsing gold diamond over a hidden-treasure cell.
@@ -1735,22 +2070,10 @@ func _draw_gift_sparkle(c: Vector2) -> void:
 	draw_circle(c, 2.6 * puls, Color(1.0, 1.0, 0.85))
 
 
-func _draw_player(idx: int, shirt: Color) -> void:
-	if not _core.player_alive(idx):
-		return
-	if _tp_frames > 0 and idx == _tp_player:
-		return                                   # drawn as the warp sprite by _draw_transport() instead
-	# flash while invulnerable (post-hit / spawn grace): blink at ~8 Hz
-	if _core.player_invuln(idx) > 0 and (int(_core.tick_count()) / 4) % 2 == 0:
-		return
-	var pos := Vector2(_core.player_x(idx), _core.player_y(idx))
-	var facing := int(_core.player_facing(idx))
-	var right := facing >= 0
-	var st := int(_core.player_state(idx))
-	var pose := int(_core.player_pose(idx))
+## The player's per-tick animation state (once per engine tick, however often the frame redraws).
+func _advance_player_anim(idx: int, real_x: float, st: int) -> void:
 	# The core's ground_state flickers idle<->run between grid steps, so keep the run
 	# alive briefly off actual horizontal motion.
-	var real_x := pos.x
 	var real_dx: float = real_x - float(_p_lastx.get(idx, real_x))
 	_p_lastx[idx] = real_x
 	# Jump-start detection: when the core enters the JUMP state, latch the tick so the somersault phase
@@ -1780,6 +2103,26 @@ func _draw_player(idx: int, shirt: Color) -> void:
 			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX * 0.5
 	elif _p_runtimer.get(idx, 0) > 0:
 		_p_runtimer[idx] = int(_p_runtimer[idx]) - 1
+
+
+func _draw_player(idx: int, shirt: Color) -> void:
+	if not _core.player_alive(idx):
+		return
+	if _tp_frames > 0 and idx == _tp_player:
+		_seen["p%d" % idx] = _draw_serial       # (no ghost of it at the IN pad meanwhile)
+		_seen["p%d_shoe" % idx] = _draw_serial
+		return                                   # drawn as the warp sprite by _draw_transport() instead
+	# flash while invulnerable (post-hit / spawn grace): blink at ~8 Hz
+	var hidden := _core.player_invuln(idx) > 0 and (int(_core.tick_count()) / 4) % 2 == 0
+	if hidden and not _smooth:
+		return
+	var pos := Vector2(_core.player_x(idx), _core.player_y(idx))
+	var facing := int(_core.player_facing(idx))
+	var right := facing >= 0
+	var st := int(_core.player_state(idx))
+	var pose := int(_core.player_pose(idx))
+	if _new_tick:
+		_advance_player_anim(idx, pos.x, st)
 	# idle/fall default: the static stand pose is DIRECTIONAL art (asm FUN_100128f8 idle /
 	# FUN_1001386c fall set frame 0x3D=61 facing RIGHT, 0x34=52 facing LEFT). Verified at 22x vs
 	# f61: f52 IS the native LEFT-facing idle, NOT right-facing -- so use the matching frame per
@@ -1834,8 +2177,12 @@ func _draw_player(idx: int, shirt: Color) -> void:
 	if tex != null:
 		var s := _texsize(tex)
 		# bottom-align the character to the cell (feet at pos.y + CELL_PX)
-		_dtex(tex, Vector2(pos.x + (CELL_PX - s.x) * 0.5 + draw_dx, pos.y + CELL_PX - s.y))
-		_draw_powerup_overlay(idx, pos)
+		_isprite("p%d" % idx, folder, frame, flip, idx == 3,
+			Vector2(pos.x + (CELL_PX - s.x) * 0.5 + draw_dx, pos.y + CELL_PX - s.y),
+			st == 1 and pose == 0, Rect2(), hidden)
+		_draw_powerup_overlay(idx, pos, hidden)
+		return
+	if hidden:
 		return
 	# procedural fallback
 	if _mode == 1:
@@ -2184,19 +2531,19 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		var nf: String = ENEMY_FOLDER.get(etype, "")
 		var st: Texture2D = _sprite(nf, sf + 1, false) if (nf != "" and sf > 0) else null
 		if st != null:
-			_dtex(st, e)
+			_isprite("e%d" % slot, nf, sf + 1, false, false, e)
 		else:
 			_draw_block(e, Color(0.85, 0.16, 0.16))
 		return
 	# travel-synced walk cycle: a moving nasty animates; a stationary one
 	# (turret / spawner / Spinner) holds its frame instead of walking in place.
-	var last: Vector2 = _enemy_lastpos.get(slot, e)
+	if _new_tick:
+		var last: Vector2 = _enemy_lastpos.get(slot, e)
+		var moved := (e - last).length()
+		if moved > 0.5 and moved < 64.0:      # accumulate real motion; skip spawn/reuse teleports
+			_enemy_walk[slot] = float(_enemy_walk.get(slot, 0.0)) + moved
+		_enemy_lastpos[slot] = e
 	var walk: float = _enemy_walk.get(slot, 0.0)
-	var moved := (e - last).length()
-	if moved > 0.5 and moved < 64.0:      # accumulate real motion; skip spawn/reuse teleports
-		walk += moved
-	_enemy_walk[slot] = walk
-	_enemy_lastpos[slot] = e
 	if etype == 12:                       # CANNON: its cell is a plain 0x300 wall (asm FUN_100071a0) -> no white fallback
 		draw_rect(Rect2(e, Vector2(CELL_PX, CELL_PX)), Color.BLACK)
 	if etype == 16:                       # CREEPER segment: its cell is the covered tile | 0x300. A bare
@@ -2207,13 +2554,14 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		var ct := _sprite("bigger_mblock", cf, false)                   # 1 = full block, 0xf = shrunk) f02-f16
 		if ct != null:
 			var cs := _texsize(ct)
-			_dtex(ct, Vector2(e.x + (CELL_PX - cs.x) * 0.5, e.y + CELL_PX - cs.y))
+			_isprite("e%d" % slot, "bigger_mblock", cf, false, false, Vector2(e.x + (CELL_PX - cs.x) * 0.5, e.y + CELL_PX - cs.y))
 		return
 	var folder: String = ENEMY_FOLDER.get(etype, "")
 	if folder != "":
 		var frame: int
 		var face_left := (edir == 1)             # core enemy dir: 1 = left, 2 = right
 		var flip := face_left
+		var planted := false                     # the pose follows ground travel (walk / roll)
 		if ENEMY_SPIN.has(etype):                # Spinner trap / flying star-disk: the asm spin
 			frame = clampi(int(_core.enemy_anim(slot)), 1, int(ENEMY_SPIN[etype])) + 1   # counter +0x56
 			flip = false
@@ -2226,6 +2574,7 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		elif ENEMY_ROLL.has(etype):              # face-ball: FUN_1000d130 steps +0x56 by -1 per 2 px
 			frame = posmod(-(int(e.x) >> 1), 48) + 2  # right / +1 left (1..0x30), i.e. tied to x
 			flip = false
+			planted = true
 		elif etype == 9 and _core.enemy_fire_cd(slot) > 0:   # Robo PUNCH (asm +0x6e): right swing
 			var pfcd: int = _core.enemy_fire_cd(slot)        # f18-33, left swing f02-17; the ball
 			frame = (2 if face_left else 18) + clampi(16 - pfcd, 0, 15)   # meets the block ~7 steps in
@@ -2234,7 +2583,7 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 			frame = (0x30 if face_left else 0x40) + clampi(int(_core.enemy_fire_cd(slot)), 1, 16) + 1   # 0x41-50 right)
 			var ht := _sprite(folder, frame, false)
 			if ht != null:
-				_dtex(ht, Vector2(e.x, e.y + 2))   # top-left at the lifted asm position (41 px tall art)
+				_isprite("e%d" % slot, folder, frame, false, false, Vector2(e.x, e.y + 2))   # top-left at the lifted asm position (41 px tall art)
 				return
 		elif _core.enemy_turn(slot) > 0 and _enemy_turn_frame(etype, int(_core.enemy_turn(slot)), face_left, _core.enemy_vertical(slot)) >= 0:
 			frame = _enemy_turn_frame(etype, int(_core.enemy_turn(slot)), face_left, _core.enemy_vertical(slot)) + 1
@@ -2242,25 +2591,28 @@ func _draw_enemy(slot: int, e: Vector2, etype: int, edir: int) -> void:
 		elif etype == 8 and _core.enemy_vertical(slot):     # vertical Beanie: 0x51-58 down / 0x71-78 up
 			frame = (0x71 if face_left else 0x51) + posmod(int(e.y) / 2, 8) + 1
 			flip = false
+			planted = true
 		elif ENEMY_WALK_TBL.has(etype):          # the asm's position-planted walk frame
 			var wt: Dictionary = ENEMY_WALK_TBL[etype]
 			var tb: Array = wt["l"] if face_left else wt["r"]
 			frame = int(tb[posmod(int(e.x) + int(wt["dx"]), tb.size())]) + 1
 			flip = false
+			planted = true
 		elif ENEMY_WALK.has(etype):              # dedicated directional walk cycle. The asm plants the leg
 			var cfg: Dictionary = ENEMY_WALK[etype]  # frame to POSITION (frame = table[x mod 32], ~16px/cycle,
 			var seg: Array = cfg["l"] if face_left else cfg["r"]   # FUN_1000dd4c). walk/8 was ~6x too slow ->
 			frame = int(seg[0]) + (int(walk / 3.0) % int(seg[1]))  # legs glided = "moonwalk"; walk/3 ~= per-cell.
 			flip = bool(cfg["flip"]) and face_left   # mirror only symmetric single-view sheets
+			planted = true
 		else:
 			frame = 2 + (int(walk / 8.0) % 4)    # travel-synced walk cycle (fallback: 4 frames + flip)
+			planted = true
 		var tex := _sprite(folder, frame, flip)
 		if tex != null:
 			var s := _texsize(tex)
-			if etype == 5:                       # Wheelie: a flyer, drawn at its asm x/y (already +2)
-				_dtex(tex, e)
-			else:
-				_dtex(tex, Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y))
+			# Wheelie: a flyer, drawn at its asm x/y (already +2)
+			var dp := e if etype == 5 else Vector2(e.x + (CELL_PX - s.x) * 0.5, e.y + CELL_PX - s.y)
+			_isprite("e%d" % slot, folder, frame, flip, false, dp, planted)
 			if etype == 8 and _core.enemy_bud(slot) > 0:
 				_draw_beanie_bud(slot, e, face_left)
 			return
@@ -2310,7 +2662,7 @@ func _draw_beanie_bud(slot: int, e: Vector2, face_left: bool) -> void:
 		return
 	var bt := _sprite("beenie_sprites", af + 1, false)
 	if bt != null:
-		_dtex(bt, pos)
+		_isprite("e%d_bud" % slot, "beenie_sprites", af + 1, false, false, pos)
 
 ## Enemy death "pop" (asm FUN_10028014 -> FUN_100278bc/FUN_10028060): every KILL enqueues one
 ## flying death sprite that pops UP ~64px and arcs off the screen. The core feeds us the dying
@@ -2333,8 +2685,9 @@ func _spawn_death_pop(x0: int, y0: int, etype: int, dir: int) -> void:
 		var seg: Array = cfg["l"] if face_left else cfg["r"]
 		frame = int(seg[0])
 		flip = bool(cfg["flip"]) and face_left
+	_pop_seq += 1
 	_death_pops.append({
-		"folder": folder, "frame": frame, "flip": flip,
+		"folder": folder, "frame": frame, "flip": flip, "id": _pop_seq,
 		"x0": float(x0), "y0": float(y0), "t": 0.0,
 		"px": float(x0), "py": float(y0),
 	})
@@ -2362,7 +2715,8 @@ func _draw_death_pops() -> void:
 		var tex := _sprite(d["folder"], int(d["frame"]), bool(d["flip"]))
 		if tex != null:
 			var s := _texsize(tex)
-			_dtex(tex, Vector2(d["px"] + (CELL_PX - s.x) * 0.5, d["py"] + CELL_PX - s.y))
+			_isprite("d%d" % int(d["id"]), d["folder"], int(d["frame"]), bool(d["flip"]), false,
+				Vector2(d["px"] + (CELL_PX - s.x) * 0.5, d["py"] + CELL_PX - s.y))
 
 func _enemy_color(etype: int) -> Color:
 	# distinct hue per bestiary index (1..11) until real sprites land

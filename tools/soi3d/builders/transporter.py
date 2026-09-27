@@ -162,7 +162,7 @@ def build_zap_px(opts):
     _sphere("head", (0, 0, 0), hr, skin, squash=(1.0, float(opts.get("head_sy", 1.05)), 0.85))
     hair_rgb = tuple(opts.get("hair", HAIR))
     hair = C._mat("tp_hair", C._srgb(*hair_rgb), rough=0.7, spec=0.15)
-    _sphere("hair", (0, float(opts.get("hair_y", 2.2)) * S, -0.8 * S), hr * 1.0, hair,
+    _sphere("hair", (0, float(opts.get("hair_y", 2.2)) * S, float(opts.get("hair_z", -0.8)) * S), hr * 1.0, hair,
             squash=(1.02, float(opts.get("hair_sy", 0.8)), 0.95))
     eye_rgb = tuple(opts.get("eye", (40, 40, 230)))
     eye = _emit(C._mat("tp_eye", C._srgb(*eye_rgb), rough=0.3, spec=0.4), eye_rgb, 0.2)

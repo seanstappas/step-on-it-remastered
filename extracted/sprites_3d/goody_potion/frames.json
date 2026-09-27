@@ -42,7 +42,8 @@
    "world": {"step": 0.04, "min": 0.0, "max": 0.4},
    "fill": {"step": 0.06, "min": 0.0, "max": 0.5}
   },
-  "refine_rounds": 10
+  "refine_rounds": 10,
+  "detail_w": 0.5
  },
  "gate": {"iou": 0.85, "de": 16.0, "rank_tol": 1},
  "fps": 30
