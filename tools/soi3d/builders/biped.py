@@ -131,7 +131,8 @@ def _frames_setup(opts):
 
 def _frames_pose(ctx, pose):
     ctx["root"].rotation_mode = 'YXZ'
-    ctx["root"].rotation_euler = (ctx["tilt"], math.radians(float(pose.get("yaw", 0.0))), 0.0)
+    tilt = ctx["tilt"] + math.radians(float(pose.get("pitch", 0.0)))   # pose "pitch": per-frame lean (deg)
+    ctx["root"].rotation_euler = (tilt, math.radians(float(pose.get("yaw", 0.0))), 0.0)
     ctx["neck"].rotation_euler = (0.0, 0.0, math.radians(float(pose.get("neck", 0.0))))
     ph = math.radians(float(pose.get("phase", 0.0)))
     for side, hip, knee, ankle in ctx["legs"]:

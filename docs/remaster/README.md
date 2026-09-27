@@ -39,7 +39,15 @@ change. To play: `.\play.ps1` (REMASTERED + music, window sized to the monitor),
 8-bit SFX (`wav`), the original game's music (`extracted/music/original`) ↔ **REMASTERED** = the 3D
 overlay over the HD sheets, HD PICTs, remastered SFX, studio music remaster (`Session.remastered`;
 `game.gd _apply_presentation`; the music keeps its playback position). **F3** toggles 3D ↔ HD sprites
-within REMASTERED. **M** toggles Retro ↔ Remastered display; **Tab** or **P** pauses; **Esc** → menu;
+within REMASTERED. REMASTERED redraws at the monitor's rate while the engine keeps its tick
+(`game.gd _isprite` / `_draw_hist`: each sprite is drawn 2 ticks behind the engine, its position lerped
+between keyframes and its pose one of the in-betweens in `sprites_3d_frames/<sheet>/tw/` from
+`framematch.py tweens`; the board is drawn from the same delayed tick). **F4** (REMASTERED 3D) toggles
+real-time 3D: every sheet with a rig that passed `framematch.py <family> livegate`
+(`extracted/sprites_live/<family>/gate.json`; `live3d.gd`) is posed between the two keyframes' frames and
+rendered live per entity at the window's scale, instead of the pre-rendered frames (see
+`plan/SPRITE_REMASTER_PROCESS.md` §F). **M** toggles Retro ↔ Remastered
+display; **Tab** or **P** pauses; **Esc** → menu;
 **Enter** advances a cleared board / retries after game over; **Ctrl-S** quick-saves.
 
 ### Front-end flags (after `--`)

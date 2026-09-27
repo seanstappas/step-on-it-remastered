@@ -60,9 +60,23 @@ def build(opts):
     tz = f("torso_hz", 6.0)
     _rbox("skirt", (0, f("skirt_y", 3.0), 0), (f("skirt_hw", 13.0), f("skirt_hh", 4.0), tz * 0.9), f("skirt_bevel", 2.0), steel).parent = root
     ty, thh = f("torso_y", 19.0), f("torso_hh", 12.0)
-    _rbox("torso", (0, ty, 0), (f("torso_hw", 9.0), thh, tz), f("torso_bevel", 3.0), steel).parent = root
+    torso = _rbox("torso", (0, ty, 0), (f("torso_hw", 9.0), thh, tz), f("torso_bevel", 3.0), steel)
+    torso.parent = root
+    if f("torso_taper", 0.0):                                        # V plate: top x(1+t), waist x(1-t)
+        m = torso.modifiers.new("taper", 'SIMPLE_DEFORM')
+        m.deform_method, m.deform_axis = 'TAPER', 'Y'
+        m.factor = f("torso_taper", 0.0) / (thh * S)
     hy, hr, hh = f("helmet_y", 36.0), f("helmet_r", 5.5), f("helmet_h", 9.0)
     _cyl("helmet", (0, hy, 0), hr, hh, steel, f("helmet_bevel", 2.5), root)
+    if f("helmet_spike", 0.0) > 0:                                   # the pointed helmet top
+        sp = f("helmet_spike", 0.0)
+        bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=hr * f("spike_r", 0.7) * S, radius2=0.0, depth=sp * S,
+                                        location=(0, (hy + hh / 2 + sp / 2) * S, 0), rotation=(-math.pi / 2, 0, 0))
+        spike = bpy.context.active_object
+        spike.name = "spike"
+        spike.data.materials.append(steel)
+        bpy.ops.object.shade_smooth()
+        spike.parent = root
     _rbox("slit", (0, hy + f("slit_dy", 0.5), hr - 0.3), (hr * 0.75, f("slit_h", 0.7), 0.5), 0.2, dark).parent = root
     _rbox("crest", (0, hy + hh / 2 + f("crest_h", 2.0) / 2, 0), (f("crest_w", 1.2), f("crest_h", 2.0), hr * 0.8), 0.5, steel).parent = root
     arms = {}
@@ -111,7 +125,7 @@ def _frames_setup(opts):
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
     return {"root": root, "arms": arms, "grip": grip, "orb": orb, "legs": legs, "elbow0": float(opts.get("elbow0", 10.0)),
-            "base": {k: float(opts[k + "0"]) for k in ("s_r", "s_l", "a_r", "a_l", "e_r", "e_l", "sw", "stance")
+            "base": {k: float(opts[k + "0"]) for k in ("s_r", "s_l", "a_r", "a_l", "e_r", "e_l", "sw", "stance", "spread")
                      if k + "0" in opts}}
 
 
@@ -126,7 +140,8 @@ def _frames_pose(ctx, pose):
         el.rotation_euler = (math.radians(-(ctx["elbow0"] + g("e_" + side))), 0.0, 0.0)
     ctx["grip"].rotation_euler = (math.radians(g("sw")), 0.0, 0.0)
     for side, sg in (("r", 1.0), ("l", -1.0)):                         # + = forward (toward the camera at yaw 0)
-        ctx["legs"][side].rotation_euler = (-math.radians(sg * g("stance") + g("l_" + side)), 0.0, 0.0)
+        ctx["legs"][side].rotation_euler = (-math.radians(sg * g("stance") + g("l_" + side)), 0.0,
+                                            math.radians(-sg * g("spread")))   # "spread": both feet out (A-stance)
     r = g("glow")
     ctx["orb"].hide_render = r <= 0.05
     ctx["orb"].scale = (max(r, 0.05),) * 3

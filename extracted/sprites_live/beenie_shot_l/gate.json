@@ -1,0 +1,27 @@
+{
+ "sheet": "beenie_sprites",
+ "family": "beenie_shot_l",
+ "frames": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17
+ ],
+ "pass": true,
+ "iou_min": 0.8811,
+ "de_mean": 10.016,
+ "de_max": 15.808,
+ "cycles_de_mean": 10.129
+}

@@ -1,0 +1,20 @@
+{
+ "sheet": "GP_sprites",
+ "family": "GP_cheer",
+ "frames": [
+  118,
+  119,
+  120,
+  121,
+  122,
+  123,
+  124,
+  125,
+  126
+ ],
+ "pass": true,
+ "iou_min": 0.8635,
+ "de_mean": 12.158,
+ "de_max": 13.539,
+ "cycles_de_mean": 12.486
+}

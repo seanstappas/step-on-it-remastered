@@ -2,9 +2,12 @@
 
 A generic rig in SD pixel units: an ellipsoid BODY, a HEAD at the front (-X when yaw = 0, i.e. facing
 left like f02), four capsule LEGS hinged at the hips (diagonal pairs swing together), plus species
-details: the hippo's open black mouth with white teeth, small ears and grey hooves; the piggy's upturned
+details: the hippo's open black mouth with white teeth, small ears and grey hooves ("open_mouth": the gap
+across the snout's front with an upper and a lower tooth each side; "tail_l": a stub at the rump; "claws":
+white toenails); the piggy's upturned
 trumpet snout, big white eyeballs with blue pupils and the striped cone on its back. Pose: "yaw" (0 =
-facing left, 180 = facing right, 90 = facing the camera) and "phase" (walk cycle, deg).
+facing left, 180 = facing right, 90 = facing the camera) and "phase" (walk cycle, deg). "snout_box" (a
+rounded-box hippo head with the flat front f02 shows) scored worse than the ellipsoid (IoU 0.843 at f20).
 """
 import math
 
@@ -53,6 +56,21 @@ def _ell(name, c, r, mat, seg=32):
     return o
 
 
+def _box(name, c, half, bevel, mat):
+    """A rounded box centred at c with half-sizes `half` and edge radius `bevel` (all px)."""
+    bpy.ops.mesh.primitive_cube_add(size=2.0, location=tuple(v * S for v in c))
+    o = bpy.context.active_object
+    o.name = name
+    o.scale = tuple(v * S for v in half)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    m = o.modifiers.new("bevel", 'BEVEL')
+    m.width = min(bevel, *half) * S * 0.98
+    m.segments = 4
+    o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
+
+
 def _capsule(name, length, r, mat):
     """A capsule hanging straight down from its origin (the hip) by `length` px."""
     bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=r * S, depth=length * S,
@@ -91,14 +109,33 @@ def build(opts):
     hx, hy = float(opts.get("head_x", -8.0)), float(opts.get("head_y", 0.3))
     hr = (float(opts.get("head_rx", 5.0)), float(opts.get("head_ry", 4.0)), float(opts.get("head_rz", 4.6)))
     if sp == "hippo":
-        parts.append(_ell("head", (hx, hy, 0), hr, skin))
+        if opts.get("snout_box", False):   # f02 rows 2-8: the snout's front is flat at x = 4, the mouth gap on it
+            parts.append(_box("head", (hx, hy, 0), hr, float(opts.get("snout_bevel", 2.0)), skin))
+        else:
+            parts.append(_ell("head", (hx, hy, 0), hr, skin))
         mw = float(opts.get("mouth_h", 1.6))
-        parts.append(_ell("mouth", (hx - hr[0] * 0.75, hy - 0.8, 0), (hr[0] * 0.45, mw, hr[2] * 0.75), dark, 24))
-        for zz in (-1.8, 1.8):
-            parts.append(_ell("tooth", (hx - hr[0] * 0.9, hy - 0.2, zz), (0.7, 0.9, 0.7), white, 12))
+        if opts.get("open_mouth", False):
+            # f02 rows 5-8: a black gap across the snout's front, one white tooth hanging from the upper lip and
+            # one rising from the lower jaw on each side, the green lower jaw below
+            mx = hx - hr[0] * float(opts.get("mouth_fx", 0.8))
+            my = hy + float(opts.get("mouth_dy", -1.0))
+            parts.append(_ell("mouth", (mx, my, 0), (hr[0] * float(opts.get("mouth_rx", 0.45)), mw, hr[2] * 0.8), dark, 24))
+            tx = hx - hr[0] * float(opts.get("tooth_fx", 0.92))
+            tz, trr = float(opts.get("tooth_z", 1.4)), float(opts.get("tooth_r", 0.55))
+            for zz in (-tz, tz):
+                parts.append(_ell("tooth_up", (tx, my + mw * 0.45, zz), (trr, trr * 1.6, trr), white, 12))
+                parts.append(_ell("tooth_lo", (tx + 0.3, my - mw * 0.55, zz), (trr, trr * 1.4, trr), white, 12))
+        else:
+            parts.append(_ell("mouth", (hx - hr[0] * 0.75, hy - 0.8, 0), (hr[0] * 0.45, mw, hr[2] * 0.75), dark, 24))
+            for zz in (-1.8, 1.8):
+                parts.append(_ell("tooth", (hx - hr[0] * 0.9, hy - 0.2, zz), (0.7, 0.9, 0.7), white, 12))
         for zz in (-2.2, 2.2):
             parts.append(_ell("ear", (hx + 1.0, hy + hr[1] + 0.3, zz), (0.9, 1.1, 0.7), white, 12))
             parts.append(_ell("eye", (hx - 1.0, hy + hr[1] * 0.55, zz * 1.2), (0.7, 0.7, 0.7), dark, 12))
+        if float(opts.get("tail_l", 0.0)) > 0:   # f02 rows 8-10: a stub at the rump, pointing back and down
+            tl = float(opts["tail_l"])
+            parts.append(_ell("tail", (bx + bl + tl * 0.3, float(opts.get("tail_y", -1.0)), 0),
+                              (tl * 0.6, float(opts.get("tail_r", 1.1)), float(opts.get("tail_r", 1.1))), skin, 16))
     else:
         # The piggy has no separate head: the eyeballs sit on the front of the body's top, the trumpet snout
         # (thin neck, flared end, rim) leaves the body's front-top going up-forward, the striped tail rises
@@ -166,6 +203,10 @@ def build(opts):
         if sp == "hippo":
             hoof = _ell("hoof_" + key, (0, -ll - 0.4, 0), (lr * 1.05, 0.9, lr * 1.05), grey, 16)
             hoof.parent = hip
+            if opts.get("claws", False):      # f02 rows 15-16: white toenails at the front of each foot
+                cl = _ell("claw_" + key, (-lr * float(opts.get("claw_fx", 0.8)), -ll - 0.3, 0),
+                          (float(opts.get("claw_r", 0.7)), 0.8, lr * 0.9), white, 12)
+                cl.parent = hip
         legs.append((key, hip))
     return root, legs
 

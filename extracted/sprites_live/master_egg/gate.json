@@ -1,0 +1,26 @@
+{
+ "sheet": "master_s_objects",
+ "family": "master_egg",
+ "frames": [
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61
+ ],
+ "pass": false,
+ "iou_min": 0.8979,
+ "de_mean": 24.555,
+ "de_max": 26.101,
+ "cycles_de_mean": 14.927
+}

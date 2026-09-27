@@ -1,0 +1,26 @@
+{
+ "sheet": "master_s_objects",
+ "family": "master_compound",
+ "frames": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16
+ ],
+ "pass": true,
+ "iou_min": 0.8784,
+ "de_mean": 11.322,
+ "de_max": 12.973,
+ "cycles_de_mean": 10.625
+}

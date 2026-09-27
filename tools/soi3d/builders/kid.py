@@ -60,6 +60,17 @@ def build(opts):
                 o.rotation_euler = (0.0, sz * a, -e)
                 o.parent = neckj
                 o.matrix_parent_inverse = neckj.matrix_world.inverted()
+    if opts.get("mouth", False):   # a red mouth below the eyes (the Hammer's face, f19/f29)
+        rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
+        e, a = math.radians(f("mouth_el", -25.0)), math.radians(f("mouth_az", 10.0))
+        d = (-math.cos(e) * math.cos(a), math.sin(e), math.cos(e) * math.sin(a))
+        t = 1.0 / math.sqrt(sum((d[i] / rad[i]) ** 2 for i in range(3)))
+        mr = f("mouth_r", 0.9)
+        o = _ell("mouth", (d[0] * t, hy + d[1] * t, d[2] * t), (mr * 0.35, mr * 0.55, mr), mat("lips", (200, 20, 20)), 16)
+        o.rotation_mode = 'ZYX'
+        o.rotation_euler = (0.0, a, -e)
+        o.parent = neckj
+        o.matrix_parent_inverse = neckj.matrix_world.inverted()
     _cyl("neck", (0, f("neck_y", 10.4), 0), f("neck_r", 1.3), 1.4, skin, 0.2, root)
     arms, legs = {}, {}
     ua, fa, ar = f("uarm_l", 3.6), f("farm_l", 3.4), f("arm_r", 1.3)

@@ -22,6 +22,8 @@ param(
     [string]$Script = "",         # --script=FILE scripted run on -Board (see game.gd _load_script)
     [string[]]$Extra = @(),       # extra game args, e.g. --players=2 --compete --alternate
     [switch]$HD,                  # --hd: load the 4x AI-upscaled sheets + record at 1280x960 (native)
+    [int]$Fps = 60,               # movie frame rate; above the 60 Hz engine tick shows REMASTERED's smooth in-between frames
+    [string]$Res = "",            # window size, e.g. 2560x1920 (4x; live 3D renders at the window's scale); default by -HD
     [switch]$Visible,             # record with the window ON-SCREEN (default: hidden/off-screen)
     [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
 )
@@ -46,11 +48,11 @@ try {
     if ($Visible) { $gargs += "--visible" }   # else the --demo/--play capture flag auto-hides the window
     $gargs += "--hidden"   # force off-screen headless render (main_menu _apply_window_mode) so the
                            # capture never pops a window onto the desktop
-    $res = if ($HD) { '1280x960' } else { '640x480' }   # HD renders the 640x480 canvas at 2x (crisp sprites)
+    $res = if ($Res -ne "") { $Res } elseif ($HD) { '1280x960' } else { '640x480' }   # HD renders the 640x480 canvas at 2x (crisp sprites)
     # Godot can print a harmless "ObjectDB instances leaked at exit" warning to
     # stderr when it quits mid-movie; don't let that abort the transcode below.
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $Godot --path godot_project --resolution $res --fixed-fps 60 --position 9000,9000 `
+    & $Godot --path godot_project --resolution $res --fixed-fps $Fps --position 9000,9000 `
         --write-movie $avi -- @gargs 2>&1 | Out-Null
     $ErrorActionPreference = $prevEAP
 
@@ -61,12 +63,12 @@ try {
     $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
     if ($ff) {
         Write-Host "==> transcoding -> $mp4" -ForegroundColor Cyan
-        $vf = if ($HD) { "scale=iw:ih" } else { "scale=iw*2:ih*2:flags=neighbor" }
+        $vf = if ($HD -or $Res -ne "") { "scale=iw:ih" } else { "scale=iw*2:ih*2:flags=neighbor" }
         & $ff.Source -y -loglevel error -i $avi -c:v libx264 -pix_fmt yuv420p -crf 20 `
             -c:a aac -b:a 160k -vf $vf $mp4
         if (Test-Path $mp4) {
             $mp4MB = [math]::Round((Get-Item $mp4).Length / 1MB, 1)
-            $note = if ($HD) { "1280x960 HD" } else { "2x nearest-neighbour" }
+            $note = if ($Res -ne "") { $Res } elseif ($HD) { "1280x960 HD" } else { "2x nearest-neighbour" }
             Write-Host "    wrote $mp4 ($mp4MB MB, $note)" -ForegroundColor Green
             Remove-Item $avi -ErrorAction SilentlyContinue   # keep only the small mp4
         }

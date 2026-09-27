@@ -1,7 +1,8 @@
 """soi3d.builders.walker -- the Walker's body (walker_sprites f02-f49; its bolt f50-f65 is bolt.py).
 
 A white robot dog in SD pixel units (origin = body centre, facing left (-X) at yaw 0): a rounded-box BODY, a
-rounded-box HEAD on its front top with a red NOSE, and four LEGS of two segments each (thigh, knee, shin,
+rounded-box HEAD on its front top with a red NOSE (and, with `eyes`, a dark eye on each side of the face), and
+four LEGS of two segments each (thigh, knee, shin,
 foot): capsules with knee balls, or (`leg_shape` "block") rounded boxes `leg_w` x `leg_d` px with a boxy
 boot. Pose: "yaw", "pitch" (deg, the body rocking in the picture plane), "phase" (walk; diagonal pairs fn+rf / ff+rn), per-leg "a_<leg>"
 (thigh, deg, + = forward) and "k_<leg>" (knee bend, deg); legs fn/ff = front near/far, rn/rf = rear near/far.
@@ -37,6 +38,13 @@ def build(opts):
     _rbox("head", (hx, hy, 0), (f("head_hx", 5.5), f("head_hy", 6.5), f("head_hz", 4.5)), f("head_bevel", 3.0), white).parent = root
     _ell("nose", (hx - f("head_hx", 5.5) + f("nose_in", 0.3), hy + f("nose_y", -5.0), 0),
          (f("nose_rx", 1.5), f("nose_ry", 1.2), f("nose_rz", 1.3)), red, 16).parent = root
+    if opts.get("eyes", False):            # f04 row 6 / f22 rows 5-7: a dark eye each side, behind the face's front
+        dark = C._mat("eye", C._srgb(*opts.get("eye_rgb", (25, 25, 25))), rough=0.4, spec=0.3)
+        er = f("eye_r", 0.8)
+        for sz in (1.0, -1.0):
+            _ell("eye_" + ("n" if sz > 0 else "f"),
+                 (hx - f("head_hx", 5.5) * f("eye_fx", 0.55), hy + f("eye_dy", 0.4), sz * (f("head_hz", 4.5) - er * 0.4)),
+                 (er, er, er * 0.6), dark, 16).parent = root
     legs = []
     tl, sl, lr = f("thigh_l", 5.0), f("shin_l", 5.0), f("leg_r", 1.7)
     block = opts.get("leg_shape", "capsule") == "block"

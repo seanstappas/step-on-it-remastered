@@ -39,8 +39,10 @@ def build(opts):
     _rbox("jaw", (hx - f("head_hx", 2.6) - jl / 2 + 1.0, f("jaw_y", -1.8), 0),
           (jl / 2 + 1.0, f("jaw_h", 0.8), f("jaw_w", 1.2)), 0.4, grey).parent = root
     al = f("ant_l", 4.0)
-    _rbox("antenna", (hx + f("ant_dx", 0.5), f("head_y", 0.0) + f("head_hy", 2.8) + al / 2, 0),
-          (f("ant_w", 0.8), al / 2, f("ant_w", 0.8)), 0.3, grey).parent = root
+    az = f("ant_z", 0.0)                 # > 0: a PAIR of antennae (face-on f26: two white posts 3 px apart)
+    for i, zz in enumerate((az, -az) if az > 0 else (0.0,)):
+        _rbox("antenna" if i == 0 else "antenna_b", (hx + f("ant_dx", 0.5), f("head_y", 0.0) + f("head_hy", 2.8) + al / 2, zz),
+              (f("ant_w", 0.8), al / 2, f("ant_w", 0.8)), 0.3, grey).parent = root
     legs = []
     for side, sz in (("l", 1.0), ("r", -1.0)):
         for i in range(3):
@@ -67,7 +69,7 @@ def _frames_pose(ctx, pose):
     ctx["root"].rotation_mode = 'YXZ'
     ctx["root"].rotation_euler = (ctx["tilt"], math.radians(float(pose.get("yaw", 0.0))), 0.0)
     ph = math.radians(float(pose.get("phase", 0.0)))
-    top, bot = ctx["top"], -ctx["ground"]
+    top, bot = ctx["top"] + float(pose.get("kt", 0.0)), -ctx["ground"]   # pose "kt": per-frame knee height (px)
     for L in ctx["legs"]:
         tripod = (L["side"] == "l") == (L["i"] != 1)                 # L1, R2, L3 vs R1, L2, R3
         p = ph + (0.0 if tripod else math.pi)

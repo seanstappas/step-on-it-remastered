@@ -1,0 +1,27 @@
+{
+ "sheet": "walker_sprites",
+ "family": "walker_bolt",
+ "frames": [
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65
+ ],
+ "pass": true,
+ "iou_min": 0.8627,
+ "de_mean": 8.055,
+ "de_max": 12.265,
+ "cycles_de_mean": 8.145
+}

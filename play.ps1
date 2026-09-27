@@ -3,8 +3,11 @@ play.ps1 -- launch Step On It! Remastered for play-testing the live ORIGINAL <->
 
   F2   ORIGINAL (1996 SD art, 8-bit SFX, original-game music)  <->  REMASTERED (frame-matched 3D
        sprites, remastered SFX, studio music remaster). Works on the title menu and in game; the
-       board keeps playing and the music keeps its place.
+       board keeps playing and the music keeps its place. REMASTERED draws at the monitor's refresh
+       rate with in-between 3D poses; the engine keeps the original tick either way.
   F3   (REMASTERED) 3D sprites <-> the HD AI-upscaled sheets (frames without a 3D render are HD).
+  F4   (REMASTERED 3D) real-time 3D (players, enemies, projectiles posed + rendered live every frame) <->
+       the pre-rendered 3D frames.
   M    Retro <-> Remastered display effects (glow + vignette).
   P1 arrows (see Help for the full key list), Tab = pause, Esc = menu.
 
@@ -48,6 +51,6 @@ $gargs += "--"
 if (-not $Original) { $gargs += "--3d" }
 if (-not $NoMusic) { $gargs += "--music" }
 if ($Sfx -ne "ai") { $gargs += "--sfx-variant=$Sfx" }
-Write-Host ("Step On It! -- {0}, {1}. F2 = original/remastered, F3 = 3D/HD sprites." -f `
+Write-Host ("Step On It! -- {0}, {1}. F2 = original/remastered, F3 = 3D/HD sprites, F4 = live/pre-rendered 3D." -f `
     $(if ($Original) { "ORIGINAL" } else { "REMASTERED" }), $(if ($Fullscreen) { "full screen" } else { "{0}x{1}" -f (640 * $Scale), (480 * $Scale) }))
 & $Godot @gargs

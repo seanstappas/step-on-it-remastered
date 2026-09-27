@@ -1,0 +1,26 @@
+{
+ "sheet": "master_s_objects",
+ "family": "master_cluster",
+ "frames": [
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46
+ ],
+ "pass": true,
+ "iou_min": 0.8616,
+ "de_mean": 6.024,
+ "de_max": 7.04,
+ "cycles_de_mean": 5.999
+}

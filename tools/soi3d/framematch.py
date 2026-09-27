@@ -24,7 +24,8 @@ Config (the family's own file, no shared writes): extracted/sprites_3d/<family>/
     "samples": {"sweep": 16, "final": 256},
     "post": [{"glint": {"cx": 0.32, "cy": 0.20, "rad": 0.14, "color": [165, 250, 165]}}],
     "gate": {"iou": 0.88, "de": 10.0},     # per-frame: silhouette IoU >= iou AND blurred mean dE76 <= de
-    "fps": 30                              # side-by-side video cadence
+    "fps": 30,                             # side-by-side video cadence
+    "tweens": {"n": 4, "cycles": [[2, 25]]} # optional: in-between poses for REMASTERED's smooth rendering
   }
 
 Stages (default = all, in order):
@@ -52,9 +53,27 @@ Stages (default = all, in order):
          pixel-art dithering, not a wrong shape/pose/hue) and frame IDENTITY (the 3D frame must match its
          own source frame best, +-rank_tol); writes extracted/sprites_3d/<family>/_verify/
          frames_{report.json,sheet.png,anim.mp4}; exit 1 on a fail
+  tweens (published families, run after final) the in-between poses the game draws between two engine
+         ticks at the monitor's frame rate: for each frame pair it animates between ("tweens": "cycles"
+         [[first, last]] wrap last->first, "runs" [[first, last]] don't, "pairs" [[a, b]]), n-1 renders
+         of the fitted pose and sprite offset lerped a->b (params with a sweep "period" -- or a tweens
+         "periods" entry -- go the short way round) -> extracted/sprites_3d_frames/<sheet>/tw/
+         fLO-HI_KofN.png. A pair is dropped (the game then steps it) when an in-between's silhouette is
+         further from both neighbours than they are from each other ("max_drop", default 0.10 IoU);
+         _verify/tweens_anim.mp4 plays each sequence with its in-betweens. `final` deletes a family's
+         tweens (they would no longer match), so re-run this after it
+  live   export the rig for REAL-TIME 3D in the game (tools/soi3d/live_blender.py): model.glb + live.json
+         (every frame's node transforms and camera, the lights, world and materials) ->
+         extracted/sprites_live/<family>/; the game poses it between any two frames at the monitor's rate
+  livecal  balance the live renderer's sun vs ambient light against the SD frames (Godot's ambient is not
+         shadowed by the model the way Cycles' world light is): sun-only + ambient-only passes mixed in
+         linear light, grid-searched by dE -> live.json key_scale / amb_scale (run after live)
+  livegate  render every frame of that rig in Godot (godot_project/scenes/live_check.tscn, the game's own
+         live renderer) and score it like verify, next to the Cycles frames' scores;
+         _verify/live_sheet.png = SD | Cycles | live per frame; exit 1 unless every frame passes the gate
 
 Env: SOI_BLENDER (blender.exe), SOI3D_WORK (scratch root, default <repo>/tmp/soi3d_work), ffmpeg on
-PATH or SOI_FFMPEG.
+PATH or SOI_FFMPEG, SOI3D_LOOK_KEYS (comma list: `look` tunes only these of its options this run).
 """
 import glob
 import itertools
@@ -75,9 +94,13 @@ SD_DIR = os.path.join(ROOT, "extracted", "sprites")
 HD_DIR = os.path.join(ROOT, "extracted", "sprites_hd")
 FAM_DIR = os.path.join(ROOT, "extracted", "sprites_3d")
 OVERLAY_DIR = os.path.join(ROOT, "extracted", "sprites_3d_frames")
+LIVE_DIR = os.path.join(ROOT, "extracted", "sprites_live")
 BLENDER = os.environ.get("SOI_BLENDER", r"D:\SOI-tools\blender\blender-4.2.3-windows-x64\blender.exe")
+GODOT = os.environ.get("SOI_GODOT", r"D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe")
 WORK = os.environ.get("SOI3D_WORK", os.path.join(ROOT, "tmp", "soi3d_work"))
 ORTHO_DEFAULT = 2.15          # common.setup_scene's camera
+LIVE_IOU_TOL = 0.008          # livegate: a live frame this close to its published frame's scores passes
+LIVE_DE_TOL = 1.0
 
 
 # ---------------------------------------------------------------------------------------- io
@@ -199,8 +222,49 @@ def compare_blur(sd_pm, r_pm, sigma=1.0):
     return float(de[uni].mean()) if uni.any() else 0.0
 
 
+DETAIL_PRE, DETAIL_SIGMA, DETAIL_MIN = 0.6, 1.2, 15.0
+
+
+def _gauss_masked(x, m, sigma):
+    """Normalised separable Gaussian of x (H, W, C) over the pixels where m (H, W) is set."""
+    r = int(math.ceil(2.5 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    h, w = m.shape
+
+    def conv(a):
+        p = np.pad(a, ((r, r), (r, r)) + ((0, 0),) * (a.ndim - 2))
+        hz = sum(k[i] * p[:, i:i + w] for i in range(2 * r + 1))
+        return sum(k[i] * hz[i:i + h] for i in range(2 * r + 1))
+    mw = conv(m.astype(np.float64))
+    return conv(x * m[..., None]) / np.maximum(mw, 1e-6)[..., None]
+
+
+def detail_miss(sd_pm, r_pm):
+    """The source's small features (eyes, stripes, marks, highlights) a render loses. Detail layer D = Lab
+    pre-smoothed (DETAIL_PRE px: a 1 px dither checker averages out) minus its masked surroundings
+    (DETAIL_SIGMA px, opaque pixels only). For each source pixel with |D_sd| >= DETAIL_MIN (a feature),
+    best = the closest render detail within 1 px (a 1 px misregistration is no miss).
+    Returns (mean over the features of min(best, |D_sd|) in dE units, features, best, |D_sd|)."""
+    sa, ra = sd_pm[..., 3] > 0.5, r_pm[..., 3] > 0.5
+    ls, lr = _lab(np.clip(sd_pm[..., :3], 0, 1)), _lab(np.clip(r_pm[..., :3], 0, 1))
+    ds = np.where(sa[..., None], _gauss_masked(ls, sa, DETAIL_PRE) - _gauss_masked(ls, sa, DETAIL_SIGMA), 0.0)
+    dr = np.where(ra[..., None], _gauss_masked(lr, ra, DETAIL_PRE) - _gauss_masked(lr, ra, DETAIL_SIGMA), 0.0)
+    mag = np.linalg.norm(ds, axis=-1)
+    h, w = sa.shape
+    best = np.full((h, w), np.inf)
+    pr, pa = np.pad(dr, ((1, 1), (1, 1), (0, 0))), np.pad(ra, 1)
+    for dy in (0, 1, 2):
+        for dx in (0, 1, 2):
+            e = np.linalg.norm(ds - pr[dy:dy + h, dx:dx + w], axis=-1)
+            best = np.minimum(best, np.where(pa[dy:dy + h, dx:dx + w], e, np.inf))
+    feat = sa & (mag >= DETAIL_MIN)
+    score = float(np.minimum(best, mag)[feat].mean()) if feat.any() else 0.0
+    return score, feat, best, mag
+
+
 # ------------------------------------------------------------------------------------ blender
-def run_blender(job, tag):
+def run_blender(job, tag, script="frames_blender.py", done="FRAMES_DONE"):
     os.makedirs(WORK, exist_ok=True)
     jp = os.path.join(WORK, "%s.job.json" % tag)
     with open(jp, "w", encoding="utf-8") as fh:
@@ -208,11 +272,11 @@ def run_blender(job, tag):
     if not os.path.exists(BLENDER):
         raise SystemExit("Blender not found: set SOI_BLENDER (looked at %s)" % BLENDER)
     cmd = [BLENDER, "--background", "--factory-startup", "--python",
-           os.path.join(ROOT, "tools", "soi3d", "frames_blender.py"), "--", jp]
+           os.path.join(ROOT, "tools", "soi3d", script), "--", jp]
     res = subprocess.run(cmd, capture_output=True, text=True)
-    tail = [ln for ln in res.stdout.splitlines() if ln.startswith(("frames_blender", "FRAMES_DONE"))]
+    tail = [ln for ln in res.stdout.splitlines() if ln.startswith(("frames_blender", done))]
     print("\n".join(tail))
-    if "FRAMES_DONE" not in res.stdout:
+    if done not in res.stdout:
         print(res.stdout[-3000:], res.stderr[-3000:])
         raise SystemExit("blender job %s failed" % tag)
 
@@ -465,6 +529,8 @@ def _smooth(fitted, order, cfg, smooth):
     x = np.arange(len(order), dtype=float)
     model = {}
     for pname, how in smooth.items():
+        if pname not in axes:                             # an optim-only param has no sweep pick to smooth
+            continue
         per = float(axes[pname].get("period") or 0)
         raw = np.array([fitted[nn][pname] for nn in order], dtype=float)
 
@@ -599,6 +665,13 @@ def stage_look(family, cfg):
     if not look:
         print("look: no \"look\" block, skipping")
         return
+    only = os.environ.get("SOI3D_LOOK_KEYS")      # e.g. "face_h,face_dy": tune just these options this run
+    if only:
+        keys = set(only.split(","))
+        look = dict(look, params={k: v for k, v in look.get("params", {}).items() if k in keys},
+                    refine={k: v for k, v in look.get("refine", {}).items() if k in keys})
+        cfg = dict(cfg, look=look)
+        print("look: only %s" % sorted(keys & (set(look["params"]) | set(look["refine"]))))
     frames = base_frames(cfg)
     with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
         fit = json.load(fh)
@@ -752,11 +825,15 @@ def _score_trials(cfg, fit, trials, d, tag):
 
 def _look_score(cfg, sd_pm, r_pm):
     """Blurred dE, plus a steep penalty once the silhouette IoU falls toward the gate (so a colour or
-    shape tweak can never buy dE with a worse outline); look "iou_w" / "iou_margin" tune it."""
+    shape tweak can never buy dE with a worse outline); look "iou_w" / "iou_margin" tune it. look
+    "detail_w" adds that weight x detail_miss (placing features such as eyes the blur hides)."""
     iou, _ = compare(sd_pm, r_pm)
     lk = cfg.get("look") or {}
-    return compare_blur(sd_pm, r_pm) + float(lk.get("iou_w", 60.0)) * max(
+    s = compare_blur(sd_pm, r_pm) + float(lk.get("iou_w", 60.0)) * max(
         0.0, cfg["gate"]["iou"] + float(lk.get("iou_margin", 0.01)) - iou)
+    if float(lk.get("detail_w", 0.0)) > 0:
+        s += float(lk["detail_w"]) * detail_miss(sd_pm, r_pm)[0]
+    return s
 
 
 def _look_per_kind(family, cfg, fit, best, frames, d):
@@ -1066,6 +1143,7 @@ def stage_bake(family, cfg):
 
 def stage_final(family, cfg):
     frames = base_frames(cfg)
+    _drop_tweens(cfg)
     with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
         fit = json.load(fh)
     s = cfg["scale"]
@@ -1114,8 +1192,8 @@ def _derive(cfg, d, od, s):
         elif op == "crack":
             a = rgba(sd[spec["from"]][0])
             b = rgba(sd[nn][0])
-            lum = lambda x: x[..., :3] @ np.array([0.299, 0.587, 0.114])
-            crack = (np.abs(a - b)[..., :3].max(-1) > 0.09) & (lum(b) < lum(a) - 0.08) & (b[..., 3] > 0)
+            val = lambda x: x[..., :3].max(-1)       # not luma: a crack across a BLUE ball barely moves luma
+            crack = (np.abs(a - b)[..., :3].max(-1) > 0.09) & (val(b) < val(a) - 0.08) & (b[..., 3] > 0)
             m = Image.fromarray((crack * 255).astype(np.uint8)).resize((w * s, h * s), Image.BILINEAR)
             mk = np.clip(np.asarray(m).astype(np.float64) / 255.0 * float(spec.get("strength", 1.6)), 0, 1)
             ccol = np.asarray(Image.fromarray((b * 255).astype(np.uint8)).resize((w * s, h * s), Image.NEAREST))
@@ -1131,6 +1209,297 @@ def _derive(cfg, d, od, s):
 
 def _ffmpeg():
     return shutil.which("ffmpeg") or os.environ.get("SOI_FFMPEG") or r"D:\Program Files\Tools\ffmpeg.exe"
+
+
+# ------------------------------------------------------------------------------------- tweens
+TWEEN_RE = re.compile(r"^f(\d+)-(\d+)_(\d+)of(\d+)\.png$")
+
+
+def _tween_pairs(cfg):
+    """The unordered (lo, hi) frame pairs of cfg "tweens" (cycles / runs / pairs), family frames only."""
+    tw = cfg.get("tweens") or {}
+    out = set()
+    for a, b in tw.get("cycles", []):
+        seq = list(range(a, b + 1))
+        out |= {tuple(sorted((seq[i], seq[(i + 1) % len(seq)]))) for i in range(len(seq))}
+    for a, b in tw.get("runs", []):
+        out |= {(i, i + 1) for i in range(a, b)}
+    for a, b in tw.get("pairs", []):
+        out.add(tuple(sorted((a, b))))
+    have = {nn: (w, h) for nn, _, w, h in base_frames(cfg)}
+    return sorted(p for p in out if p[0] in have and p[1] in have and have[p[0]] == have[p[1]])
+
+
+def _tween_sequences(cfg):
+    """Frame orders to preview: each cycle (closed) and run."""
+    tw = cfg.get("tweens") or {}
+    return [list(range(a, b + 1)) + [a] for a, b in tw.get("cycles", [])] + \
+           [list(range(a, b + 1)) for a, b in tw.get("runs", [])]
+
+
+def _lerp_pose(pa, pb, t, periods):
+    out = {}
+    for k in set(pa) | set(pb):
+        a, b = pa.get(k, pb.get(k)), pb.get(k, pa.get(k))
+        if isinstance(a, bool) or isinstance(b, bool) or not isinstance(a, (int, float)) \
+                or not isinstance(b, (int, float)):
+            out[k] = a if t < 0.5 else b
+        elif k in periods:
+            per = float(periods[k])
+            out[k] = a + ((b - a + per / 2) % per - per / 2) * t
+        else:
+            out[k] = a + (b - a) * t
+    return out
+
+
+def _drop_tweens(cfg):
+    """Delete the in-betweens of this family's frames (stale once its frames are re-rendered)."""
+    mine = {nn for nn, _, _, _ in sd_frames(cfg)}
+    n = 0
+    for p in glob.glob(os.path.join(OVERLAY_DIR, cfg["source"], "tw", "f*.png")):
+        m = TWEEN_RE.match(os.path.basename(p))
+        if m and int(m.group(1)) in mine and int(m.group(2)) in mine:
+            os.remove(p)
+            n += 1
+    return n
+
+
+def stage_live(family, cfg):
+    if cfg.get("frame_opts"):
+        raise SystemExit("live: %s has per-frame model variants (frame_opts) -- not a single rig" % family)
+    with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
+        fit = json.load(fh)
+    out = os.path.join(LIVE_DIR, family)
+    frames = {str(nn): {"pose": fit["frames"][str(nn)]["pose"], "w": w, "h": h, "cam": _final_cam(fit, w, h, nn)}
+              for nn, _, w, h in base_frames(cfg)}
+    run_blender({"mode": cfg["mode"], "opts": _opts(family, cfg), "sheet": cfg["source"], "family": family,
+                 "scale": cfg["scale"], "post": cfg["post"], "out": out, "frames": frames},
+                family + "_live", script="live_blender.py", done="LIVE_DONE")
+    print("live: %d frames -> %s" % (len(frames), os.path.relpath(out, ROOT)))
+
+
+def _godot_live(family, out, extra=()):
+    os.makedirs(out, exist_ok=True)
+    for f in glob.glob(os.path.join(out, "*.png")):
+        os.remove(f)
+    res = subprocess.run([GODOT, "--path", os.path.join(ROOT, "godot_project"), "--position", "9000,9000",
+                          "res://scenes/live_check.tscn", "--", "--family=" + family, "--out=" + out] + list(extra),
+                         capture_output=True, text=True)
+    if "LIVE_CHECK_DONE" not in res.stdout:
+        print(res.stdout[-3000:], res.stderr[-3000:])
+        raise SystemExit("godot live render failed")
+
+
+def stage_livegate(family, cfg):
+    d = workdir(family, "live")
+    _godot_live(family, d)
+    s, gate = cfg["scale"], cfg["gate"]
+    od = os.path.join(OVERLAY_DIR, cfg["source"])
+    rows = []
+    for nn, p, w, h in sd_frames(cfg):
+        lp, cp = os.path.join(d, "f%02d.png" % nn), glob.glob(os.path.join(od, "f%02d_*.png" % nn))
+        if not os.path.exists(lp) or not cp:
+            continue
+        sd, lv, cy = premul(rgba(p)), premul(rgba(lp)), premul(rgba(cp[0]))
+        if lv.shape[:2] != (h * s, w * s):
+            raise SystemExit("livegate: f%02d is %s, expected %dx%d" % (nn, lv.shape[:2], w * s, h * s))
+        rows.append((nn, compare(sd, box_down(lv, s))[0], compare_blur(sd, box_down(lv, s)),
+                     compare(sd, box_down(cy, s))[0], compare_blur(sd, box_down(cy, s)),
+                     compare_blur(box_down(cy, s), box_down(lv, s))))
+    if not rows:
+        raise SystemExit("livegate: nothing rendered")
+    a = np.array([r[1:] for r in rows])
+    ok = lambda i, j: int(((a[:, i] >= gate["iou"]) & (a[:, j] <= gate["de"])).sum())
+    # a live frame passes the gate, or matches its published frame's scores (Godot's MSAA edge sits a few
+    # thousandths of IoU from Cycles' filter)
+    live_ok = ((a[:, 0] >= gate["iou"]) & (a[:, 1] <= gate["de"])) | \
+        ((a[:, 0] >= a[:, 2] - LIVE_IOU_TOL) & (a[:, 1] <= a[:, 3] + LIVE_DE_TOL))
+    print("livegate %s (%d frames, gate IoU >= %.3f, dE <= %.1f):" % (family, len(rows), gate["iou"], gate["de"]))
+    print("  live  : IoU min %.3f mean %.3f, dE mean %.2f max %.2f, pass %d (%d as good as the published frame)" %
+          (a[:, 0].min(), a[:, 0].mean(), a[:, 1].mean(), a[:, 1].max(), ok(0, 1), int(live_ok.sum())))
+    print("  cycles: IoU min %.3f mean %.3f, dE mean %.2f max %.2f, pass %d" %
+          (a[:, 2].min(), a[:, 2].mean(), a[:, 3].mean(), a[:, 3].max(), ok(2, 3)))
+    print("  live vs cycles: dE mean %.2f max %.2f" % (a[:, 4].mean(), a[:, 4].max()))
+    worst = sorted(rows, key=lambda r: -r[2])[:5]
+    print("  worst live frames: " + ", ".join("f%02d (IoU %.3f dE %.1f)" % (r[0], r[1], r[2]) for r in worst))
+    tiles = [(nn, p) for nn, p, _, _ in sd_frames(cfg)][::max(1, len(rows) // 12)]
+    cw, ch = max(w for _, _, w, _ in sd_frames(cfg)) * s, max(h for _, _, _, h in sd_frames(cfg)) * s
+    sheet = Image.new("RGB", (len(tiles) * (cw + 6), 3 * (ch + 6)), (40, 40, 48))
+    for i, (nn, p) in enumerate(tiles):
+        sd = Image.open(p)
+        for j, src in enumerate((p, glob.glob(os.path.join(od, "f%02d_*.png" % nn))[0],
+                                 os.path.join(d, "f%02d.png" % nn))):
+            sheet.paste(_on_black(src, (sd.size[0] * s, sd.size[1] * s) if j == 0 else None), (i * (cw + 6), j * (ch + 6)))
+    vd = os.path.join(FAM_DIR, family, "_verify")
+    os.makedirs(vd, exist_ok=True)
+    sheet.save(os.path.join(vd, "live_sheet.png"))
+    passed = bool(live_ok.all())
+    bad = ["f%02d (IoU %.3f vs %.3f, dE %.1f vs %.1f)" % (r[0], r[1], r[3], r[2], r[4])
+           for r, k in zip(rows, live_ok) if not k]
+    if bad:
+        print("  failing live frames (live vs published): " + ", ".join(bad))
+    # the game draws a sheet live only from rigs whose gate.json says they passed
+    with open(os.path.join(LIVE_DIR, family, "gate.json"), "w", encoding="utf-8") as fh:
+        json.dump({"sheet": cfg["source"], "family": family, "frames": [r[0] for r in rows], "pass": passed,
+                   "iou_min": round(float(a[:, 0].min()), 4), "de_mean": round(float(a[:, 1].mean()), 3),
+                   "de_max": round(float(a[:, 1].max()), 3), "cycles_de_mean": round(float(a[:, 3].mean()), 3)},
+                  fh, indent=1)
+    return passed
+
+
+def _srgb_lin(c):
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def _lin_srgb(c):
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
+
+
+def stage_livecal(family, cfg):
+    """Balance the live renderer's sun vs ambient light against the SD frames: Godot's ambient light
+    reaches every surface while Cycles' world light is shadowed by the model itself, so the converted
+    values light the live model too flatly. Renders a sun-only and an ambient-only pass, mixes them in
+    linear light (k * sun + m * ambient), grid-searches (k, m) by livegate's dE and stores them in
+    live.json as key_scale / amb_scale."""
+    jp = os.path.join(LIVE_DIR, family, "live.json")
+    with open(jp, "r", encoding="utf-8") as fh:
+        live = json.load(fh)
+    live["key_scale"], live["amb_scale"] = 1.0, 1.0      # the basis passes are rendered unscaled
+    with open(jp, "w", encoding="utf-8") as fh:
+        json.dump(live, fh)
+    dk, da = workdir(family, "cal", "key"), workdir(family, "cal", "amb")
+    _godot_live(family, dk, ["--key=1", "--amb=0"])
+    _godot_live(family, da, ["--key=0", "--amb=1"])
+    s = cfg["scale"]
+    frames = []
+    for nn, p, _, _ in sd_frames(cfg):
+        K, A = rgba(os.path.join(dk, "f%02d.png" % nn)), rgba(os.path.join(da, "f%02d.png" % nn))
+        frames.append((premul(rgba(p)), _srgb_lin(K[..., :3]), _srgb_lin(A[..., :3]), np.maximum(K[..., 3:], A[..., 3:])))
+
+    def score(k, m):
+        return float(np.mean([compare_blur(sd, box_down(premul(np.concatenate([_lin_srgb(k * kl + m * al), a], -1)), s))
+                              for sd, kl, al, a in frames]))
+
+    base = score(1.0, 1.0)
+    best = min((score(k, m), k, m) for k in (0.8, 0.9, 1.0, 1.1, 1.2) for m in (0.0, 0.25, 0.5, 0.75, 1.0, 1.5))
+    for step in (0.05, 0.025):
+        de, k0, m0 = best
+        best = min([best] + [(score(k0 + i * step, max(0.0, m0 + j * step * 2)), k0 + i * step, max(0.0, m0 + j * step * 2))
+                             for i in (-1, 0, 1) for j in (-1, 0, 1) if i or j])
+    de, k, m = best
+    live["key_scale"], live["amb_scale"] = round(k, 4), round(m, 4)
+    with open(jp, "w", encoding="utf-8") as fh:
+        json.dump(live, fh)
+    print("livecal %s: sun x%.3f, ambient x%.3f -> dE mean %.2f (unscaled %.2f) -> %s" %
+          (family, k, m, de, base, os.path.relpath(jp, ROOT)))
+
+
+def stage_tweens(family, cfg):
+    tw = cfg.get("tweens")
+    if not tw:
+        print("tweens: no \"tweens\" block, skipping")
+        return True
+    if cfg.get("status") != "published":
+        print("tweens: %s is not published, skipping" % family)
+        return True
+    n = int(tw.get("n", 4))
+    pairs = _tween_pairs(cfg)
+    with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
+        fit = json.load(fh)
+    periods = {s["param"]: s["period"] for s in cfg["sweep"] if "period" in s}
+    periods.update(tw.get("periods", {}))
+    s = cfg["scale"]
+    size = {nn: (w, h) for nn, _, w, h in base_frames(cfg)}
+    base = _opts(family, cfg)
+    lfo = _look_frame_opts(family)
+    fopts = {nn: dict(frame_opts(cfg, nn, base=base), **lfo.get(str(nn), {})) for nn in size}
+    d = workdir(family, "tweens")
+    for f in glob.glob(os.path.join(d, "*.png")):
+        os.remove(f)
+    groups = {}
+    for lo, hi in pairs:
+        fa, fb = fit["frames"][str(lo)], fit["frames"][str(hi)]
+        sa, sb = fa.get("shift", (0, 0)), fb.get("shift", (0, 0))
+        pb = _lerp_pose(fa["pose"], fb["pose"], 1.0, periods)   # B's periodic params unwrapped next to A's
+        w, h = size[lo]
+        for k in range(1, n):
+            t = k / n
+            groups.setdefault((w, h), []).append({
+                "out": os.path.join(d, "f%02d-%02d_%dof%d.png" % (lo, hi, k, n)),
+                "pose": _lerp_pose(fa["pose"], fb["pose"], t, periods),
+                "pose_a": fa["pose"], "pose_b": pb, "t": t,
+                "opts": fopts[lo] if t < 0.5 else fopts[hi],
+                "camera": _final_cam(fit, w, h, None, extra=(sa[0] + (sb[0] - sa[0]) * t,
+                                                               sa[1] + (sb[1] - sa[1]) * t))})
+    for (w, h), items in groups.items():
+        items.sort(key=lambda it: json.dumps(it["opts"], sort_keys=True))   # few model rebuilds
+        run_blender({"mode": cfg["mode"], "opts": items[0]["opts"], "size": [w * s, h * s],
+                     "camera": _final_cam(fit, w, h), "samples": cfg["samples"].get("final", 256),
+                     "items": items}, "%s_tweens_%dx%d" % (family, w, h))
+    od = os.path.join(OVERLAY_DIR, cfg["source"])
+    td = os.path.join(od, "tw")
+    os.makedirs(td, exist_ok=True)
+    _drop_tweens(cfg)
+    mask = lambda p: np.asarray(Image.open(p).convert("RGBA"))[..., 3] > 127
+    iou = lambda a, b: float((a & b).sum()) / max(1, int((a | b).sum()))
+    kept, dropped = 0, []
+    max_drop = float(tw.get("max_drop", 0.10))
+    for lo, hi in pairs:
+        ma = mask(glob.glob(os.path.join(od, "f%02d_*.png" % lo))[0])
+        mb = mask(glob.glob(os.path.join(od, "f%02d_*.png" % hi))[0])
+        ref = iou(ma, mb)
+        outs = [os.path.join(d, "f%02d-%02d_%dof%d.png" % (lo, hi, k, n)) for k in range(1, n)]
+        for p in outs:
+            _post(p, cfg["post"])
+        worst = min(max(iou(mask(p), ma), iou(mask(p), mb)) for p in outs)
+        if worst < ref - max_drop:
+            dropped.append("%d-%d (%.2f < %.2f)" % (lo, hi, worst, ref))
+            continue
+        for p in outs:
+            shutil.copyfile(p, os.path.join(td, os.path.basename(p)))
+        kept += 1
+    print("tweens: %d/%d pairs x %d in-betweens -> %s%s" % (kept, len(pairs), n - 1, os.path.relpath(td, ROOT),
+          ("; dropped " + ", ".join(dropped)) if dropped else ""))
+    _tween_anim(cfg, od, n, os.path.join(FAM_DIR, family, "_verify", "tweens_anim.mp4"))
+    return True
+
+
+def _tween_anim(cfg, od, n, out):
+    """Each tween sequence at the smooth cadence: frame, its in-betweens, next frame ... (3 loops)."""
+    ff = _ffmpeg()
+    seqs = _tween_sequences(cfg)
+    if not seqs or (not os.path.exists(ff) and not shutil.which(ff)):
+        return
+    frames = {nn: glob.glob(os.path.join(od, "f%02d_*.png" % nn)) for seq in seqs for nn in seq}
+    if not all(frames.values()):
+        return
+    cw = max(Image.open(v[0]).size[0] for v in frames.values())
+    ch = max(Image.open(v[0]).size[1] for v in frames.values())
+    z = max(1, 384 // max(cw, ch))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        k = 0
+        for seq in seqs:
+            for _ in range(3):
+                for i, nn in enumerate(seq):
+                    chain = [frames[nn][0]]
+                    if i + 1 < len(seq):
+                        lo, hi = sorted((nn, seq[i + 1]))
+                        steps = [os.path.join(od, "tw", "f%02d-%02d_%dof%d.png" % (lo, hi, j, n)) for j in range(1, n)]
+                        chain += steps if nn == lo else steps[::-1]
+                    for p in chain:
+                        if not os.path.exists(p):
+                            continue
+                        fr = Image.new("RGB", (cw * z, ch * z), (20, 20, 24))
+                        im = _on_black(p, (Image.open(p).size[0] * z, Image.open(p).size[1] * z), nearest=False)
+                        fr.paste(im, (0, 0))
+                        fr = fr.resize((fr.width // 2 * 2, fr.height // 2 * 2))
+                        fr.save(os.path.join(tmp, "%05d.png" % k))
+                        k += 1
+        subprocess.run([ff, "-y", "-loglevel", "error", "-framerate", str(30 * n), "-i",
+                        os.path.join(tmp, "%05d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16",
+                        out], check=True)
 
 
 def stage_verify(family, cfg, write=True):
@@ -1281,6 +1650,11 @@ def check_all():
         if (sheet, int(b[1:b.index("_")])) not in owned:
             print("check: STRAY overlay frame %s/%s (no published family owns it)" % (sheet, b))
             ok = False
+    for p in glob.glob(os.path.join(OVERLAY_DIR, "*", "tw", "*.png")):
+        sheet, m = os.path.basename(os.path.dirname(os.path.dirname(p))), TWEEN_RE.match(os.path.basename(p))
+        if not m or (sheet, int(m.group(1))) not in owned or (sheet, int(m.group(2))) not in owned:
+            print("check: STRAY in-between %s/tw/%s" % (sheet, os.path.basename(p)))
+            ok = False
     print("check: %s" % ("PASS" if ok else "FAIL"))
     return ok
 
@@ -1312,13 +1686,21 @@ def main():
             stage_bake(family, cfg)
         elif st == "final":
             stage_final(family, cfg)
+        elif st == "tweens":
+            stage_tweens(family, cfg)
+        elif st == "live":
+            stage_live(family, cfg)
+        elif st == "livecal":
+            stage_livecal(family, cfg)
+        elif st == "livegate":
+            ok = stage_livegate(family, cfg) and ok
         elif st == "verify":
             passed = stage_verify(family, cfg)
             ok = passed and ok
             if not passed and cfg.get("status") != "published":
                 # a failing work-in-progress family must never reach the game: drop its overlay frames
                 od = os.path.join(OVERLAY_DIR, cfg["source"])
-                n = 0
+                n = _drop_tweens(cfg)
                 for nn, _, _, _ in sd_frames(cfg):
                     for p in glob.glob(os.path.join(od, "f%02d_*.png" % nn)):
                         os.remove(p)

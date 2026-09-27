@@ -1,0 +1,20 @@
+{
+ "sheet": "BP_sprites",
+ "family": "BP_cheer",
+ "frames": [
+  118,
+  119,
+  120,
+  121,
+  122,
+  123,
+  124,
+  125,
+  126
+ ],
+ "pass": true,
+ "iou_min": 0.8631,
+ "de_mean": 13.165,
+ "de_max": 14.72,
+ "cycles_de_mean": 13.594
+}

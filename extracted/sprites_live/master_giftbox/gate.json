@@ -1,0 +1,26 @@
+{
+ "sheet": "master_s_objects",
+ "family": "master_giftbox",
+ "frames": [
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31
+ ],
+ "pass": false,
+ "iou_min": 0.8502,
+ "de_mean": 32.697,
+ "de_max": 34.494,
+ "cycles_de_mean": 11.589
+}

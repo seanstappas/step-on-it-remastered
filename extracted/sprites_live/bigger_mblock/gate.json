@@ -1,0 +1,26 @@
+{
+ "sheet": "bigger_mblock",
+ "family": "bigger_mblock",
+ "frames": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16
+ ],
+ "pass": false,
+ "iou_min": 0.1719,
+ "de_mean": 37.779,
+ "de_max": 46.142,
+ "cycles_de_mean": 9.988
+}
