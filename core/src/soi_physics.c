@@ -14,6 +14,47 @@
 #define IN_AIR_DEATH_Y  0x1be   /* 446: fall past this = death (asm FUN_10011fcc) */
 #define IN_AIR_TOP_Y    0x30    /* 48: top clamp */
 
+/* ---- player sprite frames (asm numbering; the extracted BP/GP_sprites PNG is f(frame+1)) ---- */
+#define FR_STAND_R 0x3d         /* idle / fall facing right (FUN_100128f8, FUN_1001386c) */
+#define FR_STAND_L 0x34         /* ... facing left */
+/* head-bonk recoil by counter 1..9 (DAT_10034724 right / DAT_10034738 left) */
+static const int16_t BONK_R[10] = { 0, 112, 113, 114, 115, 116, 115, 114, 113, 112 };
+static const int16_t BONK_L[10] = { 0, 107, 108, 109, 110, 111, 110, 109, 108, 107 };
+/* build/fire pose by anim mode and counter 1..6 (FUN_1001166c: mode 1 DAT_100346fa, mode 2
+ * DAT_10034716, mode 3 DAT_100346ec, mode 4 DAT_10034708) */
+static const int16_t ACT_FRAMES[5][7] = {
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0,  97,  99, 101, 101,  99,  97 },    /* 1: left, high block / fire */
+    { 0,  97,  98,  99,  99,  98,  97 },    /* 2: left, low block */
+    { 0, 102, 104, 106, 106, 104, 102 },    /* 3: right, high block / fire */
+    { 0, 102, 103, 104, 104, 103, 102 },    /* 4: right, low block */
+};
+/* Indexed by the RUN frame (left cycle 1..0x18, right cycle 0x19..0x30), three contiguous
+ * PEF tables: the first frame of a mid-run turn (0x1003477c), the run frame the turn resumes
+ * on in the new direction (0x100347de), and the leg frame a stop settles to (0x10034840). */
+static const uint8_t TURN_FROM[49] = {
+    0, 67, 67, 67, 82, 82, 82, 82, 82, 82, 73, 73, 73, 73, 73, 73, 88, 88, 88, 88, 88, 88,
+    67, 67, 67, 79, 79, 79, 70, 70, 70, 70, 70, 70, 85, 85, 85, 85, 85, 85, 76, 76, 76, 76,
+    76, 76, 79, 79, 79 };
+static const uint8_t TURN_TO[49] = {
+    0, 31, 31, 31, 37, 37, 37, 37, 37, 37, 43, 43, 43, 43, 43, 43, 25, 25, 25, 25, 25, 25,
+    31, 31, 31,  6,  6,  6, 12, 12, 12, 12, 12, 12, 18, 18, 18, 18, 18, 18, 24, 24, 24, 24,
+    24, 24,  6,  6,  6 };
+static const uint8_t STOP_TO[49] = {
+    0,  2,  2,  4,  4,  4,  4, 14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 16, 16, 26, 26, 26,
+    26, 26, 26, 25, 25, 27, 27, 27, 27, 37, 37, 37, 37, 37, 37, 37, 37, 39, 39, 39, 39, 49,
+    49, 49, 49, 49, 49 };
+
+static int16_t stand_frame(const SoiPlayer *p) { return (p->facing == 1) ? FR_STAND_R : FR_STAND_L; }
+static int run_index(int frame) { return (frame >= 0 && frame <= 48) ? frame : 0; }
+
+/* asm FUN_10014744: the first movement frame after a build/fire action restores the frame
+ * the action interrupted (so a run resumes its stride). */
+static void restore_frame(SoiPlayer *p)
+{
+    if (p->act_dirty) { p->act_dirty = 0; p->frame = p->frame_save; }
+}
+
 /* ---- faithful 1-based pixel<->cell (asm FUN_1002e6cc / FUN_1002e6f8) ---- */
 static int px_col1(int x) { return (x < 16) ? 0 : ((x - 16) >> 5) + 1; }
 static int px_row1(int y) { return (y < 48) ? 0 : ((y - 48) >> 5) + 1; }
@@ -54,15 +95,17 @@ static void snap_to_ground(SoiPlayer *p)
 }
 
 /* Toggle a block (asm FUN_1002d04c/cf08/d190): permanent -> no-op; occupied ->
- * destroy (reveal 0x1000 payload); empty -> create a SUPPORTIVE block and squash
- * any enemy there. col1/row1 are 1-based. */
+ * remove it (FUN_100279c4: the shrink animation, then any 0x1000 payload shows);
+ * empty -> build the player's block (FUN_1002754c: the grow animation). col1/row1
+ * are 1-based. A block that is still growing is locked (0x300), so it cannot be
+ * toggled again until it has finished. */
 static void block_toggle(SoiWorld *w, int col1, int row1, int player)
 {
     uint32_t c = cell1(w, col1, row1);
     if (c & SOI_CELL_PERMANENT) return;
     if (SOI_CELL_TYPE(c) != 0) {
-        set_cell1(w, col1, row1, (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u);
         soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
+        soi_block_remove(w, col1 - 1, row1 - 1);
     } else {
         /* CREATE GATE (asm FUN_1002d04c -> FUN_100047e8 -> FUN_100033dc): the original
          * only builds where the target cell is visually UNOBSTRUCTED (it compares the
@@ -78,21 +121,21 @@ static void block_toggle(SoiWorld *w, int col1, int row1, int player)
          * word, low byte 0) INHERITS the payload (asm FUN_1002d04c: block_type +
          * (cell & 0xffff1000)); breaking it later reveals the goody -- this is how
          * the low-byte-0 payload cells become obtainable. */
-        set_cell1(w, col1, row1,
-                  ((uint32_t)bt | SOI_CELL_SUPPORTIVE) | (c & 0xFFFF1000u));
         soi_sfx_emit(w, SOI_SFX_BLOCK_CREATE);
+        soi_blockanim_start(w, col1 - 1, row1 - 1, +1, bt,
+                            ((uint32_t)bt | SOI_CELL_SUPPORTIVE) | (c & 0xFFFF1000u));
     }
 }
 
-/* The two block keys build (or toggle) a block ONE COLUMN AHEAD in the facing
- * column: the "high" key at the player's own row (directly in front), the "low"
- * key one row down (in front and below). NEITHER builds above the head -- this
- * matches the asm (FUN_1001166c: y+0x10 front / y+0x1f front-below; col x+0x30
- * right / x-0x12 left; FUN_1002d04c/cf08/d190). */
-static void do_block(SoiWorld *w, int player, int high)
+/* The two block keys build (or toggle) a block ONE COLUMN AHEAD: the "high" key at
+ * the player's own row (directly in front), the "low" key one row down (in front and
+ * below). NEITHER builds above the head -- this matches the asm (FUN_1001166c: y+0x10
+ * front / y+0x1f front-below; col x+0x30 right / x-0x12 left; FUN_1002d04c/cf08/d190).
+ * `right` is the side the action was started facing (its anim mode 3/4 vs 1/2). */
+static void do_block(SoiWorld *w, int player, int high, int right)
 {
     SoiPlayer *p = &w->players[player];
-    int col1 = px_col1(p->x + (p->facing >= 0 ? 0x30 : -0x12));
+    int col1 = px_col1(p->x + (right ? 0x30 : -0x12));
     int row1 = px_row1(p->y + (high ? 0x10 : 0x1f));
     block_toggle(w, col1, row1, player);
 }
@@ -171,17 +214,17 @@ static int headroom_clear(const SoiWorld *w, const SoiPlayer *p)
     return 1;
 }
 
-/* Airborne horizontal steer (jump only): move +/-2 px toward the held run key if the
- * cell ahead is clear. Called after the arc y-step in jump_step; the fall never steers. */
-static void air_drift(SoiWorld *w, SoiPlayer *p)
+/* Airborne horizontal steer (jump only, asm FUN_10013404): +/-2 px toward the held run key
+ * (right first) if the cell ahead is clear. It does NOT turn the player -- the asm never
+ * writes the facing in the air, so a jump keeps its launch direction (and its tumble art)
+ * even while steered back the other way. The fall never steers. */
+static void air_drift(SoiWorld *w, SoiPlayer *p, uint8_t in)
 {
-    int dir = 0;
-    if (p->input & SOI_IN_RIGHT)      dir = 1;
-    else if (p->input & SOI_IN_LEFT)  dir = -1;
-    if (dir == 0) return;
-    p->facing = (int16_t)dir;
-    if (move_clear(w, p, dir))
-        p->x += dir * 2;
+    if (in & SOI_IN_RIGHT) {
+        if (move_clear(w, p, 1)) p->x += 2;
+    } else if (in & SOI_IN_LEFT) {
+        if (move_clear(w, p, -1)) p->x -= 2;
+    }
 }
 
 /* The head-bonk destroy (asm FUN_1002ca5c via the state-4 handler FUN_10014524 at
@@ -190,7 +233,10 @@ static void air_drift(SoiWorld *w, SoiPlayer *p)
  * px_col1, FUN_1002e6f8(y - 4) == px_row1 -- then run the TWO-STAGE crack/break. The
  * first bonk CRACKS the block (sets 0x4000, sfx 0x23); a second bonk BREAKS the cracked
  * block (reveals any 0x1000 payload, sfx 0x24). Permanent (0x100) and door (0x800)
- * blocks are IMMUNE -- the recoil plays but nothing breaks (FUN_1002ca5c line 39). */
+ * blocks are IMMUNE -- the recoil plays but nothing breaks (FUN_1002ca5c line 39), and
+ * so is an empty-typed cell (a block still shrinking away). The break SHATTERS the
+ * block: its four quarters burst up and out and fall away (FUN_1002ca5c ->
+ * FUN_100278bc x4, gravity). */
 static void do_head_break(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
@@ -199,11 +245,12 @@ static void do_head_break(SoiWorld *w, int player)
     uint32_t a = cell1(w, aCol, aRow);
     if (!(a & SOI_CELL_SUPPORTIVE)) return;                 /* block already gone */
     if (a & (SOI_CELL_PERMANENT | SOI_CELL_DOOR)) return;   /* immune: bonk but no break */
+    if (SOI_CELL_TYPE(a) == 0) return;
     if (!(a & SOI_CELL_CRACKED)) {
         set_cell1(w, aCol, aRow, a | SOI_CELL_CRACKED);
         soi_sfx_emit(w, SOI_SFX_BLOCK_CRACK);
     } else {
-        set_cell1(w, aCol, aRow, (a & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(a) : 0u);
+        soi_block_shatter(w, aCol - 1, aRow - 1, SOI_SHATTER_BONK, 0, 0);
         soi_sfx_emit(w, SOI_SFX_BLOCK_BREAK);
     }
 }
@@ -219,45 +266,21 @@ static void bonk_step(SoiWorld *w, int player)
     SoiPlayer *p = &w->players[player];
     p->jump_t++;                                  /* asm: sVar3 = counter + 1; counter = sVar3 */
     if (p->jump_t < 10) {
+        p->frame = (p->facing == 1) ? BONK_R[p->jump_t] : BONK_L[p->jump_t];   /* the arm-up recoil */
         if (p->jump_t == 5) do_head_break(w, player);
     } else {
         p->ground_state = SOI_ST_IDLE;            /* asm: counter reaches 10 -> ground_state 0 */
     }
 }
 
-/* Begin a jump (asm FUN_10013404 @ t==0): a solid block directly overhead is a HEAD-BONK
- * -- enter the frozen recoil (ground-state 4) and do NOT leap (FUN_10012444 head-clear
- * check -> state 4 FUN_10014524). With clear headroom the player leaps into the table
- * arc. The launch is SILENT (the only somersault sound, event 0x21 -> 26486, is the
- * DEATH throw FUN_10012228, not the jump). */
-static void start_jump(SoiWorld *w, int player)
+/* Enter the jump (a jump press seen by the idle / run / turn handlers): the asm only sets
+ * state 2 with its counter at 0 on the press frame; the launch itself -- headroom test, bonk
+ * or leap -- happens on the NEXT player frame, in jump_step. */
+static void begin_jump(SoiPlayer *p)
 {
-    SoiPlayer *p = &w->players[player];
-    /* A solid block directly overhead is a HEAD-BONK, not a leap (asm FUN_10013404
-     * line 23 -> FUN_10012444 head-clear fails -> ground-state 4 FUN_10014524): enter
-     * the frozen 10-frame recoil. Use the SAME faithful two-column head-clear the RISING
-     * jump uses (headroom_clear == FUN_10012444), not a simplified single-column probe,
-     * so the launch bonk-detection and the midpoint destroy (do_head_break) resolve the
-     * overhead cell by the asm's own geometry for EVERY x -- including a player straddling
-     * a column boundary -- not just grid-aligned ones. The TWO-STAGE destroy is DEFERRED
-     * to the animation midpoint (do_head_break, from bonk_step at jump_t==5) -- NOT done
-     * on this press frame. Permanent (0x100)/door (0x800) blocks ALSO bonk (the recoil
-     * plays) but survive: the midpoint destroy no-ops on them. Headroom is blocked by the
-     * SUPPORTIVE bit ALONE (FUN_10012444 probes (cell & 0x200) only), so a non-solid
-     * goodie/coin overhead (0x9xx, no 0x200) is NOT a bonk -- the player leaps up INTO it
-     * (fixes "cannot jump into coins/3x above"). The destroy uses the asm's facing-
-     * direction column (do_head_break: x+0x12 right / x+0xc left) while this detection
-     * uses the x+0x10 & x+0x0e straddle -- that asymmetry is in the ORIGINAL (FUN_10012444
-     * vs FUN_10014524), so at a boundary a bonk can leave the facing destroy-target empty:
-     * a faithful bonk-without-break, preserved deliberately. */
-    if (!headroom_clear(w, p)) {
-        p->ground_state = SOI_ST_BONK;           /* enter the 10-frame head-bonk recoil */
-        p->jump_t = 0;                           /* asm state 4 entered with counter (0x1003a9e2) == 0 */
-        return;                                  /* no leap; frozen for the animation */
-    }
+    p->ground_state = SOI_ST_JUMP;
     p->in_air = 1;
     p->jump_t = 0;
-    p->ground_state = SOI_ST_JUMP;
 }
 
 /* Commit a finished death: debit a life (from the co-op pool, FUN_1000e9c8) and either
@@ -277,10 +300,32 @@ static void commit_death(SoiWorld *w, int player)
 }
 
 /* One JUMP frame (asm FUN_10013404, ground-state 2): the table-driven arc. */
-static void jump_step(SoiWorld *w, int player)
+static void jump_step(SoiWorld *w, int player, uint8_t in)
 {
     SoiPlayer *p = &w->players[player];
     int y;
+    restore_frame(p);
+    /* The LAUNCH frame (counter 0, the player frame after the press): a solid block directly
+     * overhead is a HEAD-BONK, not a leap (FUN_10012444 head-clear fails -> ground-state 4
+     * FUN_10014524, entered with its counter at 0) -- the frozen 10-frame recoil. It uses the
+     * SAME two-column head-clear as the rising jump, so the bonk detection and the midpoint
+     * destroy (do_head_break) resolve the overhead cell by the asm's own geometry for every x.
+     * Permanent (0x100) / door (0x800) blocks ALSO bonk (the recoil plays) but survive: the
+     * midpoint destroy no-ops on them. Headroom is blocked by the SUPPORTIVE bit ALONE, so a
+     * non-solid goodie/coin overhead (0x9xx, no 0x200) is NOT a bonk -- the player leaps up INTO
+     * it. The destroy uses the facing column (x+0x12 right / x+0xc left) while this detection
+     * uses the x+0x10 & x+0x0e straddle -- that asymmetry is in the ORIGINAL, so at a column
+     * boundary a bonk can leave the facing destroy-target empty (a faithful bonk-without-
+     * break). With clear headroom the tumble starts from frame 0x85 (facing right) / 0x7e
+     * (left). The launch is SILENT. */
+    if (p->jump_t == 0) {
+        if (!headroom_clear(w, p)) {
+            p->ground_state = SOI_ST_BONK;
+            p->in_air = 0;
+            return;
+        }
+        p->aux = (p->facing == 1) ? 0x85 : 0x7e;
+    }
     /* asm FUN_10013404 order: BEFORE the jump_t increment (line 33) and the arc y-step
      * (line 38-40), the early-rise phase (jump_t<8) re-checks headroom (FUN_10012444)
      * every frame and stalls the leap to the apex (jump_t=0xc) if a solid cell now sits
@@ -303,12 +348,22 @@ static void jump_step(SoiWorld *w, int player)
     }
     if (y < IN_AIR_TOP_Y) y = IN_AIR_TOP_Y;
     p->y = (int16_t)y;
-    air_drift(w, p);                              /* input air-steer only (wall-rebound handled above) */
+    p->aux++;                                     /* the somersault advances a frame per player frame */
+    air_drift(w, p, in);                          /* input air-steer only (wall-rebound handled above) */
+    if (p->facing == 1) { if (p->aux > 0x8d) p->aux = 0x86; }   /* right tumble 0x86..0x8d */
+    else if (p->aux > 0x85) p->aux = 0x7e;                      /* left tumble 0x7e..0x85 */
     if (p->jump_t > 12 && supported(w, p)) {      /* past the apex + ground -> land */
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
         snap_to_ground(p);
+        if (in & (SOI_IN_LEFT | SOI_IN_RIGHT)) {  /* landing with a direction held runs on at once */
+            p->ground_state = SOI_ST_RUN;
+            p->jump_t = 0;
+        }
     }
+    /* the tumble art comes in two sets drawn 2 px apart: +0x10 at an odd 2-px x (the sprite is
+     * blitted 4-px aligned) */
+    p->frame = (int16_t)(p->aux + ((p->x & 2) ? 0x10 : 0));
 }
 
 /* Gravity fall (asm state 3, FUN_1001386c): a flat 4 px/frame descent until the
@@ -316,11 +371,13 @@ static void jump_step(SoiWorld *w, int player)
  * PURELY VERTICAL -- FUN_1001386c calls ONLY the wall-rebound (FUN_10012554) for
  * any x change; it reads NO input, so you CANNOT steer a cliff-fall (unlike the
  * jump FUN_10013404, which does air-steer). Walking off a ledge drops straight
- * down (+ wall rebound if you fall against a wall), never at an angle. */
+ * down (+ wall rebound if you fall against a wall), never at an angle. The player
+ * shows the stand frame while falling, and lands into the stand (state 0). */
 static void fall_step(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
     int y;
+    restore_frame(p);
     wall_rebound(w, p);                           /* asm FUN_1001386c: rebound (line 9) runs on EVERY
                                                    * fall frame, on the PRE-step Y, BEFORE the y += 4 at
                                                    * line 19 (rebound-only, no steer). The asm fall has NO
@@ -331,6 +388,7 @@ static void fall_step(SoiWorld *w, int player)
                                                    * eliminated player is removed from play so its x is never
                                                    * read again. Mirrors the jump path (rebound before its
                                                    * own pit-death check). */
+    p->frame = stand_frame(p);
     y = p->y + 4;
     if (y >= IN_AIR_DEATH_Y) {
         commit_death(w, player);
@@ -348,12 +406,17 @@ static void fall_step(SoiWorld *w, int player)
 /* One DEATH-THROW frame (asm FUN_10011fcc, dying flag +0x28): the computed
  * parabola Y = (base*10 - 30*t + floor(t*t/2)) / 10, clamp low 48. It NEVER lands;
  * the arc carries the dying player off the bottom (y >= 446) to the life-loss +
- * respawn commit. The death cry already played at launch (soi_player_hit). */
+ * respawn commit. The death cry already played at launch (soi_player_hit). The arms
+ * flap by ping-ponging the frame 0x75..0x7d (FUN_10012228 starts it at 0x75 stepping
+ * down, so the first shown frame is 0x76). */
 static void death_step(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
     int t, y;
     p->jump_t++;
+    p->frame = (int16_t)(p->frame + p->dstep);
+    if (p->frame >= 0x7e)     { p->frame = 0x7c; p->dstep = -1; }
+    else if (p->frame < 0x75) { p->frame = 0x76; p->dstep = 1; }
     t = p->jump_t;
     y = (p->launch_y * 10 - 30 * t + (t * t) / 2) / 10;
     if (y < IN_AIR_TOP_Y) y = IN_AIR_TOP_Y;
@@ -364,28 +427,227 @@ static void death_step(SoiWorld *w, int player)
     p->y = (int16_t)y;
 }
 
-/* Airborne dispatch by ground_state: table-driven jump, flat gravity fall, or the
- * death-throw parabola. */
-static void air_step(SoiWorld *w, int player)
+/* The two run cycles (asm FUN_10012bf4): one frame per 2 px stride, right 0x19..0x30 and
+ * left 1..0x18 -- 24 directional frames each, never mirrored. */
+static void run_frame_r(SoiPlayer *p) { if (++p->frame >= 0x31) p->frame = 0x19; }
+static void run_frame_l(SoiPlayer *p) { if (++p->frame >= 0x19) p->frame = 1; }
+
+/* IDLE (asm FUN_100128f8, state 0): stand 4-px aligned; walk off -> fall; a jump press ->
+ * jump; a held direction -> run, or first TURN (states 9/10) if facing the other way.
+ * Right beats left, and a jump beats both. */
+static void idle_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
 {
     SoiPlayer *p = &w->players[player];
-    if (p->ground_state == SOI_ST_JUMP) { jump_step(w, player); return; }
-    if (p->ground_state == SOI_ST_DEAD) { death_step(w, player); return; }
-    fall_step(w, player);                         /* SOI_ST_FALL */
+    restore_frame(p);
+    p->x &= ~3;
+    p->frame = stand_frame(p);
+    if (!supported(w, p)) {
+        p->in_air = 1;
+        p->ground_state = SOI_ST_FALL;
+        return;
+    }
+    /* (the asm also re-snaps y to the row here, FUN_100137f8 -- a no-op for a player at rest,
+     * which an idle player always is: every landing and spawn already rests him on the row) */
+    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (in & SOI_IN_RIGHT) {
+        p->jump_t = 0;
+        if (p->facing == 1) p->ground_state = SOI_ST_RUN;
+        else { p->ground_state = SOI_ST_TURN_R; p->facing = 1; }
+    } else if (in & SOI_IN_LEFT) {
+        p->jump_t = 0;
+        if (p->facing == -1) p->ground_state = SOI_ST_RUN;
+        else { p->ground_state = SOI_ST_TURN_L; p->facing = -1; }
+    }
 }
 
-/* One continuous run step (asm FUN_10012bf4, ground-state 1): advance 2 px in dir
- * if the cell ahead is clear -- the shared dual-row wall test move_clear() (x+0x14 right /
- * x+0x0a left, the 0x200 solid bit, FUN_100127e0 / FUN_100126c8) -- else run in place.
- * (Goodie pickup is NOT done here: the asm collects on EVERY player tick, not only while
- * running -- see the soi_pickup_check call in soi_player_update below.) */
-static void run_step(SoiWorld *w, int player, int dir)
+/* RUN (asm FUN_10012bf4, state 1): a 2 px stride per frame with the leg frame advancing one
+ * step. The first stride frame is picked by x parity (right 0x1a / 0x19, left 1 / 2). Letting
+ * go of the key does not stop the player dead: a stride only ends 4-px aligned, so a half
+ * stride is finished first (stepping back instead if the way ahead is now blocked), and then
+ * the player STOPs (state 0xc) -- or, if the other direction is held, TURNS round (state 0xb).
+ * Running into a wall runs in place (two leg frames every other frame). A jump press leaps
+ * from the stride. Walking off a ledge falls. An action that interrupted the run resumes its
+ * stride, or drops straight to the stand if no direction is still held. */
+static void run_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
 {
     SoiPlayer *p = &w->players[player];
-    p->facing = (int16_t)dir;
-    p->ground_state = SOI_ST_RUN;
-    if (move_clear(w, p, dir))
-        p->x += dir * 2;
+    const int R = (in & SOI_IN_RIGHT) != 0, L = (in & SOI_IN_LEFT) != 0;
+    if (p->act_dirty) {
+        restore_frame(p);
+        if (!R && !L) {
+            p->ground_state = SOI_ST_IDLE;
+            p->jump_t = 0;
+            p->frame = stand_frame(p);
+            return;
+        }
+    }
+    if (!supported(w, p)) {
+        p->in_air = 1;
+        p->ground_state = SOI_ST_FALL;
+        return;
+    }
+    if (p->facing == 1) {
+        if (p->jump_t == 0) p->frame = (p->x & 2) ? 0x1a : 0x19;
+        if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+        if (R || (p->x & 2)) {
+            if (move_clear(w, p, 1))  { p->x += 2; run_frame_r(p); }
+            else if (!R)              { p->x -= 2; run_frame_r(p); }   /* blocked mid-stride: back */
+            else if (p->jump_t & 1)   { run_frame_r(p); run_frame_r(p); }   /* against a wall */
+            p->jump_t++;
+        } else if (L) {
+            p->ground_state = SOI_ST_TURN; p->jump_t = 0; p->facing = -1;
+        } else {
+            p->ground_state = SOI_ST_STOP; p->jump_t = 0;
+        }
+    } else if (p->facing == -1) {
+        if (p->jump_t == 0) p->frame = (p->x & 2) ? 1 : 2;
+        if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+        if (L || (p->x & 2)) {
+            if (move_clear(w, p, -1)) { p->x -= 2; run_frame_l(p); }
+            else if (!L)              { p->x += 2; run_frame_l(p); }
+            else if (p->jump_t & 1)   { run_frame_l(p); run_frame_l(p); }
+            p->jump_t++;
+        } else if (R) {
+            p->ground_state = SOI_ST_TURN; p->jump_t = 0; p->facing = 1;
+        } else {
+            p->ground_state = SOI_ST_STOP; p->jump_t = 0;
+        }
+    }
+}
+
+/* TURN from a stand (asm FUN_10013ddc state 9 = face right / FUN_10013f68 state 10 = face
+ * left): three turning frames (0x5b..0x5d / 0x5e..0x60) standing still, then run on from
+ * frame 0x27 / 2 if the key is still held, else stand. A jump press leaps out of it. */
+static void turn_idle_step(SoiWorld *w, int player, uint8_t in, uint8_t edge, int right)
+{
+    SoiPlayer *p = &w->players[player];
+    (void)w;
+    restore_frame(p);
+    p->facing = (int16_t)(right ? 1 : -1);
+    if (p->jump_t++ == 0) p->frame = right ? 0x5a : 0x5d;
+    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (++p->frame > (right ? 0x5d : 0x60)) {
+        if (in & (right ? SOI_IN_RIGHT : SOI_IN_LEFT)) {
+            p->ground_state = SOI_ST_RUN;             /* the counter stays > 0: no stride restart */
+            p->frame = right ? 0x27 : 2;
+        } else {
+            p->ground_state = SOI_ST_IDLE;
+        }
+    }
+}
+
+/* TURN mid-run (asm FUN_10013c18, state 0xb; the facing is already the new one): a 4-frame
+ * turn standing still -- three frames from TURN_FROM[stride frame], then the run carries on in
+ * the new direction from TURN_TO[stride frame]. A jump press leaps out of it. */
+static void turn_run_step(SoiWorld *w, int player, uint8_t edge)
+{
+    SoiPlayer *p = &w->players[player];
+    (void)w;
+    restore_frame(p);
+    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (p->jump_t++ == 0) {
+        p->aux = TURN_TO[run_index(p->frame)];
+        p->frame = TURN_FROM[run_index(p->frame)];
+    } else {
+        p->frame++;
+        if (p->jump_t == 4) {
+            p->ground_state = SOI_ST_RUN;
+            p->frame = p->aux;
+        }
+    }
+}
+
+/* STOP (asm FUN_100140f4, state 0xc): the legs come together -- the frame steps 2 at a time
+ * to STOP_TO[stride frame] -- then SETTLE. No key is read meanwhile: the player cannot run
+ * or jump until he has settled (a build/fire still starts, and afterwards he just stands). */
+static void stop_step(SoiWorld *w, int player)
+{
+    SoiPlayer *p = &w->players[player];
+    (void)w;
+    if (p->act_dirty) {
+        restore_frame(p);
+        p->ground_state = SOI_ST_IDLE; p->jump_t = 0;
+        p->frame = stand_frame(p);
+        return;
+    }
+    if (p->jump_t++ == 0) p->aux = STOP_TO[run_index(p->frame)];
+    p->frame = (int16_t)(p->frame + ((p->aux < p->frame) ? -2 : 2));
+    /* A stride always ends on a frame of the target's parity (the run advances one frame per
+     * 2 px from an x-parity start, and a stop comes 4-px aligned). Only a teleport mid-stride
+     * could break that; bound the swing so it can never leave the player stuck. */
+    if (p->frame == p->aux || p->jump_t > 12) {
+        p->frame = p->aux;
+        if (p->frame == 0x1a) p->frame = 2;
+        if (p->frame == 0x31) p->frame = 0x19;
+        p->ground_state = SOI_ST_SETTLE; p->jump_t = 0;
+    }
+}
+
+/* SETTLE (asm FUN_1001431c, state 0xd): three frames of the feet planting (from 0x31 / 0x36 /
+ * 0x3a / 0x3f by the leg frame), then the stand. Also ignores the keys. */
+static void settle_step(SoiWorld *w, int player)
+{
+    SoiPlayer *p = &w->players[player];
+    (void)w;
+    if (p->act_dirty) {
+        restore_frame(p);
+        p->ground_state = SOI_ST_IDLE; p->jump_t = 0;
+        p->frame = stand_frame(p);
+        return;
+    }
+    if (p->jump_t++ == 0) {
+        if      (p->frame < 5)    p->frame = 0x31;
+        else if (p->frame < 0x11) p->frame = 0x36;
+        else if (p->frame < 0x1c) p->frame = 0x3a;
+        else if (p->frame < 0x28) p->frame = 0x3f;
+    } else {
+        p->frame++;
+    }
+    if (p->jump_t > 2) { p->ground_state = SOI_ST_IDLE; p->jump_t = 0; }
+}
+
+/* The build/fire ACTION (asm FUN_1001166c lines 14-157). It runs before the movement
+ * handler on every live player frame, whatever the ground state -- idle, running, mid-
+ * jump, falling, even mid head-bonk. With no action running, a key PRESS starts one: its
+ * anim mode picks the pose table (3/4 facing right, 1/2 left; 4/2 = the low block) and
+ * nothing else happens that frame. Each later frame advances the counter: frames 1..6 show
+ * pose[counter], the VERB -- toggle the block, or fire -- happens on frame 5, and on frame 7
+ * the action ends and the movement handler runs again on that SAME frame. So every action
+ * freezes the player for 7 frames, and a new one can start no sooner than the frame after
+ * the release (a press during an action is lost: the key latches are rebuilt from fresh
+ * press edges every frame, FUN_1002d440). A player mashing the block key in mid-air
+ * therefore keeps sinking -- one fall step (4 px) per 8 frames -- instead of hovering.
+ * Key priority is the asm nesting: high block, low block, Arrow (latch +0x24 -> FUN_100110b4
+ * = the port's straight soi_ball_fire), Ball (+0x23 -> FUN_10010d30 = the rolling
+ * soi_projectile_fire). Returns 1 while the movement handler must not run. */
+static int action_step(SoiWorld *w, int player, uint8_t edge)
+{
+    SoiPlayer *p = &w->players[player];
+    const int right = (p->facing >= 0);
+    if (p->pose == 0) {
+        if      (edge & SOI_IN_BLOCK_HIGH) { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BLOCK; }
+        else if (edge & SOI_IN_BLOCK_LOW)  { p->pose = right ? 4 : 2; p->act_verb = SOI_ACT_BLOCK; }
+        else if (edge & SOI_IN_ARROW)      { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_ARROW; }
+        else if (edge & SOI_IN_BALL)       { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BALL; }
+        else return 0;
+        p->pose_t = 0;
+        p->act_dirty = 1;                  /* FUN_10014700: remember the frame it interrupts */
+        p->frame_save = p->frame;
+        return 1;
+    }
+    if (++p->pose_t < 7) p->frame = ACT_FRAMES[p->pose][p->pose_t];
+    if (p->pose_t == 5) {
+        if (p->act_verb == SOI_ACT_BLOCK)
+            do_block(w, player, p->pose == 1 || p->pose == 3, p->pose >= 3);
+        else if (p->act_verb == SOI_ACT_ARROW)
+            soi_ball_fire(w, player);
+        else if (p->act_verb == SOI_ACT_BALL)
+            soi_projectile_fire(w, player);
+    }
+    if (p->pose_t < 7) return 1;
+    p->pose = 0;
+    p->act_verb = SOI_ACT_NONE;
+    return 0;
 }
 
 void soi_player_update(SoiWorld *w, int player)
@@ -426,95 +688,29 @@ void soi_player_update(SoiWorld *w, int player)
      * death-throw (short-circuited above) collects nothing. */
     soi_pickup_check(w, player);
 
-    /* asm ground-state 4 (FUN_10014524): the head-bonk recoil. A grounded player who
-     * jumped into a solid block overhead is frozen here for a fixed 10-frame animation
-     * -- this `return` is the FREEZE (no run/build/jump/gravity is processed while it
-     * runs); the block is cracked/broken at the midpoint (bonk_step). Dispatched AFTER
-     * the walk-over pickup: the asm runs the per-player pickup pass (FUN_1002bc64) every
-     * 30Hz frame gated ONLY on the player-active flags (FUN_1002a308 cRam1003aa5a /
-     * cRam1003aa48), NEVER on ground_state, so a bonking player still collects goodies as
-     * in the original -- moving this dispatch above the pickup would DEVIATE. It sits
-     * BEFORE the in_air/grounded logic, mirroring the asm per-player state dispatch
-     * (FUN_1001166c case 4). The freeze is a MOVEMENT freeze (no run/build/jump/gravity),
-     * not a pickup freeze. */
-    if (p->ground_state == SOI_ST_BONK) {
-        bonk_step(w, player);
-        return;
-    }
+    /* The build/fire ACTION runs FIRST, whatever the ground state (see action_step): while
+     * one is running -- its start frame included -- the movement handler below does not run
+     * at all, so the player hangs frozen mid-run, mid-jump, mid-fall or mid-bonk. */
+    if (action_step(w, player, edge)) return;
 
-    if (p->in_air) {
-        /* Airborne: you can still BUILD/DESTROY blocks and fire weapons -- the asm runs the action
-         * animation (FUN_1001166c) every frame and the build/fire fires from that animation
-         * (FUN_1002d04c / FUN_100110b4 / etc.) regardless of air state. But an ACTIVE action FREEZES
-         * the movement: the asm's line-160 gate runs the jump-arc (case 2) / fall (case 3) switch ONLY
-         * while the action-active flag is clear, so a mid-air build/fire hangs the player in place for
-         * the pose -- and because wall-rebound (FUN_10012554) and pit-death (FUN_10012348) live INSIDE
-         * the fall handler FUN_1001386c, those freeze with it, which is faithful. A NEW action only
-         * starts when none is active (asm line 14), so gate the WHOLE block on pose_t==0: while a pose
-         * runs there is no re-trigger and no arc (one finite freeze, never an indefinite hover), and on
-         * the frame an action starts the arc is skipped (asm skips the movement switch that frame). A
-         * new jump is never started while airborne. do_block/fire target the front cell at the player's
-         * CURRENT mid-air x/y, exactly as the asm does. (A dying player never reaches here -- gated at
-         * the top on SOI_ST_DEAD, matching asm FUN_1001166c line 13.) */
-        if (p->pose_t == 0) {
-            if      (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; }
-            else if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; }
-            else if (edge & SOI_IN_ARROW)      { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; }
-            else if (edge & SOI_IN_BALL)       { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; }
-            else                               air_step(w, player);
-        }
-        return;
-    }
-
-    /* Action phase + movement are BOTH gated on "no pose active", matching asm FUN_1001166c:
-     * a new action verb starts only when the action-active flag is clear (line 14), and the
-     * movement state machine -- gravity/fall (case 3), the idle/run handlers that START a jump
-     * (cases 0/1), and the run itself -- runs only when it is clear (the line-160 gate). So for
-     * the whole ~12-frame build/fire pose the player starts no new action, does not fall, does
-     * not move, and CANNOT start a jump: he is frozen in place, then a still-pressed jump leaps
-     * once the pose clears. A single pose_t==0 gate reproduces that WITHOUT ever emitting the
-     * asm-impossible "airborne but frozen at ground height" state (a jump pressed DURING a pose
-     * is dropped, not started). */
-    if (p->pose_t == 0) {
-        /* asm idle handler FUN_100128f8 line 21: an IDLE player's physics x is snapped
-         * to a 4 px boundary EVERY idle frame, and it runs BEFORE the support check
-         * (line 37). So a player who lands from the air at a 2-off-grid x (air-steer /
-         * wall-rebound / off-grid spawn) is grid-aligned on the next idle frame -- and
-         * a block broken under him drops from an x aligned to the block column (the
-         * "fall straight DOWN the column" the user wanted). While a direction is HELD the
-         * run handler (FUN_10012bf4) moves x in raw 2 px sub-steps and does NOT 4 px-align
-         * it, so gate this to the IDLE state only: a running player keeps his 2 px sub-step,
-         * and running off a ledge falls from that raw x exactly as the asm run handler does
-         * (FUN_10012bf4 line 27 -> state 3, no snap). */
-        if (p->ground_state == SOI_ST_IDLE) p->x &= ~3;
-        /* gravity: fall if unsupported (asm state 3 = flat 4 px/frame; see fall_step). */
-        if (!supported(w, p)) {
-            p->in_air = 1;
-            p->ground_state = SOI_ST_FALL;
-            return;
-        }
-        /* The build/fire ACTION is evaluated BEFORE the jump so a build queued on the SAME tick
-         * as a jump performs the BUILD, not the jump (the asm runs its action phase, lines 14-68,
-         * before the movement switch that starts the jump). Fixes "sometimes I can't create a
-         * block and jump at the same time". Each build/fire starts a pose that then freezes
-         * everything below -- including a later same-window jump -- until it drains. */
-        if (edge & SOI_IN_BLOCK_HIGH) { do_block(w, player, 1); p->pose = 2; p->pose_t = 12; return; }
-        if (edge & SOI_IN_BLOCK_LOW)  { do_block(w, player, 0); p->pose = 2; p->pose_t = 12; return; }
-        /* Key slot 5 "Arrow" -> latch +0x24 -> FUN_100110b4 straight shot; slot 6 "Ball" -> +0x23 ->
-         * FUN_10010d30 roller (FUN_1002d440 + the key dialog labels). The port's soi_ball_fire is the
-         * straight Arrow and soi_projectile_fire the rolling Ball; +0x24 is tested first. */
-        if (edge & SOI_IN_ARROW)      { soi_ball_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
-        if (edge & SOI_IN_BALL)       { soi_projectile_fire(w, player); p->pose = 1; p->pose_t = 12; return; }
-        if (edge & SOI_IN_JUMP)       { start_jump(w, player); return; }
-        if (in & SOI_IN_LEFT)         { run_step(w, player, -1); return; }
-        if (in & SOI_IN_RIGHT)        { run_step(w, player, +1); return; }
-        /* no direction held: settle to rest -- snap x to a 4 px boundary and drop RUN->IDLE
-         * on this transition frame. The top-of-block IDLE snap then re-aligns x on every
-         * subsequent idle frame (and is what aligns a player who reached IDLE via a landing,
-         * where fall_step sets IDLE without snapping). */
-        if (p->ground_state == SOI_ST_RUN) {
-            p->x &= ~3;
-            p->ground_state = SOI_ST_IDLE;
-        }
+    /* The movement switch (asm FUN_1001166c case-switch on +0x1c). The head-bonk recoil
+     * (case 4, FUN_10014524) is a frozen 10-frame animation dispatched AFTER the walk-over
+     * pickup: the asm runs the per-player pickup pass (FUN_1002bc64) every 30Hz frame gated
+     * ONLY on the player-active flags, NEVER on ground_state, so a bonking player still
+     * collects goodies. Wall-rebound (FUN_10012554) and the pit death live INSIDE the jump /
+     * fall handlers, so an action freezes them too. (A dying player never reaches here --
+     * gated at the top on SOI_ST_DEAD, matching asm FUN_1001166c line 13.) */
+    switch (p->ground_state) {
+        case SOI_ST_IDLE:   idle_step(w, player, in, edge);         break;
+        case SOI_ST_RUN:    run_step(w, player, in, edge);          break;
+        case SOI_ST_JUMP:   jump_step(w, player, in);               break;
+        case SOI_ST_FALL:   fall_step(w, player);                   break;
+        case SOI_ST_BONK:   bonk_step(w, player);                   break;
+        case SOI_ST_TURN_R: turn_idle_step(w, player, in, edge, 1); break;
+        case SOI_ST_TURN_L: turn_idle_step(w, player, in, edge, 0); break;
+        case SOI_ST_TURN:   turn_run_step(w, player, edge);         break;
+        case SOI_ST_STOP:   stop_step(w, player);                   break;
+        case SOI_ST_SETTLE: settle_step(w, player);                 break;
+        default:                                                    break;
     }
 }

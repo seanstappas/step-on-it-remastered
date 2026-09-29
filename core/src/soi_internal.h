@@ -31,12 +31,30 @@
 /* goodie / marker cell types (CONFIRMED, docs §2 / §0) */
 #define SOI_TILE_KEY          0x0Bu                   /* the key (collect to open the door) */
 
-/* Ground state machine selector (player.ground_state; asm FUN_1001166c +0x1c).
- * SOI_ST_BONK (4) is the asm's head-bonk recoil state (FUN_10014524): a grounded
- * player who jumped into a solid block overhead is frozen in it for a fixed 10-frame
- * animation, the block is cracked/broken at the midpoint, then it returns to IDLE. */
+/* Ground state machine selector (player.ground_state; asm FUN_1001166c +0x1c), numbered as
+ * the asm's movement switch: 0 idle FUN_100128f8, 1 run FUN_10012bf4, 2 jump FUN_10013404,
+ * 3 fall FUN_1001386c, 4 head-bonk recoil FUN_10014524, 9 / 10 turn to face right / left
+ * from a stand FUN_10013ddc / FUN_10013f68, 0xB turn round mid-run FUN_10013c18, 0xC stop
+ * (legs come together) FUN_100140f4, 0xD settle into the stand FUN_1001431c. The asm marks a
+ * DYING player with a separate flag (+0x28); the port folds it into ground_state as
+ * SOI_ST_DEAD, a value outside the asm's switch. */
 enum { SOI_ST_IDLE = 0, SOI_ST_RUN = 1, SOI_ST_JUMP = 2, SOI_ST_FALL = 3,
-       SOI_ST_BONK = 4, SOI_ST_DEAD = 0xC };
+       SOI_ST_BONK = 4, SOI_ST_TURN_R = 9, SOI_ST_TURN_L = 10, SOI_ST_TURN = 0xB,
+       SOI_ST_STOP = 0xC, SOI_ST_SETTLE = 0xD, SOI_ST_DEAD = 0x80 };
+
+/* Build/fire action verbs (asm FUN_1001166c +0x2e): the high/low block choice lives in
+ * the anim mode (pose 3/1 vs 4/2), the fire verbs in the verb. */
+enum { SOI_ACT_NONE = 0, SOI_ACT_BLOCK = 1, SOI_ACT_BALL = 2, SOI_ACT_ARROW = 3 };
+
+/* One block build/remove animation (asm list @0x1003a370, stride 0x10, 10 slots). */
+typedef struct {
+    uint8_t  active;
+    int8_t   step;      /* asm +6: +1 = build (grows 1..5), -1 = removal (shrinks 5..1) */
+    int8_t   frame;     /* asm +4: 0 (build) / 6 (removal) at the start, then the drawn frame */
+    uint8_t  type;      /* asm +8: block sprite a finished build draws (0 for a removal) */
+    int16_t  col, row;  /* 0-based cell (the asm keeps the cell's pixel x/y) */
+    uint32_t fin;       /* asm +0xA: the cell value stored when the animation ends */
+} SoiBlockAnim;
 
 typedef struct {
     uint8_t  active;      /* slot in use */
@@ -75,19 +93,25 @@ typedef struct {
     int16_t  respawn_timer;         /* >0 = counting down to respawn */
     int16_t  fast;                  /* speed-shoes timer (goody 0x32 -> asm +0x5c/+0x6e);
                                      * >0 = 2x speed (player runs at 60Hz, not 30Hz) */
-    uint8_t  pose;                  /* action pose for DISPLAY: 0 none, 1 fire, 2 build */
-    int16_t  pose_t;                /* action-pose countdown (frames). Drives DISPLAY (the
-                                     * fire/build pose out-ranks run in the renderer) AND, as the
-                                     * port's stand-in for the asm action-active flag (FUN_1001166c
-                                     * +0x25), gates the ENTIRE movement dispatch while >0: the
-                                     * ground gravity/run/idle AND jump-start, and the airborne
-                                     * arc/fall (air_step) alike are all frozen for the ~12-frame
-                                     * swing (asm line-160 gate), and no new action starts (asm line
-                                     * 14). So a jump pressed DURING a pose is dropped, never started
-                                     * -- reproducing the asm, which keeps the player grounded through
-                                     * the pose rather than emitting an airborne-but-frozen state. It
-                                     * self-releases because soi_state.c decrements it UNCONDITIONALLY
-                                     * every frame -- keep that drain ungated or the freeze is permanent. */
+    uint8_t  pose;                  /* build/fire ACTION anim mode (asm +0x30; the asm action-active
+                                     * flag +0x25 is pose != 0): 1 left high/fire, 2 left low, 3 right
+                                     * high/fire, 4 right low. Set by an action key press (FUN_1001166c
+                                     * start branch), cleared when the counter reaches 7. */
+    int16_t  pose_t;                /* action frame counter (asm +0x2c): 0 on the start frame, +1 per
+                                     * player frame; frames 1..6 show pose-table[pose_t], the verb fires
+                                     * at 5, and at 7 the action ends and the movement handler runs on
+                                     * that SAME frame. While an action runs (start frame included) no
+                                     * movement happens at all -- run, jump, fall, bonk are frozen. */
+    uint8_t  act_verb;              /* the action's verb (asm +0x2e): SOI_ACT_* */
+    int16_t  frame;                 /* sprite frame (asm +0x0e, asm numbering: the extracted
+                                     * BP/GP_sprites PNG is f(frame+1)); every state handler sets it
+                                     * exactly as the original does */
+    int16_t  frame_save;            /* the frame an action interrupted (asm +0x1a, FUN_10014700) */
+    uint8_t  act_dirty;             /* an action ran since the movement handler last restored
+                                     * frame_save (asm +0x26; FUN_10014744 restores + clears it) */
+    int16_t  aux;                   /* asm +0x10: the jump's tumble frame / the stop's target leg
+                                     * frame / the run frame a mid-run turn resumes on */
+    int8_t   dstep;                 /* death flap direction (+1/-1; the asm keeps it in +0x2e) */
     int16_t  prev_pcol, prev_prow;  /* the player's collision-centre cell LAST frame, for the
                                      * Stop/Go switch entry edge (asm FUN_1002bc64 bVar12 = cell
                                      * changed this frame). Seeded to the spawn cell so spawning ON
@@ -178,6 +202,24 @@ struct SoiWorld {
     uint8_t  death_dir[SOI_DEATH_QUEUE_MAX];
     uint8_t  death_count;
 
+    /* transient per-tick cosmetic debris queue (NOT serialized/hashed): the asm's particle
+     * list (FUN_100278bc / mover FUN_10028060) is purely visual -- shattered-block quarters
+     * and popped goodies never collide with anything -- so the core only reports each
+     * particle's spawn and the Godot layer flies it (see soi_fx_get). */
+    int16_t  fx_x[SOI_FX_QUEUE_MAX];
+    int16_t  fx_y[SOI_FX_QUEUE_MAX];
+    int16_t  fx_vx[SOI_FX_QUEUE_MAX];
+    int16_t  fx_vy[SOI_FX_QUEUE_MAX];
+    uint8_t  fx_sheet[SOI_FX_QUEUE_MAX];
+    int16_t  fx_frame[SOI_FX_QUEUE_MAX];
+    uint8_t  fx_grav[SOI_FX_QUEUE_MAX];
+    uint8_t  fx_count;
+
+    /* Block build/remove animations (asm FUN_1002754c / FUN_100283a0). GAMEPLAY state: the
+     * cell holds an in-between value while one runs (0x300 during a build, 0x200 during a
+     * removal) and only takes its final value when it ends -- serialized. */
+    SoiBlockAnim banim[SOI_BLOCKANIM_MAX];
+
     /* Faithful death recovery: a copy of the CURRENT board's BORD bytes, captured at
      * load, so a death can RELOAD the board (asm FUN_1001f4f8 -> FUN_10029acc ->
      * FUN_1002b448: grid/enemies/bonus/positions reset, persistent stats kept). NOT part
@@ -222,6 +264,22 @@ void     soi_set_cell(SoiWorld *w, int col, int row, uint32_t v);
 void     soi_switch_load_scan(SoiWorld *w);   /* register switch blocks after a board load */
 void     soi_switch_toggle(SoiWorld *w, int tile_low);  /* flip the group a switch tile selects */
 void     soi_switch_animate(SoiWorld *w);     /* advance open/close animations one frame */
+
+/* ---- block build/remove animations + debris (soi_grid.c) ---- */
+/* asm FUN_1002754c: start a build (step +1: the cell becomes solid+locked |0x300 at once and
+ * `fin` when the grow ends) or a removal (step -1: the cell is cleared to its payload or 0,
+ * kept standable |0x200, and becomes `fin` when the shrink ends). 0-based cell. */
+void     soi_blockanim_start(SoiWorld *w, int col, int row, int step, int type, uint32_t fin);
+void     soi_blockanims_update(SoiWorld *w);  /* asm FUN_100283a0: advance every animation a frame */
+/* asm FUN_100279c4: remove a breakable block through the shrink animation (reveals a payload). */
+void     soi_block_remove(SoiWorld *w, int col, int row);
+/* Shatter a breakable block into its 4 flying quarters (asm FUN_1002ca5c head-bonk up-burst,
+ * FUN_10027d84 / FUN_10027ecc right / left blast, FUN_10027aec Hammer smash, FUN_10027c34
+ * along (vx,vy) in 1/10 px): clears it at once to its payload or 0 (FUN_1002cc10). */
+enum { SOI_SHATTER_BONK = 0, SOI_SHATTER_RIGHT, SOI_SHATTER_LEFT, SOI_SHATTER_DROP, SOI_SHATTER_DIR };
+void     soi_block_shatter(SoiWorld *w, int col, int row, int kind, int vx, int vy);
+/* Queue one cosmetic particle (asm FUN_100278bc). */
+void     soi_fx_emit(SoiWorld *w, int sheet, int frame, int x, int y, int vx, int vy, int grav);
 
 /* ---- play-mode credit pool ----
  * Cooperate keeps ONE team pool in player 1's slot: every score/lives/ammo/multiplier/Bonus

@@ -14,7 +14,6 @@ static int enemy_speed(int type);   /* per-type base speed (defined below) */
 static int enemy_period(int type);  /* frames per AI step (defined below) */
 static uint32_t cell_at_px(const SoiWorld *w, int px, int py, int *col, int *row);
 static int cell_breakable(uint32_t c);
-static void break_block(SoiWorld *w, int col, int row);
 static void enemy_turn_around(SoiEnemy *e);
 static void turret_anim(SoiEnemy *e);
 
@@ -220,6 +219,7 @@ void soi_player_hit(SoiWorld *w, int idx)
     p->jump_t = 0;
     p->launch_y = (int16_t)(p->y - 3);
     p->ground_state = SOI_ST_DEAD;
+    p->frame = 0x75; p->dstep = -1;            /* the arm flap (FUN_10012228: +0x0e = 0x75, +0x2e = -1) */
     soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
 }
 
@@ -396,7 +396,7 @@ static void enemy_hammer_hop(SoiWorld *w, SoiEnemy *e)
         if (e->fire_cd == 11) {                          /* asm strike frame 0x4b/0x3b */
             fc = cell_at_px(w, e->x + ((e->dir == 2) ? 0x1a : 4), e->y + 11 + 14, &c, &r);
             if (cell_breakable(fc)) {
-                break_block(w, c, r);
+                soi_block_shatter(w, c, r, SOI_SHATTER_DROP, 0, 0);   /* FUN_10027aec: pieces tumble down */
                 soi_sfx_emit(w, SOI_SFX_ROBO_PUNCH);     /* asm sound event 0x11 (Metal) */
             }
         }
@@ -570,14 +570,6 @@ static int cell_breakable(uint32_t c)
     return (c & SOI_CELL_SUPPORTIVE) && !(c & SOI_CELL_PERMANENT) && SOI_CELL_TYPE(c) != 0;
 }
 
-/* FUN_100279c4: clear a breakable block, revealing any 0x1000 payload. */
-static void break_block(SoiWorld *w, int col, int row)
-{
-    uint32_t c = soi_get_cell(w, col, row);
-    if (soi_in_bounds(col, row) && cell_breakable(c))
-        soi_set_cell(w, col, row, (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u);
-}
-
 /* Walkers that stop and play a turn-around animation (asm +0x4c states 5/6) instead of
  * flipping on the spot. The turn lasts 16 AI steps after the step that starts it (the
  * Robo's 0x31..0x40 run is 15); the Smiley alone reverses instantly (FUN_1000d130). */
@@ -631,7 +623,8 @@ static void enemy_beanie(SoiWorld *w, SoiEnemy *e)
             if (!vert) { px = ax + ((e->dir == 2) ? 0x2c : -0x18); py = ay + ((e->dir == 2) ? 3 : 2); }
             else       { px = ax + ((e->dir == 2) ? 0x0c : 0x14); py = ay + ((e->dir == 2) ? 0x30 : -0x0e); }
             (void)cell_at_px(w, px, py, &c, &r);
-            break_block(w, c, r);
+            if (cell_breakable(soi_get_cell(w, c, r)))
+                soi_block_remove(w, c, r);             /* FUN_100279c4: the block shrinks away */
         }
         if (e->bud >= (vert ? 33 : 32)) e->bud = 0;  /* retracted: the bud is gone */
         return;
@@ -760,7 +753,7 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
             int a, r;
             (void)cell_at_px(w, e->x + ((e->dir == 2) ? 0x20 : 0), e->y + 14, &a, &r);
             if (cell_breakable(soi_get_cell(w, a, r))) {
-                break_block(w, a, r);
+                soi_block_shatter(w, a, r, (e->dir == 2) ? SOI_SHATTER_RIGHT : SOI_SHATTER_LEFT, 0, 0);
                 soi_sfx_emit(w, SOI_SFX_ROBO_PUNCH);      /* asm event 0x11 -> 15960 "Metal" */
             }
         }
@@ -791,7 +784,7 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
         } else if (cell_breakable(ac) &&
                    (e->type == SOI_ENEMY_HIPPO || e->type == SOI_ENEMY_PIGGY ||
                     e->type == SOI_ENEMY_TEETH || e->type == SOI_ENEMY_SMILEY)) {
-            break_block(w, ahead, ar);
+            soi_block_remove(w, ahead, ar);          /* FUN_100279c4: chomped away (shrinks) */
             if (e->type != SOI_ENEMY_TEETH) {
                 if (e->type == SOI_ENEMY_SMILEY) { e->dir = (uint8_t)((e->dir == 2) ? 1 : 2); e->vx = (int16_t)-e->vx; }
                 else enemy_turn_around(e);
@@ -1606,7 +1599,9 @@ void soi_projectiles_update(SoiWorld *w)
                 if (!(cell & SOI_CELL_SUPPORTIVE)) continue;
                 if (!(cell & SOI_CELL_PERMANENT)) {
                     if (SOI_CELL_TYPE(cell) != 0) {
-                        soi_set_cell(w, pc, prw, (cell & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(cell) : 0u);
+                        /* FUN_10027c34: the quarters fly on along the puff's own heading
+                         * (its velocity x10 in the 1/10-px particle units) */
+                        soi_block_shatter(w, pc, prw, SOI_SHATTER_DIR, pr->vx * 10, pr->vy * 10);
                         soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
                     }
                     if (!pr->pierce) dead = 1;
@@ -1639,7 +1634,9 @@ void soi_projectiles_update(SoiWorld *w)
             cell = cell_at_px(w, pr->x + (right ? 0x10 : -1), pr->y + 8, &c, &r);
             if (cell & SOI_CELL_SUPPORTIVE) {
                 if (cell_breakable(cell)) {
-                    break_block(w, c, r);
+                    /* FUN_1000744c / FUN_1000e3c0 -> FUN_10027d84 (right) / FUN_10027ecc (left):
+                     * the block is blasted apart in the shot's direction */
+                    soi_block_shatter(w, c, r, right ? SOI_SHATTER_RIGHT : SOI_SHATTER_LEFT, 0, 0);
                     soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
                 }
                 pr->active = 0;

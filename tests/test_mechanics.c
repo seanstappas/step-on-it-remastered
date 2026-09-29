@@ -42,6 +42,27 @@ static void ground_player(SoiWorld *w, int col, int row)
     soi_set_cell(w, col, row, SOI_CELL_SUPPORTIVE);
 }
 
+/* Press an action key the way a player does -- held 2 ticks so an odd (logic) tick latches
+ * the press -- then run the action up to its VERB: the original builds/fires on the
+ * action's 5th player frame (asm FUN_1001166c), not on the press frame. */
+static void act_press(SoiWorld *w, uint8_t key)
+{
+    int g = 0;
+    soi_tick(w, key, 0); soi_tick(w, key, 0);
+    while (w->players[1].pose != 0 && w->players[1].pose_t < 5 && g++ < 40) soi_tick(w, 0, 0);
+}
+
+/* Let the running action end and every block grow/shrink animation finish. */
+static void act_done(SoiWorld *w)
+{
+    int g = 0, i, busy = 1;
+    while (busy && g++ < 60) {
+        busy = (w->players[1].pose != 0);
+        for (i = 0; i < SOI_BLOCKANIM_MAX; i++) if (w->banim[i].active) busy = 1;
+        if (busy) soi_tick(w, 0, 0);
+    }
+}
+
 int main(void)
 {
     SoiWorld *w = (SoiWorld *)malloc(soi_world_size());
@@ -57,13 +78,14 @@ int main(void)
     w->players[1].facing = 1;
     soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);   /* two cells to the right */
     soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);   /* floor so the nasty stands (gravity) */
+    w->enemies[0].turn = 200;                  /* ...and holds still through the throw's wind-up */
     CHECK(soi_enemy_count(w) == 1, "arrow: enemy present before firing");
     CHECK(soi_enemy_active(w, 0) == 1 && soi_enemy_type(w, 0) == SOI_ENEMY_ANT,
           "accessor: enemy slot 0 active + type readable");
     CHECK(soi_enemy_x(w, 0) == soi_cell_x(5) && soi_enemy_y(w, 0) == soi_cell_y(9),
           "accessor: enemy pixel position readable");
 
-    soi_tick(w, SOI_IN_BALL, 0);               /* fire once */
+    act_press(w, SOI_IN_BALL);                 /* fire once (the throw lands on the action's 5th frame) */
     CHECK(w->players[1].arrows == 1, "arrow: firing consumed one arrow");
     CHECK(soi_projectile_count(w) == 1, "arrow: a projectile is in flight");
 
@@ -87,22 +109,25 @@ int main(void)
     w->players[1].arrows = 3;
     w->players[1].balls  = 3;
     w->players[1].facing = 1;
-    soi_tick(w, SOI_IN_BALL, 0);               /* fire the rolling ball */
+    act_press(w, SOI_IN_BALL);                 /* fire the rolling ball */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
           "one-shot: first arrow fires (1 in flight, ammo 3->2)");
-    soi_tick(w, SOI_IN_BALL, 0);               /* try to fire again while it flies */
+    act_done(w);
+    act_press(w, SOI_IN_BALL);                 /* try to fire again while it flies */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 2,
           "one-shot: a 2nd arrow is BLOCKED while the 1st is live (no timer needed)");
-    soi_tick(w, SOI_IN_ARROW, 0);              /* the other weapon SHARES the slot -> also blocked */
+    act_done(w);
+    act_press(w, SOI_IN_ARROW);                /* the other weapon SHARES the slot -> also blocked */
     CHECK(soi_projectile_count(w) == 1 && w->players[1].balls == 3,
           "one-shot: a ball is BLOCKED too (arrow+ball share the one slot)");
+    act_done(w);
     {
         int t;                                 /* let the live arrow fizzle (age 500) */
         for (t = 0; t < 560 && soi_projectile_count(w) > 0; t++)
             soi_tick(w, 0, 0);
     }
     CHECK(soi_projectile_count(w) == 0, "one-shot: the live arrow eventually despawns");
-    soi_tick(w, SOI_IN_BALL, 0);
+    act_press(w, SOI_IN_BALL);
     CHECK(soi_projectile_count(w) == 1 && w->players[1].arrows == 1,
           "one-shot: once the slot is free, firing works again (ammo 2->1)");
 
@@ -147,6 +172,9 @@ int main(void)
         int bonk_x0 = w->players[1].x;
         int crack_f = -1, idle_f = -1, f, frozen = 1;
         soi_tick(w, SOI_IN_JUMP, 0);                 /* press jump into the block (odd tick: logic runs) */
+        CHECK(w->players[1].ground_state == SOI_ST_JUMP && w->players[1].y == soi_cell_y(9),
+              "bonk: the press frame only readies the jump (asm idle -> state 2, counter 0)");
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);        /* the next player frame is the launch check */
         CHECK(w->players[1].ground_state == SOI_ST_BONK,
               "bonk: jumping into a solid block overhead enters the frozen bonk state (no leap)");
         CHECK(!(soi_get_cell(w, 6, 8) & SOI_CELL_CRACKED),
@@ -175,6 +203,7 @@ int main(void)
      * (clear the edge), then re-press JUMP for 2 ticks (spans an odd logic tick). */
     soi_tick(w, 0, 0); soi_tick(w, 0, 0);            /* release inputs */
     soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);  /* re-press -> bonk #2 */
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0);            /* (the launch check runs a frame after the press) */
     CHECK(w->players[1].ground_state == SOI_ST_BONK,
           "bonk2: re-pressing jump into the cracked block bonks again");
     {
@@ -195,6 +224,7 @@ int main(void)
     ground_player(w, 6, 9);
     soi_set_cell(w, 6, 8, SOI_WALL);
     soi_tick(w, SOI_IN_JUMP, 0);
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0);
     CHECK(w->players[1].ground_state == SOI_ST_BONK,
           "bonkperm: jumping into a permanent block overhead still enters the bonk recoil");
     {
@@ -226,6 +256,7 @@ int main(void)
     CHECK(!(soi_get_cell(w, 7, 8) & SOI_CELL_SUPPORTIVE),
           "bonk-straddle: the FACING (right) head column is clear (only the trailing one has a block)");
     soi_tick(w, SOI_IN_JUMP, 0);
+    soi_tick(w, 0, 0); soi_tick(w, 0, 0);
     CHECK(w->players[1].ground_state == SOI_ST_BONK,
           "bonk-straddle: the two-column head-clear bonks off the trailing column (a single-column probe would leap)");
     {
@@ -290,20 +321,13 @@ int main(void)
     reset_player(w, 1, 5, 9);
     ground_player(w, 5, 9);
     w->players[1].facing = 1;                   /* face right -> block-high targets the front cell */
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);          /* press: build a block in front */
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    act_press(w, SOI_IN_BLOCK_HIGH);            /* press: build a block in front */
+    act_done(w);                                /* ...it grows in over ~6 frames */
     CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) &&
           SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
           "block-high: first press builds a block in front");
-    {   /* the build pose gates a NEW action (asm FUN_1001166c line 14: a verb starts only when
-         * the action-active flag is clear), so a second press registers only once the pose
-         * drains -- release and let it run out, then press again to remove the block. */
-        int guard = 0;
-        soi_tick(w, 0, 0); soi_tick(w, 0, 0);   /* release (must latch a 0 on an odd tick) */
-        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);
-    }
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);          /* press again: remove the same block */
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    act_press(w, SOI_IN_BLOCK_HIGH);            /* press again: remove the same block */
+    act_done(w);
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
           "block-high: a second press at the same cell removes it");
 
@@ -316,26 +340,66 @@ int main(void)
     w->players[1].facing = 1;                   /* block-high targets the front cell (6,9) */
     int gate_ei = soi_enemy_spawn(w, SOI_ENEMY_ANT, 6, 9);   /* nasty on the front build cell */
     CHECK(gate_ei >= 0, "build-gate: test nasty spawned on the front cell");
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    w->enemies[gate_ei].vx = 0; w->enemies[gate_ei].turn = 200;   /* hold it on the cell */
+    soi_set_cell(w, 6, 10, SOI_CELL_SUPPORTIVE);                    /* ...standing, not falling */
+    act_press(w, SOI_IN_BLOCK_HIGH);
+    act_done(w);
     CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == SOI_CELL_EMPTY,
           "build-gate: no block is built on a nasty-occupied cell");
     CHECK(gate_ei >= 0 && w->enemies[gate_ei].active,
           "build-gate: the nasty is NOT squashed by the build (weapons/goody defeat it)");
 
-    /* action poses are a DISPLAY hint (asm FUN_1001166c busy-state); ours sets pose on
-     * fire/build with NO input lock, so behavior is unchanged (soi_player_pose>0 only
-     * for the brief pose window). */
+    /* ---- 3c2. The build/fire ACTION (asm FUN_1001166c): a press starts it and picks the
+     * pose table by its anim mode (3/4 facing right, 1/2 left; 4/2 = the LOW block); the
+     * VERB happens on the action's 5th player frame, and on the 7th the action ends. ---- */
     soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
     w->players[1].facing = 1;
     soi_tick(w, SOI_IN_BLOCK_HIGH, 0); soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
-    CHECK(soi_player_pose(w, 1) == 2, "pose: building sets the BUILD pose (display)");
+    CHECK(soi_player_pose(w, 1) == 3 && soi_player_pose_t(w, 1) == 0,
+          "action: a high-block press facing right starts anim mode 3 at frame 0");
+    CHECK(!(soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE),
+          "action: nothing is built on the press frame");
+    {
+        int f, built_at = -1, end_at = -1;
+        for (f = 1; f <= 10 && end_at < 0; f++) {
+            soi_tick(w, 0, 0); soi_tick(w, 0, 0);          /* one player frame */
+            if (built_at < 0 && (soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE)) built_at = f;
+            if (soi_player_pose(w, 1) == 0) end_at = f;
+        }
+        CHECK(built_at == 5, "action: the block is built on the action's 5th frame");
+        CHECK(end_at == 7, "action: the action ends on its 7th frame");
+    }
+    CHECK(soi_get_cell(w, 6, 9) == (0x19u | SOI_CELL_SUPPORTIVE),
+          "action: the grown block is the player's block type");
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+    w->players[1].facing = -1;
+    soi_tick(w, SOI_IN_BLOCK_LOW, 0); soi_tick(w, SOI_IN_BLOCK_LOW, 0);
+    CHECK(soi_player_pose(w, 1) == 2, "action: a low-block press facing left is anim mode 2");
     soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
     reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
     w->players[1].facing = 1; w->players[1].balls = 3;
     soi_tick(w, SOI_IN_ARROW, 0); soi_tick(w, SOI_IN_ARROW, 0);
-    CHECK(soi_player_pose(w, 1) == 1, "pose: firing a ball sets the FIRE pose (display)");
+    CHECK(soi_player_pose(w, 1) == 3 && soi_projectile_count(w) == 0,
+          "action: firing uses anim mode 3 and nothing flies yet on the press frame");
+
+    /* ---- 3c3. MASHING a block key in mid-air does NOT hover. Each action freezes the fall
+     * for its 7 frames, but the frame it ends runs the fall step and a new action can only
+     * start on the frame after -- so the player still sinks 4 px every 8 frames (the old
+     * port let a press right on the release frame start the next action with no fall step,
+     * so a masher floated forever). Here the key is pressed on every other player frame. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 8, 2);
+    w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_FALL;
+    w->players[1].facing = 1;
+    {
+        int y0 = w->players[1].y, t;
+        for (t = 0; t < 64; t++)
+            soi_tick(w, ((t >> 1) & 1) ? 0 : SOI_IN_BLOCK_HIGH, 0);
+        CHECK(w->players[1].y - y0 == 16,
+              "mash: mid-air block mashing still sinks 4 px per 8 frames (no hover)");
+    }
 
     /* ---- 3e. A cliff-fall is PURELY VERTICAL (asm FUN_1001386c calls ONLY the
      * wall-rebound FUN_10012554, never an input-steer -- unlike the jump FUN_10013404).
@@ -368,12 +432,12 @@ int main(void)
               "midair-freeze: the player is airborne (falling) before the build");
         y0 = w->players[1].y;
         soi_tick(w, SOI_IN_BLOCK_HIGH, 0); soi_tick(w, SOI_IN_BLOCK_HIGH, 0);   /* build while falling */
-        CHECK(w->players[1].pose_t > 0, "midair-freeze: the build pose is active");
+        CHECK(w->players[1].pose != 0, "midair-freeze: the build action is running");
         CHECK(w->players[1].y == y0, "midair-freeze: the fall is frozen while the build pose plays");
         soi_tick(w, 0, 0); soi_tick(w, 0, 0);
         CHECK(w->players[1].y == y0, "midair-freeze: still frozen partway through the pose");
         guard = 0;
-        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);      /* run the pose out */
+        while (w->players[1].pose != 0 && guard++ < 40) soi_tick(w, 0, 0);      /* run the action out */
         ypose = w->players[1].y;
         soi_tick(w, 0, 0); soi_tick(w, 0, 0);
         CHECK(w->players[1].y > ypose, "midair-freeze: the descent resumes once the pose ends");
@@ -391,20 +455,22 @@ int main(void)
     w->players[1].facing = 1;
     soi_tick(w, (uint8_t)(SOI_IN_BLOCK_HIGH | SOI_IN_JUMP), 0);
     soi_tick(w, (uint8_t)(SOI_IN_BLOCK_HIGH | SOI_IN_JUMP), 0);
-    CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
-          "jump-build: a same-frame build+jump performs the BUILD (block created)");
+    CHECK(w->players[1].pose == 3 && w->players[1].act_verb == SOI_ACT_BLOCK,
+          "jump-build: a same-frame build+jump starts the BUILD action");
     CHECK(w->players[1].in_air == 0,
           "jump-build: the same-frame jump does NOT swallow the build (player stays grounded)");
-    /* release, then a jump pressed WHILE the pose is still active -> dropped, stays grounded (HIGH-1) */
+    /* release, then a jump pressed WHILE the action is still running -> dropped, stays grounded */
     soi_tick(w, 0, 0); soi_tick(w, 0, 0);
-    CHECK(w->players[1].pose_t > 0, "jump-build: the build pose is still active");
+    CHECK(w->players[1].pose != 0, "jump-build: the build action is still running");
     soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, SOI_IN_JUMP, 0);
-    CHECK(w->players[1].in_air == 0 && w->players[1].pose_t > 0,
+    CHECK(w->players[1].in_air == 0 && w->players[1].pose != 0,
           "jump-build: a jump pressed DURING the pose is dropped (no airborne-frozen state)");
-    /* drain the pose fully, THEN a jump leaps AND actually arcs upward (y decreases) */
+    /* let the action (and its block's grow) finish, THEN a jump leaps AND arcs upward */
     {
-        int guard = 0, yj;
-        while (w->players[1].pose_t > 0 && guard++ < 40) soi_tick(w, 0, 0);
+        int yj;
+        act_done(w);
+        CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
+              "jump-build: the same-frame build+jump performed the BUILD (block created)");
         CHECK(w->players[1].in_air == 0,
               "jump-build: player is still grounded after the pose drains");
         yj = w->players[1].y;
@@ -425,11 +491,11 @@ int main(void)
     reset_player(w, 1, 5, 9);
     w->players[1].facing = 1;                         /* face right -> block-high targets (6,9) */
     w->players[1].in_air = 1; w->players[1].ground_state = SOI_ST_JUMP;   /* mid-jump */
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
-    soi_tick(w, SOI_IN_BLOCK_HIGH, 0);
+    act_press(w, SOI_IN_BLOCK_HIGH);
+    CHECK(w->players[1].in_air == 1, "airborne: building mid-air does NOT cancel the jump");
+    act_done(w);
     CHECK((soi_get_cell(w, 6, 9) & SOI_CELL_SUPPORTIVE) && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) != 0,
           "airborne: can BUILD a block in front while jumping (mid-air)");
-    CHECK(w->players[1].in_air == 1, "airborne: building mid-air does NOT cancel the jump");
 
     /* ---- 4. Thunderballs (goody 0x31, asm FUN_1000543c) defeats every nasty: it
      * CLAIMS each one for the collecting player, and a claimed nasty is cleared on
@@ -748,10 +814,10 @@ int main(void)
         w->enemies[pi].dir = 2; w->enemies[pi].vx = 2;
         soi_set_cell(w, 6, 9, SOI_CELL_SUPPORTIVE | 0x07);  /* breakable block ahead */
         x0 = w->enemies[pi].x;
-        soi_enemies_update(w);
+        soi_enemies_update(w); soi_blockanims_update(w);
         CHECK(w->enemies[pi].bud > 0 && w->enemies[pi].x == x0, "beanie: stops and shoots a bud at a breakable block");
         for (t = 0; t < 80 && w->enemies[pi].bud; t++) {
-            soi_enemies_update(w);
+            soi_enemies_update(w); soi_blockanims_update(w);
             if (broke_at < 0 && SOI_CELL_TYPE(soi_get_cell(w, 6, 9)) == 0) broke_at = w->enemies[pi].bud;
         }
         CHECK(broke_at == 17, "beanie: the bud smashes the block when fully out (16 steps)");
@@ -760,10 +826,10 @@ int main(void)
         for (e = 0; e < SOI_MAX_ENEMIES; e++)
             if (w->enemies[e].active && w->enemies[e].type == SOI_ENEMY_BEANIE) n++;
         CHECK(n == 1, "beanie: never spawns another Beanie");
-        for (t = 0; t < 4; t++) soi_enemies_update(w);
+        for (t = 0; t < 4; t++) { soi_enemies_update(w); soi_blockanims_update(w); }
         CHECK(w->enemies[pi].x > x0, "beanie: walks on through the cleared cell");
         soi_set_cell(w, 8, 9, SOI_WALL);                      /* permanent block further on */
-        for (t = 0; t < 200 && w->enemies[pi].dir == 2; t++) soi_enemies_update(w);
+        for (t = 0; t < 200 && w->enemies[pi].dir == 2; t++) { soi_enemies_update(w); soi_blockanims_update(w); }
         CHECK(w->enemies[pi].dir == 1 && w->enemies[pi].turn == 16, "beanie: turns around (16 steps) at a permanent block");
     }
 
@@ -1524,7 +1590,7 @@ int main(void)
     w->players[1].arrows = 1;
     w->players[1].facing = 1;
     soi_set_cell(w, 5, 9, 0x201);                       /* destructible block directly ahead */
-    soi_tick(w, SOI_IN_BALL, 0);                        /* fire -> travels right */
+    act_press(w, SOI_IN_BALL);                          /* fire -> travels right */
     {
         int t;
         for (t = 0; t < 20; t++) soi_tick(w, 0, 0);     /* it reaches + deflects off the block */
@@ -1548,7 +1614,7 @@ int main(void)
     { int c; for (c = 1; c <= 9; c++) soi_set_cell(w, c, 12, 0x300u); }  /* solid floor below the arrow */
     soi_set_cell(w, 3, 11, 0x300u); soi_set_cell(w, 3, 10, 0x300u);      /* wall to the left */
     w->players[1].arrows = 1; w->players[1].facing = -1;                 /* face left */
-    soi_tick(w, SOI_IN_BALL, 0);                                         /* fire left */
+    act_press(w, SOI_IN_BALL);                                           /* fire left */
     {
         int y0 = w->projectiles[0].y, t;
         for (t = 0; t < 60 && soi_projectile_count(w) == 1; t++) soi_tick(w, 0, 0);
@@ -1611,7 +1677,8 @@ int main(void)
        * verb builds on one and that block must inherit the payload. */
         int c, r, found = 0;
         for (c = 6; c <= 7; c++) for (r = 8; r <= 12; r++) soi_set_cell(w, c, r, 0x090A1000u);
-        soi_tick(w, SOI_IN_BLOCK_LOW, 0);           /* build a block in front-below */
+        act_press(w, SOI_IN_BLOCK_LOW);             /* build a block in front-below */
+        act_done(w);
         for (c = 6; c <= 7; c++) for (r = 8; r <= 12; r++)
             if (soi_get_cell(w, c, r) == 0x090A1219u) found = 1;   /* built block = blue 0x19 + payload */
         CHECK(found, "payload: a block built on a hidden-payload cell inherits the goody");
@@ -1794,7 +1861,7 @@ int main(void)
     w->players[1].facing = 1;
     soi_enemy_spawn(w, SOI_ENEMY_ROBO, 5, 9);           /* two cells to the right */
     soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);        /* floor so the nasty stands */
-    soi_tick(w, SOI_IN_ARROW, 0);                       /* fire the straight shot */
+    act_press(w, SOI_IN_ARROW);                         /* fire the straight shot */
     CHECK(w->players[1].balls == 1, "ball: firing consumed one ball");
     CHECK(soi_projectile_count(w) == 1, "ball: a ball is in flight");
     CHECK(soi_projectile_active(w, 0) == 1 && soi_projectile_kind(w, 0) == 1,
@@ -1817,7 +1884,7 @@ int main(void)
     soi_enemy_spawn(w, SOI_ENEMY_ANT, 5, 9);
     w->enemies[0].vx = 0; w->enemies[0].turn = 200;
     soi_set_cell(w, 5, 10, SOI_CELL_SUPPORTIVE);
-    soi_tick(w, SOI_IN_ARROW, 0);
+    act_press(w, SOI_IN_ARROW);
     {
         int t;
         for (t = 0; t < 120 && soi_projectile_count(w) > 0; t++)
@@ -1834,7 +1901,7 @@ int main(void)
     w->players[1].balls = 1;
     w->players[1].facing = 1;
     soi_set_cell(w, 5, 9, 0x201);                       /* destructible block ahead */
-    soi_tick(w, SOI_IN_ARROW, 0);
+    act_press(w, SOI_IN_ARROW);
     {
         int t;
         for (t = 0; t < 24 && soi_projectile_count(w) > 0; t++)
@@ -2321,8 +2388,8 @@ int main(void)
         reset_player(w, 1, 5, 9);
         ground_player(w, 5, 9);
         w->players[1].facing = 1; w->players[1].arrows = 5;
-        soi_tick(w, SOI_IN_BALL, 0);                /* fire -> action pose starts (pose_t=12) */
-        CHECK(w->players[1].pose_t > 0, "glide: firing a weapon starts the action pose");
+        soi_tick(w, SOI_IN_BALL, 0);                /* press fire -> the action starts */
+        CHECK(w->players[1].pose != 0, "glide: firing a weapon starts the action pose");
         x0 = w->players[1].x;
         for (t = 0; t < 5; t++) {                   /* hold RIGHT while the pose still swings */
             soi_tick(w, SOI_IN_RIGHT, 0);
@@ -2333,8 +2400,8 @@ int main(void)
               "glide: holding a direction during the action pose does NOT advance x (no glide)");
         CHECK(!ran_during_pose,
               "glide: the run DISPATCH is frozen during the pose (stutter-stop, not just x-clamped)");
-        for (t = 0; t < 12; t++) soi_tick(w, 0, 0); /* let the pose fully drain */
-        CHECK(w->players[1].pose_t == 0, "glide: the action pose drains after ~12 frames");
+        for (t = 0; t < 12; t++) soi_tick(w, 0, 0); /* let the action run out (7 player frames) */
+        CHECK(w->players[1].pose == 0, "glide: the action pose ends after 7 player frames");
         soi_tick(w, SOI_IN_RIGHT, 0);
         CHECK(w->players[1].ground_state == SOI_ST_RUN,
               "glide: once the pose ends, holding a direction runs the player again");
@@ -3084,7 +3151,7 @@ int main(void)
     w->players[1].arrows = 1;
     w->players[1].facing = 1;                           /* fire RIGHT */
     { int c; for (c = 1; c <= 7; c++) soi_set_cell(w, c, 8, 0x300u); }   /* floor cols 1..7, row 8; then a cliff (cols 8+ open) */
-    soi_tick(w, SOI_IN_BALL, 0);                        /* fire the wall-follower ball */
+    act_press(w, SOI_IN_BALL);                          /* fire the wall-follower ball */
     CHECK(soi_projectile_count(w) == 1 && soi_projectile_kind(w, 0) == 0,
           "wall-ball: a kind-0 follower is in flight after firing right");
     {
@@ -3510,6 +3577,146 @@ int main(void)
         for (t = 0; t < 100 && pi >= 0 && w->projectiles[pi].active; t++) soi_projectiles_update(w);
         CHECK(pi >= 0 && !w->projectiles[pi].active && SOI_CELL_TYPE(soi_get_cell(w, 8, 9)) == 0,
               "cannon: the ball smashes the breakable block and is spent");
+        CHECK(w->fx_count == 4 && w->fx_frame[0] == 0x07 + 2 && w->fx_vx[0] == 40 && w->fx_vy[0] == -40 &&
+              !w->fx_grav[0] && w->fx_x[1] == soi_cell_x(8) + 16,
+              "cannon: the smashed block flies apart right in 4 quarters (FUN_10027d84)");
+    }
+
+    /* ---- 57. Block build/remove ANIMATIONS (asm FUN_1002754c / FUN_100283a0). A build locks the
+     * cell solid (|0x300, type still 0) while it grows through frames 1..5 and becomes the block on
+     * the 6th frame; a removal clears the block at once but keeps the cell standable (0x200) while
+     * it shrinks 5..1, then empties it. ---- */
+    {
+        int t, grow_ok = 1, shrink_ok = 1, anim;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        soi_blockanim_start(w, 6, 9, +1, 0x6D, 0x026Du);
+        for (t = 1; t <= 5; t++) {
+            soi_blockanims_update(w);
+            anim = soi_blockanim(w, 0);
+            if (soi_get_cell(w, 6, 9) != SOI_WALL || anim != (6 | 9 << 8 | t << 16 | 1 << 24)) grow_ok = 0;
+        }
+        CHECK(grow_ok, "blockanim: a build is solid+locked (0x300) while it grows through frames 1..5");
+        soi_blockanims_update(w);
+        CHECK(soi_get_cell(w, 6, 9) == 0x026Du && soi_blockanim(w, 0) == -1,
+              "blockanim: ...and becomes the built block on the 6th frame");
+        soi_set_cell(w, 7, 9, 0x09121291u);                    /* a block hiding a goody */
+        soi_block_remove(w, 7, 9);
+        for (t = 5; t >= 1; t--) {
+            soi_blockanims_update(w);
+            anim = soi_blockanim(w, 0);
+            if (soi_get_cell(w, 7, 9) != (0x0912u | SOI_CELL_SUPPORTIVE) || anim != (7 | 9 << 8 | t << 16)) shrink_ok = 0;
+        }
+        CHECK(shrink_ok, "blockanim: a removal shows the payload but stays standable while it shrinks 5..1");
+        soi_blockanims_update(w);
+        CHECK(soi_get_cell(w, 7, 9) == 0x0912u, "blockanim: ...then the revealed goody is left");
+    }
+
+    /* ---- 58. A head-bonk BREAK shatters the block: its 4 quarters burst up and fall away
+     * (FUN_1002ca5c -> FUN_100278bc x4 with gravity), and a collected goody POPS up (FUN_1002bc64). */
+    {
+        int f;
+        soi_world_init(w, 1);
+        w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 6, 9);
+        ground_player(w, 6, 9);
+        soi_set_cell(w, 6, 8, SOI_CELL_SUPPORTIVE | SOI_CELL_CRACKED | 0x07);   /* cracked: next bonk breaks */
+        soi_tick(w, SOI_IN_JUMP, 0);
+        for (f = 0; f < 14 && SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) != 0; f++) { soi_tick(w, 0, 0); soi_tick(w, 0, 0); }
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 6, 8)) == 0, "shatter: the second bonk breaks the block");
+        CHECK(w->fx_count == 4 && w->fx_sheet[0] == SOI_FX_SHEET_BLOCK && w->fx_frame[3] == 0x07 + 5 &&
+              w->fx_vx[0] == -40 && w->fx_vy[0] == -80 && w->fx_grav[0] &&
+              w->fx_x[2] == soi_cell_x(6) + 16 && w->fx_y[2] == soi_cell_y(8) + 16,
+              "shatter: the bonked block bursts into its 4 quarter frames (FUN_1002ca5c)");
+        soi_set_cell(w, 6, 8, 0x90Au);                         /* a silver coin overhead */
+        w->players[1].y = soi_cell_y(8);
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);                 /* (even, odd): the pickup runs on the odd tick */
+        CHECK(w->fx_count == 1 && w->fx_sheet[0] == SOI_FX_SHEET_GOODY && w->fx_frame[0] == 0x0A &&
+              w->fx_vx[0] == 0 && w->fx_vy[0] == -80 && w->fx_grav[0],
+              "pop: a collected goody pops up and falls away (FUN_1002bc64)");
+    }
+
+    /* ---- 59. Each player builds its OWN colour (asm FUN_1002b448: P1 +0x36 = BORD 0x02, P2 = 0x04;
+     * every board holds 0x026D / 0x0273 = the blue / green blocks). ---- */
+    {
+        uint8_t bord[0x1C];
+        memset(bord, 0, sizeof(bord));
+        bord[0x02] = 0x02; bord[0x03] = 0x6D;
+        bord[0x04] = 0x02; bord[0x05] = 0x73;
+        soi_world_init(w, 1);
+        soi_load_level(w, bord, sizeof(bord));
+        CHECK(w->players[1].block_type == 0x6D && w->players[2].block_type == 0x73,
+              "loader: P1 builds the blue block (0x6D), P2 the green one (0x73)");
+    }
+
+    /* ---- 60. The original's RUN FEEL (asm FUN_100128f8 / FUN_10012bf4 / FUN_10013ddc /
+     * FUN_10013f68 / FUN_10013c18 / FUN_100140f4 / FUN_1001431c): turning round from a stand
+     * takes 3 frames on the spot, reversing mid-run 4, and letting go finishes the stride then
+     * STOPS and SETTLES (no key is read meanwhile) before the stand. Frames are the asm's own. */
+    {
+        int t, x0, moved, jumped;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 8, 9);
+        { int c; for (c = 1; c <= 17; c++) soi_set_cell(w, c, 9, SOI_CELL_SUPPORTIVE); }
+        w->players[1].y = soi_cell_y(8) + 1;      /* rest on the row-9 floor */
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_IDLE && w->players[1].frame == 0x3d,
+              "feel: standing facing right shows frame 0x3d");
+        x0 = w->players[1].x; moved = 0;
+        for (t = 0; t < 4; t++) {                 /* hold LEFT: the stand hands over to 3 turning frames */
+            soi_tick(w, SOI_IN_LEFT, 0); soi_tick(w, SOI_IN_LEFT, 0);
+            if (w->players[1].x != x0) moved = 1;
+        }
+        CHECK(!moved && w->players[1].ground_state == SOI_ST_TURN_L && w->players[1].frame == 0x60,
+              "feel: turning to face left plays frames 0x5e..0x60 without moving");
+        soi_tick(w, SOI_IN_LEFT, 0); soi_tick(w, SOI_IN_LEFT, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_RUN && w->players[1].facing == -1 && w->players[1].frame == 2,
+              "feel: ...then runs left from frame 2");
+        for (t = 0; t < 8; t++) { soi_tick(w, SOI_IN_LEFT, 0); soi_tick(w, SOI_IN_LEFT, 0); }
+        CHECK(w->players[1].x == x0 - 16 && w->players[1].frame >= 1 && w->players[1].frame <= 0x18,
+              "feel: the left run strides 2 px a frame on its own leg frames (1..0x18)");
+        x0 = w->players[1].x; moved = 0;
+        for (t = 0; t < 5; t++) {                 /* reverse: the stride hands over to a 4-frame turn */
+            soi_tick(w, SOI_IN_RIGHT, 0); soi_tick(w, SOI_IN_RIGHT, 0);
+            if (w->players[1].x != x0) moved = 1;
+        }
+        CHECK(!moved && w->players[1].ground_state == SOI_ST_RUN && w->players[1].facing == 1 &&
+              w->players[1].frame >= 0x19 && w->players[1].frame <= 0x30,
+              "feel: reversing mid-run turns on the spot for 4 frames, then runs right");
+        soi_tick(w, SOI_IN_RIGHT, 0); soi_tick(w, SOI_IN_RIGHT, 0);   /* one 2-px stride: half a step */
+        CHECK(w->players[1].x & 2, "feel: (mid-stride, x is 2 px off the 4-px grid)");
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);     /* let go: the stride is finished first */
+        CHECK((w->players[1].x & 3) == 0 && w->players[1].ground_state == SOI_ST_RUN,
+              "feel: letting go mid-stride finishes the stride (x ends 4-px aligned)");
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0);     /* aligned with no key: the stop begins */
+        CHECK(w->players[1].ground_state == SOI_ST_STOP, "feel: ...then the player stops");
+        x0 = w->players[1].x; jumped = 0;
+        for (t = 0; t < 8 && w->players[1].ground_state != SOI_ST_IDLE; t++) {
+            soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, 0, 0);   /* mash jump while stopping */
+            if (w->players[1].ground_state == SOI_ST_JUMP) jumped = 1;
+        }
+        CHECK(!jumped && w->players[1].x == x0 && w->players[1].ground_state == SOI_ST_IDLE,
+              "feel: the stop + settle ignore the keys, then the player stands");
+        CHECK(t >= 4, "feel: stopping takes a few frames (the legs come together, the feet plant)");
+    }
+
+    /* ---- 61. The jump keeps its launch facing while steered (FUN_10013404 never writes +0x34),
+     * tumbling through the asm's right-hand frames 0x86..0x8d (+0x10 at odd 2-px x). ---- */
+    {
+        int t, okf = 1;
+        soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+        reset_player(w, 1, 8, 9);
+        { int c; for (c = 1; c <= 17; c++) soi_set_cell(w, c, 9, SOI_CELL_SUPPORTIVE); }
+        w->players[1].y = soi_cell_y(8) + 1;
+        soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, 0, 0);
+        for (t = 0; t < 10; t++) {
+            int f;
+            soi_tick(w, SOI_IN_LEFT, 0); soi_tick(w, SOI_IN_LEFT, 0);
+            f = w->players[1].frame - ((w->players[1].x & 2) ? 0x10 : 0);
+            if (w->players[1].ground_state == SOI_ST_JUMP && (f < 0x86 || f > 0x8d)) okf = 0;
+        }
+        CHECK(w->players[1].facing == 1, "jumpfeel: steering left in the air keeps the right facing");
+        CHECK(okf, "jumpfeel: the right tumble cycles frames 0x86..0x8d");
     }
 
     free(w);

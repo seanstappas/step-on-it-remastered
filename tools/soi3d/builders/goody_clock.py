@@ -14,22 +14,30 @@ from .. import common as C
 from .. import register, register_frames
 
 
-def _pie_sector(name, fill, radius, z, mat, n=96, dome=0.11):
+def _pie_sector(name, fill, radius, z, mat, n=96, dome=0.11, zf=None, rings=1):
     """A RED pie sector as a triangle fan from the centre, starting at 12 o'clock (+Y) and sweeping
     CLOCKWISE by ``fill`` turns (0..1). fill>=1 => a full closed disc. ``dome`` lifts the centre so the
-    wedge reads as a shallow raised dome (matches the glossy red bulge in the source)."""
+    wedge reads as a shallow raised dome (matches the glossy red bulge in the source). ``zf(r)`` (with
+    ``rings`` radial steps) lays it on a curved face instead of the flat one."""
     fill = max(0.0, min(1.0, fill))
     start = math.pi / 2.0                 # 12 o'clock = +Y
     total = fill * 2.0 * math.pi
     steps = max(2, int(round(n * fill)))
+    base = zf or (lambda r: 0.0)
+    h = lambda r: base(r) + dome * radius * (1.0 - r / radius)
     bm = bmesh.new()
-    ctr = bm.verts.new((0.0, 0.0, dome * radius))     # raised centre => shallow dome
-    arc = []
-    for i in range(steps + 1):
-        a = start - total * (i / steps)   # clockwise => angle decreases
-        arc.append(bm.verts.new((radius * math.cos(a), radius * math.sin(a), 0.0)))
-    for i in range(steps):
-        bm.faces.new((ctr, arc[i], arc[i + 1]))
+    ctr = bm.verts.new((0.0, 0.0, h(0.0)))     # raised centre => shallow dome
+    prev = None
+    for k in range(1, rings + 1):
+        r = radius * k / rings
+        arc = [bm.verts.new((r * math.cos(start - total * (i / steps)), r * math.sin(start - total * (i / steps)), h(r)))
+               for i in range(steps + 1)]      # clockwise => angle decreases
+        for i in range(steps):
+            if prev is None:
+                bm.faces.new((ctr, arc[i], arc[i + 1]))
+            else:
+                bm.faces.new((prev[i], arc[i], arc[i + 1], prev[i + 1]))
+        prev = arc
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
@@ -67,18 +75,47 @@ def build_clock(fill=0.25, opts=None):
     db = disc.modifiers.new("bev", 'BEVEL'); db.width = 0.05; db.segments = 3
     disc.data.materials.append(blue)
     bpy.ops.object.shade_smooth()
+    fd = float(opts.get("face_dome", 0.0))                              # the source face is a lens: bright top-left,
+    zf = lambda r: 0.10 + fd * max(0.0, 1.0 - (r / 0.98) ** 2)          # dark lower-right rim
+    if fd > 0:
+        bm = bmesh.new()
+        rings, seg = 24, 96
+        ctr = bm.verts.new((0.0, 0.0, zf(0.0)))
+        prev = None
+        for k in range(1, rings + 1):
+            r = 0.98 * k / rings
+            ring = [bm.verts.new((r * math.cos(2 * math.pi * i / seg), r * math.sin(2 * math.pi * i / seg), zf(r))) for i in range(seg)]
+            for i in range(seg):
+                j = (i + 1) % seg
+                bm.faces.new((ctr, ring[i], ring[j]) if prev is None else (prev[i], ring[i], ring[j], prev[j]))
+            prev = ring
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        me = bpy.data.meshes.new("clk_face")
+        bm.to_mesh(me)
+        bm.free()
+        face = bpy.data.objects.new("clk_face", me)
+        bpy.context.collection.objects.link(face)
+        face.data.materials.append(blue)
+        for p in me.polygons:
+            p.use_smooth = True
 
     # red pie wedge, laid just in front of the blue face (disc front face is at z = +0.10)
-    _pie_sector("clk_pie", fill, radius=float(opts.get("pie_r", 0.80)), z=0.12, mat=red,
-                dome=float(opts.get("dome", 0.11)))
+    pr = float(opts.get("pie_r", 0.80))
+    if fd > 0:
+        _pie_sector("clk_pie", fill, radius=pr, z=0.0, mat=red, dome=float(opts.get("dome", 0.11)),
+                    zf=lambda r: zf(r) + 0.02, rings=16)
+    else:
+        _pie_sector("clk_pie", fill, radius=pr, z=0.12, mat=red, dome=float(opts.get("dome", 0.11)))
 
     # 12 white pearl studs around the rim, proud of the front face (frontmost layer)
     n_studs = 12
     ring_r = 0.85
+    sr = float(opts.get("stud_r", 0.10))
     for i in range(n_studs):
         a = math.pi / 2.0 - (i / n_studs) * 2.0 * math.pi
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.10, segments=24, ring_count=16,
-                                             location=(ring_r * math.cos(a), ring_r * math.sin(a), 0.15))
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=sr, segments=24, ring_count=16,
+                                             location=(ring_r * math.cos(a), ring_r * math.sin(a),
+                                                       zf(ring_r) + sr * 0.5 if fd > 0 else 0.15))
         st = bpy.context.active_object
         st.name = f"clk_stud_{i}"
         st.data.materials.append(pearl)

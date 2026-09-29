@@ -71,6 +71,8 @@ public:
     int64_t player_movectr(int64_t player) const;
     int64_t player_pose(int64_t player) const;
     int64_t player_pose_t(int64_t player) const;
+    int64_t player_jump_t(int64_t player) const;
+    int64_t player_frame(int64_t player) const;
     int64_t goodies_total() const;
     int64_t goodies_left() const;
     int64_t reveal_timer() const;
@@ -92,6 +94,9 @@ public:
     int64_t death_y(int64_t i) const;
     int64_t death_type(int64_t i) const;
     int64_t death_dir(int64_t i) const;
+    int64_t fx_count() const;
+    int64_t fx_get(int64_t i, int64_t field) const;
+    int64_t blockanim(int64_t i) const;
 
     /* per-entity read accessors (index into the pools; for rendering) */
     bool    enemy_active(int64_t i) const;

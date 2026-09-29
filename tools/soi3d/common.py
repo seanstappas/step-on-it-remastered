@@ -215,8 +215,12 @@ def apply_look(opts):
         suns[0].location = tuple(v / n * 5.0 for v in d)
     if suns and "key" in opts:
         suns[0].data.energy = float(opts["key"])
+    if suns and "key_angle" in opts:                          # deg: a wider sun = a softer highlight
+        suns[0].data.angle = math.radians(float(opts["key_angle"]))
     if len(suns) > 1 and "fill" in opts:
         suns[-1].data.energy = float(opts["fill"])
+    if len(suns) > 1 and "fill_spec" in opts:                 # 0 = the fill adds no glint of its own
+        suns[-1].data.specular_factor = float(opts["fill_spec"])
     if "gamma" in opts:
         scn.view_settings.gamma = float(opts["gamma"])
     if not opts.get("shadows", True):

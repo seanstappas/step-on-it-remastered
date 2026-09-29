@@ -53,6 +53,16 @@ const ORIGIN_X := 16
 const ORIGIN_Y := 48
 const MAX_ENEMIES := 64   # == SOI_MAX_ENEMIES
 const MAX_PROJECTILES := 8
+const BLOCKANIM_MAX := 10  # == SOI_BLOCKANIM_MAX (block build/remove animation slots)
+# soi_fx_get fields / sheets (soi_core.h)
+const FX_SHEET := 0
+const FX_FRAME := 1
+const FX_X := 2
+const FX_Y := 3
+const FX_VX := 4
+const FX_VY := 5
+const FX_GRAV := 6
+const FX_SHEET_GOODY := 1
 
 # cell encoding (matches core/src/soi_internal.h)
 const CELL_PERMANENT := 0x100
@@ -74,8 +84,7 @@ var _play_frames := -1   # --play=N: play the loaded (real) board for N frames, 
 var _enemy_lastpos := {}   # slot -> Vector2, for travel-synced enemy animation
 var _enemy_walk := {}      # slot -> float, accumulated movement distance
 var _proj_lastpos := {}    # projectile idx -> Vector2, to aim the arrow along travel
-var _grid_prev := {}       # cell key -> last-frame cell value (create/destroy detection)
-var _cell_fx := {}         # cell key -> { grow:bool, cell:int, t:float } grow/shrink pop
+var _debris := []          # flying debris (asm FUN_100278bc/FUN_10028060): shattered-block quarters, popped goodies
 var _death_pops := []      # active enemy death "pops" (asm FUN_10028014 flying death sprite): { folder,frame,flip,x0,y0,t,px,py }
 # Stop/Go SWITCH flip (asm FUN_10016544/10016784): stepping onto a switch cell (low 0x24-0x2D)
 # flips its paired block group's sign (Stop octagon <-> Go circle) over an ~8-frame animation +
@@ -213,59 +222,7 @@ var _live_on := true
 var _live_index := {}         # sheet -> [[family, {frame: true}], ...] of the rigs that passed livegate
 var _live_scanned := false
 var _live := {}               # family -> Live3D (null when its rig failed to load)
-# Player (Ted) animation frames into BP_sprites / GP_sprites (CONFIRMED: the sheet
-# has SEPARATE left/right blocks — idle 61 right / 52 left; run cycles follow each
-# idle; jump 133; land 26). Frames are directional, so run/idle are NOT flipped.
-# All BP/GP player art faces RIGHT; left is drawn by flipping. (Earlier notes
-# claimed 52-60 were a left-facing block -- they are NOT, they also face right.)
-const PLAYER_IDLE := 61          # standing pose
-const PLAYER_RUN := 37            # RIGHT-facing run cycle f37-f48 (mirrored for left). The sheet's f25-f36
-                                 # run the body forward but with the HEAD turned BACK -- a facing scan
-                                 # calibrated on f61(R-idle)/f52(L-idle) shows f25-36 = skin-LEFT (head
-                                 # back) vs f37-48 = skin-RIGHT (head forward). The port used to start the
-                                 # rightward run at f25, so the head faced BACKWARD each stride = the
-                                 # "flip". f37-f48 keeps the head forward; mirror it for a leftward run.
-const PLAYER_RUN_CYCLE := 12
-const PLAYER_RUN_PX := 2.0       # asm advances the leg frame 1 per 2px moved (matches the 2px/tick run)
-# The JUMP is a somersault TUMBLE with DIRECTIONAL art (asm FUN_10013404 +0x10, chosen at launch from
-# facing): a RIGHT jump plays f133-141, a LEFT jump plays f127-133 -- the two HALVES of ONE continuous
-# tumble that rotates the SAME way (NOT mirrors; both show the head LEFT at the horizontal mid-tumble).
-# The jump art is the 32x31 block f127-141. NB: f118-126 are the LARGER 36x34 DEATH arm-flap frames --
-# f126 (arms fully up) is a DEATH pose, NOT a jump frame. An earlier version started the left jump at
-# f126, so a left jump briefly flashed the death arms-up pose; the tumble is f127+ only.
-const PLAYER_JUMP_FRAME := 133   # RIGHT somersault f133-141
-const PLAYER_JUMP_CYCLE := 9     # jump animates frames 133..141 while airborne
-const PLAYER_JUMP_FRAME_L := 127 # LEFT somersault f127-133 (32x31 tumble; f126 is the DEATH arms-up, excluded)
-const PLAYER_JUMP_CYCLE_L := 7
-# The DEATH throw (hit by a nasty / thrown off) is an ARM-FLAP, NOT a somersault: the character flails
-# both arms UP then DOWN (the larger 36x34 frames f118-126; f126 = arms fully up). The asm (FUN_10011fcc)
-# PING-PONGS 0x75..0x7e (117-126) -- up to the peak then back down, repeating. We ping-pong f118-126 so
-# the flap actually reaches the arms-up peak. This is a DIFFERENT animation from the jump TUMBLE
-# (f127-141) above -- the arms-up f126 belongs ONLY here, never in a jump.
-const PLAYER_DEATH_SPIN := [118, 119, 120, 121, 122, 123, 124, 125, 126, 125, 124, 123, 122, 121, 120, 119]
-const PLAYER_LAND_FRAME := 26
-# The standing pose is DIRECTIONAL, not a flip: idle (asm FUN_100128f8) and fall
-# (asm FUN_1001386c) both set frame 0x3D facing right / 0x34 facing left.
-const PLAYER_STAND_R := 61
-const PLAYER_STAND_L := 52
-# Action pose (DISPLAY hint): fire + build share the same arm-extension swing. Frame
-# sequences recovered from the PEF step tables (asm FUN_1001166c): facing==right selects
-# the mode-3 table @0x100346ec [102,104,106,106,104,102]; facing==left selects the mode-1
-# table @0x100346fa [97,99,101,101,99,97]. DIRECTIONAL art (no mirror). Recover with
-# tools/dump_pose_tables.py.
-#
-# NOTE: our BP_sprites PNG extraction is offset +1 from the asm's internal frame numbering
-# for this action block, so the raw asm numbers must be shifted +1 to hit the correct PNGs.
-# Verified visually at 22x zoom: PNG f97-f102 face LEFT, f103-f108 face RIGHT, and f97 is a
-# raised-leg WALK frame (not part of the swing). The neutral "arm-down, feet planted" build
-# frame is f98 (left) / f103 (right). Applying +1: asm right [102,104,106]->PNG [103,105,107]
-# (all right-facing) and asm left [97,99,101]->PNG [98,100,102] (all left-facing). Without the
-# shift, the right swing's first/last frame (asm 102 -> PNG 102) rendered LEFT-facing during a
-# right-facing build (the reported "wrong way for 2 frames" bug), and the left swing started on
-# the stray raised-leg frame f97.
-const PLAYER_ACT_R := [103, 105, 107, 107, 105, 103]
-const PLAYER_ACT_L := [98, 100, 102, 102, 100, 98]
-const PLAYER_POSE_MAX := 12
+# (The player's sprite frame comes from the core -- soi_player_frame, the original's own frame field.)
 # Core enemy enum (soi_core.h) -> decoded sssf sprite folder.
 const ENEMY_FOLDER := {
 	1: "ant_sprites", 2: "ostrich_sprites", 3: "hippo_sprites", 4: "piggy_sprites",
@@ -333,14 +290,6 @@ const ENEMY_WALK_TBL := {
 const BEANIE_TURN := [73, 74, 75, 76, 77, 78, 79, 80, 89, 90, 91, 92, 93, 94, 95, 96]
 const VBEANIE_TURN := [89, 90, 91, 92, 93, 94, 95, 96, 105, 106, 107, 108, 109, 110, 111, 112]
 var _tex_cache := {}      # "folder/frame/flip" -> Texture2D (or null)
-var _p_lastx := {}        # player idx -> last x (run-animation motion tracking)
-var _p_runtimer := {}     # player idx -> frames of run animation left to play
-var _p_walkdist := {}     # player idx -> accumulated |travel| px (leg cadence)
-var _p_movedx := {}       # player idx -> last non-zero core x-step (30Hz->60fps run smoothing)
-var _p_holdc := {}        # player idx -> consecutive frames the core x has held (30Hz cadence)
-var _p_stuck := {}        # player idx -> frames held-but-not-moving (run-in-place at a wall)
-var _p_prevst := {}       # player idx -> ground_state last frame (to detect the jump start)
-var _p_jumptick := {}     # player idx -> core tick at the last jump start (somersault phase origin)
 
 ## Build (once) a frame->path map for a sprite folder by parsing "fNN_WxH.png" (strictly: stray
 ## files such as "f02_24x24_x16.png" inspection zooms must not shadow the real frame).
@@ -1425,6 +1374,7 @@ func _reset_round_ui() -> void:
 	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
 	_sg_last = [-1, -1, -1, -1]
 	_death_pops.clear()
+	_debris.clear()
 	_reset_smoothing()
 	_capture_board_start()
 	if not _harness_run and _core.challenge_round():
@@ -1498,6 +1448,9 @@ func _physics_process(_delta: float) -> void:
 			_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
 				int(_core.death_type(di)), int(_core.death_dir(di)))
 		_step_death_pops()   # advance/cull the pops in lock-step with the sim (frozen when paused)
+		for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
+			_spawn_debris(fi)
+		_step_debris()
 		_update_stopgo()
 		if _alt:
 			if _alt_prev_alive and not _core.player_alive(1):
@@ -1830,6 +1783,7 @@ func _draw() -> void:
 	_drawn_tick = tk
 	_draw_serial += 1
 	var snap := PackedInt32Array()
+	var banims := {}
 	if _smooth:
 		if _core_ticked:
 			_rtick = float(tk) + Engine.get_physics_interpolation_fraction()
@@ -1839,13 +1793,17 @@ func _draw() -> void:
 			for r in range(GRID_ROWS):
 				for c in range(GRID_COLS):
 					g[r * GRID_COLS + c] = int(_core.grid_cell(c, r))
-			_grid_snaps.append([tk, g])
+			_grid_snaps.append([tk, g, _block_anims()])
 			if _grid_snaps.size() > 6:
 				_grid_snaps.pop_front()
 		snap = _grid_snaps[0][1]
+		banims = _grid_snaps[0][2]
 		for gs in _grid_snaps:
 			if float(gs[0]) <= _rtick - SMOOTH_DELAY:
 				snap = gs[1]
+				banims = gs[2]
+	else:
+		banims = _block_anims()
 	# black outside the frame (the original sits on a black CRT field)
 	draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
 	var W := GRID_COLS * CELL_PX
@@ -1854,35 +1812,22 @@ func _draw() -> void:
 	_draw_frame(pf)
 	draw_rect(pf, Color.BLACK)   # black playfield
 
-	# grid cells: beveled blocks / red balls / coins / key / door. A cell that just
-	# became solid GROWS in (small->big); one just cleared SHRINKS out (big->small),
-	# matching the original's block build/break pop.
+	# grid cells: beveled blocks / red balls / coins / key / door. A block being BUILT grows in,
+	# and one being REMOVED (the player's toggle, a chomping nasty) shrinks out, through the
+	# original's own block_sprites frames 1..5 (white squares, small -> full) -- the core's block
+	# animation list (asm FUN_100283a0). The cell meanwhile holds a placeholder (a locked 0x300 /
+	# a standable 0x200) that is not drawn; a removed block's payload goody shows at once under the
+	# shrinking square (FUN_1002cc10). Blocks that SHATTER instead fly apart as debris (below).
 	for r in range(GRID_ROWS):
 		for c in range(GRID_COLS):
 			var key := r * GRID_COLS + c
 			var cell := _grid_at(c, r, snap)
-			var prev: int = _grid_prev.get(key, 0)
-			_grid_prev[key] = cell
 			var pos := Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX)
-			# The block build/break POP (grow/shrink) is only for REAL blocks (non-zero low byte). A
-			# moving CREEPER (etype 16) stamps a plain 0x300 wall (low byte 0) each step; the pop FX
-			# drew that via the white _draw_block fallback SCALED, and the shrink-FX on the cell it
-			# just LEFT (no sprite over it) flashed white. Skip the FX for low-byte-0 cells.
-			if (cell & CELL_SUPPORTIVE) and not (prev & CELL_SUPPORTIVE) and (cell & 0xff) != 0:
-				_cell_fx[key] = { "grow": true, "cell": cell, "t": 0.0, "t0": _rtick }
-			elif (prev & CELL_SUPPORTIVE) and not (cell & CELL_SUPPORTIVE) and (prev & 0xff) != 0:
-				_cell_fx[key] = { "grow": false, "cell": prev, "t": 0.0, "t0": _rtick }
-			if _cell_fx.has(key):
-				var fx: Dictionary = _cell_fx[key]
-				if _smooth:                    # timed on the render clock: smooth at any frame rate
-					fx["t"] = (_rtick - float(fx["t0"]) + 1.0) * 0.16
-				else:
-					fx["t"] = float(fx["t"]) + 0.16
-				if float(fx["t"]) < 1.0:
-					var sc: float = float(fx["t"]) if fx["grow"] else (1.0 - float(fx["t"]))
-					_draw_cell_scaled(int(fx["cell"]), pos, maxf(sc, 0.05))
-					continue
-				_cell_fx.erase(key)   # settle: fall through to the normal full-size draw
+			if banims.has(key):
+				if cell & CELL_DOOR:
+					_draw_cell(cell & ~CELL_SUPPORTIVE, pos)
+				_blit("block_sprites", ((int(banims[key]) >> 16) & 0xFF) + 1, pos)
+				continue
 			if cell == 0:
 				continue
 			_draw_cell(cell, pos)
@@ -1958,6 +1903,7 @@ func _draw() -> void:
 				int(_core.enemy_type(i)), int(_core.enemy_dir(i)))
 	_draw_ghosts("e")
 	_draw_death_pops()   # flying death sprites arcing off after a kill (drawn above the nasties)
+	_draw_debris()       # shattered-block quarters and popped goodies
 	_draw_ghosts("d")
 
 	# players
@@ -2070,41 +2016,6 @@ func _draw_gift_sparkle(c: Vector2) -> void:
 	draw_circle(c, 2.6 * puls, Color(1.0, 1.0, 0.85))
 
 
-## The player's per-tick animation state (once per engine tick, however often the frame redraws).
-func _advance_player_anim(idx: int, real_x: float, st: int) -> void:
-	# The core's ground_state flickers idle<->run between grid steps, so keep the run
-	# alive briefly off actual horizontal motion.
-	var real_dx: float = real_x - float(_p_lastx.get(idx, real_x))
-	_p_lastx[idx] = real_x
-	# Jump-start detection: when the core enters the JUMP state, latch the tick so the somersault phase
-	# begins at the LAUNCH pose (the asm resets the jump frame at jump_t==0) instead of advancing off the
-	# free-running global tick (which dropped the player into the middle of a spin).
-	if st == 2 and int(_p_prevst.get(idx, -1)) != 2:
-		_p_jumptick[idx] = int(_core.tick_count())
-	_p_prevst[idx] = st
-	# FAITHFUL run rendering (asm FUN_1001166c): draw the player at the core's exact 30 Hz position and
-	# advance the leg cycle by REAL horizontal travel -- 2px per 30 Hz step => one leg frame per step,
-	# EVEN and in lockstep with the body so the feet stay PLANTED. (My old remaster hacks -- a position
-	# lerp that advanced the legs by the *smoothed* per-frame travel (~0.8/1.2px alternating = an uneven
-	# leg stutter) plus a per-frame _run_align anchor shift -- were what ADDED the perceived "twitch".
-	# The original simply steps the body and steps the legs together.)
-	if absf(real_dx) > 0.5:                       # the core took a 30 Hz step this frame
-		_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + absf(real_dx)
-		_p_runtimer[idx] = 6
-		_p_stuck[idx] = 0
-	elif st == 1:                                # held but not moving THIS frame
-		_p_runtimer[idx] = 6
-		_p_stuck[idx] = int(_p_stuck.get(idx, 0)) + 1
-		if int(_p_stuck[idx]) >= 3:              # blocked by a wall for a few frames -> run IN PLACE
-			# Advance the leg cycle at the SAME 30 Hz cadence as a real run step (half of
-			# PLAYER_RUN_PX per 60 Hz draw = 2 px per 30 Hz step). Advancing a FULL PLAYER_RUN_PX
-			# every draw cycled the legs at 60 Hz -- twice run speed -- which read as the player
-			# "moving faster" while merely pushing against a wall.
-			_p_walkdist[idx] = float(_p_walkdist.get(idx, 0.0)) + PLAYER_RUN_PX * 0.5
-	elif _p_runtimer.get(idx, 0) > 0:
-		_p_runtimer[idx] = int(_p_runtimer[idx]) - 1
-
-
 func _draw_player(idx: int, shirt: Color) -> void:
 	if not _core.player_alive(idx):
 		return
@@ -2118,67 +2029,24 @@ func _draw_player(idx: int, shirt: Color) -> void:
 		return
 	var pos := Vector2(_core.player_x(idx), _core.player_y(idx))
 	var facing := int(_core.player_facing(idx))
-	var right := facing >= 0
 	var st := int(_core.player_state(idx))
 	var pose := int(_core.player_pose(idx))
-	if _new_tick:
-		_advance_player_anim(idx, pos.x, st)
-	# idle/fall default: the static stand pose is DIRECTIONAL art (asm FUN_100128f8 idle /
-	# FUN_1001386c fall set frame 0x3D=61 facing RIGHT, 0x34=52 facing LEFT). Verified at 22x vs
-	# f61: f52 IS the native LEFT-facing idle, NOT right-facing -- so use the matching frame per
-	# direction with NO mirror (same directional scheme as the run f37/f25 pair + the fire pose).
-	# (An earlier comment wrongly claimed f52 faces right and mirrored f61 for the left idle.)
-	var frame := PLAYER_STAND_R if right else PLAYER_STAND_L
+	# The sprite frame is the core's own copy of the original's frame field (asm +0x0e), set by
+	# every state handler exactly as the original does: the directional stands 0x3d/0x34, the two
+	# 24-frame run cycles, the turn / stop / settle frames, the jump tumbles, the head-bonk recoil,
+	# the build/fire poses and the death flap. The extracted sheet is offset by one (PNG fNN =
+	# frame + 1) and every pose is drawn as authored -- no mirroring.
+	var frame := int(_core.player_frame(idx)) + 1
 	var flip := false
-	# ASM runs FUN_1001166c every frame gated only by death: action pose overrides jump/fall/run; death overrides all.
-	if st == 12:                                # death-throw -> somersault spin. NON-directional: the asm
-		# FUN_10011fcc ping-pongs ONE frame range (0x75..0x7e) with NO facing branch, and the sheet has no
-		# separate left-death block -> the tumble is drawn the SAME way regardless of facing. Mirroring it
-		# for a left-facing death (the old `flip = not right`) spun the throw backwards, like the jump bug.
-		frame = PLAYER_DEATH_SPIN[int(_core.tick_count() / 2) % PLAYER_DEATH_SPIN.size()]
-		flip = false
-	elif pose > 0:                               # fire/build arm-extension swing -- PRIORITY over jump/fall/run.
-		# The asm action animation (FUN_1001166c, active-flag +0x25) plays its 7 DIRECTIONAL frames and
-		# OVERRIDES the jump-tumble / fall / run-idle frame while it runs (gated only by the death-throw
-		# above; +0x28). Ranking it ABOVE the jump (st==2) branch is exactly what makes a mid-air build/fire
-		# show its swing instead of the jump art. Checking it BEFORE the run branch also stops a residual
-		# run-timer (still counting down right after you stop moving) from bleeding a run frame into the
-		# build/fire pose -- that one-frame run frame is the "flip" seen when acting immediately after running.
-		var seq: Array = PLAYER_ACT_R if right else PLAYER_ACT_L
-		frame = seq[clampi((PLAYER_POSE_MAX - int(_core.player_pose_t(idx))) / 2, 0, seq.size() - 1)]
-		flip = false                             # frames are directional -- no mirror
-	elif st == 2:                                # JUMP -> the somersault tumble; DIRECTIONAL art (asm
-		# FUN_10013404 +0x10): RIGHT plays f133-141, LEFT plays its OWN f126-133 -- NOT a mirror (the two sets
-		# are halves of one same-direction tumble, so mirroring the right set spun the left jump backwards).
-		# Phase counts from the jump's launch tick (_p_jumptick) so the tumble STARTS at the launch pose.
-		var jp := (int(_core.tick_count()) - int(_p_jumptick.get(idx, 0))) / 2
-		if right:
-			frame = PLAYER_JUMP_FRAME + (jp % PLAYER_JUMP_CYCLE)
-		else:
-			frame = PLAYER_JUMP_FRAME_L + (jp % PLAYER_JUMP_CYCLE_L)
-		flip = false                             # native directional art -- no mirror
-	elif st == 3:                                # FALL -> the static directional pose (same as idle)
-		pass
-	elif st == 1:                                # running (or holding into a wall = run-in-place)
-		# Gate the run legs on the core's actual RUN state, NOT a lingering _p_runtimer. When the
-		# player genuinely stops (st -> 0 idle) or falls (st 3), the countdown timer used to keep
-		# drawing run frames for ~6 more frames, leaving one foot planted ahead of the other. The
-		# core holds st==1 for the whole run (no idle<->run flicker between 30 Hz steps, verified),
-		# so keying off st==1 keeps the legs alive while running yet snaps to the two-feet STAND the
-		# instant the player is idle/falling/on an edge.
-		frame = PLAYER_RUN + int(float(_p_walkdist.get(idx, 0.0)) / PLAYER_RUN_PX) % PLAYER_RUN_CYCLE
-		flip = not right                         # right = f37-48 (head forward); left = the same, mirrored
 	var folder := "GP_sprites" if idx == 2 else "BP_sprites"   # P2 = green art; P1/P3 = blue art
-	# Draw the run frame at a FIXED anchor with NO per-frame offset -- exactly as the original does (the
-	# body bob is authored into the frame art). (The old _run_align centroid-shift was a remaster hack
-	# that slid the anchor every frame and slipped the planted foot = part of the "twitch"; removed.)
-	var draw_dx := 0.0
+	# The original blits the player at (x & ~3, y) -- its frame TOP-LEFT on a 4-px column (the art of
+	# the in-between strides and the +0x10 tumble set carries the other 2 px), and the dying player at
+	# ((x - 4) & ~3, y) (FUN_10012228). No centring or bottom-aligning: a resting player (y = row top
+	# + 1) stands with his soles on the floor, not a pixel into it.
+	var dpos := Vector2(float((int(pos.x) - (4 if st == 0x80 else 0)) & ~3), pos.y)
 	var tex := _sprite(folder, frame, flip, idx == 3)   # P3 = the blue art recoloured RED (_redden)
 	if tex != null:
-		var s := _texsize(tex)
-		# bottom-align the character to the cell (feet at pos.y + CELL_PX)
-		_isprite("p%d" % idx, folder, frame, flip, idx == 3,
-			Vector2(pos.x + (CELL_PX - s.x) * 0.5 + draw_dx, pos.y + CELL_PX - s.y),
+		_isprite("p%d" % idx, folder, frame, flip, idx == 3, dpos,
 			st == 1 and pose == 0, Rect2(), hidden)
 		_draw_powerup_overlay(idx, pos, hidden)
 		return
@@ -2458,12 +2326,15 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 		return                                       # low byte like any block; the port dropped them (bg).
 	# background / decorative cell: nothing to draw over the black field
 
-## Draw a grid cell scaled about its centre (for the block build/break pop).
-func _draw_cell_scaled(cell: int, pos: Vector2, scale: float) -> void:
-	var half := Vector2(CELL_PX, CELL_PX) * 0.5
-	draw_set_transform(pos + half, 0.0, Vector2(scale, scale))
-	_draw_cell(cell, -half)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+## The core's running block grow/shrink animations: cell key (r * GRID_COLS + c) -> packed
+## soi_blockanim value (frame in bits 16..23).
+func _block_anims() -> Dictionary:
+	var d := {}
+	for i in range(BLOCKANIM_MAX):
+		var a := int(_core.blockanim(i))
+		if a >= 0:
+			d[((a >> 8) & 0xFF) * GRID_COLS + (a & 0xFF)] = a
+	return d
 
 ## A jagged dark fracture over a head-bonked (cracked) block -- one more bonk breaks it.
 func _draw_crack(pos: Vector2) -> void:
@@ -2717,6 +2588,55 @@ func _draw_death_pops() -> void:
 			var s := _texsize(tex)
 			_isprite("d%d" % int(d["id"]), d["folder"], int(d["frame"]), bool(d["flip"]), false,
 				Vector2(d["px"] + (CELL_PX - s.x) * 0.5, d["py"] + CELL_PX - s.y))
+
+## One debris particle the core queued this tick (asm FUN_100278bc): a quarter of a shattered
+## block (block_sprites asm frames type+2..type+5) or a collected goody popping away.
+func _spawn_debris(fi: int) -> void:
+	var goody := int(_core.fx_get(fi, FX_SHEET)) == FX_SHEET_GOODY
+	_pop_seq += 1
+	_debris.append({
+		"folder": "goody_sprites" if goody else "block_sprites",
+		"frame": int(_core.fx_get(fi, FX_FRAME)) + 1,      # asm frame -> extracted PNG fNN
+		"x0": int(_core.fx_get(fi, FX_X)), "y0": int(_core.fx_get(fi, FX_Y)),
+		"vx": int(_core.fx_get(fi, FX_VX)), "vy": int(_core.fx_get(fi, FX_VY)),
+		"grav": int(_core.fx_get(fi, FX_GRAV)) != 0, "t": 0, "id": _pop_seq,
+		"px": int(_core.fx_get(fi, FX_X)), "py": int(_core.fx_get(fi, FX_Y)),
+	})
+
+## Advance the debris one frame exactly as the asm mover FUN_10028060 does, in C integer math
+## (truncating division), t = frames since the spawn:
+##   x = (x0*10 + t*vx) / 10,  y = (y0*10 + t*vy [+ t*t*5/2 with gravity]) / 10
+## A gravity piece never rises above y 0x28; a piece leaves play once outside 4 < x < 0x25e,
+## 0x27 < y < 0x1be. Runs in lock-step with the sim (frozen when paused).
+func _step_debris() -> void:
+	var keep := []
+	for d in _debris:
+		var t: int = int(d["t"]) + 1
+		d["t"] = t
+		var x: int = (int(d["x0"]) * 10 + t * int(d["vx"])) / 10
+		var ya: int = int(d["y0"]) * 10 + t * int(d["vy"])
+		if d["grav"]:
+			ya += (t * 5 * t) / 2
+		var y: int = ya / 10
+		if d["grav"] and y < 0x28:
+			y = 0x28
+		d["px"] = x
+		d["py"] = y
+		if x > 4 and x < 0x25e and y > 0x27 and y < 0x1be:
+			keep.append(d)
+	_debris = keep
+
+## Draw the debris at the asm's own position -- each piece's top-left (a popped goody leaves from
+## where its cell drew it).
+func _draw_debris() -> void:
+	for d in _debris:
+		var tex := _sprite(d["folder"], int(d["frame"]))
+		if tex == null:
+			continue
+		var pos := Vector2(float(d["px"]), float(d["py"]))
+		if d["folder"] == "goody_sprites":
+			pos += (Vector2(CELL_PX, CELL_PX) - _texsize(tex)) * 0.5
+		_isprite("dx%d" % int(d["id"]), d["folder"], int(d["frame"]), false, false, pos)
 
 func _enemy_color(etype: int) -> Color:
 	# distinct hue per bestiary index (1..11) until real sprites land

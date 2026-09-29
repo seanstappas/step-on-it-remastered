@@ -205,10 +205,25 @@ def build_spinner_front(opts):
     root = bpy.context.active_object
     root.name = "root"
     bw, bt, bb = float(opts.get("base_w", 23.0)), float(opts.get("base_top", 18.0)), 26.0
-    base = C._box("base", (*_px(bw / 2, (bt + bb) / 2), 0.0), (bw * S, (bb - bt) * S, float(opts.get("base_d", 12.0)) * S),
-                  green, bevel=float(opts.get("base_bevel", 1.2)) * S)
+    if opts.get("base_shape") == "cylinder":
+        # the source's base is a plain upright DRUM: flat vertical sides lit bright left -> dark right,
+        # no rounded top edge (the bevelled slab read as a squat cushion)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=96, radius=bw / 2 * S, depth=(bb - bt) * S,
+                                            location=(*_px(bw / 2, (bt + bb) / 2), 0.0))
+        base = bpy.context.active_object
+        base.name = "base"
+        base.rotation_euler = (math.radians(90), 0, 0)
+        base.data.materials.append(green)
+        bev = base.modifiers.new("bevel", "BEVEL")
+        bev.width = float(opts.get("base_bevel", 0.3)) * S
+        bev.segments = 3
+        bpy.ops.object.shade_smooth()
+    else:
+        base = C._box("base", (*_px(bw / 2, (bt + bb) / 2), 0.0), (bw * S, (bb - bt) * S, float(opts.get("base_d", 12.0)) * S),
+                      green, bevel=float(opts.get("base_bevel", 1.2)) * S)
     pr = float(opts.get("post_r", 2.0)) * S
-    post = _post("post", 0.0, _px(0, bt)[1], _px(0, 0.5)[1], pr, grey)
+    # the post runs up INTO the upper bar (post_top = its row); poking out above the bar it showed a white dot
+    post = _post("post", 0.0, _px(0, bt)[1], _px(0, float(opts.get("post_top", 0.5)))[1], pr, grey)
     for o in (base, post):
         _parent_keep_local(o, root)
     pivots = []

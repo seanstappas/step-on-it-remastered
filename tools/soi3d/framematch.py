@@ -1270,8 +1270,21 @@ def stage_live(family, cfg):
     with open(os.path.join(workdir(family), "fit.json"), "r", encoding="utf-8") as fh:
         fit = json.load(fh)
     out = os.path.join(LIVE_DIR, family)
-    frames = {str(nn): {"pose": fit["frames"][str(nn)]["pose"], "w": w, "h": h, "cam": _final_cam(fit, w, h, nn)}
+    frames = {str(nn): {"pose": dict(fit["frames"][str(nn)]["pose"]), "w": w, "h": h, "cam": _final_cam(fit, w, h, nn)}
               for nn, _, w, h in base_frames(cfg)}
+    # unwrap periodic params so consecutive frames step the short way (the rig interpolates between them)
+    periods = {s["param"]: float(s["period"]) for s in cfg["sweep"] if "period" in s}
+    periods.update({k: float(v) for k, v in cfg.get("tweens", {}).get("periods", {}).items()})
+    prev = {}
+    for key in sorted(frames, key=int):
+        pose = frames[key]["pose"]
+        for k, per in periods.items():
+            v = pose.get(k)
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            if k in prev:
+                v = prev[k] + ((v - prev[k] + per / 2) % per - per / 2)
+            pose[k] = prev[k] = v
     run_blender({"mode": cfg["mode"], "opts": _opts(family, cfg), "sheet": cfg["source"], "family": family,
                  "scale": cfg["scale"], "post": cfg["post"], "out": out, "frames": frames},
                 family + "_live", script="live_blender.py", done="LIVE_DONE")

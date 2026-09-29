@@ -24,6 +24,102 @@ void soi_set_cell(SoiWorld *w, int col, int row, uint32_t v)
 }
 
 /* ---------------------------------------------------------------------------
+ * Block build/remove animations (asm FUN_1002754c starts one, FUN_100283a0 advances
+ * every live one each frame, FUN_100274e8 links the 10 slots at a board start).
+ * A BUILD grows through block_sprites frames 1..5 (small -> full white square) and
+ * then shows the built block; a REMOVAL (the player's toggle, a chomping nasty's
+ * FUN_100279c4) plays the same frames 5..1. Both take 6 frames, and the cell only
+ * takes its final value when the animation ends:
+ *   build:   cell |= 0x300 at once (standable AND locked -- nothing can toggle, smash
+ *            or bonk a growing block), then `fin` = template + inherited payload;
+ *   removal: the block is erased at once (FUN_1002cc10: a payload goody shows through,
+ *            else empty) but the cell stays standable (|0x200) until it has shrunk,
+ *            then `fin` = the payload or 0.
+ * ------------------------------------------------------------------------- */
+void soi_blockanim_start(SoiWorld *w, int col, int row, int step, int type, uint32_t fin)
+{
+    int i, slot = -1;
+    SoiBlockAnim *a;
+    if (!soi_in_bounds(col, row)) return;
+    for (i = 0; i < SOI_BLOCKANIM_MAX; i++)            /* FUN_10027834: this cell already animating? */
+        if (w->banim[i].active && w->banim[i].col == col && w->banim[i].row == row) slot = i;
+    for (i = 0; slot < 0 && i < SOI_BLOCKANIM_MAX; i++)
+        if (!w->banim[i].active) slot = i;
+    if (slot < 0) return;                               /* all 10 busy: the asm drops the request */
+    a = &w->banim[slot];
+    a->active = 1;
+    a->col = (int16_t)col; a->row = (int16_t)row;
+    a->step = (int8_t)((step < 0) ? -1 : 1);
+    a->type = (uint8_t)type;
+    a->fin = fin;
+    if (a->step < 0) {
+        uint32_t c = w->cell[row][col];
+        a->frame = 6;
+        w->cell[row][col] = ((c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u) | SOI_CELL_SUPPORTIVE;
+    } else {
+        a->frame = 0;
+        w->cell[row][col] |= SOI_WALL;
+    }
+}
+
+void soi_blockanims_update(SoiWorld *w)
+{
+    int i;
+    for (i = 0; i < SOI_BLOCKANIM_MAX; i++) {
+        SoiBlockAnim *a = &w->banim[i];
+        int next;
+        if (!a->active) continue;
+        next = a->frame + a->step;
+        if (next > 0 && next < 6) { a->frame = (int8_t)next; continue; }   /* show frame `next` */
+        w->cell[a->row][a->col] = a->fin;   /* finished: the built block, or the payload / empty */
+        a->active = 0;
+    }
+}
+
+/* asm FUN_100279c4: a breakable block (not permanent, non-empty) is removed through the
+ * shrink animation, revealing its 0x1000 payload goody when it ends. */
+void soi_block_remove(SoiWorld *w, int col, int row)
+{
+    uint32_t c = soi_get_cell(w, col, row);
+    if (!soi_in_bounds(col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
+    soi_blockanim_start(w, col, row, -1, 0, (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u);
+}
+
+/* Shatter a breakable block: FUN_1002cc10 clears it at once (to its payload goody or 0)
+ * and its four 16x16 quarters (block_sprites asm frames type+2..type+5: top-left,
+ * top-right, bottom-right, bottom-left) fly off as debris. Offsets + velocities (1/10 px
+ * per frame) are the asm's own, including FUN_10027ecc's second piece starting at the
+ * top-LEFT corner. */
+void soi_block_shatter(SoiWorld *w, int col, int row, int kind, int vx, int vy)
+{
+    static const int8_t OFS[4][2] = { { 0, 0 }, { 16, 0 }, { 16, 16 }, { 0, 16 } };
+    static const int8_t VEL[4][4][2] = {
+        { { -40, -80 }, { 40, -80 }, { 60, -70 }, { -60, -70 } },   /* FUN_1002ca5c head-bonk (gravity) */
+        { {  40, -40 }, { 53, -20 }, { 53,  20 }, {  40,  40 } },   /* FUN_10027d84 blast right */
+        { { -53, -20 }, { -40, -40 }, { -40, 40 }, { -53, 20 } },   /* FUN_10027ecc blast left */
+        { { -10,  10 }, { 10,  10 }, { 15,  15 }, { -15,  15 } },   /* FUN_10027aec Hammer smash (gravity) */
+    };
+    static const int8_t SPREAD[4][2] = { { -3, -3 }, { 3, -3 }, { 3, 3 }, { -3, 3 } };   /* FUN_10027c34 */
+    uint32_t c = soi_get_cell(w, col, row);
+    int t, x, y, k;
+    if (!soi_in_bounds(col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
+    t = (int)SOI_CELL_TYPE(c);
+    x = soi_cell_x(col); y = soi_cell_y(row);
+    w->cell[row][col] = (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u;
+    for (k = 0; k < 4; k++) {
+        int px = x + OFS[k][0], py = y + OFS[k][1], pvx, pvy, grav;
+        if (kind == SOI_SHATTER_LEFT && k == 1) px = x;      /* the asm's own quirk */
+        if (kind == SOI_SHATTER_DIR) {
+            pvx = vx + SPREAD[k][0]; pvy = vy + SPREAD[k][1]; grav = 0;
+        } else {
+            pvx = VEL[kind][k][0]; pvy = VEL[kind][k][1];
+            grav = (kind == SOI_SHATTER_BONK || kind == SOI_SHATTER_DROP);
+        }
+        soi_fx_emit(w, SOI_FX_SHEET_BLOCK, t + 2 + k, px, py, pvx, pvy, grav);
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Stop/Go switches (asm FUN_1001604c load-register / FUN_10016544 toggle /
  * FUN_100166b8 state-advance / FUN_10016784 per-frame animator; confirmed
  * against the decomp + a full board scan). A switch is a REAL solid<->passable
@@ -178,6 +274,7 @@ void soi_pickup_check(SoiWorld *w, int player)
     if (t == SOI_TILE_KEY) {
         give_key(w, player);
         soi_sfx_emit(w, SOI_SFX_POWERUP);
+        soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)t, soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
         w->cell[prow][pcol] = SOI_CELL_EMPTY;
         return;
     }
@@ -238,6 +335,7 @@ void soi_pickup_check(SoiWorld *w, int player)
                     w->cell[rr][cc] = lt + 0x8FDu;   /* lock -> opened door (asm) */
             }
         soi_sfx_emit(w, SOI_SFX_KEY);                /* colored-key collect (evt 0x14 -> 17661 "Announce") */
+        soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)t, soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
         w->cell[prow][pcol] = SOI_CELL_EMPTY;        /* consume the key */
         return;
     }
@@ -382,5 +480,9 @@ void soi_pickup_check(SoiWorld *w, int player)
         }
         soi_sfx_emit(w, s);
     }
+    /* The collected goody POPS: asm FUN_1002bc64 erases it and launches its sprite as a
+     * particle (FUN_100278bc(goody sheet, type, cell x/y, vx 0, vy -80, gravity)) that
+     * jumps up two cells (64 px at frame 16) and falls off the bottom of the board. */
+    soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)t, soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
     w->cell[prow][pcol] = SOI_CELL_EMPTY; /* a collected goodie clears its cell */
 }

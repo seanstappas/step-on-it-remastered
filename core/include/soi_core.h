@@ -128,6 +128,12 @@ typedef enum {
 
 #define SOI_SFX_QUEUE_MAX 32   /* per-tick sound-event capacity */
 #define SOI_DEATH_QUEUE_MAX 64 /* per-tick enemy-death effect capacity (== SOI_MAX_ENEMIES) */
+#define SOI_FX_QUEUE_MAX 48    /* per-tick cosmetic debris-particle capacity (asm list holds 60 live) */
+#define SOI_BLOCKANIM_MAX 10   /* block build/remove animation slots (asm FUN_100274e8 links 10) */
+
+/* Debris-particle fields for soi_fx_get, and its two sprite sheets. */
+enum { SOI_FX_SHEET = 0, SOI_FX_FRAME, SOI_FX_X, SOI_FX_Y, SOI_FX_VX, SOI_FX_VY, SOI_FX_GRAV };
+enum { SOI_FX_SHEET_BLOCK = 0, SOI_FX_SHEET_GOODY = 1 };
 
 /* Opaque world state. Allocate soi_world_size() bytes; the core never mallocs. */
 typedef struct SoiWorld SoiWorld;
@@ -199,10 +205,21 @@ int      soi_player_facing(const SoiWorld *w, int player);
 int      soi_player_invuln(const SoiWorld *w, int player);  /* >0 = flashing/invulnerable */
 int      soi_player_fast(const SoiWorld *w, int player);    /* >0 = speed-shoes (goody 0x32) active */
 int      soi_player_has_key(const SoiWorld *w, int player); /* 0 none, 1 carrying, 2 exited */
-int      soi_player_state(const SoiWorld *w, int player);   /* ground_state: 0 idle,1 run,2 jump,3 fall,4 head-bonk recoil,0xC dead */
+int      soi_player_state(const SoiWorld *w, int player);   /* ground_state, the asm movement switch: 0 idle, 1 run,
+                                                              * 2 jump, 3 fall, 4 head-bonk recoil, 9/10 turn to
+                                                              * face right/left, 0xB turn mid-run, 0xC stop,
+                                                              * 0xD settle; 0x80 = dying (death throw) */
+int      soi_player_frame(const SoiWorld *w, int player);   /* sprite frame (asm +0x0e numbering; the extracted
+                                                              * BP/GP_sprites PNG is f(frame + 1)) */
 int      soi_player_movectr(const SoiWorld *w, int player); /* 0..6 run-step animation counter */
-int      soi_player_pose(const SoiWorld *w, int player);    /* action pose (display): 0 none, 1 fire, 2 build */
-int      soi_player_pose_t(const SoiWorld *w, int player);  /* action-pose countdown (frames) */
+int      soi_player_pose(const SoiWorld *w, int player);    /* running build/fire action's anim mode (asm +0x30):
+                                                              * 1 left high/fire, 2 left low, 3 right high/fire,
+                                                              * 4 right low; 0 = no action */
+int      soi_player_pose_t(const SoiWorld *w, int player);  /* its frame counter (asm +0x2c): 0 on the start
+                                                              * frame, then 1..6 = pose-table index; the verb
+                                                              * (build/fire) happens at 5 */
+int      soi_player_jump_t(const SoiWorld *w, int player);  /* shared state counter (asm +0x32): jump-arc t,
+                                                              * head-bonk recoil frame 1..9, death-throw t */
 int      soi_goodies_total(const SoiWorld *w);   /* treasure at level load */
 int      soi_goodies_left(const SoiWorld *w);    /* treasure still uncollected */
 int      soi_count_treasure(const SoiWorld *w);  /* treasure cells now in the grid (objective count) */
@@ -229,6 +246,26 @@ int      soi_death_x(const SoiWorld *w, int i);   /* pixel x at death, or 0 if O
 int      soi_death_y(const SoiWorld *w, int i);   /* pixel y at death, or 0 if OOB */
 int      soi_death_type(const SoiWorld *w, int i);/* SoiEnemyType, or 0 if OOB */
 int      soi_death_dir(const SoiWorld *w, int i); /* 1 = left, 2 = right, or 0 if OOB */
+
+/* ---- cosmetic debris particles queued during the last soi_tick (asm FUN_100278bc) ----
+ *      A shattered block flies apart as its 4 quarter frames (block_sprites asm frames
+ *      type+2..type+5) and a collected goody pops up and falls away. Each entry is one
+ *      particle to animate with the asm mover FUN_10028060, per frame t = 1, 2, ...:
+ *        x = (x0*10 + t*vx) / 10
+ *        y = (y0*10 + t*vy + (grav ? t*t*5/2 : 0)) / 10   (grav: y clamps to >= 0x28)
+ *      (C truncating division), removed once outside 4 < x < 0x25e, 0x27 < y < 0x1be.
+ *      FRAME is the sheet's asm frame index (extracted PNG fNN = frame + 1). NOT
+ *      serialized/hashed. */
+int      soi_fx_count(const SoiWorld *w);
+int      soi_fx_get(const SoiWorld *w, int i, int field);   /* SOI_FX_* field, or 0 if OOB */
+
+/* ---- block build/remove animations (asm FUN_1002754c / FUN_100283a0) ----
+ *      A built block GROWS in and a removed one SHRINKS out through block_sprites asm
+ *      frames 1..5 (small -> full white squares) over ~6 frames; the cell only takes its
+ *      final value when the animation ends. Slot i in 0..SOI_BLOCKANIM_MAX-1: -1 = idle,
+ *      else col | row << 8 | frame << 16 | (growing ? 1 : 0) << 24 (0-based cell, frame
+ *      1..5 = the asm frame being shown). */
+int      soi_blockanim(const SoiWorld *w, int i);
 
 /* ---- per-entity read accessors (index into the fixed pools; for rendering).
  *      soi_*_active returns 0 for an empty slot; the other fields are then

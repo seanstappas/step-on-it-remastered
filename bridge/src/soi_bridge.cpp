@@ -81,6 +81,8 @@ int64_t SoiCore::player_state(int64_t p) const { return soi_player_state(w(), (i
 int64_t SoiCore::player_movectr(int64_t p) const { return soi_player_movectr(w(), (int)p); }
 int64_t SoiCore::player_pose(int64_t p) const { return soi_player_pose(w(), (int)p); }
 int64_t SoiCore::player_pose_t(int64_t p) const { return soi_player_pose_t(w(), (int)p); }
+int64_t SoiCore::player_jump_t(int64_t p) const { return soi_player_jump_t(w(), (int)p); }
+int64_t SoiCore::player_frame(int64_t p) const { return soi_player_frame(w(), (int)p); }
 int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); }
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
 int64_t SoiCore::reveal_timer() const          { return soi_reveal_timer(w()); }
@@ -100,6 +102,9 @@ int64_t SoiCore::death_x(int64_t i) const      { return soi_death_x(w(), (int)i)
 int64_t SoiCore::death_y(int64_t i) const      { return soi_death_y(w(), (int)i); }
 int64_t SoiCore::death_type(int64_t i) const   { return soi_death_type(w(), (int)i); }
 int64_t SoiCore::death_dir(int64_t i) const    { return soi_death_dir(w(), (int)i); }
+int64_t SoiCore::fx_count() const              { return soi_fx_count(w()); }
+int64_t SoiCore::fx_get(int64_t i, int64_t f) const { return soi_fx_get(w(), (int)i, (int)f); }
+int64_t SoiCore::blockanim(int64_t i) const    { return soi_blockanim(w(), (int)i); }
 
 bool    SoiCore::enemy_active(int64_t i) const { return soi_enemy_active(w(), (int)i) != 0; }
 int64_t SoiCore::enemy_type(int64_t i) const   { return soi_enemy_type(w(), (int)i); }
@@ -173,6 +178,8 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("player_movectr", "player"), &SoiCore::player_movectr);
     ClassDB::bind_method(D_METHOD("player_pose", "player"), &SoiCore::player_pose);
     ClassDB::bind_method(D_METHOD("player_pose_t", "player"), &SoiCore::player_pose_t);
+    ClassDB::bind_method(D_METHOD("player_jump_t", "player"), &SoiCore::player_jump_t);
+    ClassDB::bind_method(D_METHOD("player_frame", "player"), &SoiCore::player_frame);
     ClassDB::bind_method(D_METHOD("goodies_total"), &SoiCore::goodies_total);
     ClassDB::bind_method(D_METHOD("goodies_left"), &SoiCore::goodies_left);
     ClassDB::bind_method(D_METHOD("reveal_timer"), &SoiCore::reveal_timer);
@@ -191,6 +198,9 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("death_y", "i"), &SoiCore::death_y);
     ClassDB::bind_method(D_METHOD("death_type", "i"), &SoiCore::death_type);
     ClassDB::bind_method(D_METHOD("death_dir", "i"), &SoiCore::death_dir);
+    ClassDB::bind_method(D_METHOD("fx_count"), &SoiCore::fx_count);
+    ClassDB::bind_method(D_METHOD("fx_get", "i", "field"), &SoiCore::fx_get);
+    ClassDB::bind_method(D_METHOD("blockanim", "i"), &SoiCore::blockanim);
 
     ClassDB::bind_method(D_METHOD("enemy_active", "i"), &SoiCore::enemy_active);
     ClassDB::bind_method(D_METHOD("enemy_type", "i"), &SoiCore::enemy_type);
