@@ -9,7 +9,11 @@ import sys
 bp, gp = sys.argv[1], sys.argv[2]
 src = os.path.join("extracted", "sprites_3d", bp, "frames.json")
 c = json.loads(open(src, encoding="utf-8").read(), object_pairs_hook=collections.OrderedDict)
-c["status"] = "wip"
+gpc = os.path.join("extracted", "sprites_3d", gp, "frames.json")
+if os.path.exists(gpc):   # an already published twin stays published (a failing verify must not delete its frames)
+    c["status"] = json.loads(open(gpc, encoding="utf-8-sig").read()).get("status", "wip")
+else:
+    c["status"] = "wip"
 c["source"] = "GP_sprites"
 c["note"] = ("The GREEN player's copy of %s: GP_sprites is BP_sprites with the sweater recoloured blue -> green, "
              "so this reuses %s's fit.json poses and placement and its baked look; only the sweater is re-tuned "

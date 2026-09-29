@@ -8,7 +8,7 @@
   ]
  },
  "mode": "kid",
- "note": "The player f50-f117 (kid.py; seeded from BP_run), WIP: 61/68 pass (IoU 0.878, dE 13.3) after sweep fit optim, look, optimfail with probe grids (the far arm raised in f107-f117). Failing f70, f72, f76, f82, f86, f88, f89: mostly dE 16-20 at IoU 0.85-0.88 -- e.g. f86 shows the face on the far side of a left-facing body (the head turned back), which the rig cannot do (no neck turn yet). The 36x34 cheer f118-f126 moved to BP_cheer. PUBLISHED round 10 (68/68, IoU min 0.851 mean 0.880, dE mean 12.2 max 15.7): the kid eyes + look (59 -> 61), ankle keys and a_n/a_f probes, +-1 px shift hops (f82 17.0 -> 12.4) and, for f86, a reseed from f85 with the yaw held to 60-160 (the free fit had turned the body to 208 deg and shown the back of the head).",
+ "note": "Round 13 (user feedback): full hair mop cut at a fringe (kid.py hair_cut) + longer arms (the source's hands hang to the upper thigh); both held out of the look. The player f50-f117 (kid.py; seeded from BP_run), WIP: 61/68 pass (IoU 0.878, dE 13.3) after sweep fit optim, look, optimfail with probe grids (the far arm raised in f107-f117). Failing f70, f72, f76, f82, f86, f88, f89: mostly dE 16-20 at IoU 0.85-0.88 -- e.g. f86 shows the face on the far side of a left-facing body (the head turned back), which the rig cannot do (no neck turn yet). The 36x34 cheer f118-f126 moved to BP_cheer. PUBLISHED round 10 (68/68, IoU min 0.851 mean 0.880, dE mean 12.2 max 15.7): the kid eyes + look (59 -> 61), ankle keys and a_n/a_f probes, +-1 px shift hops (f82 17.0 -> 12.4) and, for f86, a reseed from f85 with the yaw held to 60-160 (the free fit had turned the body to 208 deg and shown the back of the head).",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -47,7 +47,7 @@
    240
   ],
   "torso_y": 5.05,
-  "torso_h": 7.95,
+  "torso_h": 8.05,
   "torso_r": 4.35,
   "torso_fx": 0.77,
   "torso_bevel": 1.2,
@@ -57,25 +57,25 @@
   "head_r": 3.525,
   "head_fy": 1.05,
   "head_fz": 0.95,
-  "hair_dx": 0.4625,
-  "hair_dy": 0.675,
-  "hair_f": 0.9438,
-  "hair_fy": 0.95,
+  "hair_dx": 0.35,
+  "hair_dy": 0.3,
+  "hair_f": 1.08,
+  "hair_fy": 1.05,
   "hair_fz": 1.02,
   "neck_y": 9.4,
   "neck_r": 1.3,
   "shoulder_y": 8.1,
-  "shoulder_z": 4.15,
-  "uarm_l": 4.8625,
-  "farm_l": 3.875,
-  "arm_r": 1.7125,
+  "shoulder_z": 4.1125,
+  "uarm_l": 5.35,
+  "farm_l": 4.6,
+  "arm_r": 1.5625,
   "hand_r": 1.5188,
-  "hip_z": 1.3,
+  "hip_z": 1.4,
   "thigh_l": 5.4125,
   "shin_l": 5.45,
   "leg_r": 1.775,
   "foot_rx": 2.6688,
-  "foot_ry": 1.2438,
+  "foot_ry": 1.225,
   "foot_rz": 1.6,
   "foot_dx": 0.75,
   "swing": 30.0,
@@ -88,7 +88,10 @@
   "gamma": 0.8625,
   "eye_el": 10.75,
   "eye_r": 1.225,
-  "eye_az": 17.0
+  "eye_az": 17.0,
+  "hair_cut": 25.0,
+  "fringe_x": 0.4,
+  "fringe_y": 0.1
  },
  "sweep": [
   {
@@ -399,7 +402,7 @@
     "step": 0.4,
     "min": 6,
     "max": 11,
-    "init": 7.95
+    "init": 8.05
    },
    "torso_r": {
     "step": 0.25,
@@ -431,24 +434,6 @@
     "max": 4.6,
     "init": 3.525
    },
-   "hair_dx": {
-    "step": 0.3,
-    "min": -1,
-    "max": 2,
-    "init": 0.4625
-   },
-   "hair_dy": {
-    "step": 0.3,
-    "min": -0.5,
-    "max": 2,
-    "init": 0.675
-   },
-   "hair_f": {
-    "step": 0.05,
-    "min": 0.9,
-    "max": 1.25,
-    "init": 0.9438
-   },
    "shoulder_y": {
     "step": 0.4,
     "min": 6,
@@ -459,25 +444,25 @@
     "step": 0.3,
     "min": 2.8,
     "max": 5.2,
-    "init": 4.15
+    "init": 4.1125
    },
    "uarm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 4.8625
+    "min": 5.0,
+    "max": 7.0,
+    "init": 5.35
    },
    "farm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 3.875
+    "min": 4.2,
+    "max": 6.0,
+    "init": 4.6
    },
    "arm_r": {
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 1.7125
+    "init": 1.5625
    },
    "hand_r": {
     "step": 0.15,
@@ -489,7 +474,7 @@
     "step": 0.2,
     "min": 0.8,
     "max": 2.4,
-    "init": 1.3
+    "init": 1.4
    },
    "thigh_l": {
     "step": 0.3,
@@ -519,7 +504,7 @@
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 1.2438
+    "init": 1.225
    },
    "foot_dx": {
     "step": 0.3,

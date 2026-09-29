@@ -1,0 +1,10 @@
+== cannon_barrel [look final verify] (13 s, exit 1)
+look: 2 frames [2, 3]
+look: start dE 17.245
+look: world -> 0.12  dE 16.373
+look: key -> 4.6  dE 15.997
+look: fill -> 0.16  dE 15.902
+look: dE 17.245 -> 15.902 with {"barrel": true, "world": 0.12, "key": 4.6, "fill": 0.16}
+final: 2 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
+verify cannon_barrel: 2 frames, IoU min 0.980 mean 0.980, dE mean 15.91 max 16.33 -> FAIL [2]
+BATCH DONE

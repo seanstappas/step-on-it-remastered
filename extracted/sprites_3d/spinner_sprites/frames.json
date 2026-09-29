@@ -41,8 +41,10 @@
   "cone_len": 6.0,
   "cone_x": 5.9,
   "post_r": 1.675,
-  "base_bevel": 3.0,
-  "base_top": 17.85,
+  "post_top": 5.0,
+  "base_shape": "cylinder",
+  "base_bevel": 0.3,
+  "base_top": 17.5,
   "base_d": 24.0,
   "bar_bevel": 0.95,
   "key_dir": [
@@ -241,22 +243,16 @@
     "init": 1.675
    },
    "base_bevel": {
-    "step": 0.4,
-    "min": 0.3,
-    "max": 3.0,
-    "init": 3.0
+    "step": 0.15,
+    "min": 0.1,
+    "max": 1.0,
+    "init": 0.3
    },
    "base_top": {
-    "step": 0.3,
+    "step": 0.25,
     "min": 17.0,
-    "max": 19.0,
-    "init": 17.85
-   },
-   "base_d": {
-    "step": 3.0,
-    "min": 6.0,
-    "max": 24.0,
-    "init": 24.0
+    "max": 18.0,
+    "init": 17.5
    },
    "tilt": {
     "step": 2.0,

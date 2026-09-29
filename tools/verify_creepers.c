@@ -22,6 +22,16 @@ static int board_has_creeper(const SoiWorld *w)
     return 0;
 }
 
+/* A block mid build/remove animation (asm FUN_1002754c) is locked solid on purpose until it
+ * finishes -- not a Creeper wall. */
+static int animating(const SoiWorld *w, int c, int r)
+{
+    int i;
+    for (i = 0; i < SOI_BLOCKANIM_MAX; i++)
+        if (w->banim[i].active && w->banim[i].col == c && w->banim[i].row == r) return 1;
+    return 0;
+}
+
 static int check(const SoiWorld *w, const uint8_t *wall0, int *nseg_out, char *why, size_t n)
 {
     int c, r, i, nseg = 0;
@@ -39,7 +49,8 @@ static int check(const SoiWorld *w, const uint8_t *wall0, int *nseg_out, char *w
     }
     for (c = 0; c < SOI_GRID_COLS; c++)
         for (r = 0; r < SOI_GRID_ROWS; r++)
-            if ((soi_get_cell(w, c, r) & SOI_WALL) == SOI_WALL && !wall0[c * SOI_GRID_ROWS + r] && !owner[c][r]) {
+            if ((soi_get_cell(w, c, r) & SOI_WALL) == SOI_WALL && !wall0[c * SOI_GRID_ROWS + r] && !owner[c][r] &&
+                !animating(w, c, r)) {
                 snprintf(why, n, "leaked wall at (%d,%d) = 0x%X", c, r, (unsigned)soi_get_cell(w, c, r));
                 return 0;
             }

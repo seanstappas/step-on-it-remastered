@@ -4,21 +4,68 @@
  "frames": [
   50
  ],
- "mode": "tile",
- "note": "The smiley SPAWNER emblem block f50 (static; drawn by game.gd _draw_enemy for a spawner): tile.py kind emblem -- a red slab with a silver bas-relief of the nasty whose outline is the source frame's statue mask and whose height = an inflated mask + a shape-from-shading height of the statue's own shading. Reproduce: sweep fit look final verify.",
+ "mode": "emblem3d",
+ "note": "The smiley SPAWNER emblem f50: emblem3d.py -- the nasty's own 3D model (smiley_sprites, smiley pose of f02) cast in silver in front of the red slab, its real shadow on the red. Setup: tmp/emblem3d_setup.py; reproduce: look final verify.",
  "opts": {
-  "bevel": 0.03
- },
- "frame_opts": {
-  "50": {
-   "kind": "emblem",
-   "base": [
-    214,
+  "monster_mode": "smiley",
+  "monster_opts": {
+   "world": 0.12,
+   "key": 3.0,
+   "fill": 0.1,
+   "key_dir": [
+    -0.26,
+    0.7,
+    0.66
+   ],
+   "gamma": 0.7,
+   "red": [
+    205,
     0,
     0
    ],
-   "mask": "D:\\Code\\step-on-it-remastered\\extracted\\sprites\\smiley_sprites\\f50_32x32.png"
-  }
+   "rough": 0.8,
+   "spec": 0.03,
+   "coat": 0.0,
+   "face_x": 0.0,
+   "eye_r": 0.31,
+   "eye_sx": 1.1,
+   "eye_sz": 1.0,
+   "eye_x": 0.49,
+   "slit_len": 0.8,
+   "nose_w": 0.9,
+   "nose_top": 0.55,
+   "nose_h": 0.32,
+   "mouth_r": 0.4,
+   "mouth_t": 0.18,
+   "mouth_sy": 0.7,
+   "mouth_sx": 1.15,
+   "mouth_y": 0.54,
+   "mouth_tilt": 0.8,
+   "slit_t": 0.05
+  },
+  "monster_pose": {
+   "roll": 359.8749946452355
+  },
+  "statue_mirror": false,
+  "statue_k": 0.7523,
+  "statue_x": -0.324,
+  "statue_y": 0.226,
+  "statue_dz": 0.25,
+  "statue_fz": 1.0,
+  "base": [
+   214,
+   0,
+   0
+  ],
+  "silver": [
+   205,
+   205,
+   210
+  ],
+  "bevel": 0.03,
+  "base_gain": 1.2,
+  "gamma": 1.025,
+  "key": 2.75
  },
  "sweep": [
   {
@@ -39,53 +86,97 @@
   "samples": 64,
   "group_frames": 1,
   "params": {
-   "gain": [
-    0.9,
-    1.0,
-    1.1
+   "monster_pose": [
+    {
+     "roll": 359.8749946452355
+    },
+    {
+     "roll": 14.874994645235502
+    },
+    {
+     "roll": 29.874994645235503
+    },
+    {
+     "roll": 44.8749946452355
+    },
+    {
+     "roll": 59.8749946452355
+    },
+    {
+     "roll": 74.8749946452355
+    }
+   ],
+   "statue_mirror": [
+    false,
+    true
    ]
   },
   "refine": {
-   "base_gain": {
+   "statue_k": {
+    "step": 0.0301,
+    "min": 0.5266,
+    "max": 0.9779,
+    "init": 0.7523
+   },
+   "statue_x": {
+    "step": 0.5,
+    "min": -6.324,
+    "max": 5.676,
+    "init": -0.324
+   },
+   "statue_y": {
+    "step": 0.5,
+    "min": -5.774,
+    "max": 6.226,
+    "init": 0.226
+   },
+   "statue_dz": {
     "step": 0.05,
-    "min": 0.7,
-    "max": 1.3,
+    "min": 0.02,
+    "max": 0.8,
+    "init": 0.25
+   },
+   "statue_fz": {
+    "step": 0.1,
+    "min": 0.3,
+    "max": 1.5,
     "init": 1.0
    },
    "silver_gain": {
     "step": 0.05,
     "min": 0.6,
-    "max": 1.2,
+    "max": 1.3,
     "init": 1.0
    },
-   "relief_h": {
-    "step": 0.04,
-    "min": 0.08,
-    "max": 0.4,
-    "init": 0.2
+   "base_gain": {
+    "step": 0.05,
+    "min": 0.7,
+    "max": 1.4,
+    "init": 1.2
    },
    "gamma": {
     "step": 0.1,
     "min": 0.6,
     "max": 1.3,
-    "init": 1.0
-   },
-   "sfs_gain": {
-    "step": 0.25,
-    "min": 0.0,
-    "max": 3.0,
-    "init": 1.5
+    "init": 1.025
    },
    "key": {
-    "step": 0.25,
-    "min": 1.0,
-    "max": 5.0,
-    "init": 3.0
+    "step": 0.4,
+    "min": 1.5,
+    "max": 7.0,
+    "init": 2.75
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0.0,
+    "max": 0.4,
+    "init": 0.11
    }
   },
-  "refine_rounds": 6,
+  "refine_rounds": 8,
   "iou_w": 200,
-  "iou_margin": 0.03
+  "iou_margin": 0.03,
+  "detail_w": 0.5
  },
  "gate": {
   "iou": 0.9,

@@ -1,0 +1,21 @@
+== BP_run [tweens live livecal livegate] (20 s, exit 0)
+tweens: 11/12 pairs x 3 in-betweens -> extracted\sprites_3d_frames\BP_sprites\tw; dropped 37-48 (0.52 < 0.63)
+LIVE_DONE 48
+live: 48 frames -> extracted\sprites_live\BP_run
+livecal BP_run: sun x0.925, ambient x0.500 -> dE mean 12.72 (unscaled 13.53) -> extracted\sprites_live\BP_run\live.json
+livegate BP_run (48 frames, gate IoU >= 0.850, dE <= 17.5):
+  live  : IoU min 0.849 mean 0.870, dE mean 12.73 max 15.99, pass 46 (48 as good as the published frame)
+  cycles: IoU min 0.851 mean 0.871, dE mean 12.45 max 16.56, pass 48
+  live vs cycles: dE mean 2.53 max 3.53
+  worst live frames: f07 (IoU 0.862 dE 16.0), f42 (IoU 0.872 dE 15.9), f03 (IoU 0.866 dE 15.2), f04 (IoU 0.886 dE 15.0), f08 (IoU 0.862 dE 15.0)
+== BP_cheer [tweens live livecal livegate] (11 s, exit 0)
+tweens: 8/8 pairs x 3 in-betweens -> extracted\sprites_3d_frames\BP_sprites\tw
+LIVE_DONE 9
+live: 9 frames -> extracted\sprites_live\BP_cheer
+livecal BP_cheer: sun x1.275, ambient x0.650 -> dE mean 12.31 (unscaled 12.53) -> extracted\sprites_live\BP_cheer\live.json
+livegate BP_cheer (9 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.846 mean 0.873, dE mean 12.31 max 14.05, pass 8 (9 as good as the published frame)
+  cycles: IoU min 0.853 mean 0.874, dE mean 12.65 max 14.83, pass 9
+  live vs cycles: dE mean 2.28 max 2.59
+  worst live frames: f123 (IoU 0.846 dE 14.0), f118 (IoU 0.883 dE 13.9), f126 (IoU 0.860 dE 12.6), f122 (IoU 0.883 dE 12.6), f125 (IoU 0.873 dE 12.4)
+BATCH DONE

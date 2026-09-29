@@ -8,7 +8,10 @@
   23
  ],
  "mode": "goody_clock",
- "opts": {},
+ "opts": {
+  "face_dome": 0.25,
+  "stud_r": 0.11
+ },
  "sweep": [
   {
    "param": "spin",
@@ -89,10 +92,43 @@
    "fill": [
     0.06,
     0.12
+   ],
+   "face_dome": [
+    0.15,
+    0.25,
+    0.4
    ]
-  }
+  },
+  "refine": {
+   "face_dome": {
+    "step": 0.04,
+    "min": 0.05,
+    "max": 0.55,
+    "init": 0.25
+   },
+   "stud_r": {
+    "step": 0.01,
+    "min": 0.08,
+    "max": 0.14,
+    "init": 0.11
+   },
+   "pie_r": {
+    "step": 0.02,
+    "min": 0.7,
+    "max": 0.9,
+    "init": 0.8
+   }
+  },
+  "refine_rounds": 4,
+  "detail_w": 0.5
  },
- "post": [{"fringe": {"px": 2}}],
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
  "gate": {
   "iou": 0.88,
   "de": 16.0

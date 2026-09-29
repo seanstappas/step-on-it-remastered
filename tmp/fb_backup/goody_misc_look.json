@@ -1,0 +1,19 @@
+{
+ "opts": {
+  "key_dir": [
+   -0.4,
+   0.6,
+   0.7
+  ],
+  "gain": 0.85,
+  "world": 0.19,
+  "color_gain": 1.2125,
+  "gold_gain": 1.25,
+  "white_gain": 1.0,
+  "gamma": 0.8,
+  "fill": 0.18
+ },
+ "de_start": 9.986631742803615,
+ "de": 9.26228168834405,
+ "frame_opts": {}
+}

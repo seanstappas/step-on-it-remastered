@@ -1,0 +1,14 @@
+{
+ "opts": {
+  "bevel": 0.03,
+  "base_gain": 1.125,
+  "silver_gain": 0.875,
+  "relief_h": 0.09,
+  "gamma": 0.75,
+  "sfs_gain": 2.25,
+  "key": 3.5
+ },
+ "de_start": 13.047394785133468,
+ "de": 9.398996219356098,
+ "frame_opts": {}
+}

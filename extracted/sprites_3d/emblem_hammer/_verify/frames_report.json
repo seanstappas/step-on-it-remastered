@@ -10,14 +10,14 @@
  "failed": [],
  "iou_min": 1.0,
  "iou_mean": 1.0,
- "de_mean": 9.978,
- "de_max": 9.978,
+ "de_mean": 12.205,
+ "de_max": 12.205,
  "rows": [
   {
    "frame": 82,
    "iou": 1.0,
-   "de": 9.978,
-   "de_raw": 13.184,
+   "de": 12.205,
+   "de_raw": 16.898,
    "best_src": 82,
    "rank_dist": 0,
    "rank_gap": 0.0,

@@ -1,0 +1,13 @@
+== ant_sprites [optimfail final verify tweens live livecal livegate] (349 s, exit 0)
+final: 49 frames (+0 derived) -> extracted\sprites_3d_frames\ant_sprites
+verify ant_sprites: 49 frames, IoU min 0.852 mean 0.872, dE mean 10.75 max 14.70 -> PASS
+tweens: no "tweens" block, skipping
+LIVE_DONE 49
+live: 49 frames -> extracted\sprites_live\ant_sprites
+livecal ant_sprites: sun x0.825, ambient x0.150 -> dE mean 11.08 (unscaled 13.66) -> extracted\sprites_live\ant_sprites\live.json
+livegate ant_sprites (49 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.850 mean 0.871, dE mean 11.08 max 14.92, pass 48 (49 as good as the published frame)
+  cycles: IoU min 0.852 mean 0.872, dE mean 10.75 max 14.70, pass 49
+  live vs cycles: dE mean 2.55 max 3.31
+  worst live frames: f23 (IoU 0.863 dE 14.9), f11 (IoU 0.856 dE 14.7), f13 (IoU 0.876 dE 14.0), f14 (IoU 0.886 dE 13.6), f05 (IoU 0.874 dE 13.4)
+BATCH DONE

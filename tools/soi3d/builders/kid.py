@@ -20,6 +20,23 @@ from .robo import _cyl, _empty
 from .robo import _frames_pose as _robo_pose
 
 
+def _fringe(hair, hr, hy, f):
+    """Cut the face out of the hair: remove the part in front of and below a plane through the fringe point
+    (fringe_x x hr in front of the head centre, fringe_y x hr above it) tilted `hair_cut` deg below level."""
+    import bmesh
+    bpy.context.view_layer.update()
+    mw = hair.matrix_world.copy()
+    t = math.radians(f("hair_cut", 0.0))
+    p = mw.inverted() @ mathutils.Vector((-hr * f("fringe_x", 0.55) * S, (hy + hr * f("fringe_y", 0.25)) * S, 0.0))
+    n = (mw.to_3x3().transposed() @ mathutils.Vector((-math.cos(t), -math.sin(t), 0.0))).normalized()   # plane -> local
+    bm = bmesh.new()
+    bm.from_mesh(hair.data)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=p, plane_no=n, clear_outer=True)
+    bm.to_mesh(hair.data)
+    bm.free()
+    hair.data.update()
+
+
 def build(opts):
     C._clear()
     f = lambda k, d: float(opts.get(k, d))
@@ -42,6 +59,8 @@ def build(opts):
                    (hr * f("hair_f", 1.05), hr * f("hair_fy", 0.95), hr * f("hair_fz", 1.02)), hair)):
         o.parent = neckj
         o.matrix_parent_inverse = neckj.matrix_world.inverted()
+    if f("hair_cut", 0.0) > 0:      # a FULL mop with the face cut out below a fringe line (the source's hair
+        _fringe(bpy.data.objects["hair"], hr, hy, f)   # covers the forehead, the crown and the back of the head)
     if opts.get("eyes", True):      # big white cartoon eyes with blue pupils (4x2 px on the 36x34 cheer)
         er, el0, az0 = f("eye_r", 1.0), f("eye_el", 12.0), f("eye_az", 18.0)
         et = er * f("eye_t", 0.35)                  # thin along the head normal: flush, no profile bump

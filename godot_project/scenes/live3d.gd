@@ -67,6 +67,9 @@ var _matte := 0.0
 var _holder: Node
 var _inst := {}                   # key -> {vp3, vp2, cam, nodes, mat, s, used}
 var _post: Shader
+var _jump := {}                   # "a,b" -> Array[bool]: node turns > SNAP_TURN between the two frames
+
+const SNAP_TURN := 1.745329   # 100 deg: a turn this big between two frames is a symmetric model's wrap
 
 
 ## Load a family's live rig, or null when it has none (the sprite frames are drawn instead).
@@ -142,9 +145,13 @@ func texture_for(key: String, a: int, b: int, f: float, scale: int, red: bool = 
 	var xa: Array = _xf[a]
 	var xb: Array = _xf[b]
 	var nodes: Array = e["nodes"]
+	var jump := _jumps(a, b)
 	for i in nodes.size():
 		if nodes[i] != null:
-			(nodes[i] as Node3D).transform = (xa[i] as Transform3D).interpolate_with(xb[i], f)
+			if jump[i]:                  # the Spinner's half turn wraps f17 -> f02: same picture, no sweep
+				(nodes[i] as Node3D).transform = xa[i] if f < 0.5 else xb[i]
+			else:
+				(nodes[i] as Node3D).transform = (xa[i] as Transform3D).interpolate_with(xb[i], f)
 	var u := lerpf(_u[a], _u[b], f)
 	var p0: Vector2 = (_p0[a] as Vector2).lerp(_p0[b], f)
 	var cam: Camera3D = e["cam"]
@@ -159,6 +166,21 @@ func release(key: String) -> void:
 	if _inst.has(key):
 		(_inst[key]["vp2"] as Node).queue_free()     # vp3 is its child
 		_inst.erase(key)
+
+## Per node: does it turn more than SNAP_TURN from frame a's pose to frame b's (cached per pair)?
+func _jumps(a: int, b: int) -> Array:
+	var k := "%d,%d" % [a, b]
+	if not _jump.has(k):
+		var xa: Array = _xf[a]
+		var xb: Array = _xf[b]
+		var out: Array = []
+		for i in xa.size():
+			var qa := Quaternion((xa[i] as Transform3D).basis.orthonormalized())
+			var qb := Quaternion((xb[i] as Transform3D).basis.orthonormalized())
+			var ang := (qa.inverse() * qb).get_angle()
+			out.append(minf(ang, TAU - ang) > SNAP_TURN)
+		_jump[k] = out
+	return _jump[k]
 
 func release_all() -> void:
 	for k in _inst.keys():

@@ -1,0 +1,5 @@
+== Gargoyle_sprites [optimfail final verify] (4,107 s, exit 1)
+final: 73 frames (+0 derived) -> extracted\sprites_3d_frames\Gargoyle_sprites
+verify Gargoyle_sprites: 73 frames, IoU min 0.819 mean 0.875, dE mean 14.89 max 18.81 -> FAIL [6, 7, 8, 9, 10, 11, 34, 44, 45, 71, 72, 73]
+verify: Gargoyle_sprites is not published and failed -> removed its 73 overlay frames
+BATCH DONE

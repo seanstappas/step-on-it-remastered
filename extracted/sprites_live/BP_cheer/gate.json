@@ -13,8 +13,8 @@
   126
  ],
  "pass": true,
- "iou_min": 0.8631,
- "de_mean": 13.165,
- "de_max": 14.72,
- "cycles_de_mean": 13.594
+ "iou_min": 0.8462,
+ "de_mean": 12.31,
+ "de_max": 14.048,
+ "cycles_de_mean": 12.648
 }

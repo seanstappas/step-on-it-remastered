@@ -102,6 +102,11 @@ def build(opts):
         fy = hy + f("face_dy", -0.3)
         _arc("face", (0, fy, 0), hr, f("face_h", 5.0), f("face_deg", 60.0), white, root, f("face_t", 0.25))
         ro = hr + f("face_t", 0.25)
+        if f("face_lo_h", 0.0) > 0:         # the source's lower face (f58 rows 4-6) is a GREY plate under white eyes
+            grey = C._mat("face_grey", C._srgb(*opts.get("face_grey", (150, 150, 155))), rough=f("rough", 0.35),
+                          spec=f("spec", 0.35), coat=f("coat", 0.0))
+            _arc("face_lo", (0, hy + f("face_lo_dy", -1.5), 0), hr, f("face_lo_h", 3.0), f("face_deg", 60.0), grey,
+                 root, f("face_t", 0.25))
         _arc("face_stripe", (0, fy + f("stripe_dy", 1.5), 0), ro, f("stripe_h", 3.0), f("stripe_deg", 8.0), red, root, 0.15, 4)
         _arc("face_bar", (0, fy + f("bar_dy", -0.5), 0), ro, f("bar_h", 1.5), f("bar_deg", 30.0), red, root, 0.15, 8)
         for sz in (1.0, -1.0):              # side views f02/f20: a white stud mid-head

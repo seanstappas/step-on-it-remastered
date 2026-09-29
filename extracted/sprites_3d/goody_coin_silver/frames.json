@@ -6,7 +6,12 @@
  ],
  "mode": "goody_coin",
  "opts": {
-  "kind": "silver"
+  "kind": "silver",
+  "glyph_size": 2.3,
+  "glyph_extrude": 0.06,
+  "glyph_dark": 0.9,
+  "rim_fz": 1.1,
+  "rim_minor": 0.075
  },
  "sweep": [
   {
@@ -58,7 +63,41 @@
      205
     ]
    ]
-  }
+  },
+  "refine": {
+   "glyph_size": {
+    "step": 0.08,
+    "min": 1.9,
+    "max": 2.7,
+    "init": 2.3
+   },
+   "glyph_extrude": {
+    "step": 0.02,
+    "min": 0.03,
+    "max": 0.12,
+    "init": 0.06
+   },
+   "glyph_dark": {
+    "step": 0.05,
+    "min": 0.6,
+    "max": 1.05,
+    "init": 0.9
+   },
+   "rim_fz": {
+    "step": 0.15,
+    "min": 0.5,
+    "max": 1.6,
+    "init": 1.1
+   },
+   "rim_minor": {
+    "step": 0.01,
+    "min": 0.05,
+    "max": 0.11,
+    "init": 0.075
+   }
+  },
+  "refine_rounds": 4,
+  "detail_w": 0.5
  },
  "post": [
   {
@@ -74,7 +113,11 @@
     "core": 0.5
    }
   },
-  {"fringe": {"px": 2}}
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
  ],
  "gate": {
   "iou": 0.88,

@@ -1,0 +1,4 @@
+# HUD check: a shot shortly after the level starts.
+0 40
+SHOT hud_check
+QUIT

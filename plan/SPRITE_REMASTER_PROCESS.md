@@ -174,7 +174,7 @@ the same pose.
 | `block_question` (the '?' tile f146 + crack + quarters; `tile.py`) | 6 | 0.965 | 11.5 / 14.6 |
 | `weapons_arrow` (the straight shot f10/f11; `arrow.py`) | 2 | 0.920 | 8.4 / 9.9 |
 | `cannon_barrel` (cannon_sprites f02/f03; `cannon_barrel.py`) | 2 | 0.973 | 14.7 / 15.7 |
-| `emblem_hippo`/`_piggy`/`_ostrich`/`_smiley`/`_ant`/`_hammer` (each nasty's SPAWNER block, the last 32x32 frame; `tile.py` kind emblem) | 6 | 0.999 | 7.9 - 11.2 |
+| `emblem_hippo`/`_piggy`/`_ostrich`/`_smiley`/`_ant`/`_hammer` (each nasty's SPAWNER block, the last 32x32 frame; `emblem3d.py`: the nasty's OWN model as a silver statue on `tile.py`'s red slab, real cast shadow) | 6 | 0.998 | 6.5 - 12.2 |
 | `emblem_teeth` (the Teeth's spawner f51: the teeth in a blue ball's window; `teeth.py` mode teethball) | 1 | 0.932 | 15.3 |
 | `BP_cheer` (the player's front-view cheer f118-f126, 36x34; `kid.py` with cartoon eyes) | 9 | 0.860 | 13.6 / 15.7 |
 | `GP_cheer` (the green player's cheer: BP_cheer's fit and look with a green sweater) | 9 | 0.861 | 12.5 / 13.5 |
@@ -444,6 +444,41 @@ can never buy dE with a worse outline.
 - **A free head turn can face backwards.** BP_run's f24 fitted `hd` 189 deg (the back of the head where the
   source shows the face and eye); holding `hd` to +-60 for one pass fixed it, and both run families now keep
   +-90.
+
+**Lessons from round 13 (the user's play-test feedback: faithful details, 2026-09-28):**
+- **The spawner statues are the nasty's own model.** `emblem3d.py` (mode `emblem3d`) builds the monster with
+  its family's frames builder (`monster_mode`, `monster_opts` = a snapshot of that family's published opts,
+  posed with `monster_pose`), casts every surface in `silver`, parents the model to a `statue` empty
+  (`statue_k/x/y` in tile px, `statue_fz`, `statue_mirror`) in front of `tile.py`'s red slab and lets the key
+  light throw its real shadow. `tmp/emblem3d_setup.py <emblem> <monster>` snapshots the options and picks six
+  side-view candidate poses (yaw within 15 deg of a profile) by normalised-silhouette IoU against the statue.
+  The mask-relief emblems scored lower dE but read as blobs; the models read as the nasties.
+- **`m_<key>` overrides one monster option for the statue only.** The Ant's statue is not its walk sprite (legs
+  hanging straight below a flat body, not crossing it), so its stance was measured from an ASCII map of the
+  statue's shading (bright grey / dim grey / shadow) and set with `tmp/emblem_stance.py` (rounded-box segments,
+  2 px legs with 3 px feet, 2 px antenna). A bright-grey-only mask under-measured the body by 2 rows.
+- **Trust the art over the 1x metric for features it cannot see.** The HD source shows the kid's full hair
+  mop and hands at the upper thigh; the 1x dE preferred the bald cap (+0.7-1.3 dE for any hair). `kid.py`
+  `hair_cut` (`_fringe` bisects the hair ellipsoid below a tilted fringe plane) plus longer arms, then `optim`
+  and `optimfail`, passed every BP/GP family again. Same for the Robo's round head (`head_bevel` 3.3).
+- **Read the face pixel by pixel.** The Robo's face-on f58 is two white eyes (rows 2-3) over a GREY lower plate
+  (rows 4-6) split by the red centre stripe; the fitted T-visor's red crossbar read as a smile at 4x. `robo.py`
+  `face_lo_h`/`face_lo_dy`/`face_grey` add the grey plate (80/80, dE 13.73 -> 13.82).
+- **Re-tune one kind, not the whole look.** The ball blocks' highlight sits at (-0.33, -0.67) r (light from the
+  high top left); a global key change hurt the flat tiles, so `tmp/look_kind.py` re-ran only kind `ball`
+  (`key_dir`, the new opt-in `key_angle` sun softness, `fill_spec`, `f_spec`): ball dE -1.3 to -2.0.
+- **HUD text is re-typeset, not upscaled.** `tools/hud_text_remaster.py` fits Times Bold at 4x per `extra_s`
+  text sprite (size, x-scale, offset; coverage error 0.03-0.13) instead of the wobbly AI upscales.
+- **Hold a look to the character when the 1x metric pulls it off-model.** The turtle's look walked the new short
+  neck back to a long thin one (the brontosaurus the user saw); holding `neck_x0`/`neck_y0`/`neck_r` to
+  turtle-like ranges in the refine still passed (IoU 0.882, dE 9.46). The sneaker needed a new model
+  (`goodies.py` shoe `sneaker`: toe box, instep, red high-top ankle, laces, a flat-ellipsoid sole with no
+  plate corners) - its old capsule + block passed the gate but was not a shoe.
+- **A fully opaque frame cannot fit its own zoom.** The Cannon (32x32, housing to every edge) scored IoU ~1 at any
+  zoom that filled the frame, so its fit had zoomed into a flat egg and both facings rendered the same. The rebuilt
+  `cannon_barrel.py` "barrel" (square housing, rounded breech, collar, muzzle) uses a hand-set placement (0.1 unit
+  per source px) and a pose "face" (the pivot mirrored) instead of per-frame opts, so it still exports as ONE live
+  rig (`live` refuses per-frame model variants).
 
 ---
 

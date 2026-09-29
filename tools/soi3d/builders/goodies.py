@@ -61,7 +61,7 @@ def _key(opts, f, col):
     sw, sd = f("shaft_w", 2.0), f("shaft_d", 1.5)
     top, bot = by - (R + r * 0.5) * fy, f("shaft_bot", -14.8)
     _rbox("shaft", (kx, (top + bot) / 2, 0), (sw, (top - bot) / 2, sd), 0.6, col)
-    for i, (ty, th, tl) in enumerate(opts.get("teeth", [[1.5, 1.5, 3.0], [-7.0, 2.0, 4.0], [-11.5, 1.5, 3.0]])):
+    for i, (ty, th, tl) in enumerate(opts.get("teeth", [[1.5, 1.5, 3.0], [-2.5, 1.5, 2.0], [-6.5, 1.5, 5.0], [-11.5, 1.5, 3.0]])):
         _rbox("tooth%d" % i, (kx + sw + tl / 2 - 0.5, ty, 0), (tl / 2 + 0.5, th, sd * 0.9), 0.5, col)
 
 
@@ -92,23 +92,25 @@ def _door(opts, f, col, white):
     if opts.get("state", "closed") == "closed":
         _rbox("panel", (0, -2.0, -fd + pd), (inner + 0.5, 14.0, pd), 0.4, col)
         pz = -fd + 2 * pd
-        hx = -inner + f("hinge_x", 4.5)
-        for py, ph, ky, kh in ((2.5, 2.0, 3.0, 4.5), (-10.0, 1.8, -9.5, 4.0)):
-            _rbox("hinge", (hx, py, pz), (f("hinge_w", 3.0), ph, 0.4), 0.3, gold)
-            _cyl("knuckle", (-inner + 2.0, ky, pz), 1.0, 2 * kh, gold, (math.pi / 2, 0, 0), 16)
+        sx0 = -inner + 2.0                                           # the knuckle strap (f05 cols 6-7)
+        tl = f("hinge_l", 6.5)
+        for py, ph, ky, kh in ((3.5, 1.6, 3.0, 4.5), (-9.5, 1.6, -9.0, 4.0)):   # f05 tongues rows 11-13, 24-26
+            tongue = [(sx0, py - ph), (sx0 + tl - 1.5, py - ph * 0.8), (sx0 + tl, py), (sx0 + tl - 1.5, py + ph * 0.8), (sx0, py + ph)]
+            _prism("hinge", [(x * S, y * S) for x, y in tongue], pz * S, 0.8 * S, gold, 0.3 * S)
+            _cyl("knuckle", (sx0, ky, pz), 1.0, 2 * kh, gold, (math.pi / 2, 0, 0), 16)
         lx = inner - f("lock_x", 4.5)
-        _rbox("lock2", (lx, f("lock2_y", -8.5), pz), (f("lock2_w", 2.0), f("lock2_h", 3.0), 0.5), 0.4, gold)   # keyhole plate
-        kr = f("knob_r", 3.0)                                        # the knob (its shadow falls down-right)
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=kr * S, location=(lx * S, f("knob_y", 0.5) * S, (pz + kr * 0.6) * S))
+        _rbox("lock2", (lx, f("lock2_y", -9.0), pz), (f("lock2_w", 1.5), f("lock2_h", 4.0), 0.5), 0.4, gold)   # keyhole plate
+        kr = f("knob_r", 2.6)                                        # the knob (its shadow falls down-right)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=kr * S, location=(lx * S, f("knob_y", 1.0) * S, (pz + kr * 0.8) * S))
         knob = bpy.context.active_object
-        knob.scale = (1.0, 1.0, f("knob_fz", 0.7))
+        knob.scale = (1.0, 1.0, f("knob_fz", 1.0))
         knob.data.materials.append(gold)
         bpy.ops.object.shade_smooth()
     else:
         _rbox("doorway", (0, -2.0, -fd - 0.2), (inner + 0.5, 14.0, 0.3), 0.0, _mat(opts, "dark", (4, 4, 4), 0.9, 0.0))
         pw = f("open_w", 2.6)                                             # the panel seen edge-on at the hinge side
         _rbox("panel", (-inner + pw, -2.0, 0.2), (pw, 14.0, f("open_d", 1.5)), 0.4, col)
-        _rbox("hinge", (-16.0 + wf, f("ohinge_y", 1.0), fd + 0.3), (wf - 0.3, f("ohinge_h", 2.0), 0.4), 0.3, gold)
+        _rbox("hinge", (-16.0 + wf, f("ohinge_y", 0.0), fd + 0.3), (wf - 0.3, f("ohinge_h", 3.0), 0.4), 0.3, gold)   # f02 rows 13-18
 
 
 def _frame(opts, f, col):
@@ -125,7 +127,17 @@ def _frame(opts, f, col):
 def _turtle(opts, f, col):
     from .quadruped import _ell
     sx, sy, shw, shh, shz = f("shell_x", -2.0), f("shell_y", -3.5), f("shell_hw", 10.0), f("shell_h", 6.0), f("shell_hz", 7.0)
-    shell = _ell("shell", (sx, sy, 0), (shw, shh, shz), _mat(opts, "shell", opts.get("color", (0, 150, 0)), 0.4, 0.3))
+    smat = _mat(opts, "shell", opts.get("color", (0, 150, 0)), 0.4, 0.3)
+    if f("shell_check", 0.0) > 0:                                  # the source shell's light/dark scute checker
+        nt = smat.node_tree
+        chk = nt.nodes.new("ShaderNodeTexChecker")
+        chk.inputs["Scale"].default_value = f("shell_check", 0.0)
+        base = smat.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value
+        dk = f("check_dark", 0.45)
+        chk.inputs["Color1"].default_value = tuple(base)
+        chk.inputs["Color2"].default_value = (base[0] * dk, base[1] * dk, base[2] * dk, 1.0)
+        nt.links.new(chk.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+    shell = _ell("shell", (sx, sy, 0), (shw, shh, shz), smat)
     bpy.ops.mesh.primitive_cube_add(size=2.0, location=(sx * S, (sy - shh) * S, 0))   # keep the dome above the rim
     cut = bpy.context.active_object
     cut.scale = ((shw + 1) * S, shh * S, (shz + 1) * S)
@@ -138,7 +150,7 @@ def _turtle(opts, f, col):
     _ell("belly", (sx, sy, 0), (shw * 0.92, f("belly_h", 1.2), shz * 0.92), col)
     hx, hy = f("head_x", 10.5), f("head_y", 5.5)
     _ell("head", (hx, hy, 0), (f("head_rx", 4.3), f("head_ry", 3.2), f("head_rz", 3.0)), col)
-    nx0, ny0 = sx + shw * 0.7, sy + 1.5                                  # the neck runs from the shell front to the head
+    nx0, ny0 = sx + shw * f("neck_x0", 0.7), sy + f("neck_y0", 1.5)   # the neck runs from the shell front to the head
     L = math.hypot(hx - nx0, hy - ny0)
     _cyl("neck", ((hx + nx0) / 2, (hy + ny0) / 2, 0), f("neck_r", 2.0), L, col, (-math.pi / 2, 0, -math.atan2(hx - nx0, hy - ny0)), 16)
     lh, lr = f("leg_h", 5.0), f("leg_r", 2.3)
@@ -174,7 +186,8 @@ def _gift(opts, f, col):
         loop.data.materials.append(ribbon)
         bpy.ops.object.shade_smooth()
         loop.parent = root
-    _ell("knot", (0, h + 0.8, 0), (f("knot_r", 1.8),) * 3, ribbon, 16).parent = root
+    knot = _mat(opts, "knot", (200, 20, 40), 0.5, 0.2) if "knot" in opts else ribbon   # the source's knot is red
+    _ell("knot", (0, h + 0.8, 0), (f("knot_r", 1.8),) * 3, knot, 16).parent = root
 
 
 def _px(pts):
@@ -237,6 +250,26 @@ def _shoe(opts, f, col):
     root.rotation_euler = (math.radians(f("shoe_tilt", 20.0)), math.radians(f("shoe_yaw", 30.0)), math.radians(f("shoe_roll", 59.0)))
     L = f("shoe_l", 12.0)                                          # half length
     hl = f("heel_f", 0.3)                                          # the heel's share of the length
+    if opts.get("sneaker", False):                                 # a sneaker profile: low toe box rising to the ankle
+        vh, W = f("vamp_h", 3.4), f("shoe_w", 3.6)
+        y0 = -vh                                                   # the sole's top
+        tops = []
+        for name, xc, hx, hh, mat in (("toe", -0.62, 0.38, f("toe_h", 2.2), white), ("mid", -0.12, 0.3, f("mid_h", 3.0), white),
+                                      ("quarter", 0.52, 0.48, f("quarter_h", 4.2), col)):   # the red high-top ankle
+            _rbox(name, (xc * L, y0 + hh, 0), (hx * L, hh, W), min(hh, W) * f("upper_bevel", 0.8), mat).parent = root
+            tops.append((xc * L, y0 + 2 * hh))
+        if f("sole_h", 0.8) > 0:                                   # a flat ellipsoid: no plate corners past the shoe
+            from .quadruped import _ell
+            _ell("sole", (0, y0 - 0.2, 0), (L * 1.0, f("sole_h", 0.8), W + 0.2), sole, 32).parent = root
+        qx, qt = tops[2]
+        _rbox("tongue", (tops[1][0] + L * 0.18, qt - 0.4, 0), (1.1, f("tongue_h", 1.4), W * 0.7), 0.8, white).parent = root
+        n = int(f("laces", 4))
+        for i in range(n):                                         # lace bars across the instep, toe box to tongue
+            t = i / max(n - 1, 1)
+            x = tops[0][0] + L * 0.1 + t * (tops[1][0] + L * 0.12 - tops[0][0] - L * 0.1)
+            y = tops[0][1] + t * (tops[1][1] - tops[0][1])
+            _rbox("lace", (x, y + 0.1, 0), (f("lace_w", 0.45), 0.4, W * f("lace_z", 0.75)), 0.25, blue).parent = root
+        return
     _rbox("vamp", (-L * hl, 0, 0), (L * (1 - hl), f("vamp_h", 3.4), f("shoe_w", 3.6)), f("vamp_bevel", 3.0), white).parent = root
     _rbox("heel", (L * (1 - hl), f("heel_dy", 2.2), 0), (L * hl, f("heel_h", 4.5), f("shoe_w", 3.6) * 1.04), f("heel_bevel", 2.5), col).parent = root
     _rbox("sole", (-L * hl, -f("vamp_h", 3.4) - 0.6, 0), (L * (1 - hl) + 0.3, 0.9, f("shoe_w", 3.6) + 0.3), 0.8, sole).parent = root   # under the vamp

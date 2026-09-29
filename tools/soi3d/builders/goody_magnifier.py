@@ -12,10 +12,13 @@ from .. import common as C
 from .. import register, register_frames
 
 
-def build_magnifier():
-    """Dark lens + brass rim + angled handle (source f48)."""
+def build_magnifier(opts=None):
+    """Dark lens + brass rim + angled handle (source f48). opts: "rim_r" (rim tube radius), "wood" (handle
+    RGB), "glass_rough", "glint_energy" / "glint_size" (the lens catch-light)."""
+    opts = opts or {}
+    f = lambda k, d: float(opts.get(k, d))
     C._clear()
-    glass = C._mat("mag_glass", C._srgb(30, 34, 40), rough=0.16, metal=0.0, spec=0.4, coat=0.4)
+    glass = C._mat("mag_glass", C._srgb(30, 34, 40), rough=f("glass_rough", 0.16), metal=0.0, spec=0.4, coat=0.4)
     # faint cool emission so the dark lens keeps a hint of blue depth instead of crushing to black
     gb = glass.node_tree.nodes.get("Principled BSDF")
     ec = gb.inputs.get("Emission Color"); es = gb.inputs.get("Emission Strength")
@@ -24,7 +27,7 @@ def build_magnifier():
     if es is not None:
         es.default_value = 0.05
     brass = C._mat("mag_brass", C._srgb(150, 120, 8), rough=0.3, metal=0.7, spec=0.6, coat=0.1)
-    wood = C._mat("mag_wood", C._srgb(104, 66, 8), rough=0.5, metal=0.2, spec=0.3)
+    wood = C._mat("mag_wood", C._srgb(*opts.get("wood", (104, 66, 8))), rough=0.5, metal=0.2, spec=0.3)
 
     LENS_CX, LENS_CY, LENS_R = -0.10, 0.44, 0.48
 
@@ -39,7 +42,7 @@ def build_magnifier():
 
     # brass rim: a torus hugging the lens edge, in the camera plane (torus axis = +Z = toward cam)
     bpy.ops.mesh.primitive_torus_add(location=(LENS_CX, LENS_CY, 0.02),
-                                     major_radius=LENS_R + 0.02, minor_radius=0.09,
+                                     major_radius=LENS_R + 0.02, minor_radius=f("rim_r", 0.09),
                                      major_segments=64, minor_segments=20)
     rim = bpy.context.active_object
     rim.name = "mag_rim"
@@ -74,8 +77,8 @@ def build_magnifier():
     bpy.ops.object.light_add(type='POINT', location=(-2.4, 3.2, 3.0))
     gl = bpy.context.active_object
     gl.name = "mag_glint"
-    gl.data.energy = 170
-    gl.data.shadow_soft_size = 0.5
+    gl.data.energy = f("glint_energy", 170)
+    gl.data.shadow_soft_size = f("glint_size", 0.5)
 
 
 @register("goody_magnifier")
@@ -89,7 +92,7 @@ def render(args):
 
 
 def _frames_setup(opts):
-    build_magnifier()
+    build_magnifier(opts)
     C.setup_scene(256, world_strength=0.18, fill_energy=0.14)
     C.apply_look(opts)
     return {}

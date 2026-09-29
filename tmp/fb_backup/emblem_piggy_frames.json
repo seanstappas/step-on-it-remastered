@@ -1,0 +1,110 @@
+{
+ "status": "published",
+ "source": "piggy_sprites",
+ "frames": [
+  34
+ ],
+ "mode": "tile",
+ "note": "The piggy SPAWNER emblem block f34 (static; drawn by game.gd _draw_enemy for a spawner): tile.py kind emblem -- a red slab with a silver bas-relief of the nasty whose outline is the source frame's statue mask and whose height = an inflated mask + a shape-from-shading height of the statue's own shading. Reproduce: sweep fit look final verify.",
+ "opts": {
+  "bevel": 0.03,
+  "gain": 0.9,
+  "base_gain": 1.1,
+  "silver_gain": 0.975,
+  "relief_h": 0.08,
+  "gamma": 0.75,
+  "sfs_gain": 2.5,
+  "key": 3.4375
+ },
+ "frame_opts": {
+  "34": {
+   "kind": "emblem",
+   "base": [
+    214,
+    0,
+    0
+   ],
+   "mask": "D:\\Code\\step-on-it-remastered\\extracted\\sprites\\piggy_sprites\\f34_32x32.png",
+   "shadow_paint": true
+  }
+ },
+ "sweep": [
+  {
+   "param": "none",
+   "start": 0,
+   "stop": 0,
+   "step": 1
+  }
+ ],
+ "scale": 4,
+ "samples": {
+  "sweep": 32,
+  "final": 256
+ },
+ "look": {
+  "frames": 1,
+  "passes": 2,
+  "samples": 64,
+  "group_frames": 1,
+  "params": {
+   "gain": [
+    0.9,
+    1.0,
+    1.1
+   ]
+  },
+  "refine": {
+   "base_gain": {
+    "step": 0.05,
+    "min": 0.7,
+    "max": 1.3,
+    "init": 1.1
+   },
+   "silver_gain": {
+    "step": 0.05,
+    "min": 0.6,
+    "max": 1.2,
+    "init": 0.975
+   },
+   "relief_h": {
+    "step": 0.04,
+    "min": 0.08,
+    "max": 0.4,
+    "init": 0.08
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.6,
+    "max": 1.3,
+    "init": 0.75
+   },
+   "sfs_gain": {
+    "step": 0.25,
+    "min": 0.0,
+    "max": 3.0,
+    "init": 2.5
+   },
+   "key": {
+    "step": 0.25,
+    "min": 1.0,
+    "max": 5.0,
+    "init": 3.4375
+   },
+   "shadow_gain": {
+    "step": 0.1,
+    "min": 0.2,
+    "max": 1.4,
+    "init": 0.6
+   }
+  },
+  "refine_rounds": 6,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "gate": {
+  "iou": 0.9,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 10
+}

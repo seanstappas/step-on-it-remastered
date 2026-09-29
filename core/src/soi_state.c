@@ -50,9 +50,13 @@ void soi_world_init(SoiWorld *w, uint32_t seed)
         w->players[i].lives = 2;         /* new-game lives (asm FUN_1002b060 -> +0x46 = 2; the 4 is COOPERATE's
                                           * shared pool only -- see soi_new_game). refs/images board_1/3 HUD: 02 */
         w->players[i].shield = 2;        /* VESTIGIAL (save/ABI stability only; the original has no hit-buffer) */
-        w->players[i].block_type = 0x19; /* BLUE block: the player's BUILT blocks are blue in the
-                                          * refs (montage/video), distinct from board white 0x07
-                                          * (block_sprites: 0x07 white, 0x13 green, 0x19 blue). */
+        w->players[i].block_type = (i == 2) ? 0x73 : (i == 3) ? 0x0D : 0x6D;
+                                         /* the block each player BUILDS: every shipped BORD header
+                                          * carries P1 0x026D (0x02) / P2 0x0273 (0x04) = the BLUE /
+                                          * GREEN player blocks (block_sprites f110 / f116); the
+                                          * loader re-reads them per board (asm FUN_1002b448 ->
+                                          * player +0x36). The remaster's red P3 builds the red
+                                          * block 0x0D (f14). */
         w->players[i].balls  = 1;        /* new-game ammo (asm FUN_1002b060 -> +0x4a = 1) */
         w->players[i].arrows = 1;        /* new-game ammo (asm FUN_1002b060 -> +0x4c = 1) */
         w->players[i].mult   = 1;        /* score multiplier default 1 (asm FUN_1002b174 -> +0x44 = 1) */
@@ -71,7 +75,8 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
     p->move_ctr = 0; p->run_dir = 0; p->in_air = 0; p->ground_state = SOI_ST_IDLE;
     p->spawn_x = (int16_t)p->x; p->spawn_y = (int16_t)p->y;
     p->respawn_timer = 0;
-    p->block_type = 0x07;
+    p->pose = 0; p->pose_t = 0; p->act_verb = SOI_ACT_NONE;   /* no build/fire action running */
+    p->frame = 0x3d; p->frame_save = 0x3d; p->act_dirty = 0; p->aux = 0; p->dstep = 0;   /* standing, facing right */
     p->input = 0; p->input_prev = 0;
     p->prev_pcol = (int16_t)col; p->prev_prow = (int16_t)row;   /* seed switch entry-edge to spawn cell */
     p->mult = 1;                   /* multiplier resets to 1 each level (asm FUN_1002b174 -> +0x44) */
@@ -208,6 +213,13 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
     place_player(w, 1, be16(bord + 0x06), be16(bord + 0x08));
     place_player(w, 2, be16(bord + 0x0A), be16(bord + 0x0C));
+    /* Built-block templates (asm FUN_1002b448: P1 +0x36 = header 0x02, P2 +0x36 = header 0x04;
+     * FUN_1002d04c/cf08/d190 build `template & 0xff`). Every shipped board holds 0x026D /
+     * 0x0273: P1 builds the BLUE block (f110), P2 the GREEN one (f116). */
+    w->players[1].block_type = (uint8_t)(be16(bord + 0x02) & 0xFFu);
+    w->players[2].block_type = (uint8_t)(be16(bord + 0x04) & 0xFFu);
+    /* A new board starts with no block animation running (asm FUN_10029acc/b18 -> FUN_100274e8). */
+    for (i = 0; i < SOI_BLOCKANIM_MAX; i++) w->banim[i].active = 0;
     /* pct_ultrabuster (0x10), thrown_badguy (0x12), pct_badguy (0x14): the original VALIDATES
      * these at load (asm FUN_1002b448) -- any out-of-range value -> 0 (pct 0..100, thrown 0..20),
      * and thrown & pct are LINKED (either being 0 zeros both). 5 boards carry GARBAGE here:
@@ -452,6 +464,7 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
     w->frame_parity ^= 1u;
     w->sfx_count = 0;   /* drop last frame's sound events; this tick refills */
     w->death_count = 0; /* drop last frame's death-pop events; this tick refills */
+    w->fx_count = 0;    /* drop last frame's debris-particle spawns; this tick refills */
 
     /* Input is sampled every 2 frames and so is the PLAYER state machine: the asm
      * main loop (FUN_10028a0c) gates {input FUN_1002d440 + locomotion FUN_1001166c
@@ -494,6 +507,8 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
                 rp->x = rp->spawn_x; rp->y = rp->spawn_y;
                 rp->alive = 1; rp->in_air = 0; rp->move_ctr = 0; rp->run_dir = 0;
                 rp->ground_state = SOI_ST_IDLE;
+                rp->pose = 0; rp->pose_t = 0; rp->act_verb = SOI_ACT_NONE;
+                rp->act_dirty = 0; rp->frame = (rp->facing == 1) ? 0x3d : 0x34;
                 rp->invuln = 90;                                /* spawn grace (no-board fallback) */
             }
         }
@@ -515,11 +530,8 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
     }
     for (i = 1; i < SOI_MAX_PLAYERS; i++)
         if (w->players[i].fast > 0) w->players[i].fast--;
-    /* Action pose (fire/build): count it down. This also RELEASES the run-dispatch
-     * freeze that soi_player_update holds while pose_t > 0 (the anti-glide stutter-stop),
-     * so the decrement MUST stay unconditional -- gating it would freeze the player. */
-    for (i = 1; i < SOI_MAX_PLAYERS; i++)
-        if (w->players[i].pose_t > 0 && --w->players[i].pose_t == 0) w->players[i].pose = 0;
+    /* (The build/fire action counter advances inside soi_player_update, once per PLAYER frame,
+     * exactly like the asm FUN_1001166c counter +0x2c -- it is not drained per tick.) */
     /* Clock power-up (goody 0x2E): halves the enemy update rate for ~10s. The asm
      * (_DAT_1003b294) decrements a counter each frame and runs the nasties only when
      * it is < 0 (expired -> normal) or ODD -> every other frame = 30Hz while active. */
@@ -528,6 +540,8 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
         soi_enemies_update(w);
     if (w->reveal_timer > 0) w->reveal_timer--;   /* magnifying-glass reveal (goody 0x2F) counts down */
     soi_projectiles_update(w);
+    soi_blockanims_update(w);   /* block grow/shrink animations: every frame, after the player's
+                                 * shots (asm loop: FUN_1000fd5c, FUN_10028060, FUN_100283a0) */
     soi_switch_animate(w);   /* advance Stop/Go open/close animations (b41; no-op when sw_count==0) */
 
     /* PER-PLAYER Bonus countdown (@0x1003a9f0, decremented by FUN_1000f500). Each
@@ -640,8 +654,10 @@ int      soi_player_fast(const SoiWorld *w, int p) { return pget(w, p)->fast; }
 int      soi_player_has_key(const SoiWorld *w, int p) { return pget(w, p)->has_key; }
 int      soi_player_state(const SoiWorld *w, int p) { return pget(w, p)->ground_state; }
 int      soi_player_movectr(const SoiWorld *w, int p) { return pget(w, p)->move_ctr; }
-int      soi_player_pose(const SoiWorld *w, int p) { const SoiPlayer *pp = pget(w, p); return pp->pose_t > 0 ? pp->pose : 0; }
-int      soi_player_pose_t(const SoiWorld *w, int p) { return pget(w, p)->pose_t; }
+int      soi_player_pose(const SoiWorld *w, int p) { return pget(w, p)->pose; }
+int      soi_player_pose_t(const SoiWorld *w, int p) { const SoiPlayer *pp = pget(w, p); return pp->pose ? pp->pose_t : 0; }
+int      soi_player_jump_t(const SoiWorld *w, int p) { return pget(w, p)->jump_t; }
+int      soi_player_frame(const SoiWorld *w, int p) { return pget(w, p)->frame; }
 int      soi_goodies_total(const SoiWorld *w)       { return w->goodies_total; }
 int      soi_goodies_left(const SoiWorld *w)        { return w->goodies_left; }
 int      soi_reveal_timer(const SoiWorld *w)        { return w->reveal_timer; }
@@ -730,6 +746,43 @@ int soi_death_y(const SoiWorld *w, int i)    { return (i >= 0 && i < w->death_co
 int soi_death_type(const SoiWorld *w, int i) { return (i >= 0 && i < w->death_count) ? w->death_type[i] : 0; }
 int soi_death_dir(const SoiWorld *w, int i)  { return (i >= 0 && i < w->death_count) ? w->death_dir[i]  : 0; }
 
+/* ---- cosmetic debris-particle queue (transient; the Godot layer flies each one) ---- */
+void soi_fx_emit(SoiWorld *w, int sheet, int frame, int x, int y, int vx, int vy, int grav)
+{
+    int k;
+    if (w->fx_count >= SOI_FX_QUEUE_MAX) return;
+    k = w->fx_count++;
+    w->fx_sheet[k] = (uint8_t)sheet;
+    w->fx_frame[k] = (int16_t)frame;
+    w->fx_x[k] = (int16_t)x;   w->fx_y[k] = (int16_t)y;
+    w->fx_vx[k] = (int16_t)vx; w->fx_vy[k] = (int16_t)vy;
+    w->fx_grav[k] = (uint8_t)(grav != 0);
+}
+int soi_fx_count(const SoiWorld *w) { return w->fx_count; }
+int soi_fx_get(const SoiWorld *w, int i, int field)
+{
+    if (i < 0 || i >= w->fx_count) return 0;
+    switch (field) {
+        case SOI_FX_SHEET: return w->fx_sheet[i];
+        case SOI_FX_FRAME: return w->fx_frame[i];
+        case SOI_FX_X:     return w->fx_x[i];
+        case SOI_FX_Y:     return w->fx_y[i];
+        case SOI_FX_VX:    return w->fx_vx[i];
+        case SOI_FX_VY:    return w->fx_vy[i];
+        case SOI_FX_GRAV:  return w->fx_grav[i];
+        default:           return 0;
+    }
+}
+
+int soi_blockanim(const SoiWorld *w, int i)
+{
+    const SoiBlockAnim *a;
+    if (i < 0 || i >= SOI_BLOCKANIM_MAX || !w->banim[i].active) return -1;
+    a = &w->banim[i];
+    if (a->frame < 1 || a->frame > 5) return -1;   /* not yet advanced (never visible to a caller) */
+    return (a->col & 0xFF) | ((a->row & 0xFF) << 8) | ((a->frame & 0xFF) << 16) | ((a->step > 0) << 24);
+}
+
 /* per-entity accessors (bounds-checked; inactive/OOB slots read as 0). */
 static const SoiEnemy *eget(const SoiWorld *w, int i)
 {
@@ -803,6 +856,9 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)p->fast);
         bput_u8(&b, p->pose);
         bput_u16(&b, (uint16_t)p->pose_t);
+        bput_u8(&b, p->act_verb);
+        bput_u16(&b, (uint16_t)p->frame); bput_u16(&b, (uint16_t)p->frame_save);
+        bput_u8(&b, p->act_dirty); bput_u16(&b, (uint16_t)p->aux); bput_u8(&b, (uint8_t)p->dstep);
     }
     for (i = 0; i < SOI_MAX_ENEMIES; i++) {
         const SoiEnemy *e = &w->enemies[i];
@@ -832,6 +888,13 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
     for (r = 0; r < SOI_GRID_ROWS; r++)
         for (c = 0; c < SOI_GRID_COLS; c++)
             bput_u32(&b, w->cell[r][c]);
+    for (i = 0; i < SOI_BLOCKANIM_MAX; i++) {
+        const SoiBlockAnim *a = &w->banim[i];
+        bput_u8(&b, a->active); bput_u8(&b, (uint8_t)a->step); bput_u8(&b, (uint8_t)a->frame);
+        bput_u8(&b, a->type);
+        bput_u16(&b, (uint16_t)a->col); bput_u16(&b, (uint16_t)a->row);
+        bput_u32(&b, a->fin);
+    }
 
     return b.len;
 }

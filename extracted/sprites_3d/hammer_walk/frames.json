@@ -8,7 +8,7 @@
   ]
  },
  "mode": "hammer",
- "note": "WIP: the Hammer walking (f02-f49), hammer.py. The mallet angle is now relative to the body (ham -90 = up, +-180 = back); the carry is up-and-back over the shoulder (~-135). Previous: IoU 0.79 with the handle sticking out forward.",
+ "note": "Round 13: optimfail 31 -> 34/48 (the 14 fails are colour, dE 16.1-21.6; the full hair mop and a darker look (gamma .9, world .08) scored worse: dE ~20). WIP: the Hammer walking (f02-f49), hammer.py. The mallet angle is now relative to the body (ham -90 = up, +-180 = back); the carry is up-and-back over the shoulder (~-135). Previous: IoU 0.79 with the handle sticking out forward.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,

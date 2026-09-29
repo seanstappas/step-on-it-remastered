@@ -5,7 +5,19 @@
   48
  ],
  "mode": "goody_magnifier",
- "opts": {},
+ "opts": {
+  "world": 0.06,
+  "key": 3.0,
+  "fill": 0.06,
+  "rim_r": 0.06,
+  "wood": [
+   100,
+   45,
+   0
+  ],
+  "glass_rough": 0.08,
+  "glint_size": 0.25
+ },
  "sweep": [
   {
    "param": "spin",
@@ -38,8 +50,53 @@
     0.06,
     0.12,
     0.18
+   ],
+   "wood": [
+    [
+     80,
+     36,
+     0
+    ],
+    [
+     100,
+     45,
+     0
+    ],
+    [
+     120,
+     60,
+     5
+    ]
    ]
-  }
+  },
+  "refine": {
+   "rim_r": {
+    "step": 0.01,
+    "min": 0.035,
+    "max": 0.1,
+    "init": 0.06
+   },
+   "glass_rough": {
+    "step": 0.03,
+    "min": 0.02,
+    "max": 0.3,
+    "init": 0.08
+   },
+   "glint_energy": {
+    "step": 30,
+    "min": 60,
+    "max": 400,
+    "init": 170
+   },
+   "glint_size": {
+    "step": 0.05,
+    "min": 0.05,
+    "max": 0.6,
+    "init": 0.25
+   }
+  },
+  "refine_rounds": 4,
+  "detail_w": 0.5
  },
  "post": [],
  "gate": {

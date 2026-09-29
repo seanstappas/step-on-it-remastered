@@ -48,7 +48,7 @@ def _slab(name, half, height, bevel, mat):
 
 
 def _glossy(name, rgb, opts):
-    return C._mat(name, C._srgb(*rgb), rough=float(opts.get("f_rough", 0.25)), spec=0.5,
+    return C._mat(name, C._srgb(*rgb), rough=float(opts.get("f_rough", 0.25)), spec=float(opts.get("f_spec", 0.5)),
                   coat=float(opts.get("f_coat", 0.5)))
 
 
@@ -147,7 +147,7 @@ def build_tile(opts):
     tile = _slab("tile", half, height, bevel, body_mat)
     col = _rgb(opts, "color", (200, 0, 0))
     if kind == "emblem":
-        _emblem(opts, top, half)
+        _emblem(opts, top, half, tile)
         return
     if kind == "ball":
         r = float(opts.get("ball_r", 0.6))
@@ -156,6 +156,7 @@ def build_tile(opts):
         ball = bpy.context.active_object
         ball.data.materials.append(_glossy("feature", col, opts))
         bpy.ops.object.shade_smooth()
+        ball.visible_shadow = bool(opts.get("feature_shadow", True))   # the source ball casts none on the tile
     elif kind == "donut":
         R, t = float(opts.get("torus_R", 0.46)), float(opts.get("torus_r", 0.22))
         bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=t, major_segments=64, minor_segments=24,
@@ -241,18 +242,61 @@ def _sfs_height(m, lum):
     return out
 
 
-def _emblem(opts, z0, half):
+def _shadow_paint(tile, px, shadow, opts):
+    """Paint the source's dark SHADOW pixels (the statue's shadow on the red slab, `shadow` mask) onto the
+    slab: its base colour becomes the source's own colour there (x `shadow_gain`, softened by
+    `shadow_soft` SD px), the red elsewhere."""
+    import numpy as np
+    h, w = shadow.shape
+    k = 8
+    soft = _blur(np.kron(shadow.astype(np.float32), np.ones((k, k), np.float32)), max(0.05, float(opts.get("shadow_soft", 0.5))) * k)
+    col = np.kron(px[..., :3], np.ones((k, k, 1), np.float32)) * float(opts.get("shadow_gain", 0.6))
+    rgba = np.concatenate([np.clip(col, 0.0, 1.0), np.clip(soft, 0.0, 1.0)[..., None]], -1)[::-1]   # bottom row first
+    img = bpy.data.images.new("emblem_shadow", w * k, h * k, alpha=True)
+    img.pixels = rgba.astype(np.float32).ravel().tolist()
+    mat = tile.data.materials[0]
+    nt = mat.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    base = tuple(bsdf.inputs["Base Color"].default_value)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.extension = 'EXTEND'
+    tex.interpolation = 'Linear'
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Location"].default_value = (0.5, 0.5, 0.0)          # the unit cube's local xy [-0.5, 0.5] -> uv
+    nt.links.new(coord.outputs["Object"], mp.inputs["Vector"])
+    nt.links.new(mp.outputs["Vector"], tex.inputs["Vector"])
+    mix = nt.nodes.new("ShaderNodeMixRGB")
+    mix.inputs["Color1"].default_value = base
+    nt.links.new(tex.outputs["Alpha"], mix.inputs["Fac"])
+    nt.links.new(tex.outputs["Color"], mix.inputs["Color2"])
+    nt.links.new(mix.outputs["Color"], bsdf.inputs["Base Color"])
+
+
+def _emblem(opts, z0, half, tile=None):
     """The silver relief: a fine grid over the tile top whose outline is the source's statue mask (`mask`,
     blurred by `relief_sigmas`[0], cut at `relief_thr`). Its height = `relief_h` x the mask blurred at every
     `relief_sigmas` (an inflated, rounded bas-relief) + `sfs_gain` x a shape-from-shading height (_sfs_height)
-    of the statue's own shading, so the relief lit from the top left reproduces the original's light pattern."""
+    of the statue's own shading, so the relief lit from the top left reproduces the original's light pattern.
+    `shadow_paint`: the source's DARK pixels (grey below `shadow_v`, or red below `shadow_r`) are the white
+    statue's shadow on the slab, not part of the statue -- they stay out of the relief and are painted on
+    the slab (_shadow_paint), so the icon keeps its separate shadow like the original."""
     import bmesh
     import numpy as np
     img = bpy.data.images.load(opts["mask"])
     w, h = img.size
     px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1]      # row 0 = top
     sat = px[..., :3].max(-1) - px[..., :3].min(-1)
-    m = ((sat < float(opts.get("statue_sat", 0.25))) & (px[..., 3] > 0.5)).astype(np.float32)
+    statue = (sat < float(opts.get("statue_sat", 0.25))) & (px[..., 3] > 0.5)
+    if opts.get("shadow_paint"):
+        red = (px[..., 0] - px[..., 1:3].max(-1)) > 0.2
+        shadow = (px[..., 3] > 0.5) & ((statue & (px[..., :3].max(-1) < float(opts.get("shadow_v", 0.4))))
+                                       | (red & (px[..., 0] < float(opts.get("shadow_r", 0.48)))))
+        statue &= ~shadow
+        if tile is not None:
+            _shadow_paint(tile, px, shadow, opts)
+    m = statue.astype(np.float32)
     sig = [float(s) for s in opts.get("relief_sigmas", [0.7, 1.5, 3.0])]
     cut = _blur(m, sig[0])
     hf = sum(_blur(m, s) for s in sig) / len(sig)

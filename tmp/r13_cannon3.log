@@ -1,0 +1,24 @@
+== cannon_barrel [look final verify] (13 s, exit 1)
+look: 2 frames [2, 3]
+look: start dE 17.245
+look: world -> 0.12  dE 16.373
+look: key -> 4.6  dE 15.997
+look: fill -> 0.16  dE 15.902
+look: dE 17.245 -> 15.902 with {"barrel": true, "world": 0.12, "key": 4.6, "fill": 0.16}
+final: 2 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
+verify cannon_barrel: 2 frames, IoU min 0.980 mean 0.980, dE mean 15.91 max 16.33 -> FAIL [2]
+BATCH DONE
+== cannon_barrel [look final verify] (41 s, exit 0)
+look: 2 frames [2, 3]
+look: start dE 26.545
+look: housing_rgb -> [240, 240, 240]  dE 24.311
+look: refine round 0 -> dE 22.918 {"world": 0.15, "key": 4.2, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: refine round 1 -> dE 22.840 {"world": 0.18, "key": 4.2, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: refine round 2 -> dE 22.797 {"world": 0.18, "key": 4.0, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: refine round 3 -> dE 22.776 {"world": 0.195, "key": 4.0, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: refine round 4 -> dE 22.776 {"world": 0.195, "key": 4.0, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: refine round 5 -> dE 22.776 {"world": 0.195, "key": 4.0, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+look: dE 26.545 -> 22.776 with {"barrel": true, "housing_rgb": [240, 240, 240], "world": 0.195, "key": 4.0, "fill": 0.16, "gamma": 1.0, "barrel_z": 0.15}
+final: 2 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
+verify cannon_barrel: 2 frames, IoU min 0.980 mean 0.980, dE mean 13.58 max 13.65 -> PASS
+BATCH DONE

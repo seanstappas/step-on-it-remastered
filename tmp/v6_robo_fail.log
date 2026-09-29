@@ -1,0 +1,4 @@
+== robo_sprites [optimfail final verify] (479 s, exit 0)
+final: 80 frames (+0 derived) -> extracted\sprites_3d_frames\robo_sprites
+verify robo_sprites: 80 frames, IoU min 0.854 mean 0.885, dE mean 13.73 max 16.88 -> PASS
+BATCH DONE

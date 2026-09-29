@@ -8,23 +8,23 @@
   ]
  },
  "mode": "ant",
- "note": "PUBLISHED 49/49 (IoU min 0.851 mean 0.881, dE mean 11.0 max 15.7): the turn needed TWO antennae (ant.py ant_z > 0 = a pair, the source's front views f21-f33 show both) + splay 3.5/4.0 and a full refit (42 -> 46), then the failing frames seeded from their nearly identical passing twins (f33 <- f42, f35 <- f43: source IoU 0.879) -> 48, and the head-on f26 (knees 1 px too high) a per-frame knee height (pose kt, default 0) -> 49. History: ant.py = glossy red BALLS + thin slanted splayed leg bars: IoU 0.858 / dE 12.1, 17 fails, mostly the turn f20-f35 (the fit wandered: yaw 326 at f21, 132 at f35) -> a linear yaw prior 0 -> 180 over f19-f32. Round 10: a yaw x phase probe changed nothing (33.61 -> 33.48); a look that also scored the failing turn frames (add_fails) lowered their dE by ~0.6 but cost 3 frames of IoU (39 -> 36 passing) -> reverted. The turn frames render the white legs pinkish-grey (126,92,92 for a 210 grey): leg/body overlap in the front views. Shift hops: 39 -> 40/49 (f35). Round legs (leg_d = leg_w, as wide front-on as side-on) cut the turn frames IoU by up to 0.047 (37 passing) -> reverted: the source legs are not wider in the front views.",
+ "note": "Round 13 (user feedback V12): FEET at the leg ends (foot_l 2.6), the knee BENDING back into the body side (hip_seg), antenna tip KNOBS 3 px wide (the source's little ears, ant_knob 1.6) that WIGGLE with the walk (ant_wig 15 deg), thinner legs like the source's 1-2 px white strokes (leg_w 0.8, refine held 0.7-1.0). PUBLISHED 49/49 (IoU min 0.851 mean 0.881, dE mean 11.0 max 15.7): the turn needed TWO antennae (ant.py ant_z > 0 = a pair, the source's front views f21-f33 show both) + splay 3.5/4.0 and a full refit (42 -> 46), then the failing frames seeded from their nearly identical passing twins (f33 <- f42, f35 <- f43: source IoU 0.879) -> 48, and the head-on f26 (knees 1 px too high) a per-frame knee height (pose kt, default 0) -> 49. History: ant.py = glossy red BALLS + thin slanted splayed leg bars: IoU 0.858 / dE 12.1, 17 fails, mostly the turn f20-f35 (the fit wandered: yaw 326 at f21, 132 at f35) -> a linear yaw prior 0 -> 180 over f19-f32. Round 10: a yaw x phase probe changed nothing (33.61 -> 33.48); a look that also scored the failing turn frames (add_fails) lowered their dE by ~0.6 but cost 3 frames of IoU (39 -> 36 passing) -> reverted. The turn frames render the white legs pinkish-grey (126,92,92 for a 210 grey): leg/body overlap in the front views. Shift hops: 39 -> 40/49 (f35). Round legs (leg_d = leg_w, as wide front-on as side-on) cut the turn frames IoU by up to 0.047 (37 passing) -> reverted: the source legs are not wider in the front views.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 5,
  "opts": {
-  "world": 0.05,
+  "world": 0.09,
   "key": 2.625,
-  "fill": 0.115,
+  "fill": 0.025,
   "key_dir": [
    -0.26,
    0.7,
    0.66
   ],
   "tilt": 0.0,
-  "rough": 0.4,
+  "rough": 0.8,
   "spec": 0.8,
-  "gamma": 0.8,
+  "gamma": 0.75,
   "body": [
    230,
    25,
@@ -36,40 +36,49 @@
    230
   ],
   "head_x": -8.125,
-  "head_hx": 3.3,
-  "head_hy": 3.625,
+  "head_hx": 3.6,
+  "head_hy": 3.775,
   "thx_hx": 5.4,
-  "thx_hy": 4.0875,
+  "thx_hy": 4.4625,
   "abd_x": 4.0,
   "abd_hx": 3.4,
   "abd_hy": 2.5,
-  "body_hz": 3.9,
+  "body_hz": 4.1625,
   "body_bevel": 1.0,
-  "jaw_l": 3.1,
+  "jaw_l": 3.7,
   "jaw_y": -0.45,
   "jaw_h": 0.8,
   "jaw_w": 1.2,
   "ant_l": 4.3,
-  "ant_dx": -0.3,
+  "ant_dx": -0.6,
   "ant_w": 0.8,
-  "ant_z": 1.5,
-  "leg_w": 1.1125,
+  "ant_z": 1.2,
+  "leg_w": 1.0,
   "leg_d": 0.8,
-  "leg_z": 4.5,
-  "leg_top": 3.9,
-  "ground": 8.5,
+  "leg_z": 4.6875,
+  "leg_top": 4.3,
+  "ground": 8.95,
   "foot_x1": -9.125,
   "foot_x2": 0.875,
-  "foot_x3": 12.5,
+  "foot_x3": 12.375,
   "swing": 3.05,
-  "lift": 0.4,
+  "lift": 0.375,
   "body_shape": "ball",
   "coat": 0.5,
-  "knee_x1": -5.4375,
-  "knee_x2": 0.8125,
-  "knee_x3": 6.4375,
-  "knee_swing": 0.4,
-  "splay": 3.5
+  "knee_x1": -5.6875,
+  "knee_x2": 1.3125,
+  "knee_x3": 7.1875,
+  "knee_swing": 0.7,
+  "splay": 4.0,
+  "foot_l": 2.6,
+  "foot_dir": -1.0,
+  "foot_h": 0.65,
+  "ant_knob": 1.6,
+  "ant_wig": 15.0,
+  "hip_seg": true,
+  "hip_y": 2.0,
+  "hip_dx": 1.5,
+  "hip_zf": 1.0
  },
  "sweep": [
   {
@@ -172,7 +181,7 @@
     "step": 0.3,
     "min": 0.0,
     "max": 2.5,
-    "init": 1.5
+    "init": 1.2
    },
    "head_x": {
     "step": 0.5,
@@ -184,13 +193,13 @@
     "step": 0.3,
     "min": 1.5,
     "max": 4,
-    "init": 3.3
+    "init": 3.6
    },
    "head_hy": {
     "step": 0.3,
     "min": 1.8,
     "max": 4,
-    "init": 3.625
+    "init": 3.775
    },
    "thx_hx": {
     "step": 0.4,
@@ -202,7 +211,7 @@
     "step": 0.3,
     "min": 2,
     "max": 4.5,
-    "init": 4.0875
+    "init": 4.4625
    },
    "abd_x": {
     "step": 0.5,
@@ -226,13 +235,13 @@
     "step": 0.3,
     "min": 2,
     "max": 4.5,
-    "init": 3.9
+    "init": 4.1625
    },
    "jaw_l": {
     "step": 0.4,
     "min": 1.5,
     "max": 6,
-    "init": 3.1
+    "init": 3.7
    },
    "jaw_y": {
     "step": 0.3,
@@ -250,31 +259,31 @@
     "step": 0.4,
     "min": -2,
     "max": 2,
-    "init": -0.3
+    "init": -0.6
    },
    "leg_w": {
-    "step": 0.15,
-    "min": 0.6,
-    "max": 1.6,
-    "init": 1.1125
+    "step": 0.05,
+    "min": 0.7,
+    "max": 1.0,
+    "init": 1.0
    },
    "leg_z": {
     "step": 0.3,
     "min": 3,
     "max": 6,
-    "init": 4.5
+    "init": 4.6875
    },
    "leg_top": {
     "step": 0.4,
     "min": 1,
     "max": 5,
-    "init": 3.9
+    "init": 4.3
    },
    "ground": {
     "step": 0.4,
     "min": 7,
     "max": 11,
-    "init": 8.5
+    "init": 8.95
    },
    "foot_x1": {
     "step": 0.5,
@@ -292,7 +301,7 @@
     "step": 0.5,
     "min": 6,
     "max": 15,
-    "init": 12.5
+    "init": 12.375
    },
    "swing": {
     "step": 0.4,
@@ -304,13 +313,13 @@
     "step": 0.2,
     "min": 0,
     "max": 2,
-    "init": 0.4
+    "init": 0.375
    },
    "rough": {
     "step": 0.1,
     "min": 0.05,
     "max": 0.9,
-    "init": 0.4
+    "init": 0.8
    },
    "spec": {
     "step": 0.1,
@@ -322,7 +331,7 @@
     "step": 0.1,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.8
+    "init": 0.75
    },
    "key": {
     "step": 0.5,
@@ -334,13 +343,13 @@
     "step": 0.04,
     "min": 0,
     "max": 0.4,
-    "init": 0.05
+    "init": 0.09
    },
    "fill": {
     "step": 0.06,
     "min": 0,
     "max": 0.5,
-    "init": 0.115
+    "init": 0.025
    },
    "coat": {
     "step": 0.1,
@@ -352,31 +361,37 @@
     "step": 0.5,
     "min": -10,
     "max": -2,
-    "init": -5.4375
+    "init": -5.6875
    },
    "knee_x2": {
     "step": 0.5,
     "min": -3,
     "max": 4,
-    "init": 0.8125
+    "init": 1.3125
    },
    "knee_x3": {
     "step": 0.5,
     "min": 3,
     "max": 11,
-    "init": 6.4375
+    "init": 7.1875
    },
    "knee_swing": {
     "step": 0.4,
     "min": 0,
     "max": 3,
-    "init": 0.4
+    "init": 0.7
    },
    "splay": {
     "step": 0.5,
     "min": 0.0,
     "max": 8.0,
-    "init": 3.5
+    "init": 4.0
+   },
+   "ant_knob": {
+    "step": 0.1,
+    "min": 1.4,
+    "max": 2.0,
+    "init": 1.6
    }
   },
   "refine_rounds": 8,

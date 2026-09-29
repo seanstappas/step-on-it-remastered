@@ -1,0 +1,4 @@
+== goody_gift [final verify] (1 s, exit 0)
+final: 1 frames (+0 derived) -> extracted\sprites_3d_frames\goody_sprites
+verify goody_gift: 1 frames, IoU min 0.904 mean 0.904, dE mean 15.17 max 15.17 -> PASS
+BATCH DONE

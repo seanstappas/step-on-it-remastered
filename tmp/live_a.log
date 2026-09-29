@@ -1,0 +1,51 @@
+== BP_sprites [tweens live livecal livegate] (20 s, exit 0)
+tweens: 4/4 pairs x 7 in-betweens -> extracted\sprites_3d_frames\BP_sprites\tw
+LIVE_DONE 68
+live: 68 frames -> extracted\sprites_live\BP_sprites
+livecal BP_sprites: sun x1.025, ambient x0.250 -> dE mean 12.13 (unscaled 13.36) -> extracted\sprites_live\BP_sprites\live.json
+livegate BP_sprites (68 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.849 mean 0.881, dE mean 12.13 max 15.69, pass 67 (68 as good as the published frame)
+  cycles: IoU min 0.853 mean 0.881, dE mean 11.98 max 15.83, pass 68
+  live vs cycles: dE mean 2.64 max 3.57
+  worst live frames: f51 (IoU 0.870 dE 15.7), f74 (IoU 0.849 dE 15.4), f76 (IoU 0.868 dE 15.3), f75 (IoU 0.872 dE 15.2), f88 (IoU 0.870 dE 15.0)
+== BP_tumble [tweens live livecal livegate] (9 s, exit 0)
+tweens: no "tweens" block, skipping
+LIVE_DONE 32
+live: 32 frames -> extracted\sprites_live\BP_tumble
+livecal BP_tumble: sun x0.875, ambient x0.400 -> dE mean 14.00 (unscaled 15.41) -> extracted\sprites_live\BP_tumble\live.json
+livegate BP_tumble (32 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.860 mean 0.884, dE mean 14.01 max 15.63, pass 32 (32 as good as the published frame)
+  cycles: IoU min 0.860 mean 0.882, dE mean 13.88 max 15.72, pass 32
+  live vs cycles: dE mean 3.39 max 4.19
+  worst live frames: f153 (IoU 0.882 dE 15.6), f136 (IoU 0.899 dE 15.4), f130 (IoU 0.887 dE 15.1), f154 (IoU 0.889 dE 15.1), f137 (IoU 0.881 dE 15.1)
+== GP_sprites [tweens live livecal livegate] (17 s, exit 0)
+tweens: 4/4 pairs x 7 in-betweens -> extracted\sprites_3d_frames\GP_sprites\tw
+LIVE_DONE 68
+live: 68 frames -> extracted\sprites_live\GP_sprites
+livecal GP_sprites: sun x0.925, ambient x0.350 -> dE mean 11.03 (unscaled 12.43) -> extracted\sprites_live\GP_sprites\live.json
+livegate GP_sprites (68 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.851 mean 0.879, dE mean 11.03 max 14.13, pass 68 (68 as good as the published frame)
+  cycles: IoU min 0.851 mean 0.879, dE mean 11.12 max 14.87, pass 68
+  live vs cycles: dE mean 2.07 max 2.91
+  worst live frames: f76 (IoU 0.861 dE 14.1), f97 (IoU 0.879 dE 13.9), f71 (IoU 0.851 dE 13.9), f51 (IoU 0.866 dE 13.9), f75 (IoU 0.875 dE 13.8)
+== GP_tumble [tweens live livecal livegate] (9 s, exit 0)
+tweens: no "tweens" block, skipping
+LIVE_DONE 32
+live: 32 frames -> extracted\sprites_live\GP_tumble
+livecal GP_tumble: sun x0.800, ambient x0.400 -> dE mean 13.00 (unscaled 15.29) -> extracted\sprites_live\GP_tumble\live.json
+livegate GP_tumble (32 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.855 mean 0.882, dE mean 13.00 max 14.51, pass 32 (32 as good as the published frame)
+  cycles: IoU min 0.855 mean 0.880, dE mean 12.83 max 14.32, pass 32
+  live vs cycles: dE mean 2.72 max 4.04
+  worst live frames: f153 (IoU 0.882 dE 14.5), f146 (IoU 0.895 dE 14.2), f154 (IoU 0.889 dE 14.2), f137 (IoU 0.881 dE 14.0), f130 (IoU 0.887 dE 14.0)
+== robo_sprites [tweens live livecal livegate] (58 s, exit 0)
+tweens: 77/77 pairs x 3 in-betweens -> extracted\sprites_3d_frames\robo_sprites\tw
+LIVE_DONE 80
+live: 80 frames -> extracted\sprites_live\robo_sprites
+livecal robo_sprites: sun x0.875, ambient x0.650 -> dE mean 13.68 (unscaled 14.18) -> extracted\sprites_live\robo_sprites\live.json
+livegate robo_sprites (80 frames, gate IoU >= 0.850, dE <= 17.5):
+  live  : IoU min 0.854 mean 0.883, dE mean 13.68 max 16.53, pass 80 (80 as good as the published frame)
+  cycles: IoU min 0.854 mean 0.885, dE mean 13.73 max 16.88, pass 80
+  live vs cycles: dE mean 3.00 max 4.07
+  worst live frames: f19 (IoU 0.883 dE 16.5), f32 (IoU 0.878 dE 16.4), f61 (IoU 0.885 dE 16.3), f46 (IoU 0.855 dE 16.1), f60 (IoU 0.898 dE 16.0)
+BATCH DONE

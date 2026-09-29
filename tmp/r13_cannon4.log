@@ -1,0 +1,13 @@
+== cannon_barrel [final verify tweens live livecal livegate] (5 s, exit 0)
+final: 2 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
+verify cannon_barrel: 2 frames, IoU min 0.980 mean 0.980, dE mean 13.58 max 13.65 -> PASS
+tweens: no "tweens" block, skipping
+LIVE_DONE 2
+live: 2 frames -> extracted\sprites_live\cannon_barrel
+livecal cannon_barrel: sun x0.775, ambient x1.050 -> dE mean 12.76 (unscaled 13.15) -> extracted\sprites_live\cannon_barrel\live.json
+livegate cannon_barrel (2 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.980 mean 0.980, dE mean 12.75 max 13.37, pass 2 (2 as good as the published frame)
+  cycles: IoU min 0.980 mean 0.980, dE mean 13.58 max 13.65, pass 2
+  live vs cycles: dE mean 4.47 max 4.57
+  worst live frames: f03 (IoU 0.980 dE 13.4), f02 (IoU 0.980 dE 12.1)
+BATCH DONE

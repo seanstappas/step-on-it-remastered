@@ -1,0 +1,4 @@
+== cannon_barrel [tweens live livecal livegate] (0 s, exit 1)
+tweens: no "tweens" block, skipping
+live: cannon_barrel has per-frame model variants (frame_opts) -- not a single rig
+BATCH DONE

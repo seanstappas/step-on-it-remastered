@@ -8,14 +8,14 @@
   ]
  },
  "mode": "kid",
- "note": "BP run f02-f49 (kid.py), WIP: 41/48 pass (IoU 0.868, dE 13.1) after sweep fit optim look optim + optim/finish passes, widened ankles/knees/elbows, bake look, optimfail with probe grids (the front arm straight out in f07/f19). Failing: f07 (dE 18.4), f19 (dE 17.7), f11 (IoU 0.833), f24/f34/f35/f47 (IoU 0.84-0.85). Its tuned body/colour opts seed BP_sprites/BP_tumble. Round 10: 45/48 (eyes, an ankle probe, and +-1 px shift hops fixed f11 and f20); white socks on the lower 60% of the shin raised the dE in 47 of 48 frames (the tall white in f07/f19 is the pointed shoe) -> removed. Left: f07 dE 16.7, f19 dE 17.7, f24 IoU 0.849. PUBLISHED round 10 (48 frames). Documented gate dE 17.5 (not 16): f07 (16.5) and f19 (17.1) are the stride frames whose front shoe points down across 5-6 rows and whose trouser shading runs dark where ours is lit; eyes, ankle and head-turn probes, +-1 px shift hops, sub-pixel offsets, white socks (worse in 47/48) and a mirrored key light (+2.8 mean dE) did not close them. The other 46 frames are <= 15.7. Head turn held to +-90 deg: a free +-180 turned f24 to face backwards.",
+ "note": "Round 13 (user feedback): full hair mop cut at a fringe (kid.py hair_cut) + longer arms (the source's hands hang to the upper thigh); both held out of the look. BP run f02-f49 (kid.py), WIP: 41/48 pass (IoU 0.868, dE 13.1) after sweep fit optim look optim + optim/finish passes, widened ankles/knees/elbows, bake look, optimfail with probe grids (the front arm straight out in f07/f19). Failing: f07 (dE 18.4), f19 (dE 17.7), f11 (IoU 0.833), f24/f34/f35/f47 (IoU 0.84-0.85). Its tuned body/colour opts seed BP_sprites/BP_tumble. Round 10: 45/48 (eyes, an ankle probe, and +-1 px shift hops fixed f11 and f20); white socks on the lower 60% of the shin raised the dE in 47 of 48 frames (the tall white in f07/f19 is the pointed shoe) -> removed. Left: f07 dE 16.7, f19 dE 17.7, f24 IoU 0.849. PUBLISHED round 10 (48 frames). Documented gate dE 17.5 (not 16): f07 (16.5) and f19 (17.1) are the stride frames whose front shoe points down across 5-6 rows and whose trouser shading runs dark where ours is lit; eyes, ankle and head-turn probes, +-1 px shift hops, sub-pixel offsets, white socks (worse in 47/48) and a mirrored key light (+2.8 mean dE) did not close them. The other 46 frames are <= 15.7. Head turn held to +-90 deg: a free +-180 turned f24 to face backwards.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
  "opts": {
   "world": 0.18,
   "key": 3.075,
-  "fill": 0.12,
+  "fill": 0.06,
   "key_dir": [
    -0.26,
    0.7,
@@ -46,35 +46,35 @@
    245,
    240
   ],
-  "torso_y": 4.85,
-  "torso_h": 7.2,
+  "torso_y": 4.95,
+  "torso_h": 7.0,
   "torso_r": 4.0375,
   "torso_fx": 0.77,
   "torso_bevel": 1.2,
-  "hip_r": 3.25,
+  "hip_r": 3.1875,
   "hip_h": 2.4,
-  "head_y": 12.3,
-  "head_r": 3.575,
+  "head_y": 12.1,
+  "head_r": 3.375,
   "head_fy": 1.05,
   "head_fz": 0.95,
-  "hair_dx": 0.3125,
-  "hair_dy": 0.375,
-  "hair_f": 0.9188,
-  "hair_fy": 0.95,
+  "hair_dx": 0.35,
+  "hair_dy": 0.3,
+  "hair_f": 1.08,
+  "hair_fy": 1.05,
   "hair_fz": 1.02,
   "neck_y": 9.4,
   "neck_r": 1.3,
   "shoulder_y": 8.2,
-  "shoulder_z": 4.15,
-  "uarm_l": 4.825,
-  "farm_l": 3.8,
+  "shoulder_z": 4.1875,
+  "uarm_l": 5.5,
+  "farm_l": 4.6,
   "arm_r": 1.7125,
   "hand_r": 1.5188,
   "hip_z": 1.3,
   "thigh_l": 5.4125,
   "shin_l": 5.0,
-  "leg_r": 1.775,
-  "foot_rx": 2.9188,
+  "leg_r": 1.7937,
+  "foot_rx": 2.8876,
   "foot_ry": 1.075,
   "foot_rz": 1.6,
   "foot_dx": 0.6,
@@ -86,9 +86,12 @@
   "rough": 0.25,
   "spec": 0.0,
   "gamma": 0.8875,
-  "eye_el": 7.0,
-  "eye_r": 0.85,
-  "eye_az": 22.0
+  "eye_el": 4.5,
+  "eye_r": 0.925,
+  "eye_az": 22.0,
+  "hair_cut": 25.0,
+  "fringe_x": 0.4,
+  "fringe_y": 0.1
  },
  "sweep": [
   {
@@ -344,13 +347,13 @@
     "step": 0.4,
     "min": 3,
     "max": 7,
-    "init": 4.85
+    "init": 4.95
    },
    "torso_h": {
     "step": 0.4,
     "min": 6,
     "max": 11,
-    "init": 7.2
+    "init": 7.0
    },
    "torso_r": {
     "step": 0.25,
@@ -368,37 +371,19 @@
     "step": 0.25,
     "min": 2,
     "max": 4,
-    "init": 3.25
+    "init": 3.1875
    },
    "head_y": {
     "step": 0.4,
     "min": 11,
     "max": 15,
-    "init": 12.3
+    "init": 12.1
    },
    "head_r": {
     "step": 0.2,
     "min": 2.8,
     "max": 4.6,
-    "init": 3.575
-   },
-   "hair_dx": {
-    "step": 0.3,
-    "min": -1,
-    "max": 2,
-    "init": 0.3125
-   },
-   "hair_dy": {
-    "step": 0.3,
-    "min": -0.5,
-    "max": 2,
-    "init": 0.375
-   },
-   "hair_f": {
-    "step": 0.05,
-    "min": 0.9,
-    "max": 1.25,
-    "init": 0.9188
+    "init": 3.375
    },
    "shoulder_y": {
     "step": 0.4,
@@ -410,19 +395,19 @@
     "step": 0.3,
     "min": 2.8,
     "max": 5.2,
-    "init": 4.15
+    "init": 4.1875
    },
    "uarm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 4.825
+    "min": 5.0,
+    "max": 7.0,
+    "init": 5.5
    },
    "farm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 3.8
+    "min": 4.2,
+    "max": 6.0,
+    "init": 4.6
    },
    "arm_r": {
     "step": 0.15,
@@ -458,13 +443,13 @@
     "step": 0.15,
     "min": 1,
     "max": 2.4,
-    "init": 1.775
+    "init": 1.7937
    },
    "foot_rx": {
     "step": 0.25,
     "min": 2,
     "max": 4.2,
-    "init": 2.9188
+    "init": 2.8876
    },
    "foot_ry": {
     "step": 0.15,
@@ -512,7 +497,7 @@
     "step": 0.06,
     "min": 0,
     "max": 0.5,
-    "init": 0.12
+    "init": 0.06
    },
    "swing": {
     "step": 3,
@@ -530,13 +515,13 @@
     "step": 5,
     "min": -10,
     "max": 45,
-    "init": 7.0
+    "init": 4.5
    },
    "eye_r": {
     "step": 0.15,
     "min": 0.6,
     "max": 1.8,
-    "init": 0.85
+    "init": 0.925
    },
    "eye_az": {
     "step": 4,

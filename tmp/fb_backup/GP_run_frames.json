@@ -1,0 +1,411 @@
+{
+ "status": "published",
+ "source": "GP_sprites",
+ "frames": {
+  "range": [
+   2,
+   49
+  ]
+ },
+ "mode": "kid",
+ "note": "The GREEN player's copy of BP_run: GP_sprites is BP_sprites with the sweater recoloured blue -> green, so this reuses BP_run's fit.json poses and placement and its baked look; only the sweater is re-tuned and optimfail fixes the frames whose outline pixels differ. PUBLISHED round 10 (48 frames). Documented gate IoU 0.845 / dE 17.5: f24 sits at IoU 0.848 (the green outline differs from the blue by a few pixels) and f19 at dE 16.3 -- the same two stride frames as BP_run; the other 46 are >= 0.85 and <= 15.3. Head turn held to +-90 deg: a free +-180 turned f24 to face backwards.",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 4,
+ "opts": {
+  "world": 0.18,
+  "key": 3.075,
+  "fill": 0.12,
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "skin": [
+   240,
+   190,
+   150
+  ],
+  "hair": [
+   120,
+   60,
+   20
+  ],
+  "sweater": [
+   15,
+   150,
+   15
+  ],
+  "trousers": [
+   140,
+   0,
+   0
+  ],
+  "shoes": [
+   245,
+   245,
+   240
+  ],
+  "torso_y": 4.85,
+  "torso_h": 7.2,
+  "torso_r": 4.0375,
+  "torso_fx": 0.77,
+  "torso_bevel": 1.2,
+  "hip_r": 3.25,
+  "hip_h": 2.4,
+  "head_y": 12.3,
+  "head_r": 3.575,
+  "head_fy": 1.05,
+  "head_fz": 0.95,
+  "hair_dx": 0.3125,
+  "hair_dy": 0.375,
+  "hair_f": 0.9188,
+  "hair_fy": 0.95,
+  "hair_fz": 1.02,
+  "neck_y": 9.4,
+  "neck_r": 1.3,
+  "shoulder_y": 8.2,
+  "shoulder_z": 4.15,
+  "uarm_l": 4.825,
+  "farm_l": 3.8,
+  "arm_r": 1.7125,
+  "hand_r": 1.5188,
+  "hip_z": 1.3,
+  "thigh_l": 5.4125,
+  "shin_l": 5.0,
+  "leg_r": 1.775,
+  "foot_rx": 2.9188,
+  "foot_ry": 1.075,
+  "foot_rz": 1.6,
+  "foot_dx": 0.6,
+  "swing": 49.5,
+  "knee_amp": 72.5,
+  "arm_swing": 40.0,
+  "elbow0": 25.0,
+  "tilt": 0.0,
+  "rough": 0.25,
+  "spec": 0.0,
+  "gamma": 0.8875,
+  "eye_el": 7.0,
+  "eye_r": 0.85,
+  "eye_az": 22.0,
+  "sweater_gain": 1.0
+ },
+ "sweep": [
+  {
+   "param": "yaw",
+   "start": 0,
+   "stop": 360,
+   "step": 30,
+   "period": 360
+  },
+  {
+   "param": "phase",
+   "start": 0,
+   "stop": 360,
+   "step": 30,
+   "period": 360
+  },
+  {
+   "param": "pitch",
+   "start": -20,
+   "stop": 20,
+   "step": 20
+  }
+ ],
+ "smooth": {
+  "yaw": "free",
+  "phase": "free",
+  "pitch": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 6,
+    "min": -60,
+    "max": 420
+   },
+   "phase": {
+    "step": 20,
+    "min": -360,
+    "max": 720
+   },
+   "s_n": {
+    "step": 12,
+    "min": -90,
+    "max": 180,
+    "init": 0
+   },
+   "s_f": {
+    "step": 12,
+    "min": -90,
+    "max": 180,
+    "init": 0
+   },
+   "e_n": {
+    "step": 12,
+    "min": -60,
+    "max": 160,
+    "init": 0
+   },
+   "e_f": {
+    "step": 12,
+    "min": -60,
+    "max": 160,
+    "init": 0
+   },
+   "t_n": {
+    "step": 10,
+    "min": -70,
+    "max": 90,
+    "init": 0
+   },
+   "t_f": {
+    "step": 10,
+    "min": -70,
+    "max": 90,
+    "init": 0
+   },
+   "k_n": {
+    "step": 10,
+    "min": -35,
+    "max": 150,
+    "init": 0
+   },
+   "k_f": {
+    "step": 10,
+    "min": -35,
+    "max": 150,
+    "init": 0
+   },
+   "a_n": {
+    "step": 12,
+    "min": -130,
+    "max": 120,
+    "init": 0
+   },
+   "a_f": {
+    "step": 12,
+    "min": -130,
+    "max": 120,
+    "init": 0
+   },
+   "pitch": {
+    "step": 4,
+    "min": -35,
+    "max": 35,
+    "init": 0.0
+   },
+   "hd": {
+    "step": 10,
+    "min": -90,
+    "max": 90,
+    "init": 0.0
+   },
+   "_dx": {
+    "step": 0.25,
+    "min": -1.0,
+    "max": 1.0,
+    "init": 0.0
+   },
+   "_dy": {
+    "step": 0.25,
+    "min": -1.0,
+    "max": 1.0,
+    "init": 0.0
+   }
+  },
+  "rounds": 8,
+  "scale": 2,
+  "samples": 8,
+  "finish": {
+   "rounds": 3,
+   "scale": 4,
+   "samples": 32,
+   "step_f": 0.5
+  },
+  "probe": [
+   {
+    "t_n": [
+     -60,
+     -30,
+     0,
+     30,
+     60
+    ],
+    "k_n": [
+     0,
+     50,
+     100
+    ]
+   },
+   {
+    "t_f": [
+     -60,
+     -30,
+     0,
+     30,
+     60
+    ],
+    "k_f": [
+     0,
+     50,
+     100
+    ]
+   },
+   {
+    "pitch": [
+     -20,
+     -10,
+     0,
+     10,
+     20
+    ]
+   },
+   {
+    "s_n": [
+     0,
+     45,
+     90,
+     135
+    ],
+    "e_n": [
+     0,
+     40,
+     90
+    ]
+   },
+   {
+    "s_f": [
+     0,
+     45,
+     90,
+     135
+    ],
+    "e_f": [
+     0,
+     40,
+     90
+    ]
+   },
+   {
+    "a_n": [
+     -90,
+     -60,
+     -30,
+     0,
+     30,
+     60,
+     90
+    ],
+    "a_f": [
+     -90,
+     -60,
+     -30,
+     0,
+     30,
+     60,
+     90
+    ]
+   },
+   {
+    "hd": [
+     -90,
+     -45,
+     0,
+     45,
+     90
+    ]
+   }
+  ]
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 10,
+  "final": 256
+ },
+ "look": {
+  "frames": 12,
+  "passes": 1,
+  "samples": 32,
+  "params": {
+   "sweater": [
+    [
+     0,
+     100,
+     0
+    ],
+    [
+     0,
+     120,
+     0
+    ],
+    [
+     0,
+     140,
+     0
+    ],
+    [
+     15,
+     150,
+     15
+    ]
+   ]
+  },
+  "refine": {
+   "sweater_gain": {
+    "step": 0.05,
+    "min": 0.7,
+    "max": 1.4,
+    "init": 1.0
+   }
+  },
+  "refine_rounds": 6,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.845,
+  "de": 17.5,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "prior": [
+  {
+   "frames": [
+    2,
+    25
+   ],
+   "param": "yaw",
+   "value": 0,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    26,
+    49
+   ],
+   "param": "yaw",
+   "value": 180,
+   "tol": 30,
+   "period": 360
+  }
+ ],
+ "tweens": {
+  "n": 4,
+  "cycles": [
+   [
+    37,
+    48
+   ]
+  ]
+ }
+}

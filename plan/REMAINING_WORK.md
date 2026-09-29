@@ -1,6 +1,6 @@
 # Remaining Work — Step On It! Remaster (RE accuracy)
 
-_Last updated: 2026-09-22 (§F play-mode / challenge-round audit)._
+_Last updated: 2026-09-28 (round 13: the user's play-test feedback, §D)._
 
 ## Status
 The port is **comprehensively faithful** and all 152 boards are winnable. Player animation, core
@@ -116,6 +116,19 @@ regressing the green gates for no gameplay benefit._
 - Published 2026-09-27 (live rigs too): the Ant (49/49), both players' tumble (`BP_tumble`,
   `GP_tumble`, 32/32 each) and the Ostrich (32/32 under a documented gate dE 17.75: f32 17.7) --
   27 families now render live under F4.
+- Round 13 (2026-09-28, the user's play-test feedback): the HUD text re-typeset crisp (`tools/hud_text_remaster.py`),
+  bigger $ on both coins, the ball blocks' highlight moved to the source's high top-left, the key's fourth
+  tooth, the door's hinges/lock plate, the clock and magnifier lighting, the Spinner (no flicker, no stray dot,
+  a taller cylinder base), the kid's hair mop and longer arms (all 8 player families refitted), the Robo's
+  round head and face (white eyes over a grey plate), the Ant's feet / knees bending into the body / antenna
+  knobs that wiggle, and the six spawner statues rebuilt from
+  each nasty's own model (`emblem3d.py`). Also found and fixed: the sneaker goody (a real sneaker: toe box,
+  laces, red high-top ankle), the turtle (checkered shell, short neck) and the gift's red bow knot, and the
+  Cannon (a barrel in its housing with breech, collar and muzzle, facing its firing side; was a flat egg with
+  both frames identical). WIP refits: Hammer walk 31 -> 34/48, Gargoyle 51 -> 61/73, Beenie's outline now
+  passes everywhere (colours not yet).
+  Engine: bonk arm-up, chained builds keep falling, block debris,
+  blue/green player blocks from the BORD header.
 - WIP with notes (frames passing / total, 2026-09-27): the Hammer walk (27/48; every fail is colour,
   dE 16-21, limited by the legs' positions), the Gargoyle (32/73; rebuilt with raised arms, looped horns,
   the red striped ball and the wings wrapped in front as a cloak for f02-f10 -- refit in progress), the

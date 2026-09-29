@@ -1,0 +1,21 @@
+== goody_misc [look final verify] (59 s, exit 0)
+look: 1 frames [47]
+look: start dE 41.473
+look: world -> 0.12  dE 41.402
+look: refine shell_x skipped (not in opts and no "init": its builder default is unknown)
+look: refine shell_y skipped (not in opts and no "init": its builder default is unknown)
+look: refine shell_hw skipped (not in opts and no "init": its builder default is unknown)
+look: refine head_rx skipped (not in opts and no "init": its builder default is unknown)
+look: refine head_ry skipped (not in opts and no "init": its builder default is unknown)
+look: refine leg_rx skipped (not in opts and no "init": its builder default is unknown)
+look: refine leg_fx skipped (not in opts and no "init": its builder default is unknown)
+look: refine round 0 -> dE 26.541 {"shell_h": 6.7, "head_x": 9.4, "head_y": 4.4, "neck_r": 3.0, "leg_h": 6.1, "leg_r": 2.0, "color_gain": 1.1625, "gamma": 0.8, "neck_y0": 3.0, "shell_check": 5.5, "check_dark": 0.55}
+look: refine round 1 -> dE 19.284 {"shell_h": 6.4, "head_x": 9.8, "head_y": 4.4, "neck_r": 2.8, "leg_h": 6.1, "leg_r": 2.0, "color_gain": 1.2125, "gamma": 0.85, "neck_y0": 2.5, "shell_check": 5.5, "check_dark": 0.6}
+look: refine round 2 -> dE 12.163 {"shell_h": 6.1, "head_x": 10.2, "head_y": 4.6, "neck_r": 2.7, "leg_h": 5.9, "leg_r": 2.1, "color_gain": 1.1625, "gamma": 0.85, "neck_y0": 2.0, "shell_check": 5.5, "check_dark": 0.65}
+look: refine round 3 -> dE 11.130 {"shell_h": 6.1, "head_x": 10.2, "head_y": 4.8, "neck_r": 2.6, "leg_h": 5.7, "leg_r": 2.2, "color_gain": 1.1625, "gamma": 0.875, "neck_y0": 2.0, "shell_check": 5.5, "check_dark": 0.7}
+look: refine round 4 -> dE 10.332 {"shell_h": 6.1, "head_x": 10.2, "head_y": 5.0, "neck_r": 2.5, "leg_h": 5.5, "leg_r": 2.3, "color_gain": 1.1625, "gamma": 0.875, "neck_y0": 1.75, "shell_check": 5.5, "check_dark": 0.75}
+look: refine round 5 -> dE 9.703 {"shell_h": 6.1, "head_x": 10.3, "head_y": 5.2, "neck_r": 2.4, "leg_h": 5.5, "leg_r": 2.3, "color_gain": 1.175, "gamma": 0.875, "neck_y0": 1.5, "shell_check": 5.5, "check_dark": 0.8}
+look: dE 41.473 -> 9.703 with {"key_dir": [-0.4, 0.6, 0.7], "gain": 0.85, "world": 0.12, "color_gain": 1.175, "gold_gain": 1.25, "white_gain": 1.0, "gamma": 0.875, "fill": 0.18, "shell_check": 5.5, "check_dark": 0.8, "neck_r": 2.4, "neck_y0": 1.5, "leg_h": 5.5, "leg_r": 2.3, "head_x": 10.3, "head_y": 5.2, "shell_h": 6.1}
+final: 1 frames (+0 derived) -> extracted\sprites_3d_frames\goody_sprites
+verify goody_misc: 1 frames, IoU min 0.896 mean 0.896, dE mean 9.67 max 9.67 -> PASS
+BATCH DONE

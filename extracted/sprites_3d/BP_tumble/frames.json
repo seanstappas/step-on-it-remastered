@@ -8,7 +8,7 @@
   ]
  },
  "mode": "kid",
- "note": "PUBLISHED 32/32 (IoU min 0.866 mean 0.888, dE mean 13.5 max 15.3): knees less tucked (k_n0/k_f0 40) + a full refit whose look re-proportioned the roll (shorter shins 3.5, thicker legs 2.3 / arms 2.0, small hands) -> 8/32; that look baked into opts, then optim with the new proportions + a continued look -> 31/32 and optimfail f138 -> 32/32. History: WIP: the blue player tumbling (f127-f158): kid.py from a tucked base pose (thighs up, knees bent, arms hugging), sweep yaw x pitch. Round 10: the sheet is FOUR 8-frame forward rolls, 45 deg per frame: f127-f134 facing left (f127 upright, f131 upside down), f135-f142 the mirror image facing right, f143-f150 = f127-f134 and f151-f158 = f135-f142 shifted 2 px. The free yaw x pitch fit had wandered (yaw 88-352); reseeded from that structure with BP_sprites' published look. With a centre pivot (kid.py pivot_x/pivot_y -2.5/4.5), per-frame roll priors and a full optim: IoU 0.72, dE 22 (0/32). The source body in the roll is an ELONGATED crouch (~19 px head to feet, ~10 px wide) and the model a tight ball; the base pose (t 90, k 110) and the look proportions need measuring against f127/f129/f131.",
+ "note": "Round 13 (user feedback): full hair mop cut at a fringe (kid.py hair_cut) + longer arms (the source's hands hang to the upper thigh); both held out of the look. PUBLISHED 32/32 (IoU min 0.866 mean 0.888, dE mean 13.5 max 15.3): knees less tucked (k_n0/k_f0 40) + a full refit whose look re-proportioned the roll (shorter shins 3.5, thicker legs 2.3 / arms 2.0, small hands) -> 8/32; that look baked into opts, then optim with the new proportions + a continued look -> 31/32 and optimfail f138 -> 32/32. History: WIP: the blue player tumbling (f127-f158): kid.py from a tucked base pose (thighs up, knees bent, arms hugging), sweep yaw x pitch. Round 10: the sheet is FOUR 8-frame forward rolls, 45 deg per frame: f127-f134 facing left (f127 upright, f131 upside down), f135-f142 the mirror image facing right, f143-f150 = f127-f134 and f151-f158 = f135-f142 shifted 2 px. The free yaw x pitch fit had wandered (yaw 88-352); reseeded from that structure with BP_sprites' published look. With a centre pivot (kid.py pivot_x/pivot_y -2.5/4.5), per-frame roll priors and a full optim: IoU 0.72, dE 22 (0/32). The source body in the roll is an ELONGATED crouch (~19 px head to feet, ~10 px wide) and the model a tight ball; the base pose (t 90, k 110) and the look proportions need measuring against f127/f129/f131.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -46,10 +46,10 @@
    245,
    240
   ],
-  "torso_y": 5.25,
-  "torso_h": 7.4,
+  "torso_y": 5.45,
+  "torso_h": 7.8,
   "torso_r": 4.225,
-  "torso_fx": 0.88,
+  "torso_fx": 0.89,
   "torso_bevel": 1.2,
   "hip_r": 3.4062,
   "hip_h": 2.4,
@@ -58,22 +58,22 @@
   "head_fy": 1.05,
   "head_fz": 0.95,
   "hair_dx": 0.35,
-  "hair_dy": 0.675,
-  "hair_f": 0.9938,
-  "hair_fy": 0.95,
+  "hair_dy": 0.3,
+  "hair_f": 1.08,
+  "hair_fy": 1.05,
   "hair_fz": 1.02,
   "neck_y": 9.4,
   "neck_r": 1.3,
-  "shoulder_y": 7.5,
+  "shoulder_y": 7.8,
   "shoulder_z": 5.125,
-  "uarm_l": 5.1625,
-  "farm_l": 2.7875,
+  "uarm_l": 5.5,
+  "farm_l": 4.2,
   "arm_r": 2.0,
   "hand_r": 0.7,
-  "hip_z": 1.675,
+  "hip_z": 1.875,
   "thigh_l": 5.1875,
   "shin_l": 3.5,
-  "leg_r": 2.3187,
+  "leg_r": 2.4,
   "foot_rx": 2.125,
   "foot_ry": 0.8,
   "foot_rz": 1.6,
@@ -84,9 +84,9 @@
   "elbow0": 25.0,
   "tilt": 0.0,
   "rough": 0.25,
-  "spec": 0.0,
+  "spec": 0.1,
   "gamma": 0.8375,
-  "eye_el": 5.75,
+  "eye_el": 0.75,
   "eye_r": 1.8,
   "eye_az": 15.0,
   "t_n0": 90.0,
@@ -98,7 +98,10 @@
   "e_n0": 60.0,
   "e_f0": 60.0,
   "pivot_y": 4.5,
-  "pivot_x": -2.5
+  "pivot_x": -2.5,
+  "hair_cut": 25.0,
+  "fringe_x": 0.4,
+  "fringe_y": 0.1
  },
  "sweep": [
   {
@@ -312,13 +315,13 @@
     "step": 0.4,
     "min": 3,
     "max": 7,
-    "init": 5.25
+    "init": 5.45
    },
    "torso_h": {
     "step": 0.4,
     "min": 6,
     "max": 11,
-    "init": 7.4
+    "init": 7.8
    },
    "torso_r": {
     "step": 0.25,
@@ -330,7 +333,7 @@
     "step": 0.08,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.88
+    "init": 0.89
    },
    "hip_r": {
     "step": 0.25,
@@ -350,29 +353,11 @@
     "max": 4.6,
     "init": 3.825
    },
-   "hair_dx": {
-    "step": 0.3,
-    "min": -1,
-    "max": 2,
-    "init": 0.35
-   },
-   "hair_dy": {
-    "step": 0.3,
-    "min": -0.5,
-    "max": 2,
-    "init": 0.675
-   },
-   "hair_f": {
-    "step": 0.05,
-    "min": 0.9,
-    "max": 1.25,
-    "init": 0.9938
-   },
    "shoulder_y": {
     "step": 0.4,
     "min": 6,
     "max": 10,
-    "init": 7.5
+    "init": 7.8
    },
    "shoulder_z": {
     "step": 0.3,
@@ -382,15 +367,15 @@
    },
    "uarm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 5.1625
+    "min": 5.0,
+    "max": 7.0,
+    "init": 5.5
    },
    "farm_l": {
     "step": 0.3,
-    "min": 2.5,
-    "max": 5.5,
-    "init": 2.7875
+    "min": 4.2,
+    "max": 6.0,
+    "init": 4.2
    },
    "arm_r": {
     "step": 0.15,
@@ -408,7 +393,7 @@
     "step": 0.2,
     "min": 0.8,
     "max": 2.4,
-    "init": 1.675
+    "init": 1.875
    },
    "thigh_l": {
     "step": 0.3,
@@ -426,7 +411,7 @@
     "step": 0.15,
     "min": 1,
     "max": 2.4,
-    "init": 2.3187
+    "init": 2.4
    },
    "foot_rx": {
     "step": 0.25,
@@ -456,7 +441,7 @@
     "step": 0.1,
     "min": 0,
     "max": 0.8,
-    "init": 0.0
+    "init": 0.1
    },
    "gamma": {
     "step": 0.1,
@@ -486,7 +471,7 @@
     "step": 5,
     "min": -10,
     "max": 45,
-    "init": 5.75
+    "init": 0.75
    },
    "eye_r": {
     "step": 0.15,
