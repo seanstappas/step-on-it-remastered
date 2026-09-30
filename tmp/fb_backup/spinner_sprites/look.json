@@ -1,0 +1,54 @@
+{
+ "opts": {
+  "world": 0.11,
+  "key": 3.45,
+  "fill": 0.0,
+  "tilt": 0.0,
+  "rough": 0.7,
+  "gamma": 0.975,
+  "red": [
+   210,
+   0,
+   0
+  ],
+  "green": [
+   0,
+   140,
+   0
+  ],
+  "blue": [
+   10,
+   10,
+   230
+  ],
+  "grey": [
+   235,
+   235,
+   235
+  ],
+  "spec": 0.0,
+  "bar_h": 6.5,
+  "up_y": 5.0,
+  "lo_y": 13.075,
+  "bar_d": 3.95,
+  "cone_r": 3.1,
+  "cone_len": 5.7,
+  "cone_x": 5.9,
+  "post_r": 1.675,
+  "post_top": 5.0,
+  "base_shape": "cylinder",
+  "base_bevel": 0.15,
+  "base_top": 17.8125,
+  "base_d": 24.0,
+  "bar_bevel": 1.2,
+  "key_dir": [
+   -0.3,
+   0.8,
+   0.5
+  ],
+  "post_emit": 0.15
+ },
+ "de_start": 14.556246170444707,
+ "de": 13.588969907294436,
+ "frame_opts": {}
+}

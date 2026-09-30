@@ -14,9 +14,9 @@
  "shift_range": 3,
  "opts": {
   "stone": [
-   125,
-   125,
-   130
+   150,
+   150,
+   155
   ],
   "claw": [
    235,
@@ -25,9 +25,9 @@
   ],
   "rough": 0.6,
   "spec": 0.2,
-  "world": 0.12,
-  "key": 2.0,
-  "fill": 0.08,
+  "world": 0.08,
+  "key": 2.125,
+  "fill": 0.02,
   "key_dir": [
    -0.3,
    0.7,
@@ -81,17 +81,17 @@
   "horn_loops": true,
   "ball": true,
   "cloak": true,
-  "wing_ribs": 4.0,
+  "wing_ribs": 0,
   "rib_dark": 0.6,
-  "arm_x": 6.0,
-  "arm_y": 48.0,
-  "uarm_l": 10.0,
-  "farm_l": 9.0,
-  "arm_r": 1.3,
-  "horn_x": 11.0,
-  "horn_dy": 2.0,
-  "horn_R": 5.0,
-  "horn_r": 1.4,
+  "arm_x": 5.625,
+  "arm_y": 47.875,
+  "uarm_l": 9.75,
+  "farm_l": 8.5,
+  "arm_r": 1.4,
+  "horn_x": 9.25,
+  "horn_dy": 3.0625,
+  "horn_R": 4.1,
+  "horn_r": 1.5,
   "ball_r": 11.0,
   "ear_up": 15.0,
   "ear_dy": 0.5,
@@ -99,8 +99,25 @@
   "body_rx": 10.6,
   "body_ry": 17.6,
   "shoulder_y": 50.0,
-  "body_gain": 1.0,
-  "wing_gain": 1.125
+  "body_gain": 0.975,
+  "wing_gain": 1.125,
+  "torso2": true,
+  "face": true,
+  "legs2": true,
+  "wing_pleats": 5,
+  "pleat_amp": 1.2,
+  "chest_rx": 8.9,
+  "pec_rx": 3.5,
+  "pec_ry": 2.6,
+  "pec_z": 3.9,
+  "thigh_f": 1.05,
+  "shin_f": 0.8,
+  "horn_tilt": 15,
+  "chest_ry": 8.9,
+  "abd_ry": 7.5,
+  "abd_rx": 7.2,
+  "wing_root_gain": 1.05,
+  "wing_tip_gain": 0.85
  },
  "sweep": [
   {
@@ -130,8 +147,8 @@
   {
    "param": "arm",
    "start": 0,
-   "stop": 180,
-   "step": 60
+   "stop": 160,
+   "step": 40
   }
  ],
  "smooth": {
@@ -324,57 +341,68 @@
    "horn_x": {
     "step": 0.5,
     "min": 8,
-    "max": 15
+    "max": 15,
+    "init": 9.25
    },
    "horn_dy": {
     "step": 0.5,
     "min": -2,
-    "max": 6
+    "max": 6,
+    "init": 3.0625
    },
    "horn_R": {
     "step": 0.4,
     "min": 3,
-    "max": 7
+    "max": 7,
+    "init": 4.1
    },
    "horn_r": {
     "step": 0.2,
     "min": 0.8,
-    "max": 2.2
+    "max": 2.2,
+    "init": 1.5
    },
    "horn_tilt": {
     "step": 5,
     "min": -30,
-    "max": 30
+    "max": 30,
+    "init": 15
    },
    "arm_x": {
     "step": 0.5,
     "min": 3,
-    "max": 9
+    "max": 9,
+    "init": 5.625
    },
    "arm_y": {
     "step": 0.5,
     "min": 42,
-    "max": 54
+    "max": 54,
+    "init": 47.875
    },
    "uarm_l": {
     "step": 0.5,
     "min": 6,
-    "max": 14
+    "max": 14,
+    "init": 9.75
    },
    "farm_l": {
     "step": 0.5,
     "min": 6,
-    "max": 13
+    "max": 13,
+    "init": 8.5
    },
    "arm_r": {
     "step": 0.2,
     "min": 0.8,
-    "max": 2.2
+    "max": 2.2,
+    "init": 1.4
    },
    "ball_r": {
     "step": 0.5,
     "min": 8,
-    "max": 14
+    "max": 14,
+    "init": 11.0
    },
    "cloak_r": {
     "step": 0.5,
@@ -395,36 +423,6 @@
     "step": 1,
     "min": 18,
     "max": 32
-   },
-   "wing_ribs": {
-    "step": 1,
-    "min": 0,
-    "max": 8,
-    "init": 4
-   },
-   "rib_dark": {
-    "step": 0.08,
-    "min": 0.3,
-    "max": 1.0,
-    "init": 0.6
-   },
-   "body_y": {
-    "step": 0.5,
-    "min": 30,
-    "max": 44,
-    "init": 37.5
-   },
-   "body_rx": {
-    "step": 0.4,
-    "min": 5,
-    "max": 11,
-    "init": 10.6
-   },
-   "body_ry": {
-    "step": 0.4,
-    "min": 9,
-    "max": 18,
-    "init": 17.6
    },
    "shoulder_x": {
     "step": 0.4,
@@ -493,25 +491,25 @@
     "step": 0.5,
     "min": 1.5,
     "max": 7,
-    "init": 2.0
+    "init": 2.125
    },
    "world": {
     "step": 0.04,
     "min": 0,
     "max": 0.4,
-    "init": 0.12
+    "init": 0.08
    },
    "fill": {
     "step": 0.06,
     "min": 0,
     "max": 0.5,
-    "init": 0.08
+    "init": 0.02
    },
    "body_gain": {
     "step": 0.1,
     "min": 0.6,
     "max": 2.2,
-    "init": 1.0
+    "init": 0.975
    },
    "wing_gain": {
     "step": 0.1,
@@ -523,18 +521,55 @@
     "step": 0.1,
     "min": 0.8,
     "max": 2.0,
-    "init": 1.3
+    "init": 1.05
    },
    "wing_tip_gain": {
     "step": 0.1,
     "min": 0.4,
     "max": 1.3,
     "init": 0.85
+   },
+   "chest_rx": {
+    "step": 0.4,
+    "min": 6.5,
+    "max": 10.5,
+    "init": 8.9
+   },
+   "chest_ry": {
+    "step": 0.4,
+    "min": 6.0,
+    "max": 10.0,
+    "init": 8.9
+   },
+   "abd_rx": {
+    "step": 0.4,
+    "min": 5.0,
+    "max": 9.0,
+    "init": 7.2
+   },
+   "pec_z": {
+    "step": 0.3,
+    "min": 3.0,
+    "max": 5.0,
+    "init": 3.9
+   },
+   "pleat_amp": {
+    "step": 0.3,
+    "min": 0.3,
+    "max": 2.5,
+    "init": 1.2
+   },
+   "thigh_f": {
+    "step": 0.1,
+    "min": 0.8,
+    "max": 1.5,
+    "init": 1.05
    }
   },
   "refine_rounds": 6,
   "iou_w": 200,
-  "iou_margin": 0.03
+  "iou_margin": 0.03,
+  "detail_w": 0.5
  },
  "post": [
   {
@@ -621,6 +656,15 @@
    "param": "wrap",
    "value": 0,
    "tol": 10
+  },
+  {
+   "frames": [
+    12,
+    74
+   ],
+   "param": "arm",
+   "value": 130,
+   "tol": 30
   }
  ],
  "place_frames": [

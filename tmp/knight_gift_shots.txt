@@ -1,0 +1,27 @@
+# temp: Knight gift boxes on board_410 (REMASTERED 3D)
+0 60
+SHOT kg_00
+0 90
+SHOT kg_01
+0 90
+SHOT kg_02
+0 90
+SHOT kg_03
+0 90
+SHOT kg_04
+0 90
+SHOT kg_05
+0 90
+SHOT kg_06
+0 90
+SHOT kg_07
+0 90
+SHOT kg_08
+0 90
+SHOT kg_09
+0 90
+SHOT kg_10
+0 90
+SHOT kg_11
+0 90
+QUIT

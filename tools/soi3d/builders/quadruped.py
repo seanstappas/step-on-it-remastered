@@ -46,6 +46,24 @@ def _stripes(rgb_a, rgb_b, freq):
     return m
 
 
+def _band(name, c, r, y0, h, x_max, mat):
+    """A dark line on an _ell surface: the ellipsoid (c, r) grown 2% and cut to the slab |y - y0| < h over x < x_max
+    (y0, h, x_max in the ellipsoid's unit coordinates). Real geometry, so the live GLB export keeps it."""
+    band = _ell(name, c, tuple(v * 1.02 for v in r), mat, 48)
+    lo, hi = c[1] + (y0 - h) * r[1], c[1] + (y0 + h) * r[1]
+    x0, x1 = c[0] - r[0] * 1.1, c[0] + r[0] * x_max
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=((x0 + x1) / 2 * S, (lo + hi) / 2 * S, c[2] * S))
+    cut = bpy.context.active_object
+    cut.scale = ((x1 - x0) * S, (hi - lo) * S, r[2] * 3 * S)
+    m = band.modifiers.new("slab", 'BOOLEAN')
+    m.operation = 'INTERSECT'
+    m.object = cut
+    bpy.context.view_layer.objects.active = band
+    bpy.ops.object.modifier_apply(modifier="slab")
+    bpy.data.objects.remove(cut, do_unlink=True)
+    return band
+
+
 def _ell(name, c, r, mat, seg=32):
     bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=seg, ring_count=seg // 2, location=tuple(v * S for v in c))
     o = bpy.context.active_object
@@ -113,13 +131,17 @@ def build(opts):
             parts.append(_box("head", (hx, hy, 0), hr, float(opts.get("snout_bevel", 2.0)), skin))
         else:
             parts.append(_ell("head", (hx, hy, 0), hr, skin))
+        if opts.get("mouth_band", False):    # f02 row 5, x 4-7: a 1 px dark line from the snout tip back
+            parts.append(_band("mouth_line", (hx, hy, 0), hr, float(opts.get("band_y", 0.0)),
+                               float(opts.get("band_h", 0.15)), float(opts.get("band_x", -0.3)), dark))
         mw = float(opts.get("mouth_h", 1.6))
         if opts.get("open_mouth", False):
             # f02 rows 5-8: a black gap across the snout's front, one white tooth hanging from the upper lip and
             # one rising from the lower jaw on each side, the green lower jaw below
             mx = hx - hr[0] * float(opts.get("mouth_fx", 0.8))
             my = hy + float(opts.get("mouth_dy", -1.0))
-            parts.append(_ell("mouth", (mx, my, 0), (hr[0] * float(opts.get("mouth_rx", 0.45)), mw, hr[2] * 0.8), dark, 24))
+            mz = hr[2] * float(opts.get("mouth_rz", 0.8))      # > the head's local half-width: the gap shows on the sides
+            parts.append(_ell("mouth", (mx, my, 0), (hr[0] * float(opts.get("mouth_rx", 0.45)), mw, mz), dark, 24))
             tx = hx - hr[0] * float(opts.get("tooth_fx", 0.92))
             tz, trr = float(opts.get("tooth_z", 1.4)), float(opts.get("tooth_r", 0.55))
             for zz in (-tz, tz):

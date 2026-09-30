@@ -1,0 +1,5 @@
+== hammer_swing_l [sweep fit optim final verify] (175 s, exit 1)
+final: 16 frames (+0 derived) -> extracted\sprites_3d_frames\hammer_sprites
+verify hammer_swing_l: 16 frames, IoU min 0.790 mean 0.857, dE mean 14.77 max 17.45 -> FAIL [50, 53, 56, 59, 63]
+verify: hammer_swing_l is not published and failed -> removed its 16 overlay frames
+BATCH DONE

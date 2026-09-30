@@ -178,13 +178,19 @@ the same pose.
 | `emblem_teeth` (the Teeth's spawner f51: the teeth in a blue ball's window; `teeth.py` mode teethball) | 1 | 0.932 | 15.3 |
 | `BP_cheer` (the player's front-view cheer f118-f126, 36x34; `kid.py` with cartoon eyes) | 9 | 0.860 | 13.6 / 15.7 |
 | `GP_cheer` (the green player's cheer: BP_cheer's fit and look with a green sweater) | 9 | 0.861 | 12.5 / 13.5 |
+| `ant_sprites` (the Ant f02-f50; `ant.py`) | 49 | 0.852 | 10.8 / 14.7 |
+| `ostrich_sprites` (the Ostrich walk; `biped.py`; documented gate dE 17.75) | 32 | 0.850 | 12.9 / 17.7 |
+| `BP_tumble` / `GP_tumble` (the players' four 8-frame rolls; `kid.py` pitch/bank) | 64 | 0.855 | 12.8-13.9 / 15.7 |
+| `beenie_char` (the Beenie f66-f121: clown face, six-gore cap, blaster in the right hand; gate dE 17.5) | 56 | 0.859 | 14.4 / 17.2 |
+| `hammer_walk` (the Hammer f02-f49: walk, turn through a front view; `hammer.py`; gate dE 17.5) | 48 | 0.854 | 13.8 / 17.2 |
+| `hammer_swing_l` / `_r` (the Hammer's two-handed jump-smash f50-f65 / f66-f81; `hammer.py` two_hand; gate dE 17.5) | 32 | 0.853 | 14.6-15.2 / 17.3 |
 
-WIP (`note` in each `frames.json` says what fails; passing frames / total): `ant_sprites` (40/49, `ant.py`: the front-view turn frames render pinkish greys),
-`ostrich_sprites` (19/32, `biped.py`), `Gargoyle_sprites` (22/73, `gargoyle.py`: IoU 0.861, dE 16.1; the egg rises
-via `egg_y`), `hammer_walk` (`hammer.py`: dE 18.5), `BP_tumble` (0/32, IoU 0.72: four 8-frame rolls, the body
-shape is wrong), `knight_sprites` (0/65, `knight.py`: IoU 0.739, no armour highlights), `beenie_char` (0/56, IoU
-0.71: needs re-proportioning) and `beenie_shot_d` (the down set flies toward the camera and is masked by the Beenie).
-Not started: `blocks` (not drawn by the port) and the Hammer's swing (f50-f81). The Hippo and Piggy show the
+(2026-09-29: 64 published families, 1360 frames.)
+
+WIP (`note` in each `frames.json` says what fails; passing frames / total): `Gargoyle_sprites` (22/73, `gargoyle.py`:
+IoU 0.861, dE 16.1; the egg rises via `egg_y`; still a crude body with no face or horns), `knight_sprites` (0/65,
+`knight.py`: IoU 0.739, no armour highlights) and `beenie_shot_d` (the down set flies toward the camera and is masked
+by the Beenie). Not started: `blocks` (not drawn by the port). The Hippo and Piggy show the
 recipe: a rig in SD px units with per-limb pose keys fitted per frame by `optim`.
 
 **Derived frames** (`derive` in frames.json): a frame the original builds from another is built the
@@ -479,6 +485,58 @@ can never buy dE with a worse outline.
   `cannon_barrel.py` "barrel" (square housing, rounded breech, collar, muzzle) uses a hand-set placement (0.1 unit
   per source px) and a pose "face" (the pivot mirrored) instead of per-frame opts, so it still exports as ONE live
   rig (`live` refuses per-frame model variants).
+- **A look candidate list must contain the faithful value.** The cross-hatch mesh tile (block f152, 0x197) shipped
+  at twice the original's density: its `per_kind` "cells" candidates were 2.5-4, never the SD's 2, so the look
+  picked a fine lattice that averages to the right grey. `tile.py` mesh "phase" 0.5 puts the bar crossings where
+  the original's are (the edge quarter points); cells 2 took dE 12.5 -> 4.6 and fixed its crack and quarter frames.
+  Check the game in 3D with `--3d`: `--hd` alone shows only the AI HD art.
+- **An orthographic silhouette cannot tell front from back, so check the fitted facing.** A symmetric model at yaw
+  +a and -a (or 90 and 270) has the same outline, so the fit can pick the wrong one and still pass: the Walker's
+  turn frame f26 showed its plain rump instead of its face (yaw 270, not 90), and the kids' run turned the head to
+  the camera or away in 6 of 48 frames (`hd` -88 / +94 while the original holds its profile), a twitch every
+  cycle; BP/GP_sprites f75/f97 showed the back of the head. Print the yaw / `hd` sequence per family and look for
+  outliers against their neighbours. `tmp/hold_pose.py` seeds such frames between their neighbours and
+  re-optimises only them with the head range narrowed (the run families now keep `hd` within +-35).
+  Not every jump is a flip: the Hippo's walk views face slightly AWAY and its turn passes through the front, so
+  mirroring its walk frames toward the camera failed frame identity (f05 matched f11); the Ostrich held at one yaw
+  per walk fitted worse (f28/f32 failed). Both were reverted.
+- **Framed tiles are picture frames, not holes.** The '?' block and the blue/green player blocks recess their panel
+  with SLOPED walls (dark top/left, bright bottom/right). A box-cut well casts black shadows, so the look had
+  flattened it (the '?' well was 0.04 deep: the frame was gone). `tile.py` "well_slope" cuts a frustum: '?' dE
+  11.5 -> 9.0, the player blocks' missed detail 7.3 -> 4.3.
+- **Details must be geometry to survive the live renderer.** Godot's live rig takes only each material's Principled
+  values, so a node-painted line would vanish under F4. The Hippo's mouth line (`quadruped.py` "mouth_band": the
+  head grown 2% and boolean-cut to a thin slab at the snout tip) is a dark shell, so it exports.
+- **Keep the model 1 px inside a frame the original fills.** The Spinner's sprite is opaque to its edges, but the
+  original's bars and base END 1 px inside it with a dark outline; ours ran off the frame, where post `fringe` cannot
+  add a rim. Shorter bars/base and a thinner upper bar (`bar_len` 22.2, `base_w` 22, `bar_h` 6.0) took IoU mean
+  0.934 -> 0.966. `tmp/pop_scan.py` flags frame pairs that change far more than the original's (the Robo's far fist
+  swinging in front of the body in 5 punch frames; now held behind it).
+- **Check a prior against the source before trusting a fit.** The Beenie's prior pulled f80-f108 to yaw 0 (side
+  view), but f80-f90 face the CAMERA (the clown face; the blaster's muzzle points at the viewer), so every front
+  frame was fitted side-on and its face never showed. Per-frame priors (180 / turn / 90 / turn / 0 / 270), the
+  blaster in the RIGHT hand (the rig's far arm: `beenie.py` "gun_hand") and a clown smile built as a red curve on
+  the face surface (`kid.py` "smile", "nose_r"; the mouth disc read as a red mask) took it from 1 to 19/56
+  passing, dE mean 20.2 -> 16.6. The last step was the cap: the source shows the SAME gores facing left and right,
+  so the beanie has SIX gores with opposite ones alike (`beenie.py` "cap_reps" 2, order R/G/B, turn 120; found by
+  a one-job grid over order x turn, `tmp/opt_grid.py`): 22 -> 53/56, published under the kid families' documented
+  gate dE 17.5. Its live rig fails the live gate (the gores are a shader), so F4 keeps the baked frames.
+  The Hammer has the same fault (f21-f28 face the camera with the mallet over the RIGHT shoulder; its fit showed the
+  back of the head there). A refit with front priors and `hammer.py` "grip_hand" f alone fell to 1/48: the BASE
+  carry pose (`s_f0`/`e_f0` and the optim inits) was still on the near arm, so the far hand never reached the
+  handle. With the carry pose moved to the far arm: sweep fit optim final verify, then look bake optimfail -> 42/48;
+  then `tmp/hold_pose.py` for f05-f09 (the optim had swung the mallet FORWARD into the free fist; held back with
+  ham -185..-145) -> 47/48 at dE 16, published under the kid gate dE 17.5 (+ tweens, live rig passes).
+  **When a held prop changes hands, move the whole carry pose (base keys + optim inits + refine names) with it.**
+- **One placement per family: split a sheet whose art moves the character inside the frame.** The Hammer's
+  jump-smash (36x41) puts the kid on the RIGHT of the frame when it swings left and on the LEFT when it swings
+  right, so a single family fitted one compromise placement (IoU 0.10-0.20 for the right half). As
+  `hammer_swing_l` / `_r` each half got its own placement (the fitted scale x render size matches the walk's
+  within 2%, so the kid keeps its size) and passed 16/16 after two moves: the carry frames were seeded with the
+  mallet up-back (`tmp/hold_pose.py` with ham -200..-100; the sweep had picked it hanging in front), and the last
+  miss (f78) was seeded from its mirror twin in the other half (f62, yaw 180 - y). Both fists hold the handle:
+  `hammer.py` "two_hand" makes the other arm copy the grip arm. Found by listing every sheet frame the game draws
+  that had no 3D frame: the swing still showed the 2D art between 3D walk frames.
 
 ---
 

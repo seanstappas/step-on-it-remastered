@@ -1,0 +1,22 @@
+f75 was {"yaw": 300.8, "hd": 22.5}
+f97 was {"hd": -170.0}
+optim: reseed moved 0 of 2 frames to a neighbour's pose
+optim: hop 0 improved f75 10.012 -> 9.983
+optim: hop 1 improved f75 9.983 -> 8.916
+optim: mean score 10.427 -> 9.815
+f75 now yaw 86.4 hd -8.9
+f97 now yaw 37.5 hd 6.2
+HOLD DONE
+== GP_sprites [final verify tweens live livecal livegate] (23 s, exit 0)
+final: 68 frames (+0 derived) -> extracted\sprites_3d_frames\GP_sprites
+verify GP_sprites: 68 frames, IoU min 0.851 mean 0.879, dE mean 10.98 max 14.39 -> PASS
+tweens: 4/4 pairs x 7 in-betweens -> extracted\sprites_3d_frames\GP_sprites\tw
+LIVE_DONE 68
+live: 68 frames -> extracted\sprites_live\GP_sprites
+livecal GP_sprites: sun x0.925, ambient x0.350 -> dE mean 10.91 (unscaled 12.35) -> extracted\sprites_live\GP_sprites\live.json
+livegate GP_sprites (68 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.851 mean 0.879, dE mean 10.91 max 14.13, pass 68 (68 as good as the published frame)
+  cycles: IoU min 0.851 mean 0.879, dE mean 10.98 max 14.39, pass 68
+  live vs cycles: dE mean 2.06 max 2.91
+  worst live frames: f76 (IoU 0.861 dE 14.1), f71 (IoU 0.851 dE 13.9), f51 (IoU 0.866 dE 13.9), f88 (IoU 0.867 dE 13.6), f69 (IoU 0.890 dE 13.6)
+BATCH DONE

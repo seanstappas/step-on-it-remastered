@@ -1,0 +1,13 @@
+== BP_sprites [final verify tweens live livecal livegate] (33 s, exit 0)
+final: 68 frames (+0 derived) -> extracted\sprites_3d_frames\BP_sprites
+verify BP_sprites: 68 frames, IoU min 0.853 mean 0.881, dE mean 11.81 max 15.53 -> PASS
+tweens: 4/4 pairs x 7 in-betweens -> extracted\sprites_3d_frames\BP_sprites\tw
+LIVE_DONE 68
+live: 68 frames -> extracted\sprites_live\BP_sprites
+livecal BP_sprites: sun x1.000, ambient x0.250 -> dE mean 11.97 (unscaled 13.26) -> extracted\sprites_live\BP_sprites\live.json
+livegate BP_sprites (68 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.849 mean 0.881, dE mean 11.97 max 15.66, pass 67 (68 as good as the published frame)
+  cycles: IoU min 0.853 mean 0.881, dE mean 11.81 max 15.53, pass 68
+  live vs cycles: dE mean 2.71 max 3.66
+  worst live frames: f51 (IoU 0.870 dE 15.7), f74 (IoU 0.849 dE 15.3), f76 (IoU 0.868 dE 15.3), f65 (IoU 0.876 dE 14.9), f56 (IoU 0.881 dE 14.6)
+BATCH DONE

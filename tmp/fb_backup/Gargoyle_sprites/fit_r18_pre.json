@@ -1,0 +1,1976 @@
+{
+ "R": 336,
+ "placement": {
+  "k": 0.2548230360622955,
+  "ox": -1.3102700584656461,
+  "oy": -3.9838993567082763
+ },
+ "model": [
+  {}
+ ],
+ "frames": {
+  "2": {
+   "pose": {
+    "spread": -95.25,
+    "wrap": 34.0,
+    "crouch": 22.0,
+    "egg": 1.2999999999999998,
+    "arm": 27.5,
+    "scroll": 1.5,
+    "egg_y": 48.375,
+    "elbow": -15.0,
+    "cloak": 0.025
+   },
+   "sweep_pick": {
+    "spread": -75,
+    "wrap": 0,
+    "crouch": 24,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.769,
+   "de": 22.757,
+   "shift": [
+    -0.25,
+    3.09375
+   ],
+   "optim_score": 15.443
+  },
+  "3": {
+   "pose": {
+    "spread": -94.5,
+    "wrap": 33.0,
+    "crouch": 24.0,
+    "egg": 1.2999999999999998,
+    "arm": 20.0,
+    "scroll": 1.5,
+    "egg_y": 48.0,
+    "elbow": 6.25,
+    "cloak": 0.4625000000000001
+   },
+   "sweep_pick": {
+    "spread": -75,
+    "wrap": 0,
+    "crouch": 24,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7554,
+   "de": 23.578,
+   "shift": [
+    -0.25,
+    1.3125
+   ],
+   "optim_score": 15.772
+  },
+  "4": {
+   "pose": {
+    "spread": -94.5,
+    "wrap": 31.0,
+    "crouch": 24,
+    "egg": 1.075,
+    "arm": 30.0,
+    "scroll": 1.5,
+    "egg_y": 48,
+    "elbow": -13.75,
+    "cloak": 0.4375
+   },
+   "sweep_pick": {
+    "spread": -75,
+    "wrap": 0,
+    "crouch": 18,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.733,
+   "de": 23.165,
+   "shift": [
+    0.0,
+    -0.03125
+   ],
+   "optim_score": 15.0
+  },
+  "5": {
+   "pose": {
+    "spread": -96.75,
+    "wrap": 29.0,
+    "crouch": 21.0,
+    "egg": 1.3,
+    "arm": 21.25,
+    "scroll": 1.5,
+    "egg_y": 51.0,
+    "elbow": 6.25,
+    "cloak": 0.4
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 24,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7354,
+   "de": 24.728,
+   "shift": [
+    -0.0625,
+    1.9375
+   ],
+   "optim_score": 14.963
+  },
+  "6": {
+   "pose": {
+    "spread": -47.55352313534853,
+    "wrap": 62.40959972780378,
+    "crouch": 17.0,
+    "egg": 1.01875,
+    "arm": 51.54681656609844,
+    "scroll": 4.337293512567866,
+    "egg_y": 24.375,
+    "elbow": -40.0,
+    "cloak": 0.7125
+   },
+   "sweep_pick": {
+    "spread": -75,
+    "wrap": 0,
+    "crouch": 12,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7316,
+   "de": 22.756,
+   "shift": [
+    0.0,
+    2.0
+   ],
+   "optim_score": 27.629
+  },
+  "7": {
+   "pose": {
+    "spread": -43.07092153115046,
+    "wrap": 63.277305617505604,
+    "crouch": 13.571377570718482,
+    "egg": 1.3,
+    "arm": 56.8387775431696,
+    "scroll": 1.675641221926813,
+    "egg_y": 58.28054256361663,
+    "elbow": -40.0,
+    "cloak": 0.3429083729479766
+   },
+   "sweep_pick": {
+    "spread": -60,
+    "wrap": 40,
+    "crouch": 12,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.6962,
+   "de": 22.26,
+   "shift": [
+    0.36299717825457456,
+    3.1092194540511713
+   ],
+   "optim_score": 31.178
+  },
+  "8": {
+   "pose": {
+    "spread": -45.75,
+    "wrap": 59.0,
+    "crouch": 12.75,
+    "egg": 0,
+    "arm": 60.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": -40.0,
+    "cloak": 0.19999999999999998
+   },
+   "sweep_pick": {
+    "spread": -45,
+    "wrap": 40,
+    "crouch": 12,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.688,
+   "de": 23.085,
+   "shift": [
+    0.0,
+    0.46875
+   ],
+   "optim_score": 28.141
+  },
+  "9": {
+   "pose": {
+    "spread": -0.75,
+    "wrap": 62.0,
+    "crouch": 12.0,
+    "egg": 0.5375,
+    "arm": 16.25,
+    "scroll": 6.75,
+    "egg_y": 8,
+    "elbow": 40.0,
+    "cloak": 0.8375
+   },
+   "sweep_pick": {
+    "spread": -60,
+    "wrap": 40,
+    "crouch": 6,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.7018,
+   "de": 22.586,
+   "shift": [
+    -0.03125,
+    2.15625
+   ],
+   "optim_score": 19.001
+  },
+  "10": {
+   "pose": {
+    "spread": -3.0,
+    "wrap": 56.0,
+    "crouch": 10.0,
+    "egg": 0.5,
+    "arm": 140.0,
+    "scroll": 0.0,
+    "egg_y": 32,
+    "elbow": 101.25,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 12,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7233,
+   "de": 22.52,
+   "shift": [
+    0.0625,
+    0.78125
+   ],
+   "optim_score": 24.618
+  },
+  "11": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 54.0,
+    "crouch": 11.0,
+    "egg": 0,
+    "arm": 180,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 75.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 12,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7483,
+   "de": 21.888,
+   "shift": [
+    0.09375,
+    -2.59375
+   ],
+   "optim_score": 20.619
+  },
+  "12": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 45.0,
+    "crouch": 6.0,
+    "egg": 0,
+    "arm": 0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 6,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8254,
+   "de": 20.867,
+   "shift": [
+    -0.125,
+    0.0
+   ],
+   "optim_score": 27.237
+  },
+  "13": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 36.0,
+    "crouch": 6.5,
+    "egg": 0.13124999999999998,
+    "arm": 155.0,
+    "scroll": 2.25,
+    "egg_y": 1.5,
+    "elbow": 2.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 6,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.8567,
+   "de": 21.975,
+   "shift": [
+    0.15625,
+    -2.65625
+   ],
+   "optim_score": 15.664
+  },
+  "14": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 23.0,
+    "crouch": 0,
+    "egg": 0.11249999999999999,
+    "arm": 110.0,
+    "scroll": 0.0,
+    "egg_y": -0.75,
+    "elbow": 60.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.8662,
+   "de": 22.867,
+   "shift": [
+    0.03125,
+    2.03125
+   ],
+   "optim_score": 15.332
+  },
+  "15": {
+   "pose": {
+    "spread": 3.6414204292598145,
+    "wrap": 16.559366584400227,
+    "crouch": 0.0,
+    "egg": 0.11179718999869467,
+    "arm": 110.59623512175426,
+    "scroll": 1.5,
+    "egg_y": -3.5,
+    "elbow": 53.93212986572762,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8481,
+   "de": 20.728,
+   "shift": [
+    -0.07616818527946945,
+    1.5954698314329572
+   ],
+   "optim_score": 14.948
+  },
+  "16": {
+   "pose": {
+    "spread": -0.75,
+    "wrap": 20.0,
+    "crouch": 0.0,
+    "egg": 0,
+    "arm": 0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 5.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8625,
+   "de": 20.614,
+   "shift": [
+    -0.125,
+    0.0
+   ],
+   "optim_score": 18.577
+  },
+  "17": {
+   "pose": {
+    "spread": 0,
+    "wrap": 1.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 3.75,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8798,
+   "de": 20.872,
+   "shift": [
+    0.0,
+    0.03125
+   ],
+   "optim_score": 16.831
+  },
+  "18": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 1.0,
+    "crouch": 1.0,
+    "egg": 0.11249999999999999,
+    "arm": 131.25,
+    "scroll": 1.5,
+    "egg_y": -3.0,
+    "elbow": 3.75,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8614,
+   "de": 22.257,
+   "shift": [
+    -0.15625,
+    -0.5625
+   ],
+   "optim_score": 15.963
+  },
+  "19": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8886,
+   "de": 21.196,
+   "shift": [
+    0.125,
+    0.65625
+   ],
+   "optim_score": 16.95
+  },
+  "20": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 14.0,
+    "crouch": 0.25,
+    "egg": 0.075,
+    "arm": 0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8692,
+   "de": 19.937,
+   "optim_score": 16.434
+  },
+  "21": {
+   "pose": {
+    "spread": -4.5,
+    "wrap": 24.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 5.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8343,
+   "de": 19.467,
+   "shift": [
+    0.125,
+    0.0
+   ],
+   "optim_score": 16.053
+  },
+  "22": {
+   "pose": {
+    "spread": -6.0,
+    "wrap": 30.0,
+    "crouch": 0.5,
+    "egg": 0,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 1.25,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.807,
+   "de": 20.23,
+   "shift": [
+    0.125,
+    -0.625
+   ],
+   "optim_score": 16.474
+  },
+  "23": {
+   "pose": {
+    "spread": -6.0,
+    "wrap": 26.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 2.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8243,
+   "de": 19.088,
+   "shift": [
+    0.125,
+    -0.09375
+   ],
+   "optim_score": 15.902
+  },
+  "24": {
+   "pose": {
+    "spread": -4.5,
+    "wrap": 22.0,
+    "crouch": 0,
+    "egg": 0.0375,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 2.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8505,
+   "de": 18.188,
+   "shift": [
+    0.125,
+    -0.09375
+   ],
+   "optim_score": 14.963
+  },
+  "25": {
+   "pose": {
+    "spread": -3.0,
+    "wrap": 20.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 15.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 5.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8576,
+   "de": 17.938,
+   "shift": [
+    -0.375,
+    0.34375
+   ],
+   "optim_score": 14.487
+  },
+  "26": {
+   "pose": {
+    "spread": -0.75,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 12.5,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 1.25,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8708,
+   "de": 18.204,
+   "shift": [
+    0.09375,
+    0.8125
+   ],
+   "optim_score": 15.563
+  },
+  "27": {
+   "pose": {
+    "spread": -0.75,
+    "wrap": 5.0,
+    "crouch": 0,
+    "egg": 0.075,
+    "arm": 11.25,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": -3.75,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8847,
+   "de": 17.591,
+   "shift": [
+    -0.25,
+    -0.0625
+   ],
+   "optim_score": 13.381
+  },
+  "28": {
+   "pose": {
+    "spread": 0,
+    "wrap": 4.0,
+    "crouch": 0,
+    "egg": 0.075,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8979,
+   "de": 17.62,
+   "shift": [
+    -0.25,
+    -0.21875
+   ],
+   "optim_score": 13.421
+  },
+  "29": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 6.0,
+    "crouch": 0,
+    "egg": 0.11249999999999999,
+    "arm": 8.75,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8971,
+   "de": 18.339,
+   "shift": [
+    -0.15625,
+    -0.5
+   ],
+   "optim_score": 13.403
+  },
+  "30": {
+   "pose": {
+    "spread": 2.25,
+    "wrap": 7.0,
+    "crouch": 0.5,
+    "egg": 0.075,
+    "arm": 5.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 15.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8935,
+   "de": 17.398,
+   "shift": [
+    -0.0625,
+    -1.375
+   ],
+   "optim_score": 13.29
+  },
+  "31": {
+   "pose": {
+    "spread": 2.25,
+    "wrap": 3.0,
+    "crouch": 0.25,
+    "egg": 0.11249999999999999,
+    "arm": 10.0,
+    "scroll": 0.0,
+    "egg_y": 0.75,
+    "elbow": 2.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8923,
+   "de": 18.46,
+   "shift": [
+    -0.15625,
+    -0.75
+   ],
+   "optim_score": 14.368
+  },
+  "32": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 2.0,
+    "crouch": 0,
+    "egg": 0.15,
+    "arm": 11.25,
+    "scroll": 0.0,
+    "egg_y": 0.75,
+    "elbow": -5.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.9006,
+   "de": 20.294,
+   "shift": [
+    -0.09375,
+    -0.375
+   ],
+   "optim_score": 16.113
+  },
+  "33": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 1.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 11.25,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": -5.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8799,
+   "de": 21.111,
+   "shift": [
+    -0.125,
+    0.0
+   ],
+   "optim_score": 17.258
+  },
+  "34": {
+   "pose": {
+    "spread": 2.25,
+    "wrap": 0.0,
+    "crouch": 2.5,
+    "egg": 0.20624999999999996,
+    "arm": 143.75,
+    "scroll": 4.5,
+    "egg_y": 5.625,
+    "elbow": 33.75,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8614,
+   "de": 22.257,
+   "shift": [
+    -0.0625,
+    -1.71875
+   ],
+   "optim_score": 16.187
+  },
+  "35": {
+   "pose": {
+    "spread": 0,
+    "wrap": 20.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 12.5,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": -2.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8681,
+   "de": 20.317,
+   "shift": [
+    -0.125,
+    0.0
+   ],
+   "optim_score": 17.697
+  },
+  "36": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 36.0,
+    "crouch": 0.0,
+    "egg": 0,
+    "arm": 50.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": -5.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 60
+   },
+   "iou": 0.8644,
+   "de": 22.159,
+   "shift": [
+    0.125,
+    0.125
+   ],
+   "optim_score": 19.1
+  },
+  "37": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 44.0,
+    "crouch": 0.0,
+    "egg": 0,
+    "arm": 32.5,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 22.5,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.8561,
+   "de": 20.047,
+   "shift": [
+    -0.15625,
+    0.03125
+   ],
+   "optim_score": 16.823
+  },
+  "38": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 55.0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 35.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 0.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7846,
+   "de": 20.471,
+   "optim_score": 19.829
+  },
+  "39": {
+   "pose": {
+    "spread": -97.5,
+    "wrap": 0,
+    "crouch": 0.0,
+    "egg": 0,
+    "arm": 17.5,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 25.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7901,
+   "de": 21.612,
+   "shift": [
+    -0.125,
+    0.5
+   ],
+   "optim_score": 21.943
+  },
+  "40": {
+   "pose": {
+    "spread": -94.5,
+    "wrap": 20.0,
+    "crouch": 0.5,
+    "egg": 0,
+    "arm": 20.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 10.0,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7897,
+   "de": 20.716,
+   "shift": [
+    0.0,
+    -0.15625
+   ],
+   "optim_score": 19.787
+  },
+  "41": {
+   "pose": {
+    "spread": -95.25,
+    "wrap": 30.0,
+    "crouch": 0.0,
+    "egg": 0,
+    "arm": 20.0,
+    "scroll": 0.0,
+    "egg_y": 0.0,
+    "elbow": 1.25,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0,
+    "arm": 0
+   },
+   "iou": 0.7732,
+   "de": 20.414,
+   "shift": [
+    0.125,
+    0.0625
+   ],
+   "optim_score": 19.339
+  },
+  "42": {
+   "pose": {
+    "spread": -93.0,
+    "wrap": 32.0,
+    "crouch": 0.0,
+    "egg": 0.56875,
+    "arm": 170.0,
+    "scroll": 6.0,
+    "egg_y": 6.375,
+    "elbow": -20.0,
+    "cloak": 0.28750000000000003
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 180
+   },
+   "iou": 0.723,
+   "de": 21.52,
+   "shift": [
+    0.0,
+    2.0
+   ],
+   "optim_score": 21.843
+  },
+  "43": {
+   "pose": {
+    "spread": -96.499284122649,
+    "wrap": 31.029915855624914,
+    "crouch": 0.0,
+    "egg": 0.9402456945333227,
+    "arm": 7.5,
+    "scroll": 14.536210136837482,
+    "egg_y": 20.37271420679656,
+    "elbow": 34.974616726254965,
+    "cloak": 0.0
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 180
+   },
+   "iou": 0.7403,
+   "de": 24.275,
+   "shift": [
+    -0.09665996493887508,
+    -0.7156491451350931
+   ],
+   "optim_score": 12.072
+  },
+  "44": {
+   "pose": {
+    "spread": -95.59105541955938,
+    "wrap": 20.85042643914873,
+    "crouch": 0.0,
+    "egg": 1.0316029791845536,
+    "arm": 170.4668870813812,
+    "scroll": 13.003179012565493,
+    "egg_y": 8.886704421630395,
+    "elbow": -22.77020301439075,
+    "cloak": 0.2996235021919264
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 180
+   },
+   "iou": 0.7599,
+   "de": 26.47,
+   "shift": [
+    0.045629310509929466,
+    2.5272336881867963
+   ],
+   "optim_score": 18.764
+  },
+  "45": {
+   "pose": {
+    "spread": -95.28460222560037,
+    "wrap": 4.0,
+    "crouch": 0.0,
+    "egg": 1.2437500000000001,
+    "arm": 149.90750079802058,
+    "scroll": 17.08973911396482,
+    "egg_y": 10.035742007100914,
+    "elbow": 22.912346969468224,
+    "cloak": 0.17500000000000002
+   },
+   "sweep_pick": {
+    "spread": -90,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 120
+   },
+   "iou": 0.7557,
+   "de": 27.383,
+   "shift": [
+    -0.38672899043215714,
+    2.544652655218134
+   ],
+   "optim_score": 21.328
+  },
+  "46": {
+   "pose": {
+    "spread": 3.75,
+    "wrap": 58.0,
+    "crouch": 0.5,
+    "egg": 1.075,
+    "arm": 170.0,
+    "scroll": 0.0,
+    "egg_y": 6.75,
+    "elbow": -10.0,
+    "cloak": 0.125
+   },
+   "sweep_pick": {
+    "spread": 15,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 180
+   },
+   "iou": 0.7308,
+   "de": 25.242,
+   "shift": [
+    0.09375,
+    2.125
+   ],
+   "optim_score": 19.065
+  },
+  "47": {
+   "pose": {
+    "spread": 3.75,
+    "wrap": 44.0,
+    "crouch": 0,
+    "egg": 0.9812499999999998,
+    "arm": 0,
+    "scroll": 0.0,
+    "egg_y": 2.625,
+    "elbow": 0.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 0
+   },
+   "iou": 0.8192,
+   "de": 20.98,
+   "shift": [
+    -0.125,
+    1.125
+   ],
+   "optim_score": 19.371
+  },
+  "48": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 41.0,
+    "crouch": 0,
+    "egg": 1.075,
+    "arm": 50.0,
+    "scroll": 0.0,
+    "egg_y": 0.375,
+    "elbow": -13.75,
+    "cloak": 0.07500000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 40,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.858,
+   "de": 19.745,
+   "shift": [
+    0.0,
+    0.4375
+   ],
+   "optim_score": 17.357
+  },
+  "49": {
+   "pose": {
+    "spread": 0,
+    "wrap": 21.0,
+    "crouch": 0.0,
+    "egg": 1.1124999999999998,
+    "arm": 50.0,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": -5.0,
+    "cloak": 0.06250000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8567,
+   "de": 20.325,
+   "shift": [
+    -0.125,
+    0.0625
+   ],
+   "optim_score": 16.349
+  },
+  "50": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.15,
+    "arm": 52.5,
+    "scroll": 2.25,
+    "egg_y": -2.25,
+    "elbow": 0.0,
+    "cloak": 0.07500000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8563,
+   "de": 20.524,
+   "shift": [
+    -0.125,
+    1.0625
+   ],
+   "optim_score": 18.249
+  },
+  "51": {
+   "pose": {
+    "spread": 2.25,
+    "wrap": 1.0,
+    "crouch": 0.5,
+    "egg": 1.2249999999999999,
+    "arm": 47.5,
+    "scroll": 3.0,
+    "egg_y": -1.875,
+    "elbow": 20.0,
+    "cloak": 0.07500000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8555,
+   "de": 20.421,
+   "shift": [
+    0.25,
+    0.875
+   ],
+   "optim_score": 15.077
+  },
+  "52": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 0,
+    "crouch": 1.0,
+    "egg": 1.225,
+    "arm": 50.0,
+    "scroll": 0.0,
+    "egg_y": -2.25,
+    "elbow": 20.0,
+    "cloak": 0.08750000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8437,
+   "de": 19.441,
+   "shift": [
+    0.0,
+    0.25
+   ],
+   "optim_score": 16.241
+  },
+  "53": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.0187499999999998,
+    "arm": 46.25,
+    "scroll": 0.0,
+    "egg_y": -1.875,
+    "elbow": 20.0,
+    "cloak": 0.07500000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8456,
+   "de": 19.04,
+   "shift": [
+    0.0,
+    0.03125
+   ],
+   "optim_score": 17.852
+  },
+  "54": {
+   "pose": {
+    "spread": -2.25,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 0.9624999999999999,
+    "arm": 57.5,
+    "scroll": 0.75,
+    "egg_y": -1.875,
+    "elbow": -1.25,
+    "cloak": 0.07500000000000001
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8552,
+   "de": 19.224,
+   "shift": [
+    0.125,
+    0.0
+   ],
+   "optim_score": 17.888
+  },
+  "55": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.05625,
+    "arm": 60,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": 5.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8674,
+   "de": 19.757,
+   "shift": [
+    -0.1875,
+    0.0
+   ],
+   "optim_score": 15.097
+  },
+  "56": {
+   "pose": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.0937500000000002,
+    "arm": 60.0,
+    "scroll": 0.375,
+    "egg_y": -1.5,
+    "elbow": 10.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8635,
+   "de": 20.906,
+   "shift": [
+    -0.21875,
+    0.03125
+   ],
+   "optim_score": 16.159
+  },
+  "57": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 0,
+    "crouch": 0.5,
+    "egg": 1.0375,
+    "arm": 70.0,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": 0.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8602,
+   "de": 21.079,
+   "shift": [
+    -0.21875,
+    0.09375
+   ],
+   "optim_score": 17.802
+  },
+  "58": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0,
+    "crouch": 1.0,
+    "egg": 1.0,
+    "arm": 70.0,
+    "scroll": 4.5,
+    "egg_y": -2.25,
+    "elbow": 0.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.857,
+   "de": 20.666,
+   "shift": [
+    -0.125,
+    -0.1875
+   ],
+   "optim_score": 18.526
+  },
+  "59": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 0,
+    "crouch": 0.25,
+    "egg": 1.0937500000000002,
+    "arm": 60.0,
+    "scroll": 3.0,
+    "egg_y": -1.5,
+    "elbow": 15.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8575,
+   "de": 19.698,
+   "shift": [
+    0.25,
+    -0.125
+   ],
+   "optim_score": 14.256
+  },
+  "60": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.1125000000000003,
+    "arm": 60,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": 15.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8564,
+   "de": 19.492,
+   "shift": [
+    0.25,
+    0.125
+   ],
+   "optim_score": 14.717
+  },
+  "61": {
+   "pose": {
+    "spread": -2.25,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.0562500000000001,
+    "arm": 60,
+    "scroll": 0.0,
+    "egg_y": -1.875,
+    "elbow": 11.25,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8582,
+   "de": 19.064,
+   "shift": [
+    -0.125,
+    0.0
+   ],
+   "optim_score": 14.779
+  },
+  "62": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 0,
+    "crouch": 0.0,
+    "egg": 1.05625,
+    "arm": 61.25,
+    "scroll": 0.75,
+    "egg_y": -1.5,
+    "elbow": 13.75,
+    "cloak": 0.037500000000000006
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8588,
+   "de": 19.043,
+   "shift": [
+    0.34375,
+    0.28125
+   ],
+   "optim_score": 16.137
+  },
+  "63": {
+   "pose": {
+    "spread": 2.25,
+    "wrap": 0,
+    "crouch": 1.0,
+    "egg": 1.0750000000000002,
+    "arm": 70.0,
+    "scroll": 0.0,
+    "egg_y": -2.25,
+    "elbow": -5.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8614,
+   "de": 19.96,
+   "shift": [
+    0.0,
+    -0.03125
+   ],
+   "optim_score": 17.307
+  },
+  "64": {
+   "pose": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.09375,
+    "arm": 60.0,
+    "scroll": 0.375,
+    "egg_y": -1.5,
+    "elbow": 12.5,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8596,
+   "de": 21.07,
+   "shift": [
+    -0.25,
+    0.0625
+   ],
+   "optim_score": 17.107
+  },
+  "65": {
+   "pose": {
+    "spread": 1.5,
+    "wrap": 0,
+    "crouch": 1.0,
+    "egg": 1.0562500000000001,
+    "arm": 70.0,
+    "scroll": 0.0,
+    "egg_y": -1.5,
+    "elbow": 0.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8609,
+   "de": 21.095,
+   "shift": [
+    -0.25,
+    -0.3125
+   ],
+   "optim_score": 17.134
+  },
+  "66": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0,
+    "crouch": 1.0,
+    "egg": 0.9812500000000001,
+    "arm": 70.0,
+    "scroll": 4.5,
+    "egg_y": -3.0,
+    "elbow": 0.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8559,
+   "de": 20.638,
+   "shift": [
+    0.0,
+    -0.1875
+   ],
+   "optim_score": 18.364
+  },
+  "67": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 0,
+    "crouch": 0.25,
+    "egg": 1.20625,
+    "arm": 60.0,
+    "scroll": 3.0,
+    "egg_y": -2.25,
+    "elbow": 15.0,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8546,
+   "de": 20.537,
+   "shift": [
+    -0.09375,
+    -0.09375
+   ],
+   "optim_score": 14.712
+  },
+  "68": {
+   "pose": {
+    "spread": -1.5,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1.2999999999999998,
+    "arm": 60,
+    "scroll": 3.0,
+    "egg_y": -2.625,
+    "elbow": 11.25,
+    "cloak": 0.025
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8511,
+   "de": 20.362,
+   "shift": [
+    -0.125,
+    0.125
+   ],
+   "optim_score": 15.678
+  },
+  "69": {
+   "pose": {
+    "spread": 0,
+    "wrap": 0.0,
+    "crouch": 1.0,
+    "egg": 1.3,
+    "arm": 114.04562649294917,
+    "scroll": 6.001713423866015,
+    "egg_y": -4.252296223067766,
+    "elbow": 41.66888234581479,
+    "cloak": 0.037500000000000006
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8301,
+   "de": 19.633,
+   "shift": [
+    0.18830622253684004,
+    -1.0780996785082924
+   ],
+   "optim_score": 13.754
+  },
+  "70": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 0,
+    "crouch": 0.5,
+    "egg": 1.16875,
+    "arm": 58.75,
+    "scroll": 3.375,
+    "egg_y": 0.375,
+    "elbow": 12.5,
+    "cloak": 0.037500000000000006
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8403,
+   "de": 20.491,
+   "shift": [
+    -0.03125,
+    -0.25
+   ],
+   "optim_score": 22.058
+  },
+  "71": {
+   "pose": {
+    "spread": 0.75,
+    "wrap": 0.0,
+    "crouch": 0.0,
+    "egg": 0.98125,
+    "arm": 115.0,
+    "scroll": 2.625,
+    "egg_y": -1.125,
+    "elbow": 41.25,
+    "cloak": 0.037500000000000006
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8321,
+   "de": 21.788,
+   "shift": [
+    0.3125,
+    0.21875
+   ],
+   "optim_score": 16.057
+  },
+  "72": {
+   "pose": {
+    "spread": -0.4737089217409318,
+    "wrap": 1.0,
+    "crouch": 0.5,
+    "egg": 0.38797060138060235,
+    "arm": 123.38555568238357,
+    "scroll": 2.821965786514724,
+    "egg_y": -2.956086319367018,
+    "elbow": 19.487256300313174,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8253,
+   "de": 21.811,
+   "shift": [
+    0.20802682066932165,
+    -0.9009845712190556
+   ],
+   "optim_score": 15.4
+  },
+  "73": {
+   "pose": {
+    "spread": -0.8121698011974985,
+    "wrap": 2.0,
+    "crouch": 1.0,
+    "egg": 0.15516887618154407,
+    "arm": 118.02723805605925,
+    "scroll": 9.782785636404068,
+    "egg_y": 5.180558868212033,
+    "elbow": 32.74315953165283,
+    "cloak": 0.05
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8191,
+   "de": 21.789,
+   "shift": [
+    -0.20219542557074577,
+    -1.3878061271094988
+   ],
+   "optim_score": 15.266
+  },
+  "74": {
+   "pose": {
+    "spread": 0.0,
+    "wrap": 0.0,
+    "crouch": 0,
+    "egg": 0.625,
+    "arm": 60.0,
+    "scroll": 4.5,
+    "egg_y": 7.5,
+    "elbow": 15.0,
+    "cloak": 0.025
+   },
+   "sweep_pick": {
+    "spread": 0,
+    "wrap": 0,
+    "crouch": 0,
+    "egg": 1,
+    "arm": 60
+   },
+   "iou": 0.8283,
+   "de": 22.721,
+   "shift": [
+    -0.25,
+    0.6875
+   ],
+   "optim_score": 20.755
+  }
+ }
+}

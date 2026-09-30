@@ -1,0 +1,4 @@
+# temp: one mid-play frame per board (REMASTERED 3D) for a visual sweep
+0 200
+SHOT sweep
+QUIT

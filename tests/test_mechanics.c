@@ -1130,11 +1130,12 @@ int main(void)
     }
 
     /* ---- 8g4d. Knight gift (bord 13, asm FUN_1000c2e8 -> FUN_1000c680): a kind-2 gift
-     * projectile flies to its target cell and drops a goody -- a collectible on an EMPTY
-     * cell, or a gift-BLOCK (hidden payload) if the player blocked the cell mid-flight. ---- */
+     * projectile flies to its target cell and drops a goody -- a wrapped GIFT BOX on an EMPTY
+     * cell (low 0xFF, the goody in the high word, revealed only when collected), or a '?'
+     * block (type 0x91) burying the goody if the player blocked the cell mid-flight. ---- */
     {
-        SoiProjectile *pr; int t;
-        /* empty target -> collectible goody */
+        SoiProjectile *pr; int t, s0;
+        /* empty target -> gift box */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
         pr = &w->projectiles[0];
@@ -1143,10 +1144,16 @@ int main(void)
         pr->x = soi_cell_x(3); pr->y = soi_cell_y(3); pr->vx = 0; pr->vy = 0; pr->age = 0;
         for (t = 0; t < 200 && w->projectiles[0].active; t++) soi_tick(w, 0, 0);
         CHECK(!w->projectiles[0].active, "knight-gift: the gift lands and despawns");
-        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 7, 8)) == 0x0A && (soi_get_cell(w, 7, 8) & 0x900u) == 0x900u,
-              "knight-gift: an empty target becomes a collectible goody (0x90A silver coin)");
+        CHECK(soi_get_cell(w, 7, 8) == ((0x0Au << 16) | 0x9FFu),
+              "knight-gift: an empty target becomes a wrapped gift box (0x9FF, silver coin in the high word)");
+        /* collecting the box pays out the hidden goody (asm FUN_1002bc64 uVar10 == 0xff) */
+        w->players[1].x = (int16_t)soi_cell_x(7); w->players[1].y = (int16_t)soi_cell_y(8);
+        s0 = w->players[1].score;
+        soi_pickup_check(w, 1);
+        CHECK(w->players[1].score == s0 + 500 && soi_get_cell(w, 7, 8) == 0,
+              "knight-gift: collecting the gift box pays its goody (+500 silver coin) and clears the cell");
 
-        /* target BLOCKED before arrival -> gift-block with the goody as a hidden payload */
+        /* target BLOCKED before arrival -> '?' block with the goody as a hidden payload */
         soi_world_init(w, 1);
         w->level_loaded = 1; w->pct_badguy = 0;
         soi_set_cell(w, 7, 8, 0x07u);   /* a player block already occupies the target */
@@ -1155,9 +1162,10 @@ int main(void)
         pr->gtype = 0x17; pr->tcol = 7; pr->trow = 8;
         pr->x = soi_cell_x(3); pr->y = soi_cell_y(3); pr->vx = 0; pr->vy = 0; pr->age = 0;
         for (t = 0; t < 200 && w->projectiles[0].active; t++) soi_tick(w, 0, 0);
-        CHECK((soi_get_cell(w, 7, 8) & SOI_CELL_SPECIAL) &&
+        CHECK(SOI_CELL_TYPE(soi_get_cell(w, 7, 8)) == 0x91u && (soi_get_cell(w, 7, 8) & SOI_CELL_SPECIAL) &&
+              (soi_get_cell(w, 7, 8) & SOI_CELL_SUPPORTIVE) &&
               SOI_CELL_PAYLOAD(soi_get_cell(w, 7, 8)) == (0x900u | 0x17u),
-              "knight-gift: a blocked target becomes a gift-block (gold coin hidden as its payload)");
+              "knight-gift: a blocked target becomes a '?' block (0x1291) burying the gold coin");
     }
 
     /* ---- 8g4e. 3rd co-op player (remaster extension, SOI_MAX_PLAYERS==4 -> slot 3):
@@ -1191,9 +1199,10 @@ int main(void)
             { 0x30, SOI_SFX_SHIELD_ON,     "goody: shield activate plays its own sound (evt 0x29)" },
             { 0x31, SOI_SFX_WHISTLE,       "goody: enemy-claim plays its own sound (evt 0x2a)"  },
             { 0x32, SOI_SFX_SHOES,         "goody: speed shoes play their own sound (evt 0x28)" },
+            { 0x0D, SOI_SFX_MULT,          "goody: a score multiplier plays its own sound (evt 0x17), not the door bugle" },
         };
         int k;
-        for (k = 0; k < 7; k++) {
+        for (k = 0; k < 8; k++) {
             soi_world_init(w, 1);
             w->players[1].active = 1; w->players[1].alive = 1;
             w->players[1].x = soi_cell_x(5); w->players[1].y = soi_cell_y(5);
@@ -2654,6 +2663,16 @@ int main(void)
         CHECK(w->players[1].x == sx && w->players[1].y == sy,
               "transporter: a player straddling two columns is NOT teleported (asm straddle guard)");
     }
+    /* The zap moves the player by the IN->OUT cell delta (asm FUN_1002bc64: x += dcol*32,
+     * y += drow*32), so a player stepping onto the pad off-centre keeps that offset at the OUT. */
+    soi_world_init(w, 1); w->level_loaded = 1; w->pct_badguy = 0;
+    reset_player(w, 1, 2, 2);
+    w->players[1].x = (int16_t)(soi_cell_x(2) - 10);   /* col(x+0xc) = col(x+0x12) = 2: on the pad */
+    soi_set_cell(w, 2, 2, 0x1A);
+    soi_set_cell(w, 10, 10, 0x1B);
+    soi_pickup_check(w, 1);
+    CHECK(w->players[1].x == soi_cell_x(10) - 10 && w->players[1].y == soi_cell_y(10),
+          "transporter: the zap keeps the player's offset within the cell (x += dcol*32)");
 
     /* ---- 33. Auto wall-rebound reads the PRE-push x for BOTH side checks (asm
      * FUN_10012554 snapshots iVar4=x at entry and uses it for the left (+2) AND right

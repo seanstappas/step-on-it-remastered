@@ -1,0 +1,13 @@
+== hippo_sprites [optim final verify tweens live livecal livegate] (86 s, exit 1)
+final: 32 frames (+0 derived) -> extracted\sprites_3d_frames\hippo_sprites
+verify hippo_sprites: 32 frames, IoU min 0.853 mean 0.890, dE mean 9.88 max 14.22 -> FAIL [5, 7, 25, 26]
+tweens: 33/33 pairs x 3 in-betweens -> extracted\sprites_3d_frames\hippo_sprites\tw
+LIVE_DONE 32
+live: 32 frames -> extracted\sprites_live\hippo_sprites
+livecal hippo_sprites: sun x0.950, ambient x0.850 -> dE mean 9.63 (unscaled 9.78) -> extracted\sprites_live\hippo_sprites\live.json
+livegate hippo_sprites (32 frames, gate IoU >= 0.850, dE <= 16.0):
+  live  : IoU min 0.853 mean 0.890, dE mean 9.63 max 13.85, pass 32 (32 as good as the published frame)
+  cycles: IoU min 0.853 mean 0.890, dE mean 9.88 max 14.22, pass 32
+  live vs cycles: dE mean 1.46 max 2.12
+  worst live frames: f07 (IoU 0.861 dE 13.9), f26 (IoU 0.865 dE 12.3), f27 (IoU 0.864 dE 12.3), f25 (IoU 0.853 dE 12.0), f06 (IoU 0.879 dE 11.5)
+BATCH DONE

@@ -13,6 +13,8 @@ only the dark stone head (~44,42,40) showing behind the head. Opts "bare_thighs"
 scored worse than plain green legs, so the legs' positions, not their colours, limit this family. The same goes
 for the arms: "short_sleeves" (a T-shirt: green caps, bare arms, as f02-f19 show) with kid.py's "mouth" dropped
 the verify from 25/48 to 6/48 frames passing.
+Opt "grip_hand" (n/f) picks the fist that holds the handle (the source carries it in the RIGHT hand = "f"); opt
+"two_hand" (the jump-smash f50-f81) makes the other arm copy the grip arm's shoulder/elbow, both fists on the handle.
 """
 import math
 
@@ -59,7 +61,7 @@ def build(opts):
                 bpy.data.objects[part + side].data.materials[0] = skin
             sl = ua * f("sleeve_f", 0.45)
             _cyl("sleeve_" + side, (0, -sl / 2, 0), ar * f("sleeve_r", 1.12), sl, top, 0.3, arms[side][0])
-    grip = _empty("grip", (0, -f("hand_r", 1.1) * 0.6, 0), arms["n"][2])
+    grip = _empty("grip", (0, -f("hand_r", 1.1) * 0.6, 0), arms[opts.get("grip_hand", "n")][2])
     grip.rotation_mode = 'ZXY'
     handle = C._mat("handle", C._srgb(*rgb("handle", (235, 235, 230))), rough=f("rough", 0.45), spec=f("spec", 0.25))
     stone = C._mat("stone", C._srgb(*rgb("stone", (70, 70, 70))), rough=f("stone_rough", 0.8), spec=0.1)
@@ -77,12 +79,21 @@ def _frames_setup(opts):
     f = lambda k, d: float(opts.get(k, d))
     return {"root": root, "arms": arms, "legs": legs, "grip": grip, "tilt": math.radians(f("tilt", 0.0)),
             "swing": f("swing", 30.0), "knee_amp": f("knee_amp", 45.0), "arm_swing": f("arm_swing", 30.0),
-            "elbow0": f("elbow0", 25.0), "base": base_pose(opts), "ham0": f("ham0", 0.0), "ham_y0": f("ham_y0", 0.0)}
+            "elbow0": f("elbow0", 25.0), "base": base_pose(opts), "ham0": f("ham0", 0.0), "ham_y0": f("ham_y0", 0.0),
+            "grip_hand": opts.get("grip_hand", "n"), "two_hand": bool(opts.get("two_hand", False))}
 
 
 def _frames_pose(ctx, pose):
+    if ctx["two_hand"]:                                            # the swing (f50-f81): both fists on the handle --
+        g = ctx["grip_hand"]                                       # the other arm copies the grip arm
+        o = "n" if g == "f" else "f"
+        pose = dict(pose)
+        for k in ("s_", "e_"):
+            v = pose.get(k + g, ctx["base"].get(k + g))
+            if v is not None:
+                pose[k + o] = v
     kid_pose(ctx, pose)                                            # merges the opts base pose
-    sh, el, fp = ctx["arms"]["n"]
+    sh, el, fp = ctx["arms"][ctx["grip_hand"]]
     fa = sh.rotation_euler[2] + el.rotation_euler[2]              # undo the forearm: "ham" is relative to the body
     ctx["grip"].rotation_euler = (0.0, math.radians(float(pose.get("ham_y", ctx["ham_y0"]))),
                                   -fa + math.radians(90.0 + float(pose.get("ham", ctx["ham0"]))))

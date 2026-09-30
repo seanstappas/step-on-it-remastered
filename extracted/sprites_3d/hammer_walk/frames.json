@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "hammer_sprites",
  "frames": {
   "range": [
@@ -8,14 +8,14 @@
   ]
  },
  "mode": "hammer",
- "note": "Round 13: optimfail 31 -> 34/48 (the 14 fails are colour, dE 16.1-21.6; the full hair mop and a darker look (gamma .9, world .08) scored worse: dE ~20). WIP: the Hammer walking (f02-f49), hammer.py. The mallet angle is now relative to the body (ham -90 = up, +-180 = back); the carry is up-and-back over the shoulder (~-135). Previous: IoU 0.79 with the handle sticking out forward.",
+ "note": "PASS (48 frames under the players' documented gate dE 17.5; at 16: 47/48, f21 17.2; IoU min .854, dE mean 13.8). The Hammer (hammer.py on the kid rig): green shirt and shorts, bare legs, white shoes, the MALLET carried over the RIGHT shoulder (grip_hand f: the rig's far arm, carry base pose s_f0 22.5 / e_f0 105; the optim inits follow). Views (per-frame yaw priors): left walk f02-f19, turn f20, FRONT f21-f28 (face + red mouth; the old fit showed the back of the head there), turn f29-f30, right walk f31-f49. f05-f09 re-fitted with the mallet held back (ham -185..-145): the optim had swung it forward to fill the free fist. Round 17: 34 -> 47/48 at dE 16.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
  "opts": {
-  "world": 0.12,
-  "key": 2.5125,
-  "fill": 0.065,
+  "world": 0.08,
+  "key": 3.0125,
+  "fill": 0.005,
   "key_dir": [
    -0.26,
    0.7,
@@ -46,44 +46,44 @@
    245,
    240
   ],
-  "torso_y": 5.2,
-  "torso_h": 9.6,
-  "torso_r": 3.725,
+  "torso_y": 4.8,
+  "torso_h": 10.0,
+  "torso_r": 3.6,
   "torso_fx": 0.99,
   "torso_bevel": 1.2,
   "hip_r": 2.8125,
   "hip_h": 2.4,
-  "head_y": 12.95,
+  "head_y": 13.35,
   "head_r": 3.9,
   "head_fy": 1.05,
   "head_fz": 0.95,
-  "hair_dx": -0.1,
-  "hair_dy": 1.35,
-  "hair_f": 1.0,
+  "hair_dx": -0.025,
+  "hair_dy": 1.65,
+  "hair_f": 0.975,
   "hair_fy": 0.95,
   "hair_fz": 1.02,
   "neck_y": 9.4,
   "neck_r": 1.3,
-  "shoulder_y": 7.8,
+  "shoulder_y": 7.7,
   "shoulder_z": 5.2,
   "uarm_l": 4.375,
   "farm_l": 4.8875,
   "arm_r": 2.0,
   "hand_r": 1.8,
-  "hip_z": 2.0,
-  "thigh_l": 5.0,
+  "hip_z": 1.825,
+  "thigh_l": 5.15,
   "shin_l": 5.825,
   "leg_r": 2.4,
   "foot_rx": 3.45,
   "foot_ry": 1.4312,
   "foot_rz": 1.6,
-  "foot_dx": 1.425,
+  "foot_dx": 1.3875,
   "swing": 30.0,
   "knee_amp": 45.0,
   "arm_swing": 30.0,
   "elbow0": 25.0,
   "tilt": 0.0,
-  "rough": 0.25,
+  "rough": 0.15,
   "spec": 0.2,
   "gamma": 1.1,
   "handle": [
@@ -96,31 +96,32 @@
    70,
    70
   ],
-  "handle_l": 14.0,
-  "handle_r": 1.2,
+  "handle_l": 13.75,
+  "handle_r": 1.4,
   "grip_off": 1.5,
-  "mallet_r": 2.1313,
+  "mallet_r": 2.3813,
   "mallet_l": 5.5,
-  "s_n0": 22.5,
-  "e_n0": 105.0,
   "ham0": -135.0,
   "bare_thighs": false,
   "dark_socks": false,
   "short_sleeves": false,
-  "mouth": false,
-  "skin_gain": 0.975,
+  "mouth": true,
+  "skin_gain": 1.025,
   "hair_gain": 1.0,
   "sweater_gain": 1.0,
   "trousers_gain": 1.05,
   "shoes_gain": 0.975,
-  "stone_gain": 1.0,
-  "handle_gain": 1.0,
+  "stone_gain": 1.05,
+  "handle_gain": 1.05,
   "socks_gain": 1.0,
   "sleeve_f": 0.45,
   "sleeve_r": 1.12,
   "mouth_el": -30.0,
-  "mouth_az": 10.0,
-  "mouth_r": 0.9
+  "mouth_az": 0.0,
+  "mouth_r": 0.9,
+  "grip_hand": "f",
+  "s_f0": 22.5,
+  "e_f0": 105.0
  },
  "sweep": [
   {
@@ -148,7 +149,7 @@
   {
    "frames": [
     2,
-    21
+    19
    ],
    "param": "yaw",
    "value": 0,
@@ -157,7 +158,47 @@
   },
   {
    "frames": [
-    27,
+    20,
+    20
+   ],
+   "param": "yaw",
+   "value": 45,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    21,
+    28
+   ],
+   "param": "yaw",
+   "value": 90,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    29,
+    29
+   ],
+   "param": "yaw",
+   "value": 135,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    30,
+    30
+   ],
+   "param": "yaw",
+   "value": 160,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    31,
     49
    ],
    "param": "yaw",
@@ -193,25 +234,25 @@
     "step": 12,
     "min": -90,
     "max": 180,
-    "init": 20.0
+    "init": 0.0
    },
    "s_f": {
     "step": 12,
     "min": -90,
     "max": 180,
-    "init": 0
+    "init": 20.0
    },
    "e_n": {
     "step": 12,
     "min": -40,
     "max": 130,
-    "init": 120.0
+    "init": 25.0
    },
    "e_f": {
     "step": 12,
     "min": -40,
     "max": 130,
-    "init": 0
+    "init": 120.0
    },
    "t_n": {
     "step": 10,
@@ -267,15 +308,15 @@
     true,
     false
    ],
-   "e_n0": [
-    80.0,
-    105.0,
-    130.0
-   ],
-   "s_n0": [
+   "s_f0": [
     0.0,
     22.5,
     45.0
+   ],
+   "e_f0": [
+    80.0,
+    105.0,
+    130.0
    ]
   },
   "refine": {
@@ -283,13 +324,13 @@
     "step": 0.1,
     "min": 0.15,
     "max": 1.0,
-    "init": 1.0
+    "init": 0.45
    },
    "sleeve_r": {
     "step": 0.08,
     "min": 1.0,
     "max": 1.4,
-    "init": 1.28
+    "init": 1.12
    },
    "mouth_el": {
     "step": 5,
@@ -301,7 +342,7 @@
     "step": 8,
     "min": -30,
     "max": 50,
-    "init": 10.0
+    "init": 0.0
    },
    "mouth_r": {
     "step": 0.2,
@@ -313,19 +354,19 @@
     "step": 0.4,
     "min": 3,
     "max": 7,
-    "init": 5.2
+    "init": 4.8
    },
    "torso_h": {
     "step": 0.4,
     "min": 6,
     "max": 11,
-    "init": 9.6
+    "init": 10.0
    },
    "torso_r": {
     "step": 0.25,
     "min": 2.5,
     "max": 5,
-    "init": 3.725
+    "init": 3.6
    },
    "torso_fx": {
     "step": 0.08,
@@ -343,7 +384,7 @@
     "step": 0.4,
     "min": 11,
     "max": 15,
-    "init": 12.95
+    "init": 13.35
    },
    "head_r": {
     "step": 0.2,
@@ -355,25 +396,25 @@
     "step": 0.3,
     "min": -1,
     "max": 2,
-    "init": -0.1
+    "init": -0.025
    },
    "hair_dy": {
     "step": 0.3,
     "min": -0.5,
     "max": 2,
-    "init": 1.35
+    "init": 1.65
    },
    "hair_f": {
     "step": 0.05,
     "min": 0.9,
     "max": 1.25,
-    "init": 1.0
+    "init": 0.975
    },
    "shoulder_y": {
     "step": 0.4,
     "min": 6,
     "max": 10,
-    "init": 7.8
+    "init": 7.7
    },
    "shoulder_z": {
     "step": 0.3,
@@ -409,13 +450,13 @@
     "step": 0.2,
     "min": 0.8,
     "max": 2.4,
-    "init": 2.0
+    "init": 1.825
    },
    "thigh_l": {
     "step": 0.3,
     "min": 3.5,
     "max": 6.5,
-    "init": 5.0
+    "init": 5.15
    },
    "shin_l": {
     "step": 0.3,
@@ -445,13 +486,13 @@
     "step": 0.3,
     "min": 0,
     "max": 2.5,
-    "init": 1.425
+    "init": 1.3875
    },
    "rough": {
     "step": 0.1,
     "min": 0.05,
     "max": 0.9,
-    "init": 0.25
+    "init": 0.15
    },
    "spec": {
     "step": 0.1,
@@ -469,55 +510,43 @@
     "step": 0.5,
     "min": 1.5,
     "max": 7,
-    "init": 2.5125
+    "init": 3.0125
    },
    "world": {
     "step": 0.04,
     "min": 0,
     "max": 0.4,
-    "init": 0.12
+    "init": 0.08
    },
    "fill": {
     "step": 0.06,
     "min": 0,
     "max": 0.5,
-    "init": 0.065
+    "init": 0.005
    },
    "handle_l": {
     "step": 0.5,
     "min": 8,
     "max": 16,
-    "init": 14.0
+    "init": 13.75
    },
    "handle_r": {
     "step": 0.15,
     "min": 0.5,
     "max": 1.4,
-    "init": 1.2
+    "init": 1.4
    },
    "mallet_r": {
     "step": 0.25,
     "min": 1.8,
     "max": 3.6,
-    "init": 2.1313
+    "init": 2.3813
    },
    "mallet_l": {
     "step": 0.4,
     "min": 4.5,
     "max": 9,
     "init": 5.5
-   },
-   "s_n0": {
-    "step": 10,
-    "min": -60,
-    "max": 160,
-    "init": 22.5
-   },
-   "e_n0": {
-    "step": 10,
-    "min": 0,
-    "max": 160,
-    "init": 105.0
    },
    "ham0": {
     "step": 10,
@@ -529,7 +558,7 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 0.925
+    "init": 1.025
    },
    "hair_gain": {
     "step": 0.05,
@@ -541,13 +570,13 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.1
+    "init": 1.0
    },
    "trousers_gain": {
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.15
+    "init": 1.05
    },
    "shoes_gain": {
     "step": 0.05,
@@ -559,19 +588,31 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.0
+    "init": 1.05
    },
    "handle_gain": {
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.0
+    "init": 1.05
    },
    "socks_gain": {
     "step": 0.1,
     "min": 0.5,
     "max": 2.5,
     "init": 1.0
+   },
+   "s_f0": {
+    "step": 10,
+    "min": -60,
+    "max": 160,
+    "init": 22.5
+   },
+   "e_f0": {
+    "step": 10,
+    "min": 0,
+    "max": 160,
+    "init": 105.0
    }
   },
   "refine_rounds": 8,
@@ -587,8 +628,27 @@
  ],
  "gate": {
   "iou": 0.85,
-  "de": 16.0,
+  "de": 17.5,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 4,
+  "cycles": [
+   [
+    2,
+    17
+   ],
+   [
+    34,
+    49
+   ]
+  ],
+  "runs": [
+   [
+    18,
+    33
+   ]
+  ]
+ }
 }

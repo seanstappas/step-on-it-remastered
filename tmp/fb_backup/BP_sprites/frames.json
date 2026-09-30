@@ -1,0 +1,608 @@
+{
+ "status": "published",
+ "source": "BP_sprites",
+ "frames": {
+  "range": [
+   50,
+   117
+  ]
+ },
+ "mode": "kid",
+ "note": "Round 13 (user feedback): full hair mop cut at a fringe (kid.py hair_cut) + longer arms (the source's hands hang to the upper thigh); both held out of the look. The player f50-f117 (kid.py; seeded from BP_run), WIP: 61/68 pass (IoU 0.878, dE 13.3) after sweep fit optim, look, optimfail with probe grids (the far arm raised in f107-f117). Failing f70, f72, f76, f82, f86, f88, f89: mostly dE 16-20 at IoU 0.85-0.88 -- e.g. f86 shows the face on the far side of a left-facing body (the head turned back), which the rig cannot do (no neck turn yet). The 36x34 cheer f118-f126 moved to BP_cheer. PUBLISHED round 10 (68/68, IoU min 0.851 mean 0.880, dE mean 12.2 max 15.7): the kid eyes + look (59 -> 61), ankle keys and a_n/a_f probes, +-1 px shift hops (f82 17.0 -> 12.4) and, for f86, a reseed from f85 with the yaw held to 60-160 (the free fit had turned the body to 208 deg and shown the back of the head).",
+ "place_iou_w": 200,
+ "shift": "auto",
+ "shift_range": 4,
+ "opts": {
+  "world": 0.18,
+  "key": 3.075,
+  "fill": 0.06,
+  "key_dir": [
+   -0.26,
+   0.7,
+   0.66
+  ],
+  "skin": [
+   250,
+   210,
+   175
+  ],
+  "hair": [
+   120,
+   60,
+   20
+  ],
+  "sweater": [
+   20,
+   20,
+   200
+  ],
+  "trousers": [
+   140,
+   0,
+   0
+  ],
+  "shoes": [
+   245,
+   245,
+   240
+  ],
+  "torso_y": 5.05,
+  "torso_h": 8.05,
+  "torso_r": 4.35,
+  "torso_fx": 0.77,
+  "torso_bevel": 1.2,
+  "hip_r": 3.75,
+  "hip_h": 2.4,
+  "head_y": 12.35,
+  "head_r": 3.525,
+  "head_fy": 1.05,
+  "head_fz": 0.95,
+  "hair_dx": 0.35,
+  "hair_dy": 0.3,
+  "hair_f": 1.08,
+  "hair_fy": 1.05,
+  "hair_fz": 1.02,
+  "neck_y": 9.4,
+  "neck_r": 1.3,
+  "shoulder_y": 8.1,
+  "shoulder_z": 4.1125,
+  "uarm_l": 5.35,
+  "farm_l": 4.6,
+  "arm_r": 1.5625,
+  "hand_r": 1.5188,
+  "hip_z": 1.4,
+  "thigh_l": 5.4125,
+  "shin_l": 5.45,
+  "leg_r": 1.775,
+  "foot_rx": 2.6688,
+  "foot_ry": 1.225,
+  "foot_rz": 1.6,
+  "foot_dx": 0.75,
+  "swing": 30.0,
+  "knee_amp": 45.0,
+  "arm_swing": 30.0,
+  "elbow0": 25.0,
+  "tilt": 0.0,
+  "rough": 0.25,
+  "spec": 0.0,
+  "gamma": 0.8625,
+  "eye_el": 10.75,
+  "eye_r": 1.225,
+  "eye_az": 17.0,
+  "hair_cut": 25.0,
+  "fringe_x": 0.4,
+  "fringe_y": 0.1
+ },
+ "sweep": [
+  {
+   "param": "yaw",
+   "start": 0,
+   "stop": 360,
+   "step": 30,
+   "period": 360
+  },
+  {
+   "param": "phase",
+   "start": 0,
+   "stop": 360,
+   "step": 60,
+   "period": 360
+  },
+  {
+   "param": "pitch",
+   "start": 0,
+   "stop": 360,
+   "step": 90,
+   "period": 360
+  }
+ ],
+ "smooth": {
+  "yaw": "free",
+  "phase": "free",
+  "pitch": "free"
+ },
+ "optim": {
+  "params": {
+   "yaw": {
+    "step": 6,
+    "min": -60,
+    "max": 420
+   },
+   "phase": {
+    "step": 20,
+    "min": -360,
+    "max": 720
+   },
+   "pitch": {
+    "step": 8,
+    "min": -60,
+    "max": 420
+   },
+   "s_n": {
+    "step": 12,
+    "min": -90,
+    "max": 180,
+    "init": 0
+   },
+   "s_f": {
+    "step": 12,
+    "min": -90,
+    "max": 180,
+    "init": 0
+   },
+   "e_n": {
+    "step": 12,
+    "min": -60,
+    "max": 160,
+    "init": 0
+   },
+   "e_f": {
+    "step": 12,
+    "min": -60,
+    "max": 160,
+    "init": 0
+   },
+   "t_n": {
+    "step": 10,
+    "min": -70,
+    "max": 90,
+    "init": 0
+   },
+   "t_f": {
+    "step": 10,
+    "min": -70,
+    "max": 90,
+    "init": 0
+   },
+   "k_n": {
+    "step": 10,
+    "min": -35,
+    "max": 150,
+    "init": 0
+   },
+   "k_f": {
+    "step": 10,
+    "min": -35,
+    "max": 150,
+    "init": 0
+   },
+   "hd": {
+    "step": 10,
+    "min": -180,
+    "max": 180,
+    "init": 0.0
+   },
+   "a_n": {
+    "step": 12,
+    "min": -90,
+    "max": 120,
+    "init": 0
+   },
+   "a_f": {
+    "step": 12,
+    "min": -90,
+    "max": 120,
+    "init": 0
+   }
+  },
+  "rounds": 8,
+  "scale": 2,
+  "samples": 8,
+  "finish": {
+   "rounds": 3,
+   "scale": 4,
+   "samples": 32,
+   "step_f": 0.5
+  },
+  "probe": [
+   {
+    "hd": [
+     -135,
+     -90,
+     -45,
+     0,
+     45,
+     90,
+     135,
+     180
+    ]
+   },
+   {
+    "t_n": [
+     -60,
+     -30,
+     0,
+     30,
+     60
+    ],
+    "k_n": [
+     0,
+     50,
+     100
+    ]
+   },
+   {
+    "t_f": [
+     -60,
+     -30,
+     0,
+     30,
+     60
+    ],
+    "k_f": [
+     0,
+     50,
+     100
+    ]
+   },
+   {
+    "pitch": [
+     -20,
+     -10,
+     0,
+     10,
+     20
+    ]
+   },
+   {
+    "s_n": [
+     0,
+     45,
+     90,
+     135
+    ],
+    "e_n": [
+     0,
+     40,
+     90
+    ]
+   },
+   {
+    "s_f": [
+     0,
+     45,
+     90,
+     135
+    ],
+    "e_f": [
+     0,
+     40,
+     90
+    ]
+   },
+   {
+    "a_n": [
+     -90,
+     -60,
+     -30,
+     0,
+     30,
+     60,
+     90
+    ],
+    "a_f": [
+     -90,
+     -60,
+     -30,
+     0,
+     30,
+     60,
+     90
+    ]
+   }
+  ]
+ },
+ "scale": 4,
+ "samples": {
+  "sweep": 10,
+  "final": 256
+ },
+ "look": {
+  "frames": 14,
+  "passes": 2,
+  "samples": 32,
+  "params": {
+   "sweater": [
+    [
+     0,
+     0,
+     140
+    ],
+    [
+     0,
+     0,
+     170
+    ],
+    [
+     20,
+     20,
+     200
+    ]
+   ],
+   "trousers": [
+    [
+     110,
+     0,
+     0
+    ],
+    [
+     140,
+     0,
+     0
+    ],
+    [
+     170,
+     0,
+     0
+    ]
+   ],
+   "skin": [
+    [
+     220,
+     170,
+     130
+    ],
+    [
+     240,
+     190,
+     150
+    ],
+    [
+     250,
+     210,
+     175
+    ]
+   ],
+   "hair": [
+    [
+     90,
+     45,
+     15
+    ],
+    [
+     120,
+     60,
+     20
+    ],
+    [
+     150,
+     80,
+     30
+    ]
+   ]
+  },
+  "refine": {
+   "torso_y": {
+    "step": 0.4,
+    "min": 3,
+    "max": 7,
+    "init": 5.05
+   },
+   "torso_h": {
+    "step": 0.4,
+    "min": 6,
+    "max": 11,
+    "init": 8.05
+   },
+   "torso_r": {
+    "step": 0.25,
+    "min": 2.5,
+    "max": 5,
+    "init": 4.35
+   },
+   "torso_fx": {
+    "step": 0.08,
+    "min": 0.5,
+    "max": 1.2,
+    "init": 0.77
+   },
+   "hip_r": {
+    "step": 0.25,
+    "min": 2,
+    "max": 4,
+    "init": 3.75
+   },
+   "head_y": {
+    "step": 0.4,
+    "min": 11,
+    "max": 15,
+    "init": 12.35
+   },
+   "head_r": {
+    "step": 0.2,
+    "min": 2.8,
+    "max": 4.6,
+    "init": 3.525
+   },
+   "shoulder_y": {
+    "step": 0.4,
+    "min": 6,
+    "max": 10,
+    "init": 8.1
+   },
+   "shoulder_z": {
+    "step": 0.3,
+    "min": 2.8,
+    "max": 5.2,
+    "init": 4.1125
+   },
+   "uarm_l": {
+    "step": 0.3,
+    "min": 5.0,
+    "max": 7.0,
+    "init": 5.35
+   },
+   "farm_l": {
+    "step": 0.3,
+    "min": 4.2,
+    "max": 6.0,
+    "init": 4.6
+   },
+   "arm_r": {
+    "step": 0.15,
+    "min": 0.8,
+    "max": 2,
+    "init": 1.5625
+   },
+   "hand_r": {
+    "step": 0.15,
+    "min": 0.7,
+    "max": 1.8,
+    "init": 1.5188
+   },
+   "hip_z": {
+    "step": 0.2,
+    "min": 0.8,
+    "max": 2.4,
+    "init": 1.4
+   },
+   "thigh_l": {
+    "step": 0.3,
+    "min": 3.5,
+    "max": 6.5,
+    "init": 5.4125
+   },
+   "shin_l": {
+    "step": 0.3,
+    "min": 3.5,
+    "max": 6.5,
+    "init": 5.45
+   },
+   "leg_r": {
+    "step": 0.15,
+    "min": 1,
+    "max": 2.4,
+    "init": 1.775
+   },
+   "foot_rx": {
+    "step": 0.25,
+    "min": 2,
+    "max": 4.2,
+    "init": 2.6688
+   },
+   "foot_ry": {
+    "step": 0.15,
+    "min": 0.8,
+    "max": 2,
+    "init": 1.225
+   },
+   "foot_dx": {
+    "step": 0.3,
+    "min": 0,
+    "max": 2.5,
+    "init": 0.75
+   },
+   "rough": {
+    "step": 0.1,
+    "min": 0.05,
+    "max": 0.9,
+    "init": 0.25
+   },
+   "spec": {
+    "step": 0.1,
+    "min": 0,
+    "max": 0.8,
+    "init": 0.0
+   },
+   "gamma": {
+    "step": 0.1,
+    "min": 0.5,
+    "max": 1.2,
+    "init": 0.8625
+   },
+   "key": {
+    "step": 0.5,
+    "min": 1.5,
+    "max": 7,
+    "init": 3.075
+   },
+   "world": {
+    "step": 0.04,
+    "min": 0,
+    "max": 0.4,
+    "init": 0.18
+   },
+   "fill": {
+    "step": 0.06,
+    "min": 0,
+    "max": 0.5,
+    "init": 0.06
+   },
+   "eye_el": {
+    "step": 5,
+    "min": -10,
+    "max": 45,
+    "init": 10.75
+   },
+   "eye_r": {
+    "step": 0.15,
+    "min": 0.6,
+    "max": 1.8,
+    "init": 1.225
+   },
+   "eye_az": {
+    "step": 4,
+    "min": 6,
+    "max": 42,
+    "init": 17.0
+   }
+  },
+  "refine_rounds": 8,
+  "iou_w": 200,
+  "iou_margin": 0.03
+ },
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
+ "gate": {
+  "iou": 0.85,
+  "de": 16.0,
+  "rank_tol": 1
+ },
+ "fps": 15,
+ "tweens": {
+  "n": 8,
+  "pairs": [
+   [
+    103,
+    105
+   ],
+   [
+    105,
+    107
+   ],
+   [
+    98,
+    100
+   ],
+   [
+    100,
+    102
+   ]
+  ]
+ }
+}

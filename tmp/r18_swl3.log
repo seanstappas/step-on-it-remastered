@@ -1,0 +1,4 @@
+== hammer_swing_l [optimfail final verify] (193 s, exit 0)
+final: 16 frames (+0 derived) -> extracted\sprites_3d_frames\hammer_sprites
+verify hammer_swing_l: 16 frames, IoU min 0.856 mean 0.868, dE mean 14.64 max 17.26 -> PASS
+BATCH DONE

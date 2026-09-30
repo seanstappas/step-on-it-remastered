@@ -14,6 +14,10 @@ view axis: 0 = hanging, 180 = raised beside the head; "elbow", deg: + bends the 
 cushion for a red SPHERE with vertical dark stripes that spins with "scroll"; "cloak" adds the wings wrapped
 IN FRONT of the body as a curved stone shell hanging from the shoulders (pose "cloak": 0 = none, 1 = its full
 "cloak_h" length); "wing_ribs" > 0 pleats the wing albedo.
+Opt-in anatomy (f17-f35 at 10x: a muscular humanoid, not an egg): "torso2" (chest + pecs + abdomen + pelvis instead of
+the egg body), "face" (brow ridge, eye glints in the sockets, snout, a dark mouth with a row of teeth), "legs2" (thigh,
+knee, shin and a clawed foot) and "wing_pleats" (N accordion folds as GEOMETRY, so the vertical light/dark bands of
+the source come from the light and survive the live renderer; "pleat_amp" px).
 The whole model is scaled by `model_scale` and moved by `model_dy` px to fit the sweep camera.
 """
 import math
@@ -33,6 +37,37 @@ from .tile import _prism
 WING = [(0, 3), (32.5, 3), (32.5, 0), (31.5, -2), (30.5, -4), (29.5, -6), (28, -8), (26.5, -10), (24, -12), (19, -14),
         (17, -16), (15, -18), (13.5, -20), (12, -22), (0, -22)]
 EAR = [(-2, -3.5), (4, -3.5), (12, -2), (17, 0.5), (14, 2.5), (5, 5), (-2, 5.5)]   # CCW, y up; f30 rows 11-20 to +-22 px
+
+
+def _pleated_wing(name, pts, sx, n, amp, thick, mat):
+    """The WING outline (top edge y = pts[0][1], lower edge = the rest) as 2n accordion strips folding +-amp in z,
+    solidified; x mirrored by sx. pts are SD px (already scaled by wing_f / wing_fy)."""
+    top = pts[0][1]
+    span = max(x for x, _ in pts)
+    low = sorted({(x, y) for x, y in pts[2:]})                         # the lower edge, by x
+
+    def bottom(x):
+        for (x0, y0), (x1, y1) in zip(low, low[1:]):
+            if x0 <= x <= x1:
+                return y0 + (y1 - y0) * ((x - x0) / (x1 - x0) if x1 > x0 else 0.0)
+        return low[0][1] if x < low[0][0] else low[-1][1]
+    verts, faces = [], []
+    for i in range(2 * n + 1):
+        x = span * i / (2 * n)
+        z = 0.0 if i == 0 else (amp if i % 2 else -amp)
+        verts += [(sx * x * S, top * S, z * S), (sx * x * S, bottom(x) * S, z * S)]
+        if i:
+            a, b = 2 * (i - 1), 2 * i
+            faces.append((a, b, b + 1, a + 1) if sx > 0 else (a, a + 1, b + 1, b))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mat)
+    sol = o.modifiers.new("solid", 'SOLIDIFY')
+    sol.thickness = thick * S
+    sol.offset = 0.0
+    return o
 
 
 def _wing_mat(opts, rgb, span):
@@ -102,13 +137,39 @@ def build(opts):
     hip_y = f("hip_y", 22.0)
     for sx in (-1.0, 1.0):
         hp = _empty("hip", (sx * f("leg_x", 4.0), hip_y, 0), root)
+        if opts.get("legs2"):                                           # thigh, knee, shin, clawed foot
+            lr, kn = f("leg_r", 2.0), hip_y * f("knee_f", 0.5)
+            _cyl("thigh", (0, -kn / 2, 0), lr * f("thigh_f", 1.35), kn, stone, 0.6, hp)
+            _ell("knee", (0, -kn, 0.3), (lr * 1.15, lr * 1.0, lr * 1.2), stone, 16).parent = hp
+            _cyl("shin", (0, -(kn + hip_y) / 2, 0), lr * f("shin_f", 0.95), hip_y - kn, stone, 0.5, hp)
+            _rbox("claw", (0, -hip_y + 1.0, 1.2), (lr * 1.4, 1.1, 2.6), 0.5, claw).parent = hp
+            legs.append(hp)
+            continue
         _cyl("leg", (0, -hip_y / 2, 0), f("leg_r", 2.0), hip_y, stone, 0.4, hp)
         _rbox("claw", (0, -hip_y + 1.2, 1.0), (f("leg_r", 2.0) * 1.3, 1.2, 2.0), 0.5, claw).parent = hp
         legs.append(hp)
     by = f("body_y", 37.0)                                            # up to the shoulders: f30 has no gap between the wings
-    _ell("body", (0, by, 0), (f("body_rx", 8.0), f("body_ry", 14.0), f("body_rz", 5.0)), body_m, 32).parent = upper
+    if opts.get("torso2"):                                            # chest + pecs over an abdomen and pelvis
+        cy = f("chest_y", 43.0)
+        _ell("chest", (0, cy, 0.5), (f("chest_rx", 9.5), f("chest_ry", 7.5), f("chest_rz", 5.0)), body_m, 32).parent = upper
+        for sx in (-1.0, 1.0):
+            _ell("pec", (sx * f("pec_x", 4.2), cy + f("pec_dy", 1.2), f("pec_z", 4.2)),
+                 (f("pec_rx", 4.0), f("pec_ry", 3.2), 1.8), body_m, 24).parent = upper
+        _ell("abdomen", (0, f("abd_y", 34.0), 0.3), (f("abd_rx", 6.8), f("abd_ry", 6.5), 4.3), body_m, 24).parent = upper
+        _ell("pelvis", (0, f("pelvis_y", 27.5), 0), (f("pelvis_rx", 6.5), 4.0, 4.0), body_m, 24).parent = upper
+    else:
+        _ell("body", (0, by, 0), (f("body_rx", 8.0), f("body_ry", 14.0), f("body_rz", 5.0)), body_m, 32).parent = upper
     hy, hr = f("head_y", 57.0), f("head_r", 5.5)
     _ell("head", (0, hy, 0), (hr, hr * 0.95, hr * 0.9), stone, 32).parent = upper
+    if opts.get("face"):                                              # brow ridge, glints, snout, mouth + teeth
+        glint = C._mat("glint", C._srgb(*opts.get("glint", (200, 200, 205))), rough=0.3, spec=0.4)
+        _ell("brow", (0, hy + f("brow_dy", 1.4), hr * 0.72), (hr * 0.8, 0.9, 1.2), stone, 16).parent = upper
+        _ell("snout", (0, hy - 0.9, hr * 0.9), (1.1, 1.3, 1.0), stone, 12).parent = upper
+        _ell("mouth", (0, hy + f("mouth_dy", -2.7), hr * 0.8), (hr * f("mouth_w", 0.55), 0.85, 0.7), dark, 16).parent = upper
+        _rbox("teeth", (0, hy + f("mouth_dy", -2.7) + 0.2, hr * 0.84), (hr * f("mouth_w", 0.55) * 0.8, 0.35, 0.3), 0.1,
+              claw).parent = upper
+        for sx in (-1.0, 1.0):
+            _ell("glint", (sx * hr * 0.4, hy + 0.4, hr * 0.86), (0.45, 0.45, 0.3), glint, 8).parent = upper
     for sx in (-1.0, 1.0):
         _ell("socket", (sx * hr * 0.4, hy + 0.5, hr * 0.75), (1.2, 1.0, 0.6), dark, 12).parent = upper
         if opts.get("horn_loops"):
@@ -132,6 +193,11 @@ def build(opts):
         sh = _empty("shoulder", (sx * f("shoulder_x", 5.0), f("shoulder_y", 50.0), -1.0), upper)
         sh.rotation_mode = 'ZXY'                                     # spread in the view plane first, then wrap
         pts = [(x * f("wing_f", 1.0), y * f("wing_fy", 1.0)) for x, y in WING]
+        if f("wing_pleats", 0.0) > 0:
+            w = _pleated_wing("wing", pts, sx, int(f("wing_pleats", 0.0)), f("pleat_amp", 1.2), 0.8, wing_m)
+            w.parent = sh
+            wings.append((sh, sx))
+            continue
         pts = pts[::-1] if sx > 0 else [(-x, y) for x, y in pts]        # counter-clockwise on either side
         w = _prism("wing", [(x * S, y * S) for x, y in pts], -0.4 * S, 0.8 * S, wing_m, 0.2 * S)
         w.parent = sh

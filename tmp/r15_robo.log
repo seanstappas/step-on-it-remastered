@@ -1,0 +1,29 @@
+f03 was {"s_f": 15.0, "e_f": 21.2}
+f19 was {"s_f": 5.0, "e_f": -17.5}
+f20 was {"s_f": -12.5, "e_f": 0.0}
+f31 was {"s_f": 5.0, "e_f": -42.5}
+f32 was {"s_f": 1.2, "e_f": 0.0}
+optim: reseed moved 0 of 5 frames to a neighbour's pose
+optim: hop 2 improved f32 16.556 -> 15.991
+optim: shift +0,+1 improved f19 16.008 -> 13.658
+optim: shift +0,+1 improved f32 15.991 -> 13.017
+optim: mean score 14.544 -> 13.220
+f03 now yaw -2.5 hd 0.0
+f19 now yaw 181.9 hd 0.0
+f20 now yaw 179.4 hd 0.0
+f31 now yaw 177.5 hd 0.0
+f32 now yaw 182.1 hd 0.0
+HOLD DONE
+== robo_sprites [final verify tweens live livecal livegate] (74 s, exit 0)
+final: 80 frames (+0 derived) -> extracted\sprites_3d_frames\robo_sprites
+verify robo_sprites: 80 frames, IoU min 0.854 mean 0.883, dE mean 13.72 max 16.69 -> PASS
+tweens: 77/77 pairs x 3 in-betweens -> extracted\sprites_3d_frames\robo_sprites\tw
+LIVE_DONE 80
+live: 80 frames -> extracted\sprites_live\robo_sprites
+livecal robo_sprites: sun x0.900, ambient x0.600 -> dE mean 13.66 (unscaled 14.13) -> extracted\sprites_live\robo_sprites\live.json
+livegate robo_sprites (80 frames, gate IoU >= 0.850, dE <= 17.5):
+  live  : IoU min 0.852 mean 0.882, dE mean 13.66 max 16.65, pass 80 (80 as good as the published frame)
+  cycles: IoU min 0.854 mean 0.883, dE mean 13.72 max 16.69, pass 80
+  live vs cycles: dE mean 2.92 max 4.07
+  worst live frames: f61 (IoU 0.882 dE 16.7), f60 (IoU 0.898 dE 16.5), f46 (IoU 0.861 dE 16.2), f72 (IoU 0.875 dE 16.0), f58 (IoU 0.882 dE 15.8)
+BATCH DONE

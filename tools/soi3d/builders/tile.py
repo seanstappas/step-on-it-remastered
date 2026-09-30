@@ -117,10 +117,11 @@ def build_tile(opts):
         grey = C._mat("bar", C._srgb(*_rgb(opts, "color", (150, 150, 150))), rough=0.35, spec=0.4)
         pitch = 2 * half / float(opts.get("cells", 2.0))
         r = float(opts.get("bar_r", 0.07))
+        phase = float(opts.get("phase", 0.0))               # 0.5 = bars cross at the edge quarter points (SD 0x197)
         n = int(math.ceil(2 * half / pitch)) + 1
         for layer, sgn in enumerate((1.0, -1.0)):          # lines y = sgn*x + c, clipped to the square
             for i in range(-n, n + 1):
-                c = i * pitch * (1 if sgn > 0 else 1)
+                c = (i + phase) * pitch
                 pts = []
                 for x in (-half, half):
                     y = sgn * x + c
@@ -167,9 +168,21 @@ def build_tile(opts):
     elif kind in ("inset", "arrows", "switch") or (kind == "symbol" and opts.get("well")):
         inner = float(opts.get("inner", 0.56))
         floor_z = top - float(opts.get("depth", 0.22))
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, floor_z + 1.0))
+        slope = float(opts.get("well_slope", 0.0))       # > 0: sloped walls (the '?' tile's picture-frame recess)
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
         cut = bpy.context.active_object
-        cut.scale = (2 * inner, 2 * inner, 2.0)
+        if slope > 0:
+            import bmesh
+            bm = bmesh.new()
+            bm.from_mesh(cut.data)
+            for v in bm.verts:
+                s, z = (inner - slope, floor_z) if v.co.z < 0 else (inner + slope * 0.5 / (top - floor_z), top + 0.5)
+                v.co.x, v.co.y, v.co.z = math.copysign(s, v.co.x), math.copysign(s, v.co.y), z
+            bm.to_mesh(cut.data)
+            bm.free()
+        else:
+            cut.location = (0, 0, floor_z + 1.0)
+            cut.scale = (2 * inner, 2 * inner, 2.0)
         m = tile.modifiers.new("cut", 'BOOLEAN')
         m.operation = 'DIFFERENCE'
         m.object = cut
@@ -178,7 +191,8 @@ def build_tile(opts):
         bpy.ops.object.modifier_apply(modifier="cut")
         bpy.data.objects.remove(cut, do_unlink=True)
         pc = col if kind in ("inset", "arrows", "switch") else _rgb(opts, "well_col", tuple(int(v * 0.45) for v in base))
-        C._box("panel", (0, 0, floor_z - 0.02), (2 * inner - 0.02, 2 * inner - 0.02, 0.1),   # top 0.03 above the floor
+        fl = inner - slope
+        C._box("panel", (0, 0, floor_z - 0.02), (2 * fl - 0.02, 2 * fl - 0.02, 0.1),   # top 0.03 above the floor
                C._mat("panel", C._srgb(*pc), rough=0.45, spec=0.15), bevel=0.02)
         if kind == "symbol":
             _glyph(opts, floor_z + 0.03, col)

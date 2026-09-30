@@ -1,0 +1,5 @@
+== hammer_walk [optimfail final verify] (1,095 s, exit 1)
+final: 48 frames (+0 derived) -> extracted\sprites_3d_frames\hammer_sprites
+verify hammer_walk: 48 frames, IoU min 0.853 mean 0.873, dE mean 15.65 max 21.86 -> FAIL [6, 7, 8, 10, 11, 12, 15, 16, 19, 20, 29, 30, 31, 35]
+verify: hammer_walk is not published and failed -> removed its 48 overlay frames
+BATCH DONE

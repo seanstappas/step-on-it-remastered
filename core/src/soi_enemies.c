@@ -1003,17 +1003,17 @@ int soi_gift_cell_ok(SoiWorld *w, int col, int row)
     return 1;
 }
 
-/* Drop the gift's goody at (col,row): empty -> a plain collectible; a player-built
- * block -> a gift-BLOCK burying the goody as a 0x1000 payload (FUN_1000c680). */
+/* Drop the gift's goody at (col,row), as asm FUN_1000c680 does: an EMPTY cell gets a wrapped GIFT BOX
+ * (low 0xFF, drawn with master's objects frame 0x10; the goody type rides in the high word and is only
+ * revealed when collected), anything else becomes a '?' block (type 0x91) burying the goody as its
+ * 0x1000 payload. */
 static void soi_gift_land(SoiWorld *w, int col, int row, uint8_t gtype)
 {
-    uint32_t cell;
     if (!soi_in_bounds(col, row)) return;
-    cell = soi_get_cell(w, col, row);
-    if (cell == 0)
-        soi_set_cell(w, col, row, 0x900u | gtype);
-    else if (!(cell & SOI_CELL_PERMANENT))
-        soi_set_cell(w, col, row, (cell & 0xFFFFu) | SOI_CELL_SPECIAL | ((uint32_t)(0x900u | gtype) << 16));
+    if (soi_get_cell(w, col, row) == 0)
+        soi_set_cell(w, col, row, ((uint32_t)gtype << 16) | 0x9FFu);
+    else
+        soi_set_cell(w, col, row, ((uint32_t)(0x900u | gtype) << 16) | SOI_CELL_SPECIAL | SOI_CELL_SUPPORTIVE | 0x91u);
 }
 
 static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)

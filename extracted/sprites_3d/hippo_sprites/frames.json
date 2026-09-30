@@ -59,7 +59,11 @@
   "tooth_r": 0.55,
   "tail_y": -1.5,
   "claw_fx": 0.4,
-  "claw_r": 0.775
+  "claw_r": 0.775,
+  "mouth_band": true,
+  "band_y": 0.05,
+  "band_h": 0.2,
+  "band_x": -0.1
  },
  "sweep": [
   {

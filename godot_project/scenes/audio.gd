@@ -55,6 +55,7 @@ const SFX_ID := {
 	40: 2689,   # WALKER_FIRE    -> Walker bolt throw, game evt 0x13 "Strings" (DAT_10037074[0x13])
 	41: 1006,   # SWITCH         -> Stop/Go switch flip, game evt 0x2c "snap" (DAT_10037074[0x2c])
 	42: 2937,   # BEANIE_BUD     -> Beanie bud shot, game evt 0x12 (DAT_10037074[0x12])
+	43: 15128,  # MULT           -> score-multiplier goody 0x0C-0x0F, game evt 0x17 "Eastern" (DAT_10037074[0x17])
 }
 # name-keyword fallbacks (used only if the id above isn't present)
 const SFX := {

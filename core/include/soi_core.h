@@ -123,6 +123,7 @@ typedef enum {
     SOI_SFX_WALKER_FIRE,  /* Walker bolt throw (asm event 0x13 -> snd 2689 "Strings") */
     SOI_SFX_SWITCH,       /* Stop/Go switch flip (asm FUN_10016544 -> FUN_1002b020 evt 0x2c) */
     SOI_SFX_BEANIE_BUD,   /* Beanie shoots its block-breaking bud (asm FUN_10006d44/6f6c evt 0x12 -> snd 2937) */
+    SOI_SFX_MULT,         /* score-multiplier goody 0x0C-0x0F (asm FUN_1002bc64 evt 0x17 -> snd 15128 "Eastern") */
     SOI_SFX_COUNT
 } SoiSfx;
 

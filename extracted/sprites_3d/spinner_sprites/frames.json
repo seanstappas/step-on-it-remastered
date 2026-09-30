@@ -33,8 +33,8 @@
    235
   ],
   "spec": 0.0,
-  "bar_h": 6.5,
-  "up_y": 5.0,
+  "bar_h": 6.0,
+  "up_y": 5.25,
   "lo_y": 13.075,
   "bar_d": 3.45,
   "cone_r": 3.1,
@@ -52,7 +52,9 @@
    0.8,
    0.5
   ],
-  "post_emit": 0.1
+  "post_emit": 0.1,
+  "bar_len": 22.2,
+  "base_w": 22.0
  },
  "sweep": [
   {
@@ -79,7 +81,13 @@
   "samples": 16
  },
  "scale": 4,
- "post": [{"fringe": {"px": 2}}],
+ "post": [
+  {
+   "fringe": {
+    "px": 2
+   }
+  }
+ ],
  "samples": {
   "sweep": 16,
   "final": 256
@@ -190,15 +198,15 @@
    },
    "bar_h": {
     "step": 0.5,
-    "min": 6.5,
+    "min": 5.5,
     "max": 9.0,
-    "init": 6.5
+    "init": 6.0
    },
    "up_y": {
     "step": 0.3,
     "min": 3.0,
-    "max": 5.0,
-    "init": 5.0
+    "max": 5.75,
+    "init": 5.25
    },
    "lo_y": {
     "step": 0.3,

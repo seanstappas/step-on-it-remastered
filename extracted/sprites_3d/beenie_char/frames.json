@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "beenie_sprites",
  "frames": {
   "range": [
@@ -8,7 +8,7 @@
   ]
  },
  "mode": "beenie",
- "note": "Round 13 (re-proportioned): the full hair mop (hair_cut 35, fringe_x .1: face in front, hair behind), a SMALL beanie on top of the hair (cap_f .8, cap_dy 1.1; it used to be a dome over half the head) and a smaller head (head_r 4.6). The Beenie (beenie.py): the kid rig in blue with a three-gore propeller beanie and a green blaster; faces right f66-f77, turns f78-f79, left f80-f108, front/back f109-f121 (from the blaster position). Round 10 first verify: 0/56, IoU 0.708, dE 31. Per-row widths (f80): source head+beanie 12 px wide over rows 5-11, body 9-11, legs 7-9, feet 6-8; ours: head 7-9, the blaster rows 17 (vs 11), feet 14. fm_diag f70: the source cap shows all three gores (R left, B middle, G right) where ours shows only red; the source shoes are red with skin shins above. Needs re-proportioning from a per-row survey (bigger head, slimmer body and blaster, small red shoes, cap_turn) before any fit. Round 13 (viewed zoomed heads): the Beenie is a WHITE-FACED CLOWN -- white face, dark blue eye sockets, a big red smile, a small cap dome on top with the red propeller; ours had a peach face and a cap dome over half the head -> skin white, dark eyes, mouth_r 3, cap raised (cap_dy .5) and smaller.",
+ "note": "PASS (56 frames under the kid families' documented gate dE 17.5; at 16: 53/56, f99-f101 16.5-17.2; IoU min .859, dE mean 14.4). The Beenie (beenie.py on the kid rig): a WHITE-FACED CLOWN (kid.py smile: a red U curve on the face surface + a red nose, dark blue eye sockets), a SIX-gore propeller beanie (cap_reps 2: opposite gores alike, R/G/B, cap_turn 120 -- the source shows the same gores facing left and right), the green blaster in the RIGHT hand (gun_hand f: the rig's far arm; front views show its muzzle at the viewer's left). Views (per-frame yaw priors): right cycle f66-f73, turn f74-f79, FRONT cycle f80-f90 (it was fitted side-on under an old yaw-0 prior), turn f91-f95, left cycle f96-f105, turn f106-f113, back cycle f114-f121. Round 16: 1 -> 53/56 at dE 16.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -46,46 +46,46 @@
    0,
    0
   ],
-  "torso_y": 1.75,
+  "torso_y": 1.5,
   "torso_h": 6.3,
-  "torso_r": 4.4375,
-  "torso_fx": 0.8,
+  "torso_r": 4.5625,
+  "torso_fx": 0.66,
   "torso_bevel": 1.2,
   "hip_r": 3.25,
   "hip_h": 2.4,
-  "head_y": 10.5,
-  "head_r": 4.9,
+  "head_y": 10.4,
+  "head_r": 5.125,
   "head_fy": 1.05,
   "head_fz": 0.95,
-  "hair_dx": 0.8,
-  "hair_dy": 1.275,
-  "hair_f": 1.08,
+  "hair_dx": 0.875,
+  "hair_dy": 1.65,
+  "hair_f": 1.03,
   "hair_fy": 0.975,
   "hair_fz": 1.02,
   "neck_y": 6.8,
   "neck_r": 1.3,
-  "shoulder_y": 5.8,
-  "shoulder_z": 4.6,
-  "uarm_l": 3.2,
+  "shoulder_y": 5.4,
+  "shoulder_z": 4.5625,
+  "uarm_l": 3.125,
   "farm_l": 3.075,
-  "arm_r": 0.8875,
-  "hand_r": 1.3876,
-  "hip_z": 1.575,
+  "arm_r": 0.8188,
+  "hand_r": 1.0876,
+  "hip_z": 1.475,
   "thigh_l": 4.15,
   "shin_l": 3.275,
-  "leg_r": 1.85,
+  "leg_r": 1.925,
   "foot_rx": 2.6375,
-  "foot_ry": 1.4125,
+  "foot_ry": 1.375,
   "foot_rz": 1.6,
-  "foot_dx": 1.0875,
+  "foot_dx": 1.2375,
   "swing": 30.0,
   "knee_amp": 40.0,
   "arm_swing": 20.0,
   "elbow0": 25.0,
   "tilt": 0.0,
   "rough": 0.25,
-  "spec": 0.0,
-  "gamma": 0.8625,
+  "spec": 0.1,
+  "gamma": 0.8125,
   "socks": [
    240,
    240,
@@ -109,29 +109,29 @@
    ],
    [
     0,
-    0,
-    210
+    160,
+    0
    ],
    [
     0,
-    160,
-    0
+    0,
+    210
    ]
   ],
   "s_n0": 30.0,
   "e_n0": 65.0,
   "gun0": 0.0,
-  "gun_l": 8.1,
-  "gun_h": 2.3,
+  "gun_l": 8.5,
+  "gun_h": 2.375,
   "gun_w": 1.8,
-  "prop_l": 8.2,
-  "cap_f": 0.775,
-  "cap_fy": 0.55,
-  "cap_dy": 1.025,
+  "prop_l": 7.7,
+  "cap_f": 0.875,
+  "cap_fy": 0.575,
+  "cap_dy": 0.9375,
   "mouth_el": -19.375,
   "mouth_az": -5.0,
   "mouth_r": 4.0625,
-  "mouth": true,
+  "mouth": false,
   "lips": [
    205,
    15,
@@ -148,12 +148,26 @@
    25
   ],
   "cap_turn": 120,
-  "eye_r": 2.15,
-  "eye_el": 7.0,
+  "eye_r": 1.75,
+  "eye_el": 15.0,
   "eye_az": 21.25,
   "hair_cut": 35,
   "fringe_x": 0.1,
-  "fringe_y": 0.1
+  "fringe_y": 0.1,
+  "smile": true,
+  "smile_w": 75.0,
+  "smile_el": -9.0,
+  "smile_dip": 17.0,
+  "smile_t": 1.0125,
+  "nose_r": 0.95,
+  "nose_el": 2,
+  "gun_hand": "f",
+  "sweater_gain": 1.0,
+  "trousers_gain": 0.95,
+  "skin_gain": 1.025,
+  "hair_gain": 1.0,
+  "shoes_gain": 1.0,
+  "cap_reps": 2
  },
  "sweep": [
   {
@@ -182,7 +196,7 @@
   {
    "frames": [
     66,
-    77
+    73
    ],
    "param": "yaw",
    "value": 180,
@@ -191,11 +205,141 @@
   },
   {
    "frames": [
+    74,
+    74
+   ],
+   "param": "yaw",
+   "value": 172,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    75,
+    75
+   ],
+   "param": "yaw",
+   "value": 162,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    76,
+    76
+   ],
+   "param": "yaw",
+   "value": 150,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    77,
+    77
+   ],
+   "param": "yaw",
+   "value": 135,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    78,
+    78
+   ],
+   "param": "yaw",
+   "value": 118,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    79,
+    79
+   ],
+   "param": "yaw",
+   "value": 102,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
     80,
-    108
+    90
+   ],
+   "param": "yaw",
+   "value": 90,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    91,
+    91
+   ],
+   "param": "yaw",
+   "value": 72,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    92,
+    92
+   ],
+   "param": "yaw",
+   "value": 52,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    93,
+    93
+   ],
+   "param": "yaw",
+   "value": 36,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    94,
+    94
+   ],
+   "param": "yaw",
+   "value": 22,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    95,
+    95
+   ],
+   "param": "yaw",
+   "value": 10,
+   "tol": 30,
+   "period": 360
+  },
+  {
+   "frames": [
+    96,
+    105
    ],
    "param": "yaw",
    "value": 0,
+   "tol": 25,
+   "period": 360
+  },
+  {
+   "frames": [
+    114,
+    121
+   ],
+   "param": "yaw",
+   "value": 270,
    "tol": 25,
    "period": 360
   }
@@ -328,7 +472,7 @@
     "step": 0.4,
     "min": 1.5,
     "max": 5,
-    "init": 1.75
+    "init": 1.5
    },
    "torso_h": {
     "step": 0.4,
@@ -340,13 +484,13 @@
     "step": 0.25,
     "min": 2.5,
     "max": 5,
-    "init": 4.4375
+    "init": 4.5625
    },
    "torso_fx": {
     "step": 0.08,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.8
+    "init": 0.66
    },
    "hip_r": {
     "step": 0.25,
@@ -358,49 +502,49 @@
     "step": 0.4,
     "min": 8.5,
     "max": 13,
-    "init": 10.5
+    "init": 10.4
    },
    "head_r": {
     "step": 0.2,
     "min": 4.0,
     "max": 5.5,
-    "init": 4.9
+    "init": 5.125
    },
    "hair_dx": {
     "step": 0.3,
     "min": -1,
     "max": 2,
-    "init": 0.8
+    "init": 0.875
    },
    "hair_dy": {
     "step": 0.3,
     "min": -0.5,
     "max": 2,
-    "init": 1.275
+    "init": 1.65
    },
    "hair_f": {
     "step": 0.03,
     "min": 0.85,
     "max": 1.03,
-    "init": 1.08
+    "init": 1.03
    },
    "shoulder_y": {
     "step": 0.4,
     "min": 4.5,
     "max": 8,
-    "init": 5.8
+    "init": 5.4
    },
    "shoulder_z": {
     "step": 0.3,
     "min": 2.8,
     "max": 5.2,
-    "init": 4.6
+    "init": 4.5625
    },
    "uarm_l": {
     "step": 0.3,
     "min": 2.5,
     "max": 5.5,
-    "init": 3.2
+    "init": 3.125
    },
    "farm_l": {
     "step": 0.3,
@@ -412,19 +556,19 @@
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 0.8875
+    "init": 0.8188
    },
    "hand_r": {
     "step": 0.15,
     "min": 0.7,
     "max": 1.8,
-    "init": 1.3876
+    "init": 1.0876
    },
    "hip_z": {
     "step": 0.2,
     "min": 0.8,
     "max": 2.4,
-    "init": 1.575
+    "init": 1.475
    },
    "thigh_l": {
     "step": 0.3,
@@ -442,7 +586,7 @@
     "step": 0.15,
     "min": 1,
     "max": 2.4,
-    "init": 1.85
+    "init": 1.925
    },
    "foot_rx": {
     "step": 0.25,
@@ -454,49 +598,49 @@
     "step": 0.15,
     "min": 0.8,
     "max": 2,
-    "init": 1.4125
+    "init": 1.375
    },
    "foot_dx": {
     "step": 0.3,
     "min": 0,
     "max": 2.5,
-    "init": 1.0875
+    "init": 1.2375
    },
    "cap_f": {
     "step": 0.05,
     "min": 0.6,
     "max": 1.0,
-    "init": 0.775
+    "init": 0.875
    },
    "cap_fy": {
     "step": 0.05,
     "min": 0.45,
     "max": 0.8,
-    "init": 0.55
+    "init": 0.575
    },
    "cap_dy": {
     "step": 0.05,
     "min": 0.9,
     "max": 1.3,
-    "init": 1.025
+    "init": 0.9375
    },
    "prop_l": {
     "step": 0.4,
     "min": 4,
     "max": 9,
-    "init": 8.2
+    "init": 7.7
    },
    "gun_l": {
     "step": 0.4,
     "min": 6,
     "max": 12,
-    "init": 8.1
+    "init": 8.5
    },
    "gun_h": {
     "step": 0.2,
     "min": 1.4,
     "max": 3.2,
-    "init": 2.3
+    "init": 2.375
    },
    "s_n0": {
     "step": 8,
@@ -522,35 +666,17 @@
     "max": 1.1,
     "init": 0.975
    },
-   "mouth_el": {
-    "step": 5,
-    "min": -50,
-    "max": -5,
-    "init": -19.375
-   },
-   "mouth_az": {
-    "step": 5,
-    "min": -20,
-    "max": 30,
-    "init": -5.0
-   },
-   "mouth_r": {
-    "step": 0.25,
-    "min": 1.5,
-    "max": 4.5,
-    "init": 4.0625
-   },
    "eye_r": {
     "step": 0.15,
     "min": 0.8,
     "max": 2.2,
-    "init": 2.15
+    "init": 1.75
    },
    "eye_el": {
     "step": 3,
     "min": -5,
     "max": 25,
-    "init": 7.0
+    "init": 15.0
    },
    "eye_az": {
     "step": 3,
@@ -580,13 +706,13 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.3,
-    "init": 0.8625
+    "init": 0.8125
    },
    "spec": {
     "step": 0.1,
     "min": 0.0,
     "max": 0.6,
-    "init": 0.0
+    "init": 0.1
    },
    "sweater_gain": {
     "step": 0.05,
@@ -598,13 +724,13 @@
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.0
+    "init": 0.95
    },
    "skin_gain": {
     "step": 0.05,
     "min": 0.6,
     "max": 1.5,
-    "init": 1.0
+    "init": 1.025
    },
    "hair_gain": {
     "step": 0.05,
@@ -617,6 +743,36 @@
     "min": 0.6,
     "max": 1.5,
     "init": 1.0
+   },
+   "smile_w": {
+    "step": 5,
+    "min": 40,
+    "max": 80,
+    "init": 75.0
+   },
+   "smile_el": {
+    "step": 3,
+    "min": -25,
+    "max": 0,
+    "init": -9.0
+   },
+   "smile_dip": {
+    "step": 3,
+    "min": 4,
+    "max": 28,
+    "init": 17.0
+   },
+   "smile_t": {
+    "step": 0.15,
+    "min": 0.4,
+    "max": 1.4,
+    "init": 1.0125
+   },
+   "nose_r": {
+    "step": 0.15,
+    "min": 0.3,
+    "max": 1.4,
+    "init": 0.95
    }
   },
   "refine_rounds": 8,
@@ -633,8 +789,53 @@
  ],
  "gate": {
   "iou": 0.85,
-  "de": 16.0,
+  "de": 17.5,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 4,
+  "cycles": [
+   [
+    66,
+    73
+   ],
+   [
+    82,
+    89
+   ],
+   [
+    98,
+    105
+   ],
+   [
+    114,
+    121
+   ]
+  ],
+  "runs": [
+   [
+    74,
+    81
+   ],
+   [
+    90,
+    97
+   ],
+   [
+    106,
+    113
+   ]
+  ],
+  "pairs": [
+   [
+    81,
+    90
+   ],
+   [
+    97,
+    106
+   ]
+  ]
+ }
 }

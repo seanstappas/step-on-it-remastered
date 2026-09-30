@@ -90,6 +90,40 @@ def build(opts):
         o.rotation_euler = (0.0, a, -e)
         o.parent = neckj
         o.matrix_parent_inverse = neckj.matrix_world.inverted()
+    if opts.get("smile", False):   # the Beenie's clown smile: a red U on the face surface, cheek to cheek
+        rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
+        w, e0, dip = math.radians(f("smile_w", 55.0)), f("smile_el", -5.0), f("smile_dip", 20.0)
+
+        def on_face(e_deg, a):
+            e = math.radians(e_deg)
+            d = (-math.cos(e) * math.cos(a), math.sin(e), math.cos(e) * math.sin(a))
+            t = 1.0 / math.sqrt(sum((d[k] / rad[k]) ** 2 for k in range(3)))
+            return (d[0] * t, hy + d[1] * t, d[2] * t)
+
+        cu = bpy.data.curves.new("smile", 'CURVE')
+        cu.dimensions = '3D'
+        cu.bevel_depth = f("smile_t", 0.5) * S
+        cu.bevel_resolution = 3
+        sp = cu.splines.new('POLY')
+        sp.points.add(16)
+        for i, p in enumerate(sp.points):
+            a = w * (i / 8.0 - 1.0)
+            x, y, z = on_face(e0 - dip * (1.0 - (a / w) ** 2), a)
+            p.co = (x * S, y * S, z * S, 1.0)
+        o = bpy.data.objects.new("smile", cu)
+        bpy.context.collection.objects.link(o)
+        o.data.materials.append(mat("lips", (200, 20, 20)))
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        bpy.ops.object.convert(target='MESH')
+        o = bpy.context.active_object
+        o.parent = neckj
+        o.matrix_parent_inverse = neckj.matrix_world.inverted()
+        if f("nose_r", 0.0) > 0:
+            o = _ell("nose", on_face(f("nose_el", 5.0), 0.0), (f("nose_r", 0.0),) * 3, mat("lips", (200, 20, 20)), 16)
+            o.parent = neckj
+            o.matrix_parent_inverse = neckj.matrix_world.inverted()
     _cyl("neck", (0, f("neck_y", 10.4), 0), f("neck_r", 1.3), 1.4, skin, 0.2, root)
     arms, legs = {}, {}
     ua, fa, ar = f("uarm_l", 3.6), f("farm_l", 3.4), f("arm_r", 1.3)
