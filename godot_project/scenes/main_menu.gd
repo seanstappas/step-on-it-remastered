@@ -395,6 +395,10 @@ func _input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		_toggle_presentation()
 		return
+	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_F6:
+		get_viewport().set_input_as_handled()
+		Audio.set_custom_sfx(not Audio.is_custom_sfx())
+		return
 	if _splash != null:
 		if (e is InputEventKey and e.pressed) or (e is InputEventMouseButton and e.pressed):
 			get_viewport().set_input_as_handled()

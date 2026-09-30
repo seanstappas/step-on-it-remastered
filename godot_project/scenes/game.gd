@@ -196,6 +196,7 @@ const SPRITES_3D_DIR := "res://../extracted/sprites_3d_frames"
 var _use_3d := false
 var _remastered := false   # presentation: false = ORIGINAL (1996 SD art), true = REMASTERED (Session.remastered)
 var _pres_toast := 0       # frames left to show the presentation label (after F2/F3, and at the first board)
+var _toast_text := ""      # replaces the presentation label when set (F6 custom-sound notice)
 # REMASTERED smooth rendering (D2R-style): the engine keeps the original tick; the picture redraws at
 # the monitor's rate and shows every entity SMOOTH_DELAY ticks late, between its two engine states
 # around that time -- position lerped, pose tweened (framematch.py `tweens` in-betweens).
@@ -1313,7 +1314,9 @@ func _release_live() -> void:
 func _draw_presentation_toast() -> void:
 	var a := clampf(float(_pres_toast) / 30.0, 0.0, 1.0)
 	var label := "ORIGINAL  -  1996 art, sound and music      [F2: remastered]"
-	if _remastered and _use_3d:
+	if _toast_text != "":
+		label = _toast_text
+	elif _remastered and _use_3d:
 		label = "REMASTERED  -  %s 3D sprites, remastered sound and music    [F2: original   F3: HD   F4: %s]" % [
 			"live" if _live_on else "pre-rendered", "pre-rendered 3D" if _live_on else "live 3D"]
 	elif _remastered:
@@ -1691,6 +1694,9 @@ func _input(e: InputEvent) -> void:
 		KEY_F4:
 			if not e.echo:
 				_press_f4()
+		KEY_F6:
+			if not e.echo:
+				_press_f6()
 		KEY_S:
 			if (e as InputEventKey).ctrl_pressed:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
@@ -1700,6 +1706,14 @@ func _input(e: InputEvent) -> void:
 ## F2: ORIGINAL <-> REMASTERED -- art + SFX + music, live.
 func _press_f2() -> void:
 	_apply_presentation(not _remastered)
+	_toast_text = ""
+	_pres_toast = 150
+
+## F6: custom-recording sound mode on/off (audio.gd CUSTOM_SFX_DIR).
+func _press_f6() -> void:
+	var n := Audio.set_custom_sfx(not Audio.is_custom_sfx())
+	_toast_text = ("CUSTOM SOUNDS ON  -  %d recordings loaded from custom_sfx/      [F6: off]" % n) \
+		if Audio.is_custom_sfx() else "CUSTOM SOUNDS OFF      [F6: on]"
 	_pres_toast = 150
 
 ## F3 (REMASTERED only): HD <-> frame-matched 3D sprites (both are 4x sets).
@@ -1709,6 +1723,7 @@ func _press_f3() -> void:
 		_tex_cache.clear()
 		_sprite_index.clear()
 		_release_live()
+		_toast_text = ""
 		_pres_toast = 150
 
 ## F4 (REMASTERED 3D only): sheets with a live rig drawn in real-time 3D <-> as pre-rendered frames.
@@ -1716,6 +1731,7 @@ func _press_f4() -> void:
 	if _remastered and _use_3d:
 		_live_on = not _live_on
 		_release_live()
+		_toast_text = ""
 		_pres_toast = 150
 
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
