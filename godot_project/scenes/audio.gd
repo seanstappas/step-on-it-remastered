@@ -112,15 +112,18 @@ func _ready() -> void:
 	_init_music()
 	if "--music" in OS.get_cmdline_user_args():
 		_music_enabled = true   # launch with Sound -> Music on (the original defaults it off)
+	if "--custom-sfx" in OS.get_cmdline_user_args():
+		set_custom_sfx(true)
 	print("audio: loaded %d SFX (variant=%s, %d enhanced), mapped %d events, music=%s" % [_streams.size(), _sfx_variant, _sfx_variant_hits, _by_event.size(), has_music()])
 
 ## Play the sound mapped to a SoiSfx event id (round-robin over a player pool).
 func play(sfx_id: int) -> void:
-	if not _by_event.has(sfx_id) or _players.is_empty():
+	var custom: AudioStream = _custom_by_event.get(sfx_id) if _custom_on else null
+	if (custom == null and not _by_event.has(sfx_id)) or _players.is_empty():
 		return
 	var p := _players[_next]
 	_next = (_next + 1) % _players.size()
-	p.stream = _by_event[sfx_id]
+	p.stream = custom if custom != null else _by_event[sfx_id]
 	p.volume_db = _effects_db
 	p.play()
 
@@ -392,6 +395,58 @@ func _sfx_variant_override() -> String:
 			v = a.substr(a.find("=") + 1).strip_edges().to_lower()
 	return v if SFX_VARIANTS.has(v) else ""
 
+# --- Custom SFX mode (F6 in game / on the title menu, or launch with `-- --custom-sfx`) ---------
+# Drop recordings in <repo>/custom_sfx/ named <name>.wav / .ogg / .mp3 (names below). While the
+# mode is ON, an event with a custom file plays it; every other event keeps the normal sound.
+# The folder is re-scanned each time the mode is switched on, so new files need no restart.
+const CUSTOM_SFX_DIR := "res://../custom_sfx"
+const CUSTOM_SFX_NAMES := {
+	1: "block_create", 2: "block_destroy", 3: "coin", 4: "enemy_kill", 5: "player_die",
+	7: "throw_ball", 8: "teleport", 9: "exit_door", 10: "pickup_magnifier",
+	11: "coin_gold", 12: "coin_gem", 13: "coin_bars", 14: "shoot_arrow", 15: "cannon_fire",
+	16: "kill_wheelie", 17: "kill_hammer", 18: "kill_beanie", 19: "kill_robo", 20: "kill_walker",
+	21: "kill_ant", 22: "kill_ostrich", 23: "kill_hippo", 24: "kill_piggy", 25: "kill_smiley",
+	26: "kill_teeth", 27: "block_crack", 28: "block_break", 29: "robo_punch", 30: "pickup_turtles",
+	31: "pickup_arrow_ammo", 32: "pickup_ball_ammo", 33: "pickup_1up", 34: "pickup_time",
+	35: "pickup_shoes", 36: "pickup_potion", 37: "pickup_thunderballs", 38: "pickup_key",
+	39: "hurry_up", 40: "walker_fire", 41: "stop_go_switch", 42: "beanie_bud", 43: "pickup_multiplier",
+}
+var _custom_on := false
+var _custom_by_event := {}   # SoiSfx id -> AudioStream from custom_sfx/
+
+## Switch the custom-recording override mode. Returns how many custom sounds are loaded.
+func set_custom_sfx(on: bool) -> int:
+	_custom_on = on
+	_custom_by_event.clear()
+	if on:
+		_load_custom()
+	print("audio: custom sfx %s (%d overrides from %s)" % ["ON" if on else "OFF", _custom_by_event.size(),
+		ProjectSettings.globalize_path(CUSTOM_SFX_DIR)])
+	return _custom_by_event.size()
+
+func is_custom_sfx() -> bool:
+	return _custom_on
+
+func _load_custom() -> void:
+	var dir := ProjectSettings.globalize_path(CUSTOM_SFX_DIR)
+	for ev in CUSTOM_SFX_NAMES:
+		for ext in ["wav", "ogg", "mp3"]:
+			var path := dir.path_join("%s.%s" % [CUSTOM_SFX_NAMES[ev], ext])
+			if not FileAccess.file_exists(path):
+				continue
+			var s: AudioStream = null
+			match ext:
+				"wav": s = _load_wav(path)
+				"ogg": s = AudioStreamOggVorbis.load_from_file(path)
+				"mp3":
+					var m := AudioStreamMP3.new()
+					m.data = FileAccess.get_file_as_bytes(path)
+					s = m if not m.data.is_empty() else null
+			if s != null:
+				_custom_by_event[ev] = s
+				break
+			push_warning("audio: could not read custom sound %s" % path)
+
 func _reload_sfx() -> void:
 	_streams.clear()
 	_names.clear()
@@ -504,6 +559,15 @@ func _load_wav(path: String) -> AudioStreamWAV:
 	elif fmt_tag == 1 and bits == 16:
 		s.format = AudioStreamWAV.FORMAT_16_BITS
 		s.data = data
+	elif fmt_tag == 1 and bits == 24:
+		s.format = AudioStreamWAV.FORMAT_16_BITS   # keep the top 16 bits of each 24-bit sample
+		var n := data.size() / 3
+		var out24 := PackedByteArray()
+		out24.resize(n * 2)
+		for i in n:
+			out24[i * 2] = data[i * 3 + 1]
+			out24[i * 2 + 1] = data[i * 3 + 2]
+		s.data = out24
 	elif fmt_tag == 3 and bits == 32:
 		s.format = AudioStreamWAV.FORMAT_16_BITS   # no float format -> down-convert to 16-bit
 		var fl := data.to_float32_array()

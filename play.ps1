@@ -8,6 +8,8 @@ play.ps1 -- launch Step On It! Remastered for play-testing the live ORIGINAL <->
   F3   (REMASTERED) 3D sprites <-> the HD AI-upscaled sheets (frames without a 3D render are HD).
   F4   (REMASTERED 3D) real-time 3D (players, enemies, projectiles posed + rendered live every frame) <->
        the pre-rendered 3D frames.
+  F6   custom-sound mode on/off: your recordings in custom_sfx/ replace the matching sounds
+       (file names in custom_sfx/README.txt).
   M    Retro <-> Remastered display effects (glow + vignette).
   P1 arrows (see Help for the full key list), Tab = pause, Esc = menu.
 
