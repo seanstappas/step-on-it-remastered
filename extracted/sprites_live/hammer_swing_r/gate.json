@@ -1,0 +1,27 @@
+{
+ "sheet": "hammer_sprites",
+ "family": "hammer_swing_r",
+ "frames": [
+  66,
+  67,
+  68,
+  69,
+  70,
+  71,
+  72,
+  73,
+  74,
+  75,
+  76,
+  77,
+  78,
+  79,
+  80,
+  81
+ ],
+ "pass": true,
+ "iou_min": 0.849,
+ "de_mean": 15.144,
+ "de_max": 17.258,
+ "cycles_de_mean": 15.243
+}

@@ -91,6 +91,7 @@ var _death_pops := []      # active enemy death "pops" (asm FUN_10028014 flying 
 # a click. Both states stay solid, so this is a purely COSMETIC front-end overlay (no core/sim).
 var _sg_toggled := [false, false, false, false, false]   # per group g=0..4: show the FLIPPED sign?
 var _sg_anim := [0.0, 0.0, 0.0, 0.0, 0.0]                # per group: flip animation timer (1 -> 0)
+var _sg_t0 := [-1e6, -1e6, -1e6, -1e6, -1e6]             # per group: engine tick its flip started
 var _sg_last := [-1, -1, -1, -1]                          # per player 1..3: last switch cell key (edge-detect)
 var _mode := 0   # display mode: 0 = Retro (faithful 1996 look), 1 = Remastered (glow + vignette)
 var _paused := false
@@ -1372,6 +1373,7 @@ func _reset_round_ui() -> void:
 	_challenge_forfeited = false
 	_sg_toggled = [false, false, false, false, false]
 	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
+	_sg_t0 = [-1e6, -1e6, -1e6, -1e6, -1e6]
 	_sg_last = [-1, -1, -1, -1]
 	_death_pops.clear()
 	_debris.clear()
@@ -1405,6 +1407,7 @@ func _update_stopgo() -> void:
 				var g := (t - 0x24) / 2
 				_sg_toggled[g] = not _sg_toggled[g]
 				_sg_anim[g] = 1.0
+				_sg_t0[g] = float(_core.tick_count())
 				Audio.play_snd(1006)   # switch click (evt 0x2c; sequential after clock 0x2B -> 1005)
 				_sg_last[idx] = key
 		else:
@@ -2289,9 +2292,19 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 				var disp_stop: bool = loaded_stop != _sg_toggled[g]
 				var new_f := stop_f if disp_stop else go_f
 				var a: float = _sg_anim[g]
+				if _smooth:                 # the same 0.14/tick run, sampled at the delayed render time
+					a = clampf(1.0 - 0.14 * (_rtick - SMOOTH_DELAY - float(_sg_t0[g])), 0.0, 1.0)
 				if a > 0.0:
 					var old_f := go_f if disp_stop else stop_f
-					sgf = int(round(float(new_f) + float(old_f - new_f) * a))
+					var fr := float(new_f) + float(old_f - new_f) * a
+					var lo := int(floor(fr))
+					var tw := _tween_sprite("Stop_Go_sprite_family", lo, lo + 1, fr - float(lo), false, false) if _smooth else null
+					if tw != null:
+						_dtex(tw, pos + (Vector2(CELL_PX, CELL_PX) - _texsize(tw)) * 0.5)
+						if cell & CELL_CRACKED:
+							_draw_crack(pos)
+						return
+					sgf = int(round(fr))
 				else:
 					sgf = new_f
 		if sgf >= 0 and _blit("Stop_Go_sprite_family", sgf, pos):
@@ -2313,6 +2326,8 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 				_draw_crack(pos)
 		return
 	if (cell & CELL_DOOR) or t == 0x0A or t == 0x17 or t == 0x18 or t == 0x19:
+		if t == 0xFF and _blit("master_s_objects", 17, pos):   # a landed Knight gift box (asm FUN_1000c680: frame 0x10 at +4,+4)
+			return
 		if _blit("goody_sprites", t + 1, pos):
 			return
 		if t == 0x0B:

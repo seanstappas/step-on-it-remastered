@@ -373,7 +373,9 @@ void soi_pickup_check(SoiWorld *w, int player)
                     if (SOI_CELL_TYPE(w->cell[r][col]) == out_type &&
                         !(w->cell[r][col] & SOI_CELL_SUPPORTIVE)) {   /* a walk-on OUT marker,
                               * NOT a solid block that shares the low byte (pink = 0x1F) */
-                        p->x = soi_cell_x(col); p->y = soi_cell_y(r);
+                        /* the asm moves the player by the cell delta, keeping its offset in the cell */
+                        p->x += (col - pcol) * SOI_CELL_PX;
+                        p->y += (r - prow) * SOI_CELL_PX;
                         soi_sfx_emit(w, SOI_SFX_TELEPORT);
                         return;
                     }
@@ -389,6 +391,9 @@ void soi_pickup_check(SoiWorld *w, int player)
      * happens to collide with a goodie type is not consumed. Goodies/coins are
      * non-supportive overlays (0x800/0x900, no 0x200). */
     if (c & SOI_CELL_SUPPORTIVE) return;
+
+    if (t == 0xFFu && (c & SOI_CELL_DOOR))   /* a landed Knight GIFT BOX (asm uVar10 == 0xff): */
+        t = SOI_CELL_PAYLOAD(c) & 0xFFu;       /* it pays out the goody kept in its high word */
 
     switch (t) {
         case 0x0A: cp->score += 500;  break;   /* silver coin   (CONFIRMED) */
@@ -476,6 +481,8 @@ void soi_pickup_check(SoiWorld *w, int player)
             case 0x30: s = SOI_SFX_SHIELD_ON;     break;   /* shield on     (evt 0x29 -> 1003)  */
             case 0x31: s = SOI_SFX_WHISTLE;       break;   /* thunderballs (FUN_1000543c, evt 0x2a -> 1004) */
             case 0x32: s = SOI_SFX_SHOES;         break;   /* speed shoes (FUN_10014ccc, evt 0x28 -> 1002) */
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F:
+                       s = SOI_SFX_MULT;          break;   /* score multiplier (evt 0x17 -> 15128) */
             default:   s = SOI_SFX_POWERUP;       break;
         }
         soi_sfx_emit(w, s);

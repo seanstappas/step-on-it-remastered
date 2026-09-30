@@ -38,6 +38,7 @@ def _gore_mat(opts):
     u = nt.nodes.new("ShaderNodeMapRange")                             # angle -> [0, 1) turned by cap_turn
     u.inputs["From Min"].default_value = -math.pi
     u.inputs["From Max"].default_value = math.pi
+    u.inputs["To Max"].default_value = float(opts.get("cap_reps", 1))   # 2: six gores, opposite ones alike (SD f66 = f98)
     nt.links.new(ang.outputs["Value"], u.inputs["Value"])
     turn = nt.nodes.new("ShaderNodeMath")
     turn.operation = 'ADD'
@@ -84,7 +85,7 @@ def build(opts):
     blade = _rbox("blade", (0, 1.3, 0), (f("prop_l", 7.0), 0.35, f("prop_w", 0.9)), 0.3, red)
     blade.parent = post
     green = C._mat("gun", C._srgb(*opts.get("gun_col", (0, 170, 0))), rough=0.35, spec=0.35)
-    gun = _empty("gun", (0, -f("hand_r", 1.1) * 0.6, 0), arms["n"][2])
+    gun = _empty("gun", (0, -f("hand_r", 1.1) * 0.6, 0), arms[opts.get("gun_hand", "n")][2])
     gun.rotation_mode = 'XYZ'
     gl = f("gun_l", 9.0)
     _rbox("gun_body", (-gl * 0.35, 0.6, 0), (gl / 2, f("gun_h", 2.2), f("gun_w", 1.8)), 1.0, green).parent = gun
@@ -99,14 +100,15 @@ def _frames_setup(opts):
     f = lambda k, d: float(opts.get(k, d))
     return {"root": root, "arms": arms, "legs": legs, "post": post, "gun": gun, "tilt": math.radians(f("tilt", 0.0)),
             "swing": f("swing", 30.0), "knee_amp": f("knee_amp", 45.0), "arm_swing": f("arm_swing", 30.0),
-            "elbow0": f("elbow0", 25.0), "base": base_pose(opts), "gun0": f("gun0", 0.0)}
+            "elbow0": f("elbow0", 25.0), "base": base_pose(opts), "gun0": f("gun0", 0.0),
+            "gun_hand": opts.get("gun_hand", "n")}
 
 
 def _frames_pose(ctx, pose):
     kid_pose(ctx, pose)
     ctx["post"].rotation_euler = (0.0, math.radians(float(pose.get("prop", 0.0))), 0.0)
     # the fist frame's -y runs along the forearm: turn the blaster so its barrel (-x) points forward when level
-    sh, el, fp = ctx["arms"]["n"]
+    sh, el, fp = ctx["arms"][ctx["gun_hand"]]
     fa = sh.rotation_euler[2] + el.rotation_euler[2]                  # the forearm's world angle in the side plane
     ctx["gun"].rotation_euler = (0.0, 0.0, -fa + math.radians(float(pose.get("gun", ctx["gun0"]))))
 

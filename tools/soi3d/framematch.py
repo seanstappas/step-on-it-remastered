@@ -45,7 +45,7 @@ Stages (default = all, in order):
          starts from "opts", so bake between look passes or each pass restarts from the old values
   look   optional ("look" block): coordinate-descent the builder's colour/light options against the
          SD frames at the fitted poses (work/look.json overrides "opts"); "params" = {opt: [candidates]},
-         "refine" = {opt: {step, min, max}} continuous +-step refinement of numeric opts afterwards;
+         "refine" = {opt: {step, min, max}} continuous +-step refine.ment of numeric opts afterwards;
          "frames": N evenly spaced frames are scored, plus the last verify's failing ones if "add_fails"
   final  render every frame at scale x its SD size with the fitted camera + pose, apply post
          steps, write the game overlay extracted/sprites_3d_frames/<sheet>/fNN_{sW}x{sH}.png

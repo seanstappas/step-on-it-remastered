@@ -53,7 +53,7 @@
  ],
  "pass": true,
  "iou_min": 0.8485,
- "de_mean": 11.573,
- "de_max": 15.097,
- "cycles_de_mean": 11.458
+ "de_mean": 11.354,
+ "de_max": 15.015,
+ "cycles_de_mean": 11.204
 }
