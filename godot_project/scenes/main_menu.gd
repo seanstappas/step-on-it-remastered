@@ -38,7 +38,7 @@ func _ready() -> void:
 	_apply_window_mode()
 	Session.init_presentation()   # ORIGINAL, or REMASTERED when launched with --3d / --hd
 	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3") or a.begins_with("--script="):
+		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3") or a.begins_with("--script=") or a.begins_with("--board="):
 			get_tree().change_scene_to_file.call_deferred("res://scenes/menu.tscn")
 			return
 	if Session.num_players <= 0:

@@ -273,7 +273,11 @@ def run_blender(job, tag, script="frames_blender.py", done="FRAMES_DONE"):
         raise SystemExit("Blender not found: set SOI_BLENDER (looked at %s)" % BLENDER)
     cmd = [BLENDER, "--background", "--factory-startup", "--python",
            os.path.join(ROOT, "tools", "soi3d", script), "--", jp]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    for attempt in range(3):
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if done in res.stdout or "EXCEPTION_ACCESS_VIOLATION" not in res.stdout + res.stderr:
+            break
+        print("blender job %s crashed (EXCEPTION_ACCESS_VIOLATION), retry %d" % (tag, attempt + 1))  # intermittent
     tail = [ln for ln in res.stdout.splitlines() if ln.startswith(("frames_blender", done))]
     print("\n".join(tail))
     if done not in res.stdout:
@@ -923,7 +927,9 @@ def stage_optim(family, cfg, only=None):
     "optim": {"params": {name: {"step": s, "min": a, "max": b, "init": v}}, "rounds": 8, "scale": 2,
               "samples": 8, "min_step": 0.1 (fraction of the start step),
               "finish": {"rounds": 3, "scale": 4, "samples": 32, "step_f": 0.5}} -- the optional finish re-scores
-    every frame at full fidelity and polishes it with steps restarted at step_f x the start step."""
+    every frame at full fidelity and polishes it with steps restarted at step_f x the start step.
+    "fix": [{"frames": [a, b], "param": p, "value": v}] pins p to v on those frames (e.g. no red ball in the
+    Gargoyle's first animation): it is never moved, and reseeds / probes / hops keep it."""
     op = cfg.get("optim")
     if not op:
         print("optim: no \"optim\" block, skipping")
@@ -950,13 +956,21 @@ def stage_optim(family, cfg, only=None):
     d = workdir(family, "optim")
     for f in glob.glob(os.path.join(d, "*.png")):
         os.remove(f)
+    fixed = {}
+    for fx in op.get("fix") or []:
+        for nn in range(int(fx["frames"][0]), int(fx["frames"][1]) + 1):
+            fixed.setdefault(nn, {})[fx["param"]] = float(fx["value"])
+
+    def pin(nn, pose):
+        pose.update(fixed.get(nn, {}))
+        return pose
     st = {}
     for fr in frames:
         nn = fr[0]
         pose = dict(fit["frames"][str(nn)]["pose"])
         for k, spec in params.items():
             pose.setdefault(k, float(spec.get("init", 0.0)))
-        st[nn] = {"fr": fr, "pose": pose, "step": {k: float(v["step"]) for k, v in params.items()},
+        st[nn] = {"fr": fr, "pose": pin(nn, pose), "step": {k: float(v["step"]) for k, v in params.items()},
                   "score": None, "opts": dict(frame_opts(cfg, nn, base=base), **lfo.get(str(nn), {}))}
 
     def clamp(k, v):
@@ -978,7 +992,7 @@ def stage_optim(family, cfg, only=None):
                     seed = dict(snap[order[j]])
                     for k, spec in params.items():
                         seed.setdefault(k, float(spec.get("init", 0.0)))
-                    trials.append(((nn, "seed", order[j]), st[nn]["fr"], seed, st[nn]["opts"]))
+                    trials.append(((nn, "seed", order[j]), st[nn]["fr"], pin(nn, seed), st[nn]["opts"]))
         sc = _render_score(cfg, fit, trials, d, "%s_seed" % family, sc_, smp)
         moved = 0
         for nn in st:
@@ -989,6 +1003,7 @@ def stage_optim(family, cfg, only=None):
                 st[nn]["pose"] = dict(snap[key[2]], **{k: st[nn]["pose"][k] for k in ("_dx", "_dy") if k in st[nn]["pose"]})
                 for k, spec in params.items():
                     st[nn]["pose"].setdefault(k, float(spec.get("init", 0.0)))
+                pin(nn, st[nn]["pose"])
                 moved += 1
         print("optim: reseed moved %d of %d frames to a neighbour's pose" % (moved, len(st)))
 
@@ -1000,12 +1015,13 @@ def stage_optim(family, cfg, only=None):
             trials.append(((nn, "base"), s["fr"], dict(s["pose"]), s["opts"]))
             for ci, vals in enumerate(combos):
                 trials.append(((nn, "probe", ci), s["fr"],
-                               dict(s["pose"], **{k: clamp(k, v) for k, v in zip(names, vals)}), s["opts"]))
+                               pin(nn, dict(s["pose"], **{k: clamp(k, v) for k, v in zip(names, vals)})), s["opts"]))
         sc = _render_score(cfg, fit, trials, d, "%s_probe" % family, sc_, smp)
         for nn, s in st.items():
             v, key = min(((v, key) for key, v in sc.items() if key[0] == nn), key=lambda t: t[0])
             if key[1] == "probe":
                 s["pose"].update({k: clamp(k, val) for k, val in zip(names, combos[key[2]])})
+                pin(nn, s["pose"])
                 print("optim: probe moved f%02d to %s" % (nn, dict(zip(names, combos[key[2]]))))
             s["score"] = v
 
@@ -1019,7 +1035,7 @@ def stage_optim(family, cfg, only=None):
                 if s["score"] is None:
                     trials.append(((nn, "base"), s["fr"], dict(s["pose"]), s["opts"]))
                 for k in params:
-                    if s["step"][k] < float(params[k]["step"]) * float(op.get("min_step", 0.1)):
+                    if k in fixed.get(nn, {}) or s["step"][k] < float(params[k]["step"]) * float(op.get("min_step", 0.1)):
                         continue
                     for sgn in (1, -1):
                         v = clamp(k, s["pose"][k] + sgn * s["step"][k])
@@ -1075,9 +1091,10 @@ def stage_optim(family, cfg, only=None):
         rng = np.random.default_rng(7)
         for hop in range(int(op.get("hops", 4))):
             keep = {nn: (dict(s["pose"]), s["score"]) for nn, s in st.items()}
-            for s in st.values():
+            for nn, s in st.items():
                 for k, spec in params.items():
                     s["pose"][k] = clamp(k, s["pose"][k] + rng.uniform(-2.0, 2.0) * float(spec["step"]))
+                pin(nn, s["pose"])
                 s["score"] = None
                 s["step"] = {k: float(v["step"]) * 0.5 for k, v in params.items()}
             run_rounds(3, sc_, smp, "hop%d" % hop)

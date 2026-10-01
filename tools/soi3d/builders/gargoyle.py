@@ -70,6 +70,45 @@ def _pleated_wing(name, pts, sx, n, amp, thick, mat):
     return o
 
 
+# the lean torso of f30 (per-row half-widths; y SD px, rx half-width, rz half-depth, cz depth centre)
+TORSO = [(23.0, 3.0, 2.0, 0.0), (25.0, 6.0, 3.5, 0.0), (28.0, 6.5, 4.0, 0.2), (32.0, 5.8, 3.8, 0.4),
+         (37.0, 7.0, 4.3, 0.5), (42.0, 8.5, 5.0, 0.5), (48.0, 9.0, 5.0, 0.3), (52.0, 8.0, 4.0, 0.0), (54.0, 4.0, 2.5, 0.0)]
+
+
+def _lathe(name, rings, mat, seg=24):
+    """A smooth body through elliptical rings [(y, rx, rz, cz)] (SD px, bottom to top), capped and subdivided."""
+    import bmesh
+    bm = bmesh.new()
+    loops = [[bm.verts.new((rx * math.sin(2 * math.pi * i / seg) * S, y * S, (cz + rz * math.cos(2 * math.pi * i / seg)) * S))
+              for i in range(seg)] for y, rx, rz, cz in rings]
+    for a, b in zip(loops, loops[1:]):
+        for i in range(seg):
+            bm.faces.new((a[i], a[(i + 1) % seg], b[(i + 1) % seg], b[i]))
+    bm.faces.new(loops[0][::-1])
+    bm.faces.new(loops[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    for p in me.polygons:
+        p.use_smooth = True
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mat)
+    o.modifiers.new("sub", 'SUBSURF').levels = 2
+    return o
+
+
+def _torso_z(rings, x, y):
+    """The lathed torso's front surface depth at (x, y)."""
+    for (y0, rx0, rz0, c0), (y1, rx1, rz1, c1) in zip(rings, rings[1:]):
+        if y0 <= y <= y1:
+            t = (y - y0) / (y1 - y0)
+            rx, rz, cz = rx0 + (rx1 - rx0) * t, rz0 + (rz1 - rz0) * t, c0 + (c1 - c0) * t
+            return cz + rz * math.sqrt(max(0.0, 1.0 - min(1.0, abs(x) / rx) ** 2))
+    return 0.0
+
+
 def _wing_mat(opts, rgb, span):
     """Stone whose albedo ramps from `wing_root_gain` at the shoulder to `wing_tip_gain` at the tip (|object x|)."""
     f = lambda k, d: float(opts.get(k, d))
@@ -77,7 +116,9 @@ def _wing_mat(opts, rgb, span):
     mat.use_nodes = True
     nt = mat.node_tree
     bsdf = nt.nodes.get("Principled BSDF")
-    bsdf.inputs["Roughness"].default_value = f("rough", 0.6)
+    bsdf.inputs["Roughness"].default_value = f("wing_rough", f("rough", 0.6))
+    if "wing_spec" in opts and bsdf.inputs.get("Specular IOR Level") is not None:
+        bsdf.inputs["Specular IOR Level"].default_value = f("wing_spec", 0.5)
     tc, sep = nt.nodes.new("ShaderNodeTexCoord"), nt.nodes.new("ShaderNodeSeparateXYZ")
     ab, mr = nt.nodes.new("ShaderNodeMath"), nt.nodes.new("ShaderNodeMapRange")
     ab.operation = 'ABSOLUTE'
@@ -142,14 +183,39 @@ def build(opts):
             _cyl("thigh", (0, -kn / 2, 0), lr * f("thigh_f", 1.35), kn, stone, 0.6, hp)
             _ell("knee", (0, -kn, 0.3), (lr * 1.15, lr * 1.0, lr * 1.2), stone, 16).parent = hp
             _cyl("shin", (0, -(kn + hip_y) / 2, 0), lr * f("shin_f", 0.95), hip_y - kn, stone, 0.5, hp)
-            _rbox("claw", (0, -hip_y + 1.0, 1.2), (lr * 1.4, 1.1, 2.6), 0.5, claw).parent = hp
+            fh = f("foot_h", 1.1)
+            _rbox("claw", (0, -hip_y + fh - 0.1, 1.2), (lr * f("foot_w", 1.4), fh, 2.6), 0.5, claw).parent = hp
             legs.append(hp)
             continue
         _cyl("leg", (0, -hip_y / 2, 0), f("leg_r", 2.0), hip_y, stone, 0.4, hp)
         _rbox("claw", (0, -hip_y + 1.2, 1.0), (f("leg_r", 2.0) * 1.3, 1.2, 2.0), 0.5, claw).parent = hp
         legs.append(hp)
     by = f("body_y", 37.0)                                            # up to the shoulders: f30 has no gap between the wings
-    if opts.get("torso2"):                                            # chest + pecs over an abdomen and pelvis
+    if opts.get("torso3"):                                            # one smooth lean torso + flat pecs (+ strap)
+        k = f("torso_k", 1.0)
+        rings = [(y, rx * k, rz, cz) for y, rx, rz, cz in (tuple(r) for r in opts.get("torso_rings", TORSO))]
+        _lathe("torso", rings, body_m).parent = upper
+        py = f("pec_y", 46.0)
+        for sx in (-1.0, 1.0):
+            px = sx * f("pec_x", 4.2)
+            _ell("pec", (px, py, _torso_z(rings, px, py) - 0.4), (f("pec_rx", 3.8), f("pec_ry", 2.6), f("pec_rz", 1.0)),
+                 body_m, 24).parent = upper
+        if opts.get("strap"):
+            (x0, y0), (x1, y1) = opts.get("strap_from", (6.5, 50.0)), opts.get("strap_to", (-5.5, 29.0))
+            cu = bpy.data.curves.new("strap", 'CURVE')
+            cu.dimensions = '3D'
+            cu.bevel_depth = f("strap_t", 0.6) * S
+            sp = cu.splines.new('POLY')
+            sp.points.add(11)
+            for i, p in enumerate(sp.points):
+                t = i / 11.0
+                x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+                p.co = (x * S, y * S, (_torso_z(rings, x, y) + 0.2) * S, 1.0)
+            o = bpy.data.objects.new("strap", cu)
+            bpy.context.collection.objects.link(o)
+            o.data.materials.append(C._mat("strap", C._srgb(*gain("strap_gain")), rough=f("rough", 0.6), spec=f("spec", 0.2)))
+            o.parent = upper
+    elif opts.get("torso2"):                                          # chest + pecs over an abdomen and pelvis
         cy = f("chest_y", 43.0)
         _ell("chest", (0, cy, 0.5), (f("chest_rx", 9.5), f("chest_ry", 7.5), f("chest_rz", 5.0)), body_m, 32).parent = upper
         for sx in (-1.0, 1.0):

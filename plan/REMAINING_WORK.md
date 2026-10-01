@@ -147,8 +147,12 @@ regressing the green gates for no gameplay benefit._
   block); a transporter moves the player by the cell delta, keeping its offset in the cell (the port snapped
   it to the OUT cell's corner); the score-multiplier goodies play their own sound (event 0x17, snd 15128
   "Eastern"; the port played the door bugle).
-- WIP with notes (frames passing / total, 2026-09-27): the Gargoyle (32/73; rebuilt with raised arms, looped horns,
-  the red striped ball and the wings wrapped in front as a cloak for f02-f10 -- refit in progress), the
+- The Gargoyle is PUBLISHED (2026-09-29, 73/73 at the character gate dE 17.5, 70/73 at 16): rebuilt as a muscular
+  humanoid (one lathed torso, pecs, strap, face with teeth, jointed legs, arms raised to the horn loops, wings
+  pleated as geometry, a cloak for the emergence), the two differently lit animations lit separately, tweens
+  for the unfold / flap cycle / wind-up. Known differences: the ball-burst frames f68-f74 lack the source's red
+  fragments, the wings lack the source's bright panels, the wing's lower edge is not scalloped.
+- WIP with notes (frames passing / total, 2026-09-27): the
   Knight (0/65; refit held front-facing in progress), the Beenie's down shot
   (0/16; three thick bars tumbling toward the camera, needs per-bar 3D angles).
 

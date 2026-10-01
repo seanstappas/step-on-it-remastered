@@ -184,11 +184,11 @@ the same pose.
 | `beenie_char` (the Beenie f66-f121: clown face, six-gore cap, blaster in the right hand; gate dE 17.5) | 56 | 0.859 | 14.4 / 17.2 |
 | `hammer_walk` (the Hammer f02-f49: walk, turn through a front view; `hammer.py`; gate dE 17.5) | 48 | 0.854 | 13.8 / 17.2 |
 | `hammer_swing_l` / `_r` (the Hammer's two-handed jump-smash f50-f65 / f66-f81; `hammer.py` two_hand; gate dE 17.5) | 32 | 0.853 | 14.6-15.2 / 17.3 |
+| `Gargoyle_sprites` (unfold f02-f18, flap cycle f18-f33, ball wind-up f33-f74; `gargoyle.py` torso3/face/legs2/horn loops/pleated wings; gate dE 17.5, 70/73 at 16) | 73 | 0.856 | 13.5 / 16.7 |
 
-(2026-09-29: 64 published families, 1360 frames.)
+(2026-09-29: 65 published families, 1433 frames.)
 
-WIP (`note` in each `frames.json` says what fails; passing frames / total): `Gargoyle_sprites` (22/73, `gargoyle.py`:
-IoU 0.861, dE 16.1; the egg rises via `egg_y`; still a crude body with no face or horns), `knight_sprites` (0/65,
+WIP (`note` in each `frames.json` says what fails; passing frames / total): `knight_sprites` (0/65,
 `knight.py`: IoU 0.739, no armour highlights) and `beenie_shot_d` (the down set flies toward the camera and is masked
 by the Beenie). Not started: `blocks` (not drawn by the port). The Hippo and Piggy show the
 recipe: a rig in SD px units with per-limb pose keys fitted per frame by `optim`.
@@ -485,6 +485,20 @@ can never buy dE with a worse outline.
   `cannon_barrel.py` "barrel" (square housing, rounded breech, collar, muzzle) uses a hand-set placement (0.1 unit
   per source px) and a pose "face" (the pivot mirrored) instead of per-frame opts, so it still exports as ONE live
   rig (`live` refuses per-frame model variants).
+- **A sheet can hold differently lit renders; light each group on its own.** The Gargoyle's unfold/flap (f02-f41)
+  and its red-ball wind-up (f42-f74) were lit differently in the original, so one look fitted neither. Give one
+  group a `frame_opts` "kind" (its own model opts) and fit its light in `look.per_kind`; per-frame light
+  overrides go in look.json `frame_opts` (the open-wing f12-f38 take gamma 0.8 / key 3.6: dE -1 to -2 there,
+  worse on the cloak frames). A look that fits every frame at once drifts to a flat mid-grey that scores well and
+  loses the original's contrast, so compare the published frame beside the source at the same size.
+- **Pin what the optimiser must not use (`optim.fix`).** `[{"frames": [a, b], "param": p, "value": v}]` holds a
+  pose key for a frame range through seeding, reseeding, probes and hops: the Gargoyle's optimiser hid the red
+  ball in its cloak on the emergence frames (egg 0 for f02-f41). Pinning too much hurts: arms held at 0 on
+  f02-f10 dropped f03-f05 IoU to .83 (arm 25 passes).
+- **Rebuild a model whose score hides missing anatomy.** The Gargoyle's egg-bodied model passed 61/73 with no
+  arms, face or torso; the rebuild (`gargoyle.py` torso3: one body lathed through `torso_rings` + flat pecs + a
+  strap; face; legs2; horn loops; wings pleated as geometry) started at 35/73 and finished at 73/73 (70 at
+  dE 16). A torso built from separate ellipsoids read as a segmented caterpillar; one lathed body did not.
 - **A look candidate list must contain the faithful value.** The cross-hatch mesh tile (block f152, 0x197) shipped
   at twice the original's density: its `per_kind` "cells" candidates were 2.5-4, never the SD's 2, so the look
   picked a fine lattice that averages to the right grey. `tile.py` mesh "phase" 0.5 puts the bar crossings where
