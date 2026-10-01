@@ -30,7 +30,7 @@ func _ready() -> void:
 	var ua := OS.get_cmdline_user_args()
 	var want_play := false
 	for a in ua:
-		if a.begins_with("--play=") or a.begins_with("--script="):   # valued flags (not --players=N)
+		if a.begins_with("--play=") or a.begins_with("--script=") or a.begins_with("--board="):   # valued flags (not --players=N)
 			want_play = true
 	if "--shot" in ua or "--demo" in ua or "--bug3" in ua or want_play:
 		# --board=<file> overrides; else --demo uses a challenge board (has nasties).

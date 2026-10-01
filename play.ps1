@@ -20,6 +20,7 @@ the primary monitor (4x on a 4K screen: the 3D art 1:1 and the 1996 pixels crisp
   .\play.ps1 -Original        # start in the ORIGINAL presentation
   .\play.ps1 -Sfx light       # REMASTERED uses the light SFX clean-up instead of the AudioSR set
   .\play.ps1 -Scale 2         # force a 1280x960 window;  -Fullscreen for full screen
+  .\play.ps1 -Board tools\verify_scripts\board_sounds.bord -Players 1   # straight into one board
 #>
 param(
     [switch]$Original,
@@ -27,6 +28,8 @@ param(
     [switch]$Fullscreen,
     [ValidateSet("ai", "light")] [string]$Sfx = "ai",
     [int]$Scale = 0,
+    [string]$Board = "",
+    [ValidateRange(0, 3)] [int]$Players = 0,
     [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
 )
 $ErrorActionPreference = "Stop"
@@ -53,6 +56,11 @@ $gargs += "--"
 if (-not $Original) { $gargs += "--3d" }
 if (-not $NoMusic) { $gargs += "--music" }
 if ($Sfx -ne "ai") { $gargs += "--sfx-variant=$Sfx" }
+if ($Board) {
+    $bp = if (Test-Path $Board) { (Resolve-Path $Board).Path } else { $Board }   # a path, or a name like board_419
+    $gargs += "--board=$bp"
+}
+if ($Players -gt 0) { $gargs += "--players=$Players" }
 Write-Host ("Step On It! -- {0}, {1}. F2 = original/remastered, F3 = 3D/HD sprites, F4 = live/pre-rendered 3D." -f `
     $(if ($Original) { "ORIGINAL" } else { "REMASTERED" }), $(if ($Fullscreen) { "full screen" } else { "{0}x{1}" -f (640 * $Scale), (480 * $Scale) }))
 & $Godot @gargs

@@ -1,150 +1,303 @@
 """soi3d.builders.knight -- the Knight (knight_sprites f02-f66): a grey armoured knight facing the camera.
 
-In SD pixel units of the 60x80 cell (origin = the skirt's lower edge, row 57 of the standing f02; +y up, +z toward
-the camera at yaw 0), measured from f02's per-row extents: crest y 40-42, helmet y 31.5-40.5 (11 px wide), the
-shoulder line y 31 with pauldrons to +-13 px, arms hanging at +-10 px to the gauntlets' lower edge at y 4 (24 px
-below the shoulder), the skirt y -1..7 and legs to the sabatons at y -22.
-A rounded cylinder HELMET with a dark visor slit and a small crest, two PAULDRONS (flattened balls) on a wide
-BREASTPLATE, a flared SKIRT (tassets), two ARMS (upper arm, elbow cop, forearm, gauntlet) hanging from the
-pauldrons, two LEGS (thigh, knee cop, shin, sabaton) and a SWORD in the right (near-x) gauntlet: blade, cross
-guard and grip. All steel grey (`steel`), the sword brighter (`blade`).
-Pose (deg unless noted): "yaw" (0 = facing the camera), "s_r"/"s_l" shoulder raise forward (+ = up in front),
-"a_r"/"a_l" shoulder spread sideways (+ = out), "e_r"/"e_l" elbow bend, "sw" sword angle in the hand about the
-hand's side axis (0 = the blade continues the forearm), "stance" (the right leg swung forward and the left back
-by that angle), "l_r"/"l_l" extra per-leg swing (+ = forward), "glow" radius (px) of the gold/red gift orb held
-in front of the chest (f51-f65; 0 = none). The whole model is scaled by `model_scale` and moved by `model_dy` px
-so the knight with a raised sword fits the sweep camera.
+SD px of the 60x80 cell, measured from the standing f02 (origin = the ground under the body centre, column 29;
++y up, +z toward the camera): a HELMET y 54-62 (+-5.5, flat-topped, a keel down the face with an eye slot either
+side, a pointed finial to y 65), a GORGET, flat PAULDRONS from the neck to +-13.5 (y 48.5-53.5), a round
+BREASTPLATE y 37-50 (+-7.5) with a centre ridge over three FAULD lames (y 31-37.5; their lit top edges are the
+bright bands), a hip block with two front TASSETS (y 20-31, a dark gap between them), ARMS (rerebrace 8.5 px,
+couter, vambrace, a flared cuff and a long gauntlet whose fist centre is 14.5 px past the elbow) and LEGS (cuisse
+10.5 px, poleyn, greave, sabaton), both posed by two-bone IK; a SWORD (pommel, grip, cross guard, a
+diamond-section blade `blade_l` px) and the gift ORB (a gold lens in front of the chest that turns and grows,
+f51-f66).
+Pose (px / deg): "dx" the body's shift, "crouch" the hips sitting lower, "fl"/"fr" the screen-left/-right foot's x
+on the ground, "hx"/"hy"/"hz" the sword fist (the screen-right arm's, on the grip) relative to the body, "sw" the
+blade's angle from straight up in the view plane (+ = toward screen right), "st" the blade tipped toward the
+camera, "grip2" (0 = the screen-left arm hangs at its side, 1 = its fist on the grip too), "glow" (the orb's size:
+0 = none, 1 = f58's), "turn" (the orb about the vertical: 0 = face-on), "lean" (the orb in the view plane), "drop"
+(+ = a teardrop with its tip up, - = tip down: the flame f54-f57 and the bulb f61-f63), "ox"/"oy" (the orb's offset),
+"yaw", "roll" / "twist" (the upper body about the waist `pivot_y`: in the view plane / about the vertical; the
+swing f22-f44 turns the chest with the sword).
+Opt-in surface: "env" (the world becomes blotchy noise, 1 +- env at `env_scale`, for polished steel ("metal") to
+reflect: the source's armour is a mottled mirror, not a flat grey).
 """
 import math
 
+import bmesh
 import bpy
+from mathutils import Matrix, Vector
 
 from .. import common as C
 from .. import register_frames
 from .biped import _rbox
+from .gargoyle import _lathe
 from .quadruped import S, _ell
 from .robo import _cyl, _empty
 
+POSE0 = {"yaw": 0.0, "dx": 0.0, "crouch": 0.0, "fl": -4.3, "fr": 3.8, "hx": 9.5, "hy": 26.0, "hz": 2.0,
+         "sw": 214.0, "st": -20.0, "grip2": 0.0, "glow": 0.0, "turn": 0.0, "lean": 0.0, "roll": 0.0, "twist": 0.0}
+
+
+def _frustum(name, y0, y1, r0, r1, mat, seg=32):
+    """An elliptic frustum along y from y0 (half-axes r0 = (rx, rz)) to y1 (r1), px: smooth sides, flat caps."""
+    me, bm = bpy.data.meshes.new(name), bmesh.new()
+    a, b = ([bm.verts.new((rx * math.sin(2 * math.pi * i / seg) * S, y * S, rz * math.cos(2 * math.pi * i / seg) * S))
+             for i in range(seg)] for y, (rx, rz) in ((y0, r0), (y1, r1)))
+    side = [bm.faces.new((a[i], a[(i + 1) % seg], b[(i + 1) % seg], b[i])) for i in range(seg)]
+    bm.faces.new(a[::-1])
+    bm.faces.new(b)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for fc in side:
+        fc.smooth = True
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mat)
+    return o
+
+
+def _blade(name, length, w, t, mat):
+    """A diamond-section blade along +y from 0 to `length` px, `w` wide and `t` thick, pointed (flat facets)."""
+    me, bm = bpy.data.meshes.new(name), bmesh.new()
+    sec = ((w / 2, 0.0), (0.0, t / 2), (-w / 2, 0.0), (0.0, -t / 2))
+    base = [bm.verts.new((x * S, 0.0, z * S)) for x, z in sec]
+    mid = [bm.verts.new((x * 0.8 * S, length * 0.86 * S, z * 0.8 * S)) for x, z in sec]
+    tip = bm.verts.new((0.0, length * S, 0.0))
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((base[i], base[j], mid[j], mid[i]))
+        bm.faces.new((mid[i], mid[j], tip))
+    bm.faces.new(base[::-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mat)
+    return o
+
 
 def _orb_mat(opts):
-    """A dithered gold/red emissive orb (the gift's glow): a fine noise picks gold or red per cell."""
+    """The gift's gold lens: gold with dark-gold and peach speckles, a tan rim at grazing angles, self-lit."""
     mat = bpy.data.materials.new("orb")
     mat.use_nodes = True
     nt = mat.node_tree
     bsdf = nt.nodes.get("Principled BSDF")
     noise = nt.nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = float(opts.get("orb_scale", 60.0))
+    noise.inputs["Scale"].default_value = float(opts.get("orb_scale", 40.0))
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     ramp.color_ramp.interpolation = 'CONSTANT'
-    ramp.color_ramp.elements[0].color = C._srgb(*opts.get("orb_red", (220, 30, 20)))
-    ramp.color_ramp.elements[1].position = 0.5
-    ramp.color_ramp.elements[1].color = C._srgb(*opts.get("orb_gold", (250, 210, 40)))
+    els = ramp.color_ramp.elements
+    els[0].color = C._srgb(*opts.get("orb_dark", (173, 148, 0)))
+    els[1].position = float(opts.get("orb_lo", 0.38))
+    els[1].color = C._srgb(*opts.get("orb_gold", (210, 174, 0)))
+    els.new(float(opts.get("orb_hi", 0.62))).color = C._srgb(*opts.get("orb_peach", (240, 198, 170)))
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = float(opts.get("orb_rim", 0.3))
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = 'RGBA'
+    mix.inputs["B"].default_value = C._srgb(*opts.get("orb_tan", (164, 152, 115)))
     nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(lw.outputs["Facing"], mix.inputs["Factor"])
+    nt.links.new(ramp.outputs["Color"], mix.inputs["A"])
+    nt.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
     if bsdf.inputs.get("Emission Color") is not None:
-        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Emission Color"])
-        bsdf.inputs["Emission Strength"].default_value = float(opts.get("orb_emit", 0.6))
+        nt.links.new(mix.outputs["Result"], bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = float(opts.get("orb_emit", 0.5))
     return mat
+
+
+def _joint(name, parent):
+    e = _empty(name, (0, 0, 0), parent)
+    e.rotation_mode = 'QUATERNION'
+    return e
+
+
+def _aim(e, p, q):
+    """Put joint empty `e` at p (px) with its -Y axis pointing at q."""
+    e.location = tuple(v * S for v in p)
+    d = Vector(q) - Vector(p)
+    if d.length > 1e-6:
+        e.rotation_quaternion = Vector((0.0, -1.0, 0.0)).rotation_difference(d.normalized())
+
+
+def _ik(s, t, a, b, pole):
+    """Two-bone IK: the middle joint of a chain s -a- m -b- t bending toward the `pole` direction; t is pulled in
+    to the chain's reach. Returns (m, t')."""
+    s, t, pole = Vector(s), Vector(t), Vector(pole)
+    d = t - s
+    u = d.normalized() if d.length > 1e-6 else Vector((0.0, -1.0, 0.0))
+    ln = max(abs(a - b) + 1e-3, min(a + b - 1e-3, d.length))
+    p = pole - u * pole.dot(u)
+    if p.length < 1e-6:
+        p = Vector((0.0, 0.0, 1.0)) - u * u.z
+    p.normalize()
+    ca = (a * a + ln * ln - b * b) / (2 * a * ln)
+    return s + a * (ca * u + math.sqrt(max(0.0, 1.0 - ca * ca)) * p), s + u * ln
 
 
 def build(opts):
     C._clear()
     f = lambda k, d: float(opts.get(k, d))
-    steel = C._mat("steel", C._srgb(*opts.get("steel", (190, 190, 195))), rough=f("rough", 0.35), spec=f("spec", 0.5),
+    steel = C._mat("steel", C._srgb(*opts.get("steel", (175, 175, 180))), rough=f("rough", 0.35), spec=f("spec", 0.6),
                    metal=f("metal", 0.0))
-    dark = C._mat("slit", C._srgb(*opts.get("slit", (25, 25, 28))), rough=0.8, spec=0.1)
-    blade = C._mat("blade", C._srgb(*opts.get("blade", (235, 235, 240))), rough=0.25, spec=0.7)
+    dark = C._mat("slit", C._srgb(*opts.get("slit", (20, 20, 22))), rough=0.9, spec=0.0)
+    blade_m = C._mat("blade", C._srgb(*opts.get("blade", (220, 220, 228))), rough=f("blade_rough", 0.25), spec=0.8)
     bpy.ops.object.empty_add(location=(0, 0, 0))
     root = bpy.context.active_object
     root.name = "root"
-    tz = f("torso_hz", 6.0)
-    _rbox("skirt", (0, f("skirt_y", 3.0), 0), (f("skirt_hw", 13.0), f("skirt_hh", 4.0), tz * 0.9), f("skirt_bevel", 2.0), steel).parent = root
-    ty, thh = f("torso_y", 19.0), f("torso_hh", 12.0)
-    torso = _rbox("torso", (0, ty, 0), (f("torso_hw", 9.0), thh, tz), f("torso_bevel", 3.0), steel)
-    torso.parent = root
-    if f("torso_taper", 0.0):                                        # V plate: top x(1+t), waist x(1-t)
-        m = torso.modifiers.new("taper", 'SIMPLE_DEFORM')
-        m.deform_method, m.deform_axis = 'TAPER', 'Y'
-        m.factor = f("torso_taper", 0.0) / (thh * S)
-    hy, hr, hh = f("helmet_y", 36.0), f("helmet_r", 5.5), f("helmet_h", 9.0)
-    _cyl("helmet", (0, hy, 0), hr, hh, steel, f("helmet_bevel", 2.5), root)
-    if f("helmet_spike", 0.0) > 0:                                   # the pointed helmet top
-        sp = f("helmet_spike", 0.0)
-        bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=hr * f("spike_r", 0.7) * S, radius2=0.0, depth=sp * S,
-                                        location=(0, (hy + hh / 2 + sp / 2) * S, 0), rotation=(-math.pi / 2, 0, 0))
-        spike = bpy.context.active_object
-        spike.name = "spike"
-        spike.data.materials.append(steel)
-        bpy.ops.object.shade_smooth()
-        spike.parent = root
-    _rbox("slit", (0, hy + f("slit_dy", 0.5), hr - 0.3), (hr * 0.75, f("slit_h", 0.7), 0.5), 0.2, dark).parent = root
-    _rbox("crest", (0, hy + hh / 2 + f("crest_h", 2.0) / 2, 0), (f("crest_w", 1.2), f("crest_h", 2.0), hr * 0.8), 0.5, steel).parent = root
+    upper = _empty("upper", (0, 0, 0), root)                          # everything the hips carry (dx, crouch)
+    _rbox("hips", (0, f("hip_cy", 25.5), 0), (f("hip_hw", 7.0), f("hip_hh", 5.5), f("hip_hz", 4.0)), 2.0, steel).parent = upper
+    for sx in (-1.0, 1.0):                                            # two front tassets, a dark gap between them
+        t = _rbox("tasset", (sx * f("tasset_x", 3.8), f("tasset_y", 25.5), f("tasset_z", 3.6)),
+                  (f("tasset_hw", 3.3), f("tasset_hh", 5.0), 0.9), 0.8, steel)
+        t.rotation_euler = (math.radians(-f("tasset_flare", 8.0)), sx * math.radians(f("tasset_out", 12.0)), 0.0)
+        t.parent = upper
+    y0, rx, rz = f("fauld_y", 31.0), f("fauld_rx", 7.3), f("fauld_rz", 4.4)
+    for i in range(int(f("lames", 3))):                               # overlapping lames, each narrower at its top
+        y = y0 + i * f("lame_step", 2.1)
+        _frustum("lame", y, y + f("lame_h", 2.3), (rx + 0.5, rz + 0.4), (rx - 0.3, rz - 0.3), steel).parent = upper
+    k = f("torso_k", 1.0)
+    rings = [(y, r * k, d, c) for y, r, d, c in (tuple(v) for v in opts.get("torso_rings", (
+        (37.0, 7.0, 4.2, 0.0), (39.5, 7.4, 4.6, 0.2), (43.0, 7.7, 5.0, 0.4), (46.5, 7.6, 4.9, 0.3), (49.0, 6.8, 4.2, 0.0),
+        (50.5, 4.5, 3.0, 0.0))))]
+    _lathe("breastplate", rings, steel).parent = upper
+    _ell("ridge", (0, f("ridge_y", 43.5), f("ridge_z", 4.9)), (f("ridge_w", 0.8), f("ridge_h", 5.5), 0.9), steel, 16).parent = upper
+    _frustum("gorget", 49.0, 54.0, (3.4, 3.0), (3.0, 2.7), steel).parent = upper
+    for sx in (-1.0, 1.0):
+        p = _rbox("pauldron", (sx * f("pauldron_x", 8.0), f("pauldron_y", 51.0), f("pauldron_z", 0.3)),
+                  (f("pauldron_hw", 5.6), f("pauldron_hh", 2.5), f("pauldron_hz", 4.6)), f("pauldron_bevel", 1.6), steel)
+        p.rotation_euler = (0.0, 0.0, -sx * math.radians(f("pauldron_droop", 0.0)))
+        p.parent = upper
+    hy, hr = f("helmet_y", 0.0), f("helmet_r", 5.4)
+    _lathe("helmet", [(hy + y, r * hr / 5.4, d * hr / 5.4, 0.0) for y, r, d in (
+        (54.0, 3.6, 3.4), (55.2, 4.9, 4.5), (56.5, 5.4, 5.0), (61.5, 5.4, 5.0), (62.2, 5.0, 4.6), (62.6, 3.0, 2.8))], steel).parent = upper
+    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=f("finial_r", 2.4) * S, radius2=0.0, depth=f("finial_h", 3.0) * S,
+                                    location=(0, (hy + 62.2 + f("finial_h", 3.0) / 2) * S, 0), rotation=(-math.pi / 2, 0, 0))
+    fin = bpy.context.active_object
+    fin.name = "finial"
+    fin.data.materials.append(steel)
+    bpy.ops.object.shade_smooth()
+    fin.parent = upper
+    _rbox("keel", (0, hy + 58.3, hr * 0.92), (0.5, 3.2, 0.6), 0.4, steel).parent = upper
+    for sx in (-1.0, 1.0):
+        _rbox("slot", (sx * 2.4, hy + f("slot_y", 59.3), hr * 0.86), (1.5, f("slot_h", 0.45), 0.5), 0.2, dark).parent = upper
     arms = {}
-    ua, fa, ar = f("uarm_l", 11.0), f("farm_l", 10.0), f("arm_r", 2.0)
-    for side, sx in (("r", -1.0), ("l", 1.0)):                        # the knight's right arm is on screen left
-        sh = _empty("shoulder_" + side, (sx * f("shoulder_x", 10.0), f("shoulder_y", 28.0), 0), root)
-        sh.rotation_mode = 'YXZ'
-        pr = f("pauldron_r", 3.8)                                       # f02: flat plates centred 2.5 px inside the arms
-        _ell("pauldron_" + side, (-sx * f("pauldron_in", 2.5), 0.8, 0), (pr * 1.2, pr * 0.65, pr * 1.05), steel, 24).parent = sh
-        _cyl("uarm_" + side, (0, -ua / 2, 0), ar, ua, steel, 0.5, sh)
-        el = _empty("elbow_" + side, (0, -ua, 0), sh)
-        _ell("cop_" + side, (0, 0, 0), (ar * 1.25,) * 3, steel, 16).parent = el
-        _cyl("farm_" + side, (0, -fa / 2, 0), ar * 0.95, fa, steel, 0.5, el)
-        hand = _empty("hand_" + side, (0, -fa, 0), el)
-        _rbox("gauntlet_" + side, (0, -1.2, 0), (ar * 1.1, 1.8, ar * 1.1), 0.8, steel).parent = hand
-        arms[side] = (sh, el, hand)
-    grip = _empty("grip", (0, -1.5, 0), arms["r"][2])                 # the sword along the hand's -y (the forearm on)
-    gl, bl = f("grip_l", 4.0), f("blade_l", 22.0)
-    _cyl("grip_bar", (0, 0, 0), 0.8, gl, steel, 0.2, grip)
-    _rbox("guard", (0, -gl / 2 - 0.5, 0), (f("guard_w", 4.0), 0.6, 0.8), 0.3, steel).parent = grip
-    _rbox("blade", (0, -gl / 2 - 1.0 - bl / 2, 0), (f("blade_w", 0.9), bl / 2, 0.35), 0.3, blade).parent = grip
+    ua, fa, ar, fd = f("uarm_l", 8.5), f("farm_l", 9.0), f("arm_r", 1.9), f("fist_d", 14.5)   # fd: elbow -> fist centre
+    for side in ("l", "r"):                                          # screen left / right
+        up = _joint("ua_" + side, root)
+        _cyl("rerebrace", (0, -ua / 2, 0), ar, ua, steel, 0.5, up)
+        lo = _joint("fa_" + side, root)
+        _ell("couter", (0, 0, -0.3), (ar * 1.3,) * 3, steel, 16).parent = lo
+        _cyl("vambrace", (0, -fa / 2, 0), ar * 0.92, fa, steel, 0.4, lo)
+        _frustum("cuff", -(fa + 2.6), -(fa - 0.6), (ar * 1.4, ar * 1.4), (ar, ar), steel).parent = lo
+        _rbox("fist", (0, -fd, 0.2), (f("fist_hw", 1.95), f("fist_hh", 3.8), f("fist_hz", 2.1)), 1.2, steel).parent = lo
+        arms[side] = (up, lo)
     legs = {}
-    for side, sx in (("r", -1.0), ("l", 1.0)):
-        hp = _empty("hipj_" + side, (sx * f("hip_x", 3.6), -f("hip_dy", 1.0), 0), root)
-        tl, sl, lr = f("thigh_l", 10.0), f("shin_l", 9.0), f("leg_r", 3.0)
-        _cyl("thigh_" + side, (0, -tl / 2, 0), lr, tl, steel, 0.6, hp)
-        kn = _empty("knee_" + side, (0, -tl, 0), hp)
-        _ell("kcop_" + side, (0, 0, 0.5), (lr * 1.15, lr * 0.9, lr * 1.1), steel, 16).parent = kn
-        _cyl("shin_" + side, (0, -sl / 2, 0), lr * 0.95, sl, steel, 0.6, kn)
-        _rbox("sabaton_" + side, (0, -sl - 1.2, 1.2), (lr * 1.05, 1.4, lr * 1.5), 0.8, steel).parent = kn
-        legs[side] = hp
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=S, segments=32, ring_count=16,
-                                         location=(0, f("orb_y", 18.0) * S, f("orb_z", 8.0) * S))
-    orb = bpy.context.active_object
-    orb.name = "orb"
-    orb.data.materials.append(_orb_mat(opts))
-    orb.parent = root
-    k = f("model_scale", 0.32)                                        # sword raised: shrink into the +-1.07 sweep camera
-    root.scale = (k, k, k)
-    root.location = (0, f("model_dy", -12.0) * S * k, 0)
-    return root, arms, grip, orb, legs
+    lr, tl, sl = f("leg_r", 3.0), f("thigh_l", 10.5), f("shin_l", 5.0)
+    for side in ("l", "r"):
+        th = _joint("th_" + side, root)
+        _frustum("cuisse", -tl - 0.5, 0.5, (lr, lr * 0.95), (lr + 0.5, lr + 0.3), steel).parent = th
+        sh = _joint("sh_" + side, root)
+        _cyl("greave", (0, -sl / 2 - 0.5, 0), lr * 0.95, sl + 1.5, steel, 0.5, sh)
+        kn = _empty("knee_" + side, (0, 0, 0), root)
+        _ell("poleyn", (0, 0, f("poleyn_z", 0.9)), (f("poleyn_rx", 3.5), f("poleyn_ry", 1.9), f("poleyn_rz", 3.3)), steel, 20).parent = kn
+        ft = _empty("foot_" + side, (0, 0, 0), root)
+        _rbox("sabaton", (0, 2.6, f("sabaton_z", 1.2)), (f("sabaton_hw", 3.3), 2.6, f("sabaton_hz", 4.2)), 1.6, steel).parent = ft
+        legs[side] = (th, sh, kn, ft)
+    sword = _empty("sword", (0, 0, 0), root)
+    sword.rotation_mode = 'XYZ'                                       # tip toward the camera (x), then in the view plane (z)
+    _cyl("grip", (0, -0.3, 0), 0.75, 5.0, steel, 0.2, sword)
+    _ell("pommel", (0, -3.5, 0), (1.2, 1.2, 1.2), steel, 16).parent = sword
+    _rbox("guard", (0, 2.8, 0), (f("guard_w", 4.2), 0.6, 0.75), 0.4, steel).parent = sword
+    bl = _blade("blade", f("blade_l", 28.0), f("blade_w", 1.8), f("blade_t", 0.9), blade_m)
+    bl.location = (0, 3.4 * S, 0)
+    bl.parent = sword
+    orb = _empty("orb", (f("orb_x", 0.8), f("orb_y", 46.5), f("orb_z", 7.0)), upper)
+    orb.rotation_mode = 'YXZ'                                         # turn about y first, then lean in the view plane
+    lens = _ell("lens", (0, 0, 0), (f("orb_rx", 10.5), f("orb_ry", 15.5), f("orb_rz", 3.0)), _orb_mat(opts), 32)
+    lens.parent = orb
+    lens.shape_key_add(name="basis")
+    for key, sy in (("drop_up", 1.0), ("drop_dn", -1.0)):            # a teardrop: the half toward sy tapers to a point
+        kb = lens.shape_key_add(name=key, from_mix=False)
+        for v in kb.data:
+            t = max(0.0, v.co.y * sy)
+            v.co = (v.co.x * (1 - 0.85 * t), v.co.y * (1 + 0.2 * t), v.co.z * (1 - 0.85 * t))
+    m = f("model_scale", 0.45)
+    root.scale = (m, m, m)
+    root.location = (f("model_dx", -3.5) * S * m, f("model_dy", -40.0) * S * m, 0)
+    return {"root": root, "upper": upper, "arms": arms, "legs": legs, "sword": sword, "orb": orb, "lens": lens,
+            "orb0": tuple(orb.location)}
 
 
 def _frames_setup(opts):
-    root, arms, grip, orb, legs = build(opts)
+    ctx = build(opts)
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
-    return {"root": root, "arms": arms, "grip": grip, "orb": orb, "legs": legs, "elbow0": float(opts.get("elbow0", 10.0)),
-            "base": {k: float(opts[k + "0"]) for k in ("s_r", "s_l", "a_r", "a_l", "e_r", "e_l", "sw", "stance", "spread")
-                     if k + "0" in opts}}
+    f = lambda k, d: float(opts.get(k, d))
+    if f("env", 0.0) > 0:                                            # a blotchy sky for polished steel to reflect
+        nt = bpy.context.scene.world.node_tree
+        tc, nz = nt.nodes.new("ShaderNodeTexCoord"), nt.nodes.new("ShaderNodeTexNoise")
+        nz.inputs["Scale"].default_value = f("env_scale", 3.0)
+        nz.inputs["Detail"].default_value = f("env_detail", 2.0)
+        mr = nt.nodes.new("ShaderNodeMapRange")
+        mr.inputs["From Min"].default_value, mr.inputs["From Max"].default_value = 0.35, 0.65
+        mr.inputs["To Min"].default_value, mr.inputs["To Max"].default_value = 1.0 - f("env", 0.0), 1.0 + f("env", 0.0)
+        nt.links.new(tc.outputs["Generated"], nz.inputs["Vector"])
+        nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
+        nt.links.new(mr.outputs["Result"], nt.nodes["Background"].inputs["Color"])
+    ctx.update({"hip": (f("hip_x", 3.9), f("hip_y", 20.5)), "ankle": f("ankle_y", 5.0), "thigh": f("thigh_l", 10.5),
+                "shin": f("shin_l", 5.0), "shoulder": (f("shoulder_x", 10.8), f("shoulder_y", 48.5), f("shoulder_z", 0.0)),
+                "ua": f("uarm_l", 8.5), "fd": f("fist_d", 14.5), "gap": f("grip_gap", 3.6), "pivot": f("pivot_y", 31.0)})
+    return ctx
 
 
 def _frames_pose(ctx, pose):
-    p = dict(ctx["base"])
+    p = dict(POSE0)
     p.update(pose)
-    g = lambda k, d=0.0: float(p.get(k, d))
+    g = lambda k: float(p.get(k, 0.0))
+    dx, cr = g("dx"), g("crouch")
     ctx["root"].rotation_euler = (0.0, math.radians(g("yaw")), 0.0)
-    for side, sx in (("r", -1.0), ("l", 1.0)):
-        sh, el, hand = ctx["arms"][side]
-        sh.rotation_euler = (math.radians(-g("s_" + side)), 0.0, math.radians(sx * g("a_" + side)))   # raise, spread
-        el.rotation_euler = (math.radians(-(ctx["elbow0"] + g("e_" + side))), 0.0, 0.0)
-    ctx["grip"].rotation_euler = (math.radians(g("sw")), 0.0, 0.0)
-    for side, sg in (("r", 1.0), ("l", -1.0)):                         # + = forward (toward the camera at yaw 0)
-        ctx["legs"][side].rotation_euler = (-math.radians(sg * g("stance") + g("l_" + side)), 0.0,
-                                            math.radians(-sg * g("spread")))   # "spread": both feet out (A-stance)
+    rot = (Matrix.Rotation(math.radians(g("roll")), 3, 'Z') @ Matrix.Rotation(math.radians(g("twist")), 3, 'Y'))
+    pv = Vector((dx, ctx["pivot"] - cr, 0.0))                        # the upper body turns about the waist
+    turn = lambda q: rot @ (Vector(q) - pv) + pv
+    ctx["upper"].rotation_euler = rot.to_euler('XYZ')
+    ctx["upper"].location = tuple(c * S for c in turn((dx, -cr, 0.0)))
+    hx, hy = ctx["hip"]
+    for side, sx in (("l", -1.0), ("r", 1.0)):                        # legs: hip -> planted foot, knees forward
+        th, sh, kn, ft = ctx["legs"][side]
+        hip = (dx + sx * hx, hy - cr, 0.0)
+        knee, ank = _ik(hip, (g("f" + side), ctx["ankle"], 0.0), ctx["thigh"], ctx["shin"], (sx * 0.15, 0.0, 1.0))
+        _aim(th, hip, knee)
+        _aim(sh, knee, ank)
+        kn.location = tuple(v * S for v in knee)
+        ft.location = (g("f" + side) * S, 0.0, 0.0)
+    sw, st = math.radians(g("sw")), math.radians(g("st"))
+    v = Vector((math.sin(sw) * math.cos(st), math.cos(sw) * math.cos(st), math.sin(st)))
+    grip = Vector((dx + g("hx"), g("hy") - cr, g("hz")))
+    ctx["sword"].location = tuple(c * S for c in grip)
+    ctx["sword"].rotation_euler = (st, 0.0, -sw)
+    sxo, syo, szo = ctx["shoulder"]
+    for side, sx in (("l", -1.0), ("r", 1.0)):                        # arms: shoulder -> fist, elbows out and down
+        up, lo = ctx["arms"][side]
+        s = turn((dx + sx * sxo, syo - cr, szo))
+        if side == "r":
+            t = grip
+        else:
+            rest = s + Vector((-0.8, 0.2 - ctx["ua"] - ctx["fd"], 0.5))
+            t = rest.lerp(grip - v * ctx["gap"], min(1.0, max(0.0, g("grip2"))))
+        elbow, _ = _ik(s, t, ctx["ua"], ctx["fd"], (sx * 0.5, -1.0, -0.5))
+        _aim(up, s, elbow)
+        _aim(lo, elbow, t)
     r = g("glow")
-    ctx["orb"].hide_render = r <= 0.05
-    ctx["orb"].scale = (max(r, 0.05),) * 3
+    ctx["lens"].hide_render = r <= 0.02
+    ctx["orb"].scale = (max(r, 0.02),) * 3
+    ctx["orb"].rotation_euler = (0.0, math.radians(g("turn")), math.radians(g("lean")))
+    x0, y0, z0 = ctx["orb0"]
+    ctx["orb"].location = (x0 + g("ox") * S, y0 + g("oy") * S, z0)
+    kb = ctx["lens"].data.shape_keys.key_blocks
+    kb["drop_up"].value = min(1.0, max(0.0, g("drop")))
+    kb["drop_dn"].value = min(1.0, max(0.0, -g("drop")))
 
 
 register_frames("knight", _frames_setup, _frames_pose)
