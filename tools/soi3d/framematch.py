@@ -45,7 +45,7 @@ Stages (default = all, in order):
          starts from "opts", so bake between look passes or each pass restarts from the old values
   look   optional ("look" block): coordinate-descent the builder's colour/light options against the
          SD frames at the fitted poses (work/look.json overrides "opts"); "params" = {opt: [candidates]},
-         "refine" = {opt: {step, min, max}} continuous +-step refine.ment of numeric opts afterwards;
+         "refine" = {opt: {step, min, max}} continuous +-step refinement of numeric opts afterwards;
          "frames": N evenly spaced frames are scored, plus the last verify's failing ones if "add_fails"
   final  render every frame at scale x its SD size with the fitted camera + pose, apply post
          steps, write the game overlay extracted/sprites_3d_frames/<sheet>/fNN_{sW}x{sH}.png
@@ -200,6 +200,13 @@ def compare(sd_pm, r_pm):
     iou = float((a & b).sum()) / max(1, int(uni.sum()))
     de = np.linalg.norm(_lab(np.clip(sd_pm[..., :3], 0, 1)) - _lab(np.clip(r_pm[..., :3], 0, 1)), axis=-1)
     return iou, float(de[uni].mean()) if uni.any() else 0.0
+
+
+def live_iou(sd_pm, r_pm):
+    """IoU for a Godot render: an MSAA edge pixel at exactly half coverage is ambiguous, so it counts as a hit
+    where the source has a pixel and is left out where it has none."""
+    a, strict, tie = sd_pm[..., 3] > 0.5, r_pm[..., 3] > 0.5, r_pm[..., 3] > 0.5 - 1e-6
+    return float((a & tie).sum()) / max(1, int((a | strict).sum()))
 
 
 def _blur(pm, sigma=1.0):
@@ -1333,7 +1340,8 @@ def stage_livegate(family, cfg):
         sd, lv, cy = premul(rgba(p)), premul(rgba(lp)), premul(rgba(cp[0]))
         if lv.shape[:2] != (h * s, w * s):
             raise SystemExit("livegate: f%02d is %s, expected %dx%d" % (nn, lv.shape[:2], w * s, h * s))
-        rows.append((nn, compare(sd, box_down(lv, s))[0], compare_blur(sd, box_down(lv, s)),
+        # Godot's MSAA + a 2 px fringe leaves edge pixels at exactly 8/16 coverage (Cycles' filter: never exactly)
+        rows.append((nn, live_iou(sd, box_down(lv, s)), compare_blur(sd, box_down(lv, s)),
                      compare(sd, box_down(cy, s))[0], compare_blur(sd, box_down(cy, s)),
                      compare_blur(box_down(cy, s), box_down(lv, s))))
     if not rows:

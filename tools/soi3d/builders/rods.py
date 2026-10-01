@@ -7,7 +7,8 @@ axis), "length" (px; the rods grow as the shot fans out), "half" (deg, optional:
 "axis_tilt" (deg, optional: the axis turned toward the camera; with opts "taper" > 0 the rods thin toward
 the apex, a stand-in for the perspective of a shot flying at the viewer). Opts "persp_d" > 0 (px) renders the
 rods in TRUE perspective instead: each pose re-lays every rod's two end rings where a camera persp_d px in
-front of the apex would project them (x, y and radius scaled by d / (d - z)).
+front of the apex would project them (x, y and radius scaled by d / (d - z)); there "taper" shrinks only the
+apex ring (beenie_shot_d f51).
 """
 import math
 
@@ -86,7 +87,7 @@ def _tube(name, r):
     return o
 
 
-def _persp(o, dist):
+def _persp(o, dist, taper=0.0):
     """Re-lay the tube's rings as a camera `dist` (Blender units) in front of the world origin sees them."""
     mw = o.matrix_world.copy()
     a, b = mw @ mathutils.Vector((0, 0, 0)), mw @ mathutils.Vector((0, 0, 1))
@@ -99,9 +100,10 @@ def _persp(o, dist):
     v = w.cross(u)
     inv, r = mw.inverted(), float(o["rod_r"])
     for ring, (c, fk) in enumerate(((pa, fa), (pb, fb))):
+        scale_r = (1.0 - taper) if ring == 0 else 1.0
         for k in range(SEG):
             t = 2 * math.pi * k / SEG
-            o.data.vertices[ring * SEG + k].co = inv @ (c + r * fk * (math.cos(t) * u + math.sin(t) * v))
+            o.data.vertices[ring * SEG + k].co = inv @ (c + r * fk * scale_r * (math.cos(t) * u + math.sin(t) * v))
     o.data.update()
 
 
@@ -111,7 +113,8 @@ def _frames_setup(opts):
     C.apply_look(opts)
     return {"root": root, "spin": spin, "rods": rods, "half": float(opts.get("half", 33.0)),
             "tilt": float(opts.get("axis_tilt", 0.0)), "dir": float(opts.get("dir", 0.0)),
-            "persp": float(opts.get("persp_d", 0.0)) * S}
+            "persp": float(opts.get("persp_d", 0.0)) * S,
+            "taper": float(opts.get("taper", 0.0))}
 
 
 def _frames_pose(ctx, pose):
@@ -125,7 +128,7 @@ def _frames_pose(ctx, pose):
     if ctx["persp"] > 0:
         bpy.context.view_layer.update()
         for o, _, _ in ctx["rods"]:
-            _persp(o, ctx["persp"])
+            _persp(o, ctx["persp"], ctx["taper"])
 
 
 register_frames("rods", _frames_setup, _frames_pose)

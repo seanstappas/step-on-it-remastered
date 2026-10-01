@@ -18,9 +18,9 @@
   30,
   31
  ],
- "pass": false,
- "iou_min": 0.8502,
- "de_mean": 32.697,
- "de_max": 34.494,
+ "pass": true,
+ "iou_min": 0.9653,
+ "de_mean": 11.934,
+ "de_max": 13.55,
  "cycles_de_mean": 11.589
 }

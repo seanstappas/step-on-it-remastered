@@ -19,8 +19,8 @@
   48,
   49
  ],
- "pass": false,
- "iou_min": 0.8056,
+ "pass": true,
+ "iou_min": 0.8333,
  "de_mean": 11.359,
  "de_max": 13.477,
  "cycles_de_mean": 11.046

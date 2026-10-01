@@ -106,6 +106,17 @@ Piggy, the Ant, the Ostrich, Smiley, Teeth, Walker and its bolt, Spinner, Wheeli
 and barrel, the Beenie's left/up shots, the Gargoyle's puffs, the spinning shield. Pre-rendered: the procedural-texture families
 (weapons swirl, egg bands, gift box glyphs, M block — glTF carries no shader textures) and two near-misses
 (Beenie right shot f34, winged shoe). Clip: `media/video/live3d_robo_remastered_20260926_165721.mp4`.
+Since then also live: the Hammer walk and swings (2026-09-29/30) and, on 2026-10-01, the Beenie (cap gores as
+per-face materials, `beenie.py` `gore_faces`) and the Knight's gift box (`live_blender.py` converts text/curve
+objects to meshes — its glyphs had been dropped from the export). Still pre-rendered: the swirl ball and the egg
+(animated shader textures), the M block (per-frame visibility and deform modifiers), the winged shoe, the static
+1UP and Teeth emblem frames, the Gargoyle (per-frame model variants, `frame_opts`) and the Knight (a trial rig
+passed 54/65: the gift orb's teardrop is a shape key and its speckled gold a shader, which a rig of node
+transforms + Principled values cannot carry). The live materials also carry the Principled clearcoat
+(`coat` / `coat_rough` → Godot clearcoat). `livegate` scores live IoU with `live_iou`: Godot's MSAA leaves
+edge pixels at exactly half coverage, which count as hits where the source has a pixel and are left out where
+it has none (a fixed threshold either way flipped a near-miss: the Ant's f12 fell from 0.850 to 0.841 when
+they all counted as opaque).
 
 **Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
 can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)
@@ -140,20 +151,21 @@ the same pose.
 | Published (gate passes) | Frames | IoU min | blurred dE mean / max |
 |---|---|---|---|
 | `block_sprites` (24 tile types; `tile.py`) | 150 | 0.960 | 7.0 / 13.1 |
-| `robo_sprites` (the Robo f02-f81: walk, turn, punch; `robo.py` two eyes; documented gate dE 17.5 for 4 frames) | 80 | 0.861 | 14.4 / 17.1 |
+| `robo_sprites` (the Robo f02-f81: walk, turn, punch; `robo.py` two eyes) | 80 | 0.854 | 13.7 / 15.9 |
 | `BP_sprites` (the blue player f50-f117: walks, pushes, jumps; `kid.py` rig + eyes) | 68 | 0.851 | 12.2 / 15.7 |
 | `GP_sprites` (the green player f50-f117: BP_sprites' fit and look with a green sweater) | 68 | 0.851 | 11.1 / 14.7 |
-| `BP_run` (the blue player's run f02-f49; documented gate dE 17.5 for the stride frames f07/f19) | 48 | 0.850 | 12.8 / 17.1 |
-| `GP_run` (the green player's run; BP_run cloned; documented gate IoU 0.845 / dE 17.5 for f24/f19) | 48 | 0.848 | 11.9 / 16.3 |
+| `BP_run` (the blue player's run f02-f49; documented gate dE 17.5 for the stride frame f07) | 48 | 0.852 | 12.1 / 16.2 |
+| `GP_run` (the green player's run; BP_run cloned) | 48 | 0.854 | 11.2 / 15.3 |
 | `teeth_sprites` (the chattering Teeth f02-f50; `teeth.py`) | 49 | 0.855 | 11.3 / 15.4 |
-| `walker_body` (the Walker f02-f49; `walker.py` block legs; documented gate IoU 0.845 for f36) | 48 | 0.847 | 10.3 / 12.9 |
+| `walker_body` (the Walker f02-f49; `walker.py` block legs, knees to -85 deg) | 48 | 0.853 | 10.3 / 13.1 |
 | `smiley_sprites` (Smiley; `smiley.py`) | 48 | 0.974 | 9.8 / 11.8 |
-| `hippo_sprites` (the Hippo walk f02-f33; `quadruped.py`) | 32 | 0.857 | 9.5 / 11.7 |
-| `beenie_shot_l`/`_u`/`_r` (the Beenie spread shot f02-f49; `rods.py`) | 48 | 0.833 (`_r` gate 0.83) | 10.1-11.1 / 15.3 |
+| `hippo_sprites` (the Hippo walk f02-f33; `quadruped.py`, thin legs `leg_r` 1.6) | 32 | 0.865 | 9.5 / 11.7 |
+| `beenie_shot_l`/`_u`/`_r` (the Beenie spread shot f02-f49; `rods.py`) | 48 | 0.833 (`_r` gate 0.83) | 10.1-11.0 / 15.3 |
+| `beenie_shot_d` (the down set f50-f65: the rods fan up from an apex at the bottom, thin there; `rods.py` opt-in apex taper; gate IoU 0.83 like `_r`) | 16 | 0.833 | 9.4 / 15.8 |
 | `piggy_sprites` (the Piggy walk f02-f33; `quadruped.py` species piggy) | 32 | 0.859 | 11.0 / 13.9 |
 | `Stop_Go_sprite_family` (flip; `sign.py` `sign_flip`) | 40 | 0.975 | 13.3 / 15.8 |
 | `disk_sprites` (Wheelie) | 24 | 0.996 | 12.8 / 13.7 |
-| `cannon_ball` (cannon_sprites f04-f23) | 20 | 0.929 | 13.9 / 16.6 (gate 17, 16 px source) |
+| `cannon_ball` (cannon_sprites f04-f23; `beachball.py` gores aligned to the pole axis, tilt -5.5) | 20 | 0.956 | 13.4 / 15.9 |
 | `spinner_sprites` (Spinner; `spinner.py` `build_spinner_front`) | 16 | 0.867 | 11.7 / 13.7 |
 | `walker_bolt` (walker_sprites f50-f65; `bolt.py`) | 16 | 0.863 | 8.1 / 12.7 |
 | `bigger_mblock` (the M block collapse; `mblock_collapse.py`) | 15 | 0.860 | 10.0 / 15.6 |
@@ -169,28 +181,27 @@ the same pose.
 | `goody_misc` (turtle f47) + `goody_gift` (gift box f52; `goodies.py`) | 2 | 0.889 | 9.3 / 15.2 |
 | `goody_gear` (shield f49, winged helmet f50) + `goody_shoe` (sneaker f51; `goodies.py`) | 3 | 0.872 | 7.7 / 14.8 |
 | `spin_ind_shield` (the speed indicator's shield, one turn in 30 frames; `goodies.py` shield spun) | 30 | 0.875 | 4.4 / 5.9 |
-| `spin_ind_shoe` (the speed indicator's winged shoe, one turn; `wingshoe.py`; 16x12 gate IoU 0.83 / dE 16.5) | 30 | 0.836 | 11.6 / 16.2 |
+| `spin_ind_shoe` (the speed indicator's winged shoe, one near-uniform turn; `wingshoe.py`; 16x12 gate IoU 0.83) | 30 | 0.833 | 11.6 / 15.4 |
 | `weapons` (the player's swirl ball f02-f09; `spiral.py`) | 8 | 0.953 | 9.2 / 9.5 |
 | `block_question` (the '?' tile f146 + crack + quarters; `tile.py`) | 6 | 0.965 | 11.5 / 14.6 |
 | `weapons_arrow` (the straight shot f10/f11; `arrow.py`) | 2 | 0.920 | 8.4 / 9.9 |
-| `cannon_barrel` (cannon_sprites f02/f03; `cannon_barrel.py`) | 2 | 0.973 | 14.7 / 15.7 |
+| `cannon_barrel` (cannon_sprites f02/f03; `cannon_barrel.py` one lathed barrel with a bell muzzle + rivets) | 2 | 0.980 | 12.1 / 12.5 |
 | `emblem_hippo`/`_piggy`/`_ostrich`/`_smiley`/`_ant`/`_hammer` (each nasty's SPAWNER block, the last 32x32 frame; `emblem3d.py`: the nasty's OWN model as a silver statue on `tile.py`'s red slab, real cast shadow) | 6 | 0.998 | 6.5 - 12.2 |
 | `emblem_teeth` (the Teeth's spawner f51: the teeth in a blue ball's window; `teeth.py` mode teethball) | 1 | 0.932 | 15.3 |
 | `BP_cheer` (the player's front-view cheer f118-f126, 36x34; `kid.py` with cartoon eyes) | 9 | 0.860 | 13.6 / 15.7 |
 | `GP_cheer` (the green player's cheer: BP_cheer's fit and look with a green sweater) | 9 | 0.861 | 12.5 / 13.5 |
 | `ant_sprites` (the Ant f02-f50; `ant.py`) | 49 | 0.852 | 10.8 / 14.7 |
-| `ostrich_sprites` (the Ostrich walk; `biped.py`; documented gate dE 17.75) | 32 | 0.850 | 12.9 / 17.7 |
+| `ostrich_sprites` (the Ostrich walk; `biped.py`, eyes with pupils; documented gate dE 17.75) | 32 | 0.850 | 12.8 / 17.6 |
 | `BP_tumble` / `GP_tumble` (the players' four 8-frame rolls; `kid.py` pitch/bank) | 64 | 0.855 | 12.8-13.9 / 15.7 |
-| `beenie_char` (the Beenie f66-f121: clown face, six-gore cap, blaster in the right hand; gate dE 17.5) | 56 | 0.859 | 14.4 / 17.2 |
-| `hammer_walk` (the Hammer f02-f49: walk, turn through a front view; `hammer.py`; gate dE 17.5) | 48 | 0.854 | 13.8 / 17.2 |
-| `hammer_swing_l` / `_r` (the Hammer's two-handed jump-smash f50-f65 / f66-f81; `hammer.py` two_hand; gate dE 17.5) | 32 | 0.853 | 14.6-15.2 / 17.3 |
-| `Gargoyle_sprites` (unfold f02-f18, flap cycle f18-f33, ball wind-up f33-f74; `gargoyle.py` torso3/face/legs2/horn loops/pleated wings; gate dE 17.5, 70/73 at 16) | 73 | 0.856 | 13.5 / 16.7 |
+| `beenie_char` (the Beenie f66-f121: clown face, six-gore cap with a thick propeller band, long bill, blaster in the right hand; gores as per-face materials, live rig passes) | 56 | 0.854 | 13.7 / 15.8 |
+| `hammer_walk` (the Hammer f02-f49: walk, turn through a front view; `hammer.py`) | 48 | 0.854 | 13.7 / 16.0 |
+| `hammer_swing_l` / `_r` (the Hammer's two-handed jump-smash f50-f65 / f66-f81; `hammer.py` two_hand; gate dE 17.5) | 32 | 0.853 | 14.6-15.1 / 17.1 |
+| `Gargoyle_sprites` (unfold f02-f18, flap cycle f18-f33, ball wind-up and burst f33-f74; `gargoyle.py` torso3/face/legs2/horn loops/pleated wings/`burst_n` chunks, per-frame `wing_lo` box-like lower wings) | 73 | 0.863 | 13.0 / 15.6 |
+| `knight_sprites` (unfold f02-f18, hold f17, sword wind-up and gift orb f17-f66; `knight.py` measured armour on a two-bone IK rig, polished steel reflecting a blotchy world `env`) | 65 | 0.882 | 12.6 / 14.7 |
 
-(2026-09-29: 65 published families, 1433 frames.)
+(2026-09-30: 67 published families, 1514 frames; nothing WIP.)
 
-WIP (`note` in each `frames.json` says what fails; passing frames / total): `knight_sprites` (0/65,
-`knight.py`: IoU 0.739, no armour highlights) and `beenie_shot_d` (the down set flies toward the camera and is masked
-by the Beenie). Not started: `blocks` (not drawn by the port). The Hippo and Piggy show the
+Not started: `blocks` (not drawn by the port). The Hippo and Piggy show the
 recipe: a rig in SD px units with per-limb pose keys fitted per frame by `optim`.
 
 **Derived frames** (`derive` in frames.json): a frame the original builds from another is built the
@@ -303,6 +314,9 @@ can never buy dE with a worse outline.
 - **Tiny sprites live on their keyed rim.** For the 16x12 winged shoe the post `fringe` moved the IoU
   mean from 0.67 (0 px) to 0.78 (1 px) and 0.85 (2 px; 3 px: 0.82), and `shift: "auto"` (range 2)
   fixed a few more frames: at that size one pixel ring is a large share of the silhouette.
+- **A per-frame fit of a steady motion overfits on tiny sprites.** The winged shoe's spin angles fitted per
+  frame stepped 0-30 deg around a true 12 deg/frame, so the turn stuttered in game. Take, per frame, the
+  passing candidate closest to the uniform motion (`tmp/spin_regularize.py --smooth`), not the best score.
 
 **Lessons from round 7 (the Beenie spread shot, Walker body, Robo, the players):**
 - **Look at the failing frames side by side before tuning.** The spread shot's last four failures
@@ -371,8 +385,10 @@ can never buy dE with a worse outline.
   dE, neighbour-pose reseeds and four basin-hopping restarts (random +-2 steps, keep only improvements).
 - **Look for joints pinned at a limit.** The Walker's f04 and f05 had knees at the -30 deg clamp; widening
   it to -60 passed f04. Print the failing frames' poses and compare every value against its min/max.
-- **A documented gate for one stuck frame** (like `beenie_shot_r` 0.83 and `cannon_ball` dE 17): the Walker
-  publishes at IoU 0.845 because f36 stays at 0.847 after every optimfail variant; the note says why.
+- **A documented gate for one stuck frame** (like `beenie_shot_r` 0.83): the Walker published at IoU 0.845
+  because f36 stayed at 0.847 after every optimfail variant. Round 26 found two of f36's knees pinned again,
+  now at the -60 deg limit; re-optimised alone with the range opened to -85 it passed at 0.857, so the Walker
+  (and the cannon ball, once at dE 17) are back under the standard gate. Re-check pinned joints first.
 - **The last 32x32 frame of each nasty's sheet is its SPAWNER block** (game.gd `_draw_enemy`: frame 0x21/0x31/
   0x32/0x51 + 1), a red block with a silver statue of the nasty, so it IS drawn. `tile.py` kind `emblem`
   builds a red slab plus a silver relief whose outline is the source statue's mask and whose height adds a
@@ -495,10 +511,20 @@ can never buy dE with a worse outline.
   pose key for a frame range through seeding, reseeding, probes and hops: the Gargoyle's optimiser hid the red
   ball in its cloak on the emergence frames (egg 0 for f02-f41). Pinning too much hurts: arms held at 0 on
   f02-f10 dropped f03-f05 IoU to .83 (arm 25 passes).
+- **A misfit on EVERY frame is a proportion error, not a pose: measure it per row.** The Knight stuck at IoU
+  0.843 on its swing frames however the optimiser posed it; a per-row silhouette bias over the whole family
+  (`tmp/row_bias.py`: source minus 3D width per SD row, averaged over the frames) showed its legs parting at
+  row 61-63 against the source's 51-54 on f13-f66 -- the hip block and tassets ran 10 px too low. A short hip
+  block and longer thighs (same poses, no re-fit) took IoU min 0.843 -> 0.882 and dE max 16.1 -> 14.7, and
+  the Knight now passes the standard gate. Check the row bias before adding pose keys.
+  The same per-row count on just the FAILING frames finds a shape fault confined to one phase: the Gargoyle's
+  f09/f10 (dE 16.6-16.7) hung their wings as a box 37 px wide down to row 58 while ours tapered to 29. A
+  per-frame `wing_lo` (frames.json `frame_opts`), ramped 2-5-8 into the phase and back out so the tweens do not
+  pop, and left at 0 on the flap frames where it cost IoU, took every touched frame down (f09/f10 -> 15.6/15.3).
 - **Rebuild a model whose score hides missing anatomy.** The Gargoyle's egg-bodied model passed 61/73 with no
   arms, face or torso; the rebuild (`gargoyle.py` torso3: one body lathed through `torso_rings` + flat pecs + a
   strap; face; legs2; horn loops; wings pleated as geometry) started at 35/73 and finished at 73/73 (70 at
-  dE 16). A torso built from separate ellipsoids read as a segmented caterpillar; one lathed body did not.
+  dE 16; all 73 after the per-frame `wing_lo` above). A torso built from separate ellipsoids read as a segmented caterpillar; one lathed body did not.
 - **A look candidate list must contain the faithful value.** The cross-hatch mesh tile (block f152, 0x197) shipped
   at twice the original's density: its `per_kind` "cells" candidates were 2.5-4, never the SD's 2, so the look
   picked a fine lattice that averages to the right grey. `tile.py` mesh "phase" 0.5 puts the bar crossings where
@@ -520,7 +546,11 @@ can never buy dE with a worse outline.
   11.5 -> 9.0, the player blocks' missed detail 7.3 -> 4.3.
 - **Details must be geometry to survive the live renderer.** Godot's live rig takes only each material's Principled
   values, so a node-painted line would vanish under F4. The Hippo's mouth line (`quadruped.py` "mouth_band": the
-  head grown 2% and boolean-cut to a thin slab at the snout tip) is a dark shell, so it exports.
+  head grown 2% and boolean-cut to a thin slab at the snout tip) is a dark shell, so it exports. The Beenie's
+  cap gores were an azimuth shader, so its live rig drew a grey dome (live dE 17.3 vs Cycles 13.7);
+  `beenie.py` `gore_faces` assigns the same split as three flat materials per face (the 48-segment sphere's
+  edges fall on the 60 deg gore boundaries, so the Cycles frames did not change) and the rig passes. Text
+  objects are not meshes: `live_blender.py` converts FONT/CURVE objects before the export (the gift box's glyphs).
 - **Keep the model 1 px inside a frame the original fills.** The Spinner's sprite is opaque to its edges, but the
   original's bars and base END 1 px inside it with a dark outline; ours ran off the frame, where post `fringe` cannot
   add a rim. Shorter bars/base and a thinner upper bar (`bar_len` 22.2, `base_w` 22, `bar_h` 6.0) took IoU mean
@@ -535,6 +565,9 @@ can never buy dE with a worse outline.
   so the beanie has SIX gores with opposite ones alike (`beenie.py` "cap_reps" 2, order R/G/B, turn 120; found by
   a one-job grid over order x turn, `tmp/opt_grid.py`): 22 -> 53/56, published under the kid families' documented
   gate dE 17.5. Its live rig fails the live gate (the gores are a shader), so F4 keeps the baked frames.
+  A zoom of the head then showed the source's propeller as a THICK red band and its bill sticking out further;
+  `beenie.py` `prop_h` 0.7 (was 0.35) and `bill_l` 4.0 (was 2.4) took dE mean 14.4 -> 13.7 and the last three
+  frames under 16: 56/56 at the standard gate.
   The Hammer has the same fault (f21-f28 face the camera with the mallet over the RIGHT shoulder; its fit showed the
   back of the head there). A refit with front priors and `hammer.py` "grip_hand" f alone fell to 1/48: the BASE
   carry pose (`s_f0`/`e_f0` and the optim inits) was still on the near arm, so the far hand never reached the

@@ -19,13 +19,17 @@ from .. import register, register_frames
 GORES = ((255, 0, 0), (0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 0))
 
 
-def build_beachball(gores=GORES, rough=0.45, spec=0.25):
+def build_beachball(gores=GORES, rough=0.45, spec=0.25, poles_y=False):
     C._clear()
     mats = []
     for i, rgb in enumerate(gores):
         m = C._mat("gore%d" % i, C._srgb(*rgb), rough=rough, spec=spec)
         mats.append(m)
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=96, ring_count=48)
+    if poles_y:
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=96, ring_count=48, rotation=(math.pi/2, 0, 0))
+        bpy.ops.object.transform_apply(rotation=True)
+    else:
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=96, ring_count=48)
     ball = bpy.context.active_object
     ball.name = "ball"
     for m in mats:
@@ -51,16 +55,19 @@ def render(args):
 
 
 def _frames_setup(opts):
-    ball = build_beachball(rough=float(opts.get("rough", 0.45)), spec=float(opts.get("spec", 0.25)))
+    ball = build_beachball(rough=float(opts.get("rough", 0.45)),
+                           spec=float(opts.get("spec", 0.25)),
+                           poles_y=bool(opts.get("poles_y", False)))
     C.setup_scene(256, world_strength=0.12, fill_energy=0.10)
     C.apply_look(opts)
-    return {"ball": ball}
+    return {"ball": ball, "opts": opts}
 
 
 def _frames_pose(ctx, pose):
     # pose {"spin": deg about the vertical axis} [+ "tilt": lean of that axis toward the camera]
+    tilt = float(pose.get("tilt", ctx.get("opts", {}).get("tilt", 0.0)))
     ctx["ball"].rotation_mode = 'ZYX'
-    ctx["ball"].rotation_euler = (math.radians(float(pose.get("tilt", 0.0))),
+    ctx["ball"].rotation_euler = (math.radians(tilt),
                                   math.radians(float(pose.get("spin", 0.0))), 0.0)
 
 

@@ -150,11 +150,64 @@ regressing the green gates for no gameplay benefit._
 - The Gargoyle is PUBLISHED (2026-09-29, 73/73 at the character gate dE 17.5, 70/73 at 16): rebuilt as a muscular
   humanoid (one lathed torso, pecs, strap, face with teeth, jointed legs, arms raised to the horn loops, wings
   pleated as geometry, a cloak for the emergence), the two differently lit animations lit separately, tweens
-  for the unfold / flap cycle / wind-up. Known differences: the ball-burst frames f68-f74 lack the source's red
-  fragments, the wings lack the source's bright panels, the wing's lower edge is not scalloped.
-- WIP with notes (frames passing / total, 2026-09-27): the
-  Knight (0/65; refit held front-facing in progress), the Beenie's down shot
-  (0/16; three thick bars tumbling toward the camera, needs per-bar 3D angles).
+  for the unfold / flap cycle / wind-up. The ball bursts (f67-f74) into four red chunks that spread and shrink
+  (2026-09-30; `gargoyle.py` `burst_n`). The wind-up's lower wings were 5 px too narrow on every frame
+  (per-row silhouette bias, `tmp/row_bias.py`): `wing_lo` 2.5 on f42-f74, IoU mean 0.882 -> 0.889.
+  2026-10-01: the unfold frames had the same fault (the source's wings hang as a box 37 px wide down to row
+  58, ours tapered to 29), so `wing_lo` is now set per frame on f06-f41 too (ramped 2-5-8, 0 on the flap
+  frames f21-f31 where it costs IoU): f09/f10 16.6/16.7 -> 15.6/15.3, IoU mean 0.893 -- the Gargoyle now
+  passes the standard gate dE 16 (73/73). Known differences: the chunks are smooth (the source's are ragged), the wings lack the source's bright
+  panels, the wing's lower edge is not scalloped.
+- 2026-09-30: every sprite family now has a published 3D set (67 families, 1514 frames; nothing WIP).
+  The Knight (65/65 at the standard gate 0.85/16; IoU min 0.882): rebuilt from the measured f02 as armour on a
+  two-bone IK rig (hilt-driven arms, planted feet), a gift orb lens that grows, turns and drips as a teardrop,
+  and polished steel reflecting a blotchy world (`knight.py` `env`) -- the original's armour is a mottled mirror,
+  not flat grey. Its last misfit was a PROPORTION error, not a pose: the legs parted at row 61-63 in the 3D vs
+  51-54 in the source on every frame (hip block and tassets too long) -- a short hip block and 18 px thighs took
+  IoU min 0.843 -> 0.882 with the same poses (`tmp/row_bias.py` = per-row silhouette bias over a whole family).
+  The Beenie's down shot (16/16, IoU gate
+  0.83 like its right shot): the rods fan up from a thin apex at the bottom (`rods.py` opt-in apex taper with the
+  perspective `persp_d`). Back under the standard gate dE 16: the Robo, the green player's run, the Hammer walk
+  and the cannon ball (its gores aligned to the pole axis, tilted -5.5 deg); 2026-10-01 also the Gargoyle
+  (above) and the Beenie (the source's propeller is a THICK red band and its bill long: `beenie.py` `prop_h`
+  0.7, `bill_l` 4.0 took dE mean 14.4 -> 13.7, max 16.7 -> 15.8) and the Walker (its stride frame f36 had two
+  knees pinned at the old -60 deg limit; re-optimised alone with the range opened to -85: IoU 0.847 -> 0.857,
+  IoU min 0.853, live rig passes). Still on documented gates: the
+  Ostrich (17.75), the blue player's run and Hammer swings (17.5), the winged shoe (IoU 0.83) and
+  the Beenie's right/down shots (IoU 0.83); re-optimising their failing frames did not
+  bring them under the standard gate (the Hammer swings' soles are flat where the source's are rounded and their
+  hair 1 px tall, but rounding the shoes and lowering the hair gained only ~0.4 dE and cost IoU on other frames).
+  Live rigs (2026-10-01): the Beenie now PASSES livegate -- its cap gores are flat per-face materials
+  (`beenie.py` `gore_faces`; the live renderer keeps only Principled values, so the shader gores had rendered as
+  one grey dome) -- and so does the Knight's gift box (`live_blender.py` now converts text/curve objects to
+  meshes before the export; its "?" marks had been missing). Live rigs that still fail (the game draws their
+  pre-rendered frames + tweens): the Gargoyle egg and swirl ball (animated shader textures), the winged shoe
+  (shader colours + f44 IoU), the M block collapse (its pose hides bars and changes deform modifiers per frame,
+  which a fixed rig cannot carry), the 1UP (live dE 16.3 vs 13.5: its gold/silver metals) and the Teeth emblem
+  (16.6 vs 15.3); the last two are single static frames. The Knight has no live rig: a trial passed 54/65 frames,
+  failing on the gift orb (its teardrop is a shape key and its speckled gold a shader; the rig carries only node
+  transforms and Principled values -- morph weights per frame would be needed).
+  Detail pass (2026-10-01, `tools/soi3d/detail_audit.py` ranking): the Hippo's legs were 4-5 px pillars where
+  the source draws 2-3 px strokes -- thinner, longer legs with every pose re-optimised (IoU min 0.857 -> 0.865,
+  missed detail 17.5% -> 14.9%); the Ostrich's eyes got their black pupils back (the look had dropped them as
+  dE-neutral; the source's front view shows them). Both live rigs re-gated and pass. The Cannon's barrel is now
+  one lathed body with the source's BELL muzzle flaring out of the frame and its two rivets (it was a cylinder
+  with a flat collar and a muzzle disc): dE 13.6 -> 12.1, live rig passes; the Hippo's spawner statue got the
+  thinner legs too (dE 9.0 -> 8.9). Tried and rejected: brighter
+  light-green patches on the multiplier balls (random noise patches never land where the source's do, dE
+  14.4 -> 15.2-17.1), spread-leg Hippo poses (IoU 0.886 -> 0.82-0.88), a bigger or raised star on the star
+  goody (12.3 -> 12.5-18.0; the source star is the same size, its darker cast shadow did not pay), the Hammer
+  statue mirrored or with other mallet angles (12.2 -> 16-18), a white heel under a red collar on the sneaker
+  goody (13.8 -> 24). Every live rig was re-gated with the current code (39 rigs, 33 pass, no status changed);
+  that exposed the Ant's stored pass as stale under a fixed half-coverage threshold, so `livegate` now uses a
+  tie-aware live IoU (`framematch.live_iou`), and the live materials carry the clearcoat.
+  Animation pops (`tmp/pop_scan.py`: consecutive 3D frames changing far more than the source's): the winged
+  shoe's per-frame spin fit had stuttered (steps of 0-30 deg around the true 12 deg/frame); every angle is now
+  the passing candidate closest to a uniform turn within +-10 deg (`tmp/spin_regularize.py --smooth`: 23 of 30
+  exactly uniform, dE max 16.2 -> 15.4, colour gate back to 16, IoU gate stays 0.83). The green player's f88 had
+  an optimfail pose of its own that popped against f89; it takes the blue player's f88 pose again (passes, dE
+  14.4 -> 13.9). The Robo's flagged pairs (punch f02-f04, walk-cycle ends f18/f19, f32/f33) are the best fits:
+  calmer legs cost 0.2-1.7 dE or the IoU gate.
 
 ---
 

@@ -20,9 +20,9 @@ Only **A/B** get 3D; **C/D** stay 2D (UHD / Times‑Bold). See the classificatio
 `weapons` (8), `block_question` (6), `emblem_hippo`/`_piggy`/`_ostrich`/`_smiley`/`_ant`/`_hammer`/`_teeth` (7, the spawner
 blocks), `weapons_arrow` (2), `cannon_barrel` (2), `BP_cheer` (9, the player's cheer), `GP_cheer` (9, the green player's).
 Published since (2026-09-27..30): `ostrich_sprites`, `ant_sprites`, `BP_tumble`/`GP_tumble`, `hammer_walk`,
-`hammer_swing_l`/`_r`, `beenie_char`, `Gargoyle_sprites` -- 1433 frames in 65 families; the table in
-[SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md) is the current list. WIP with a failing-gate note:
-`knight_sprites`, `beenie_shot_d`. The stills in the table below are look-dev. Characters are no longer "keep 2D": the
+`hammer_swing_l`/`_r`, `beenie_char`, `Gargoyle_sprites`, `knight_sprites`, `beenie_shot_d` -- 1514 frames in 67
+families; the table in [SPRITE_REMASTER_PROCESS.md §F](SPRITE_REMASTER_PROCESS.md) is the current list. Nothing is
+WIP. The stills in the table below are look-dev. Characters are no longer "keep 2D": the
 Hippo and Piggy passed the frame gate with rigged procedural models (`quadruped.py`).
 
 | Family (`extracted/sprites/…`) | Class | Status | Deliverables (`extracted/sprites_3d/…`) |
@@ -44,8 +44,8 @@ Hippo and Piggy passed the frame gate with rigged procedural models (`quadruped.
 | `BP_sprites`, `GP_sprites` | D | **DONE** (frame-matched rig) | `BP_/GP_sprites`, `_run`, `_tumble`, `_cheer` (`kid.py`) |
 | `bp_30fps_all_but_jump`, `bp_jump_30fps` | D | unused | not drawn by the game |
 | `hippo_sprites`, `piggy_sprites`, `teeth_sprites` | D | **DONE** (frame-matched) | `<family>/frames.json` (`quadruped.py`, `teeth.py`) |
-| `ant_sprites`, `beenie_sprites`, `Gargoyle_sprites`, `hammer_sprites`, `ostrich_sprites`, `robo_sprites`, `walker_sprites` | D | **DONE** (frame-matched rig) | `<family>/frames.json`; `beenie_sprites` f50-f65 (`beenie_shot_d`) still WIP |
-| `knight_sprites`, `ant_stride_test` | D | OPEN (frame-matched rig) | `knight_sprites/frames.json` WIP; `ant_stride_test` unused by the game |
+| `ant_sprites`, `beenie_sprites`, `Gargoyle_sprites`, `hammer_sprites`, `knight_sprites`, `ostrich_sprites`, `robo_sprites`, `walker_sprites` | D | **DONE** (frame-matched rig) | `<family>/frames.json` (`beenie_sprites` f50-f65 = `beenie_shot_d`) |
+| `ant_stride_test` | D | unused | not drawn by the game |
 
 ## Shared‑file etiquette
 - `tools/soi3d/builders/<family>.py`: your OWN module (auto‑discovered) — no shared render file to edit.
