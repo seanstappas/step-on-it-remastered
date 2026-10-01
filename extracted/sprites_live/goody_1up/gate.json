@@ -6,7 +6,7 @@
  ],
  "pass": false,
  "iou_min": 0.9951,
- "de_mean": 22.031,
- "de_max": 22.031,
+ "de_mean": 16.254,
+ "de_max": 16.254,
  "cycles_de_mean": 13.496
 }

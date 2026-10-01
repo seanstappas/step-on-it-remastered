@@ -54,6 +54,6 @@
  "pass": true,
  "iou_min": 0.9512,
  "de_mean": 11.615,
- "de_max": 14.342,
+ "de_max": 14.339,
  "cycles_de_mean": 9.843
 }

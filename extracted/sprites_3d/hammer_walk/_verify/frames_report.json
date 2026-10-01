@@ -4,14 +4,14 @@
  "frames": 48,
  "gate": {
   "iou": 0.85,
-  "de": 17.5,
+  "de": 16.0,
   "rank_tol": 1
  },
  "failed": [],
  "iou_min": 0.8537,
- "iou_mean": 0.8801,
- "de_mean": 13.811,
- "de_max": 17.243,
+ "iou_mean": 0.8803,
+ "de_mean": 13.704,
+ "de_max": 15.99,
  "rows": [
   {
    "frame": 2,
@@ -257,12 +257,12 @@
   },
   {
    "frame": 21,
-   "iou": 0.8687,
-   "de": 17.243,
-   "de_raw": 28.156,
-   "best_src": 23,
+   "iou": 0.8782,
+   "de": 12.092,
+   "de_raw": 21.412,
+   "best_src": 21,
    "rank_dist": 0,
-   "rank_gap": 0.498,
+   "rank_gap": 0.0,
    "pass": true,
    "hd_iou_de": [
     1.0,

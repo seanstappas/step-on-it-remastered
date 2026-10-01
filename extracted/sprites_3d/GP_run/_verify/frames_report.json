@@ -4,7 +4,7 @@
  "frames": 48,
  "gate": {
   "iou": 0.85,
-  "de": 17.5,
+  "de": 16.0,
   "rank_tol": 1
  },
  "failed": [],

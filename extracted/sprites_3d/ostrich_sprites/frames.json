@@ -8,7 +8,7 @@
   ]
  },
  "mode": "biped",
- "note": "PUBLISHED 32/32 under a DOCUMENTED gate dE 17.75 (robo_sprites / BP_run use 17.5): IoU min 0.850 mean 0.880, dE mean 12.9; 30 frames pass the default 16, f28 16.6 and f32 17.73 are the end of the walk facing right, source twins of each other (IoU 0.979) with no passing twin, and render their pink / green ~25% darker than the source; a yaw x phase probe, a per-frame body pitch and seeding f32 from f28 all converge to the same pose. Path: bake -> optim -> look (the tumble recipe) took it 20 -> 30. History: WIP: biped.py rig (needle beak, eyes on top, box wings, thigh+shin legs, level feet; per-leg + neck optim). Four model variants reach verify dE mean ~15.5 but IoU 0.78-0.90 on the thin legs/neck, and several walk frames match a neighbour better. The source draws the far leg almost black (body shadow from a steep front-top key?) and the walk is drawn ~40 deg toward the camera (the fit is right about that). Next: measure each frame legs (x ranges per row) and fit the rig to them; try a steeper key with shadows. Round 10: optimfail with shift hops 10 -> 21/32 (IoU 0.838 -> 0.865, dE 15.9 -> 15.1). The 11 fails are dE 16.3-18.0: the source greens are pure (0-3, 39-146, 0-3) and ours pick up R/B 20-46 in the downsample at the pink/green/dark boundaries; zero specular changed nothing (-0.04 dE, one frame lost) -> reverted.",
+ "note": "PUBLISHED 32/32 under a DOCUMENTED gate dE 17.75 (robo_sprites / BP_run use 17.5): IoU min 0.850 mean 0.879, dE mean 12.8; 30 frames pass the default 16, f28 16.4 and f32 17.6 are the end of the walk facing right (round 27: the eyes have their dark PUPILS back, pupil_r 0.6 -- the source's front view f20 shows white eyes with black pupils; the look had dropped them as dE-neutral; live rig re-gated, passes), source twins of each other (IoU 0.979) with no passing twin, and render their pink / green ~25% darker than the source; a yaw x phase probe, a per-frame body pitch and seeding f32 from f28 all converge to the same pose. Path: bake -> optim -> look (the tumble recipe) took it 20 -> 30. History: WIP: biped.py rig (needle beak, eyes on top, box wings, thigh+shin legs, level feet; per-leg + neck optim). Four model variants reach verify dE mean ~15.5 but IoU 0.78-0.90 on the thin legs/neck, and several walk frames match a neighbour better. The source draws the far leg almost black (body shadow from a steep front-top key?) and the walk is drawn ~40 deg toward the camera (the fit is right about that). Next: measure each frame legs (x ranges per row) and fit the rig to them; try a steeper key with shadows. Round 10: optimfail with shift hops 10 -> 21/32 (IoU 0.838 -> 0.865, dE 15.9 -> 15.1). The 11 fails are dE 16.3-18.0: the source greens are pure (0-3, 39-146, 0-3) and ours pick up R/B 20-46 in the downsample at the pink/green/dark boundaries; zero specular changed nothing (-0.04 dE, one frame lost) -> reverted.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 3,
@@ -58,7 +58,7 @@
   "eye_z": 1.4,
   "eye_dx": -0.3,
   "eye_fy": 1.15,
-  "pupil_r": 0.0,
+  "pupil_r": 0.6,
   "thigh_l": 4.0,
   "shin_l": 4.75,
   "leg_r": 0.975,
@@ -255,7 +255,7 @@
     "step": 0.2,
     "min": 0.0,
     "max": 1.2,
-    "init": 0.0
+    "init": 0.6
    },
    "body_rx": {
     "step": 0.5,

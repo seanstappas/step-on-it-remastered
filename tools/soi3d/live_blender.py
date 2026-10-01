@@ -35,6 +35,7 @@ def _material(m):
     return {"color": [round(float(v), 6) for v in g("Base Color", (0.8, 0.8, 0.8, 1.0))],
             "rough": float(g("Roughness", 0.5)), "metal": float(g("Metallic", 0.0)),
             "spec": float(g("Specular IOR Level", 0.5)), "coat": float(g("Coat Weight", 0.0)),
+            "coat_rough": float(g("Coat Roughness", 0.03)),
             "emit": float(g("Emission Strength", 0.0)),
             "emit_color": [round(float(v), 6) for v in g("Emission Color", (0, 0, 0, 1))][:3],
             "procedural": any(n.type not in ("BSDF_PRINCIPLED", "OUTPUT_MATERIAL") for n in m.node_tree.nodes)}
@@ -47,6 +48,13 @@ def main():
     soi3d.discover()
     setup, pose = soi3d.FRAMES[job["mode"]]
     ctx = setup(job["opts"])
+    curves = [o for o in bpy.data.objects if o.type in ("FONT", "CURVE")]     # text/curves export only as meshes
+    if curves:
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in curves:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = curves[0]
+        bpy.ops.object.convert(target="MESH")
     model = [o for o in bpy.data.objects if o.type in ("MESH", "EMPTY")]
     order = sorted(job["frames"], key=int)
     per = {}

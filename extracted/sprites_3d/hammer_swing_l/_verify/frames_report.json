@@ -9,9 +9,9 @@
  },
  "failed": [],
  "iou_min": 0.8556,
- "iou_mean": 0.8682,
- "de_mean": 14.643,
- "de_max": 17.261,
+ "iou_mean": 0.8681,
+ "de_mean": 14.633,
+ "de_max": 17.097,
  "rows": [
   {
    "frame": 50,
@@ -29,12 +29,12 @@
   },
   {
    "frame": 51,
-   "iou": 0.8626,
-   "de": 17.261,
-   "de_raw": 26.337,
+   "iou": 0.8605,
+   "de": 17.097,
+   "de_raw": 26.05,
    "best_src": 52,
    "rank_dist": 0,
-   "rank_gap": 0.263,
+   "rank_gap": 0.285,
    "pass": true,
    "hd_iou_de": [
     1.0,
@@ -128,7 +128,7 @@
   {
    "frame": 58,
    "iou": 0.8686,
-   "de": 13.715,
+   "de": 13.716,
    "de_raw": 20.896,
    "best_src": 58,
    "rank_dist": 0,

@@ -9,9 +9,9 @@
  },
  "failed": [],
  "iou_min": 0.8534,
- "iou_mean": 0.8671,
- "de_mean": 15.243,
- "de_max": 17.278,
+ "iou_mean": 0.8664,
+ "de_mean": 15.118,
+ "de_max": 17.047,
  "rows": [
   {
    "frame": 66,
@@ -85,9 +85,9 @@
   },
   {
    "frame": 71,
-   "iou": 0.8864,
-   "de": 16.312,
-   "de_raw": 25.703,
+   "iou": 0.8731,
+   "de": 14.555,
+   "de_raw": 23.407,
    "best_src": 71,
    "rank_dist": 0,
    "rank_gap": 0.0,
@@ -211,9 +211,9 @@
   },
   {
    "frame": 80,
-   "iou": 0.8582,
-   "de": 17.278,
-   "de_raw": 26.218,
+   "iou": 0.8603,
+   "de": 17.047,
+   "de_raw": 25.861,
    "best_src": 80,
    "rank_dist": 0,
    "rank_gap": 0.0,
@@ -226,7 +226,7 @@
   {
    "frame": 81,
    "iou": 0.9042,
-   "de": 14.115,
+   "de": 14.114,
    "de_raw": 23.06,
    "best_src": 81,
    "rank_dist": 0,

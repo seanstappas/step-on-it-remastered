@@ -8,7 +8,7 @@
   ]
  },
  "mode": "walker",
- "note": "Walker body f02-f49: walker.py block legs (leg_shape block), per-leg thigh/knee optim at full fidelity (scale 4 / 32 samples), knees down to -60 deg, per-frame pitch. Documented gate IoU 0.845: f36 (a stride frame) sits at 0.847 after the verify-accurate optimfail (neighbour reseeds + basin hopping); its residual is the crotch/foot outline. Reproduce: sweep fit optim look optim final verify, then optimfail final verify. Round 11 (detail audit): the source draws a dark EYE each side of the face (f04 row 6, f22 rows 5-7) -> walker.py eyes, placed by a look with the detail term (look detail_w 0.5; the blurred dE alone shrank them to nothing): missed-detail px 178 -> 167, dE mean 10.33.",
+ "note": "Walker body f02-f49: walker.py block legs (leg_shape block), per-leg thigh/knee optim at full fidelity (scale 4 / 32 samples), knees down to -85 deg (was -60 until round 26), per-frame pitch. PASS at the standard gate since round 26 (48/48 at IoU 0.85; IoU min .853, dE mean 10.3): f36 (a stride frame) had sat at 0.847 with two knees pinned near the old -60 deg limit; re-optimised alone with the knee range opened to -85 (tmp/hold_pose.py) it took k_fn -67.5 / k_rf -76.9 and IoU .857, dE 11.0 -> 10.8. The live rig passes livegate. Reproduce: sweep fit optim look optim final verify, then optimfail final verify. Round 11 (detail audit): the source draws a dark EYE each side of the face (f04 row 6, f22 rows 5-7) -> walker.py eyes, placed by a look with the detail term (look detail_w 0.5; the blurred dE alone shrank them to nothing): missed-detail px 178 -> 167, dE mean 10.33.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -152,25 +152,25 @@
    },
    "k_fn": {
     "step": 5.0,
-    "min": -60,
+    "min": -85,
     "max": 70,
     "init": 0
    },
    "k_ff": {
     "step": 5.0,
-    "min": -60,
+    "min": -85,
     "max": 70,
     "init": 0
    },
    "k_rn": {
     "step": 5.0,
-    "min": -60,
+    "min": -85,
     "max": 70,
     "init": 0
    },
    "k_rf": {
     "step": 5.0,
-    "min": -60,
+    "min": -85,
     "max": 70,
     "init": 0
    },
@@ -424,7 +424,7 @@
   }
  ],
  "gate": {
-  "iou": 0.845,
+  "iou": 0.85,
   "de": 16.0,
   "rank_tol": 1
  },

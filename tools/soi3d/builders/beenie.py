@@ -1,7 +1,8 @@
 """soi3d.builders.beenie -- the Beenie (beenie_sprites f66-f121): a kid in a propeller beanie with a green blaster.
 
 The players' rig (kid.py) in blue (sweater and trousers), white socks, red shoes and dark hair, with:
-  a BEANIE: a dome over the head in three colour gores (`gores`, red / blue / green around the vertical axis),
+  a BEANIE: a dome over the head in three colour gores (`gores`, red / blue / green around the vertical axis;
+            "gore_faces" = per-face materials instead of the shader, so the live rig carries them),
             a red BILL at the front and a PROPELLER on top (a red blade on a post; pose key "prop", deg)
   a BLASTER in the near fist: a green rounded body with a barrel pointing forward (-X at yaw 0) and a grip;
             pose key "gun" (deg) turns it in the fist's side plane (0 = level forward).
@@ -60,6 +61,17 @@ def _gore_mat(opts):
     return mat
 
 
+def _gore_faces(cap, opts):
+    """The same gores as flat materials assigned per face by azimuth: the live renderer keeps only Principled values."""
+    cols = opts.get("gores", [[210, 0, 0], [0, 0, 210], [0, 160, 0]])
+    for i, c in enumerate(cols):
+        cap.data.materials.append(C._mat("gore%d" % i, C._srgb(*c), rough=float(opts.get("cap_rough", 0.4))))
+    reps, turn = float(opts.get("cap_reps", 1)), float(opts.get("cap_turn", 0.0)) / 360.0
+    for p in cap.data.polygons:
+        u = ((math.atan2(p.center.y, p.center.x) + math.pi) / (2 * math.pi) * reps + turn) % 1.0
+        p.material_index = min(len(cols) - 1, int(u * len(cols)))
+
+
 def build(opts):
     root, arms, legs = kid_build(opts)
     f = lambda k, d: float(opts.get(k, d))
@@ -74,15 +86,19 @@ def build(opts):
     cap.name = "cap"
     cr = hr * f("cap_f", 1.08)
     cap.scale = (cr, cr, cr * f("cap_fy", 0.75))
-    cap.data.materials.append(_gore_mat(opts))
+    if opts.get("gore_faces"):
+        _gore_faces(cap, opts)
+    else:
+        cap.data.materials.append(_gore_mat(opts))
     bpy.ops.object.shade_smooth()
     cap.parent = root
     red = C._mat("bill", C._srgb(*opts.get("bill", (210, 0, 0))), rough=0.4, spec=0.3)
-    _rbox("bill", (-cr - f("bill_l", 2.4) / 2 + 1.0, cy - 0.2, 0), (f("bill_l", 2.4) / 2 + 1.0, 0.4, cr * 0.7), 0.3, red).parent = root
+    _rbox("bill", (-cr - f("bill_l", 2.4) / 2 + 1.0, cy - 0.2, 0), (f("bill_l", 2.4) / 2 + 1.0, f("bill_h", 0.4), cr * 0.7), 0.3,
+          red).parent = root
     top = cy + cr * f("cap_fy", 0.75)
     post = _empty("prop_post", (0, top, 0), root)
     _cyl("post", (0, 0.6, 0), 0.35, 1.2, red, 0.1, post)
-    blade = _rbox("blade", (0, 1.3, 0), (f("prop_l", 7.0), 0.35, f("prop_w", 0.9)), 0.3, red)
+    blade = _rbox("blade", (0, 1.3, 0), (f("prop_l", 7.0), f("prop_h", 0.35), f("prop_w", 0.9)), 0.3, red)
     blade.parent = post
     green = C._mat("gun", C._srgb(*opts.get("gun_col", (0, 170, 0))), rough=0.35, spec=0.35)
     gun = _empty("gun", (0, -f("hand_r", 1.1) * 0.6, 0), arms[opts.get("gun_hand", "n")][2])

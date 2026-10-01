@@ -8,7 +8,7 @@
   ]
  },
  "mode": "kid",
- "note": "The GREEN player's copy of BP_sprites: GP_sprites is BP_sprites with the sweater recoloured blue -> green, so this reuses BP_sprites's fit.json poses and placement and its baked look; only the sweater is re-tuned and optimfail fixes the frames whose outline pixels differ.",
+ "note": "The GREEN player's copy of BP_sprites: GP_sprites is BP_sprites with the sweater recoloured blue -> green, so this reuses BP_sprites's fit.json poses and placement and its baked look; only the sweater is re-tuned and optimfail fixes the frames whose outline pixels differ. Round 27: f88 takes BP's f88 pose again (its optimfail pose popped against f89, tmp/pop_scan.py ratio 2.1; BP's pose passes here too: IoU 0.857, dE 14.4 -> 13.9).",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,

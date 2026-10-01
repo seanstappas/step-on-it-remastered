@@ -8,7 +8,15 @@
   ]
  },
  "mode": "beachball",
- "opts": {},
+ "opts": {
+  "poles_y": true,
+  "tilt": -5.5,
+  "world": 0.02,
+  "key": 3.0,
+  "fill": 0.16,
+  "spec": 0.05,
+  "rough": 0.28
+ },
  "sweep": [
   {
    "param": "spin",
@@ -62,9 +70,9 @@
  },
  "gate": {
   "iou": 0.85,
-  "de": 17.0,
+  "de": 16.0,
   "rank_tol": 1,
-  "note": "16x16 source: the 3 frames where a gore seam crosses the centre sit at dE 16.5 (the rest 11-15)"
+  "note": "16x16 source: all frames <= dE 15.90 (mean 13.44) with Y-aligned gores and -5.5 deg tilt"
  },
  "fps": 30,
  "tweens": {

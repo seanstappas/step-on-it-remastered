@@ -8,7 +8,7 @@
   ]
  },
  "mode": "quadruped",
- "note": "PASS (32 frames, IoU min 0.857, dE mean 9.5 max 11.7): quadruped rig (ellipsoid body + head with a black mouth, ears, eyes, 4 capsule legs with grey hooves); per frame yaw + walk phase from the sweep, then each LEG's angle per frame by the optimiser (a_fn/a_ff/a_rn/a_rf). The side views are ~25-30 deg toward the camera. f34 (the spawner icon) is not part of this family. Round 11 (detail audit): quadruped.py open_mouth (a dark gap across the snout front, an upper + lower white tooth each side), claws (white toenails) and a rump stub (tail_l; the look shrank it to 0.5), tuned with the head placement via SOI3D_LOOK_KEYS: dE mean 9.5 -> 9.35, missed-detail px 263 -> 233. Still off: the source snout front is FLAT at x = 4 (rows 2-8) with the mouth gap mid-height; our ellipsoid head runs ~3 px further forward, so the gap never shows -- a boxy snout is the next step.",
+ "note": "PASS (32 frames, IoU min 0.865, dE mean 9.45 max 11.7; live rig passes): quadruped rig (ellipsoid body + head with a black mouth, ears, eyes, 4 capsule legs with grey hooves; round 27: legs thinner and longer, leg_r 2.25 -> 1.6, leg_l 5 -> 6, with every pose re-optimised -- the source's legs are 2-3 px strokes, ours were 4-5 px pillars: IoU min 0.857 -> 0.865, missed-detail rate 17.5% -> 14.9%, dE mean 9.33 -> 9.45); per frame yaw + walk phase from the sweep, then each LEG's angle per frame by the optimiser (a_fn/a_ff/a_rn/a_rf). The side views are ~25-30 deg toward the camera. f34 (the spawner icon) is not part of this family. Round 11 (detail audit): quadruped.py open_mouth (a dark gap across the snout front, an upper + lower white tooth each side), claws (white toenails) and a rump stub (tail_l; the look shrank it to 0.5), tuned with the head placement via SOI3D_LOOK_KEYS: dE mean 9.5 -> 9.35, missed-detail px 263 -> 233. Still off: the source snout front is FLAT at x = 4 (rows 2-8) with the mouth gap mid-height; our ellipsoid head runs ~3 px further forward, so the gap never shows -- a boxy snout is the next step.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 3,
@@ -36,8 +36,8 @@
   "head_rx": 5.5,
   "head_ry": 4.0,
   "mouth_h": 1.225,
-  "leg_l": 5.0,
-  "leg_r": 2.25,
+  "leg_l": 6.0,
+  "leg_r": 1.6,
   "front_x": -0.1,
   "rear_x": 10.1,
   "hip_y": 2.625,
@@ -297,13 +297,13 @@
     "step": 0.5,
     "min": 4.0,
     "max": 9.0,
-    "init": 5.0
+    "init": 6.0
    },
    "leg_r": {
     "step": 0.25,
     "min": 1.2,
     "max": 3.0,
-    "init": 2.25
+    "init": 1.6
    },
    "front_x": {
     "step": 0.8,

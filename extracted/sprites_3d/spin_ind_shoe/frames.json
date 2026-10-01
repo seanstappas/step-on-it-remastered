@@ -8,7 +8,7 @@
   ]
  },
  "mode": "wingshoe",
- "note": "WIP: wingshoe.py (boxy tapered boot, white front / grey back / blue strip, two 3-feather red wing fans), one turn in 30 frames (smooth loop then per-frame spin optim), shift auto 2, fringe 2 (IoU 0.67 at fringe 0 -> 0.85 at 2: the tiny 16x12 sprite lives on its keyed rim). Best verify: IoU mean 0.86 (min 0.75), dE mean 12.6; 11 frames fail (side views f32-f34/f61, 3/4 views f42-f43, back f54/f56). Next: jagged feather silhouettes, the heel/toe profile. Round 8: the published goody sneaker (no wings) spun instead reached only IoU 0.81 / dE 16.8 (the front/back views need the wing fans) -> keep wingshoe.py. Round 10: probes (spin every 15 deg) and a uniform 12 deg/frame spin found nothing (uniform = 18 fails); key_dir [-0.7,0.45,0.55] lowered the look-subset dE 17.3 -> 16.4 but cost IoU through the keyed fringe (22 -> 19 passing) -> reverted. PUBLISHED round 10 (30 frames): the +-1 px shift hops took it 22 -> 28/30 (f42 score 51.4 -> 14.7, f43 43.7 -> 14.5). Documented gate IoU 0.83 / dE 16.5: the source is 16x12, so one pixel moves IoU by ~0.015 (f32 sits one pixel short at 0.836) and f44 is at dE 16.2; the other 28 frames are >= 0.85 and <= 14.7.",
+ "note": "WIP: wingshoe.py (boxy tapered boot, white front / grey back / blue strip, two 3-feather red wing fans), one turn in 30 frames (smooth loop then per-frame spin optim), shift auto 2, fringe 2 (IoU 0.67 at fringe 0 -> 0.85 at 2: the tiny 16x12 sprite lives on its keyed rim). Best verify: IoU mean 0.86 (min 0.75), dE mean 12.6; 11 frames fail (side views f32-f34/f61, 3/4 views f42-f43, back f54/f56). Next: jagged feather silhouettes, the heel/toe profile. Round 8: the published goody sneaker (no wings) spun instead reached only IoU 0.81 / dE 16.8 (the front/back views need the wing fans) -> keep wingshoe.py. Round 10: probes (spin every 15 deg) and a uniform 12 deg/frame spin found nothing (uniform = 18 fails); key_dir [-0.7,0.45,0.55] lowered the look-subset dE 17.3 -> 16.4 but cost IoU through the keyed fringe (22 -> 19 passing) -> reverted. PUBLISHED round 10 (30 frames): the +-1 px shift hops took it 22 -> 28/30 (f42 score 51.4 -> 14.7, f43 43.7 -> 14.5). Documented gate IoU 0.83 / dE 16.5: the source is 16x12, so one pixel moves IoU by ~0.015. Round 27: the per-frame spin fit had stuttered (steps of 0 to 30 deg around the true 12 deg/frame, e.g. f38 = f39, then +30), so every angle was re-chosen as the passing candidate closest to a uniform 12 deg/frame turn within +-10 deg (tmp/spin_regularize.py --smooth): 23 frames now sit exactly on the uniform turn, the other 7 within 2-8 deg (f39/f40 and f54/f55 still step 4-6 / 26 deg); dE max 16.2 -> 15.4, IoU min 0.836 -> 0.833 (ten frames at 0.83-0.85), 29/29 tween pairs.",
  "place_iou_w": 200,
  "opts": {
   "tilt": 32.25,
@@ -287,7 +287,7 @@
  ],
  "gate": {
   "iou": 0.83,
-  "de": 16.5,
+  "de": 16.0,
   "rank_tol": 1
  },
  "fps": 15,

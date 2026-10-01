@@ -4,9 +4,11 @@ SD px of the 60x80 cell, measured from the standing f02 (origin = the ground und
 +y up, +z toward the camera): a HELMET y 54-62 (+-5.5, flat-topped, a keel down the face with an eye slot either
 side, a pointed finial to y 65), a GORGET, flat PAULDRONS from the neck to +-13.5 (y 48.5-53.5), a round
 BREASTPLATE y 37-50 (+-7.5) with a centre ridge over three FAULD lames (y 31-37.5; their lit top edges are the
-bright bands), a hip block with two front TASSETS (y 20-31, a dark gap between them), ARMS (rerebrace 8.5 px,
-couter, vambrace, a flared cuff and a long gauntlet whose fist centre is 14.5 px past the elbow) and LEGS (cuisse
-10.5 px, poleyn, greave, sabaton), both posed by two-bone IK; a SWORD (pommel, grip, cross guard, a
+bright bands), a short hip block under the lames (y 28-31.5) with a small TASSET lip over each thigh, ARMS
+(rerebrace 8.5 px, couter, vambrace, a flared cuff and a long gauntlet whose fist centre is 14.5 px past the elbow)
+and LEGS from hip joints at y 28 right under the fauld (cuisse 18 px, poleyn, greave, sabaton; f13-f66 show the
+legs apart from SD row 51-54 -- a hip block and tassets down to y 20 put the crotch 8-11 rows too low), both posed
+by two-bone IK; a SWORD (pommel, grip, cross guard, a
 diamond-section blade `blade_l` px) and the gift ORB (a gold lens in front of the chest that turns and grows,
 f51-f66).
 Pose (px / deg): "dx" the body's shift, "crouch" the hips sitting lower, "fl"/"fr" the screen-left/-right foot's x
@@ -147,10 +149,10 @@ def build(opts):
     root = bpy.context.active_object
     root.name = "root"
     upper = _empty("upper", (0, 0, 0), root)                          # everything the hips carry (dx, crouch)
-    _rbox("hips", (0, f("hip_cy", 25.5), 0), (f("hip_hw", 7.0), f("hip_hh", 5.5), f("hip_hz", 4.0)), 2.0, steel).parent = upper
-    for sx in (-1.0, 1.0):                                            # two front tassets, a dark gap between them
-        t = _rbox("tasset", (sx * f("tasset_x", 3.8), f("tasset_y", 25.5), f("tasset_z", 3.6)),
-                  (f("tasset_hw", 3.3), f("tasset_hh", 5.0), 0.9), 0.8, steel)
+    _rbox("hips", (0, f("hip_cy", 29.75), 0), (f("hip_hw", 7.0), f("hip_hh", 1.5), f("hip_hz", 4.0)), 2.0, steel).parent = upper
+    for sx in (-1.0, 1.0):                                            # a small tasset lip over each thigh
+        t = _rbox("tasset", (sx * f("tasset_x", 4.3), f("tasset_y", 27.5), f("tasset_z", 3.6)),
+                  (f("tasset_hw", 2.5), f("tasset_hh", 1.5), 0.9), 0.8, steel)
         t.rotation_euler = (math.radians(-f("tasset_flare", 8.0)), sx * math.radians(f("tasset_out", 12.0)), 0.0)
         t.parent = upper
     y0, rx, rz = f("fauld_y", 31.0), f("fauld_rx", 7.3), f("fauld_rz", 4.4)
@@ -194,7 +196,7 @@ def build(opts):
         _rbox("fist", (0, -fd, 0.2), (f("fist_hw", 1.95), f("fist_hh", 3.8), f("fist_hz", 2.1)), 1.2, steel).parent = lo
         arms[side] = (up, lo)
     legs = {}
-    lr, tl, sl = f("leg_r", 3.0), f("thigh_l", 10.5), f("shin_l", 5.0)
+    lr, tl, sl = f("leg_r", 3.0), f("thigh_l", 18.0), f("shin_l", 5.0)
     for side in ("l", "r"):
         th = _joint("th_" + side, root)
         _frustum("cuisse", -tl - 0.5, 0.5, (lr, lr * 0.95), (lr + 0.5, lr + 0.3), steel).parent = th
@@ -246,7 +248,7 @@ def _frames_setup(opts):
         nt.links.new(tc.outputs["Generated"], nz.inputs["Vector"])
         nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
         nt.links.new(mr.outputs["Result"], nt.nodes["Background"].inputs["Color"])
-    ctx.update({"hip": (f("hip_x", 3.9), f("hip_y", 20.5)), "ankle": f("ankle_y", 5.0), "thigh": f("thigh_l", 10.5),
+    ctx.update({"hip": (f("hip_x", 3.9), f("hip_y", 28.0)), "ankle": f("ankle_y", 5.0), "thigh": f("thigh_l", 18.0),
                 "shin": f("shin_l", 5.0), "shoulder": (f("shoulder_x", 10.8), f("shoulder_y", 48.5), f("shoulder_z", 0.0)),
                 "ua": f("uarm_l", 8.5), "fd": f("fist_d", 14.5), "gap": f("grip_gap", 3.6), "pivot": f("pivot_y", 31.0)})
     return ctx

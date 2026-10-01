@@ -3,14 +3,14 @@
  "source": "walker_sprites",
  "frames": 48,
  "gate": {
-  "iou": 0.845,
+  "iou": 0.85,
   "de": 16.0,
   "rank_tol": 1
  },
  "failed": [],
- "iou_min": 0.8473,
- "iou_mean": 0.8779,
- "de_mean": 10.327,
+ "iou_min": 0.8531,
+ "iou_mean": 0.8781,
+ "de_mean": 10.322,
  "de_max": 13.053,
  "rows": [
   {
@@ -38,7 +38,7 @@
   {
    "frame": 4,
    "iou": 0.8541,
-   "de": 10.741,
+   "de": 10.742,
    "de_raw": 16.123,
    "best_src": 4,
    "rank_dist": 0,
@@ -82,7 +82,7 @@
   {
    "frame": 8,
    "iou": 0.881,
-   "de": 9.675,
+   "de": 9.676,
    "de_raw": 15.428,
    "best_src": 8,
    "rank_dist": 0,
@@ -467,9 +467,9 @@
   },
   {
    "frame": 36,
-   "iou": 0.8473,
-   "de": 11.022,
-   "de_raw": 16.217,
+   "iou": 0.8569,
+   "de": 10.783,
+   "de_raw": 15.817,
    "best_src": 36,
    "rank_dist": 0,
    "rank_gap": 0.0,
@@ -566,7 +566,7 @@
   {
    "frame": 43,
    "iou": 0.8801,
-   "de": 9.849,
+   "de": 9.85,
    "de_raw": 15.02,
    "best_src": 43,
    "rank_dist": 0,

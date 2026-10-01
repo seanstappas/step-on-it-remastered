@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "knight_sprites",
  "frames": {
   "range": [
@@ -8,7 +8,7 @@
   ]
  },
  "mode": "knight",
- "note": "Knight f02-f66 (knight.py), WIP: re-proportioned from f02 per-row extents (arms 24 px to the gauntlets, helmet 9 rows, flat pauldrons inside the arms, legs to y -22) + leg stance. Best: sweep fit optim look optim -> IoU 0.739 / dE 20.6 (standing f02-f13 0.80-0.84; the turned sword swing f14-f50 0.62-0.75; the orb f51-f65 dE 22-32). The placement is right (the fixed scale descent moved k only 2%); the swing arm/sword and the 3/4 turn are the gap. Round 10: fm_diag f02 -- the source armour is full of bright vertical highlight strokes (177-209 grey, 25% + 16% of the dE) that the render (flat 70-102) lacks; a fresh look again chose a weak key (1.75) because the model has no surfaces that catch those highlights. Needs fluted/ridged plates (or an anisotropic streak shader) before lighting can help. Round 13: 6/65 (IoU .69) with yaw held front-on; the source is a slim knight with a V torso (pauldrons +-13 px to a +-5 px waist), a pointed helmet and a narrow banded fauld, ours was a box torso over a 26 px hip slab -> knight.py torso_taper (SimpleDeform TAPER) + helmet_spike, skirt narrowed. Test render (tmp/pose_test): helmet spike + V torso read right; the source holds the sword TWO-HANDED in front and stands in an A-stance -> knight.py pose key spread (feet out), optim spread + probes for the left arm (s_l x e_l) and spread.",
+ "note": "PASS 65/65 at the standard gate 0.85/16 (IoU min 0.882 mean 0.902, dE mean 12.6 max 14.7). ROUND 24 (2026-09-30): the per-frame crotch row (where the legs part) was SD 51-54 vs 61-63 in the 3D for f13-f66 -- the hip block and tassets reached y 20 -> a short hip block under the fauld, small tasset lips, hip joints at y 28 and 18 px thighs (knee unchanged): IoU min 0.843 -> 0.882, dE max 16.06 -> 14.69 with the SAME poses (the documented 0.84/17.5 gate is gone). REBUILT round 20 (2026-09-30): knight.py = the standing f02 measured row by row (flat-topped helmet with keel, eye slots and finial, gorget, flat pauldrons, round breastplate with a ridge over three fauld lames, short hip block with tasset lips, legs from right under the fauld) on a two-bone IK rig: the sword fist (hx/hy/hz) drives the right arm, grip2 brings the left fist to the grip, the feet stay planted (fl/fr, crouch), the blade is aimed by sw/st; chest roll/twist about the waist (pivot_y) for the swing f20-f46 (optim fix 0 elsewhere). The gift ORB (f51-f66) is a gold lens with teardrop shape keys (drop), turn/lean/ox/oy, tan rim, speckled gold (orb_scale 14). Look: POLISHED STEEL reflecting a blotchy environment (metal 0.8, rough 0.23, env 1 at env_scale 2, world 0.37, gamma 0.95): the original armour is a mottled mirror; flat grey scored dE 14.10 vs 14.27 but lost that look. Asm frame order: unfold f02-f18 (a frame per 6), hold f17, wind-up f17-f66 (a frame per 4) -> tweens runs [[2,18],[17,66]]. No live rig (the env reflection is a world shader the live renderer cannot carry). Backups: tmp/fb_backup/knight_sprites/.",
  "place_iou_w": 200,
  "place_frames": [
   2,
@@ -376,5 +376,18 @@
   "de": 16.0,
   "rank_tol": 1
  },
- "fps": 15
+ "fps": 15,
+ "tweens": {
+  "n": 4,
+  "runs": [
+   [
+    2,
+    18
+   ],
+   [
+    17,
+    66
+   ]
+  ]
+ }
 }

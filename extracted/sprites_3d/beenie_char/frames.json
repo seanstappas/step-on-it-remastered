@@ -8,7 +8,7 @@
   ]
  },
  "mode": "beenie",
- "note": "PASS (56 frames under the kid families' documented gate dE 17.5; at 16: 53/56, f99-f101 16.5-17.2; IoU min .859, dE mean 14.4). The Beenie (beenie.py on the kid rig): a WHITE-FACED CLOWN (kid.py smile: a red U curve on the face surface + a red nose, dark blue eye sockets), a SIX-gore propeller beanie (cap_reps 2: opposite gores alike, R/G/B, cap_turn 120 -- the source shows the same gores facing left and right), the green blaster in the RIGHT hand (gun_hand f: the rig's far arm; front views show its muzzle at the viewer's left). Views (per-frame yaw priors): right cycle f66-f73, turn f74-f79, FRONT cycle f80-f90 (it was fitted side-on under an old yaw-0 prior), turn f91-f95, left cycle f96-f105, turn f106-f113, back cycle f114-f121. Round 16: 1 -> 53/56 at dE 16.",
+ "note": "PASS at the standard gate (56/56 at dE 16; IoU min .854, dE mean 13.7, max 15.8). LIVE RIG PASSES since round 26: the cap gores are flat per-face materials (beenie.py gore_faces, the same azimuth split as the shader; the live renderer keeps only Principled values, so the shader gores had rendered as one grey dome: live dE 17.3 -> 14.1 vs Cycles 13.7), and the back view f115 was re-optimised alone (tmp/hold_pose.py: yaw 270.5 -> 275.7, IoU .858 -> .881) because its live silhouette sat .009 under the published one. Round 25: the source draws the propeller as a THICK red band over the cap and a long red bill -- prop_h 0.7 (was .35) and bill_l 4.0 (was 2.4) took dE mean 14.4 -> 13.7 and f99-f101 (16.5-17.2) under 16. The Beenie (beenie.py on the kid rig): a WHITE-FACED CLOWN (kid.py smile: a red U curve on the face surface + a red nose, dark blue eye sockets), a SIX-gore propeller beanie (cap_reps 2: opposite gores alike, R/G/B, cap_turn 120 -- the source shows the same gores facing left and right), the green blaster in the RIGHT hand (gun_hand f: the rig's far arm; front views show its muzzle at the viewer's left). Views (per-frame yaw priors): right cycle f66-f73, turn f74-f79, FRONT cycle f80-f90 (it was fitted side-on under an old yaw-0 prior), turn f91-f95, left cycle f96-f105, turn f106-f113, back cycle f114-f121. Round 16: 1 -> 53/56 at dE 16.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -167,7 +167,10 @@
   "skin_gain": 1.025,
   "hair_gain": 1.0,
   "shoes_gain": 1.0,
-  "cap_reps": 2
+  "cap_reps": 2,
+  "prop_h": 0.7,
+  "bill_l": 4.0,
+  "gore_faces": true
  },
  "sweep": [
   {
@@ -789,7 +792,7 @@
  ],
  "gate": {
   "iou": 0.85,
-  "de": 17.5,
+  "de": 16.0,
   "rank_tol": 1
  },
  "fps": 15,

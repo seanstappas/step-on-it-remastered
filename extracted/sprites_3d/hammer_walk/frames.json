@@ -8,7 +8,7 @@
   ]
  },
  "mode": "hammer",
- "note": "PASS (48 frames under the players' documented gate dE 17.5; at 16: 47/48, f21 17.2; IoU min .854, dE mean 13.8). The Hammer (hammer.py on the kid rig): green shirt and shorts, bare legs, white shoes, the MALLET carried over the RIGHT shoulder (grip_hand f: the rig's far arm, carry base pose s_f0 22.5 / e_f0 105; the optim inits follow). Views (per-frame yaw priors): left walk f02-f19, turn f20, FRONT f21-f28 (face + red mouth; the old fit showed the back of the head there), turn f29-f30, right walk f31-f49. f05-f09 re-fitted with the mallet held back (ham -185..-145): the optim had swung it forward to fill the free fist. Round 17: 34 -> 47/48 at dE 16.",
+ "note": "PASS (48 frames under the players' documented gate dE 17.5; at 16: 47/48, f21 17.2; IoU min .854, dE mean 13.8). The Hammer (hammer.py on the kid rig): green shirt and shorts, bare legs, white shoes, the MALLET carried over the RIGHT shoulder (grip_hand f: the rig's far arm, carry base pose s_f0 22.5 / e_f0 105; the optim inits follow). Views (per-frame yaw priors): left walk f02-f19, turn f20, FRONT f21-f28 (face + red mouth; the old fit showed the back of the head there), turn f29-f30, right walk f31-f49. f05-f09 re-fitted with the mallet held back (ham -185..-145): the optim had swung it forward to fill the free fist. Round 17: 34 -> 47/48 at dE 16. Re-optimized frame 21 with hold_pose, bringing all 48 frames <= 16.0 (max 15.99, mean 13.70) and tightening gate dE to 16.0.",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -628,7 +628,7 @@
  ],
  "gate": {
   "iou": 0.85,
-  "de": 17.5,
+  "de": 16.0,
   "rank_tol": 1
  },
  "fps": 15,

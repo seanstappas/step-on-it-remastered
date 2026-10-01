@@ -7,7 +7,11 @@
  ],
  "mode": "cannon_barrel",
  "opts": {
-  "barrel": true
+  "barrel": true,
+  "bell": 1.2,
+  "flare_x": 1.0,
+  "flare_p": 2.5,
+  "rivets": true
  },
  "sweep": [
   {
@@ -108,5 +112,5 @@
   "rank_tol": 1
  },
  "fps": 30,
- "note": "Round 13 (lost detail: the barrel read as a flat egg and f02 = f03): cannon_barrel.py 'barrel' = a barrel lying in a light square housing (backplate, top/bottom rims, end wall), a rounded breech, a raised collar and the muzzle out of one side; pose face +1 (f02 muzzle right) / -1 (f03 left: the pivot mirrored). Placement set by hand (0.1 unit per source px): the frame is fully opaque, so IoU cannot fit the zoom. Gray Cannon body only; cannon_ball f04-f23 and beachball.py remain untouched. Both frames pass the gate."
+ "note": "PASS (2 frames, IoU 0.980, dE mean 12.1; live rig passes). Round 27: the barrel is ONE lathed body (cannon_barrel.py bell 1.2: round breech, straight barrel, a BELL muzzle flaring from flare_x 1.0 out of the frame, as the source draws it; it had been a cylinder with a flat collar and a muzzle disc) plus the source's two light rivets, then a look pass: dE 13.6 -> 12.1. Round 13 (lost detail: the barrel read as a flat egg and f02 = f03): cannon_barrel.py 'barrel' = a barrel lying in a light square housing (backplate, top/bottom rims, end wall), a rounded breech, a raised collar and the muzzle out of one side; pose face +1 (f02 muzzle right) / -1 (f03 left: the pivot mirrored). Placement set by hand (0.1 unit per source px): the frame is fully opaque, so IoU cannot fit the zoom. Gray Cannon body only; cannon_ball f04-f23 and beachball.py remain untouched. Both frames pass the gate."
 }

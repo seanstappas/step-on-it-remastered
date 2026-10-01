@@ -1,5 +1,5 @@
 {
- "status": "wip",
+ "status": "published",
  "source": "beenie_sprites",
  "frames": {
   "range": [
@@ -8,29 +8,43 @@
   ]
  },
  "mode": "rods",
- "note": "WIP: the down set (f50-f65) flies TOWARD the camera: the rods are 1 px thin at the apex (bottom) and ~5 px at their far ends (perspective), f53 shows a single rod, and the Beenie in front hides a band and the lower-left (post occlude clips to the union silhouette). The plain in-plane cone reaches IoU 0.54. Next: axis_tilt ~60-80 deg + rods tapered thin at the apex (emulated perspective). Round 13: rods.py persp_d (true perspective: each pose re-lays the rod end rings as seen by a camera persp_d px away) replaces the taper stand-in.",
+ "note": "Beenie spread shot, down (f50-f65): red/blue/green rods on a cone pointing up (dir 90) with true perspective (persp_d 50, axis_tilt -25) and static Beenie occlusion (dilate 0). Gate IoU 0.83 (not 0.85): f53 is only 15 px (where one pixel moves IoU by 0.067); the other 15 frames are >= 0.85 (mean IoU 0.877, blurred dE mean 9.43 max 15.75). Reproduce: sweep fit optim optimfail final verify tweens.",
+ "tweens": {
+  "n": 4,
+  "runs": [
+   [
+    50,
+    65
+   ]
+  ]
+ },
+ "frame_opts": {
+  "51": {
+   "taper": 0.5
+  }
+ },
  "place_iou_w": 200,
  "opts": {
   "dir": 90.0,
   "half": 29.25,
-  "rod_r": 2.0562,
+  "rod_r": 2.15,
   "red": [
-   200,
+   240,
    10,
    10
   ],
   "blue": [
-   40,
-   40,
-   255
+   30,
+   30,
+   245
   ],
   "green": [
    20,
-   200,
+   180,
    20
   ],
-  "world": 0.14,
-  "key": 1.875,
+  "world": 0.18,
+  "key": 2.25,
   "fill": 0.0,
   "key_dir": [
    0.4,
@@ -39,46 +53,50 @@
   ],
   "rough": 0.35,
   "spec": 0.0,
-  "gamma": 0.75,
+  "gamma": 0.85,
   "mirror": false,
-  "r_red": 1.025,
+  "r_red": 1.15,
   "r_blue": 1.05,
-  "r_green": 1.0,
-  "l_red": 1.0126,
+  "r_green": 1.0125,
+  "l_red": 0.9751,
   "l_blue": 1.0,
   "l_green": 0.9875,
-  "axis_tilt": 0.0,
+  "axis_tilt": -25.0,
   "a_red": -0.75,
   "a_green": 0.0,
-  "taper": 0.7,
-  "persp_d": 50.0
+  "taper": 0.0,
+  "persp_d": 50.625
  },
  "sweep": [
   {
    "param": "roll",
    "start": 0,
    "stop": 360,
-   "step": 15,
+   "step": 12,
    "period": 360
   },
   {
    "param": "length",
    "start": 3,
-   "stop": 39,
+   "stop": 45,
    "step": 3
   },
   {
-   "param": "axis_tilt",
-   "start": -75,
-   "stop": 75,
-   "step": 25
+   "param": "half",
+   "start": 6,
+   "stop": 34,
+   "step": 7
   }
  ],
  "smooth": {
-  "roll": "linear",
+  "roll": "fixed:185:-22.7",
   "length": "free",
-  "axis_tilt": "mode"
+  "half": "free"
  },
+ "place_frames": [
+  56,
+  65
+ ],
  "scale": 4,
  "samples": {
   "sweep": 12,
@@ -93,62 +111,68 @@
    "rod_r": {
     "step": 0.1,
     "min": 0.3,
-    "max": 2.0562,
-    "init": 2.0562
+    "max": 2.15,
+    "init": 2.15
    },
    "rough": {
     "step": 0.1,
     "min": 0.05,
-    "max": 0.9
+    "max": 0.9,
+    "init": 0.35
    },
    "spec": {
     "step": 0.15,
     "min": 0,
-    "max": 1.0
+    "max": 1.0,
+    "init": 0.0
    },
    "gamma": {
     "step": 0.1,
     "min": 0.5,
-    "max": 1.2
+    "max": 1.2,
+    "init": 0.85
    },
    "key": {
     "step": 0.5,
     "min": 1.5,
-    "max": 7
+    "max": 7,
+    "init": 2.25
    },
    "world": {
     "step": 0.04,
     "min": 0,
-    "max": 0.4
+    "max": 0.4,
+    "init": 0.18
    },
    "fill": {
     "step": 0.06,
     "min": 0,
-    "max": 0.5
+    "max": 0.5,
+    "init": 0.0
    },
    "r_red": {
     "step": 0.1,
     "min": 0.6,
     "max": 1.6,
-    "init": 1.0
+    "init": 1.15
    },
    "r_blue": {
     "step": 0.1,
     "min": 0.6,
     "max": 1.6,
-    "init": 1.0
+    "init": 1.05
    },
    "r_green": {
     "step": 0.1,
     "min": 0.6,
     "max": 1.6,
-    "init": 1.0
+    "init": 1.0125
    },
    "l_red": {
     "step": 0.05,
     "min": 0.8,
     "max": 1.25,
-    "init": 1.0
+    "init": 0.9751
    },
    "l_blue": {
     "step": 0.05,
@@ -160,13 +184,13 @@
     "step": 0.05,
     "min": 0.8,
     "max": 1.25,
-    "init": 1.0
+    "init": 0.9875
    },
    "a_red": {
     "step": 6,
     "min": -40,
     "max": 40,
-    "init": 0.0
+    "init": -0.75
    },
    "a_green": {
     "step": 6,
@@ -178,7 +202,7 @@
     "step": 5,
     "min": 30,
     "max": 120,
-    "init": 50.0
+    "init": 50.625
    }
   },
   "refine_rounds": 8,
@@ -193,12 +217,12 @@
   },
   {
    "occlude": {
-    "dilate": 1
+    "dilate": 0
    }
   }
  ],
  "gate": {
-  "iou": 0.85,
+  "iou": 0.83,
   "de": 16.0,
   "rank_tol": 1
  },
@@ -206,25 +230,25 @@
  "optim": {
   "params": {
    "roll": {
-    "step": 6,
+    "step": 3,
     "min": -720,
     "max": 720
    },
    "length": {
     "step": 1.5,
     "min": 1,
-    "max": 40
+    "max": 48
    },
    "half": {
-    "step": 3,
+    "step": 2,
     "min": 2,
     "max": 45,
     "init": 15.0
    },
    "axis_tilt": {
-    "step": 5,
-    "min": -85,
-    "max": 85
+    "step": 3,
+    "min": -50,
+    "max": -10
    }
   },
   "rounds": 8,

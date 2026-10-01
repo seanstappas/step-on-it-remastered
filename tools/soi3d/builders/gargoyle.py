@@ -11,9 +11,15 @@ chest over f42-f48), "scroll" (the egg's band scroll, px).
 Optional (default off): opts "arms" adds two-segment stone ARMS at the wing roots (pose "arm", deg about the
 view axis: 0 = hanging, 180 = raised beside the head; "elbow", deg: + bends the raised forearm toward the head);
 "horn_loops" swaps the pointed ears for two looped HORNS (tori facing the camera); "ball" swaps the striped
-cushion for a red SPHERE with vertical dark stripes that spins with "scroll"; "cloak" adds the wings wrapped
+cushion for a red SPHERE with vertical dark stripes that spins with "scroll" ("ball_gores" > 0: that many dark
+MERIDIAN gores, "ball_duty" of their period wide, instead of planar bands, which show a bullseye when spun side
+on); "cloak" adds the wings wrapped
 IN FRONT of the body as a curved stone shell hanging from the shoulders (pose "cloak": 0 = none, 1 = its full
-"cloak_h" length); "wing_ribs" > 0 pleats the wing albedo.
+"cloak_h" length); "wing_ribs" > 0 pleats the wing albedo; "wing_lo" (px) pushes the wing's lower membrane
+(y < -10 px below the shoulder) outward; "burst_n" > 0 (with "ball") adds that many chunks of
+the ball (`frag_f` ball radii, `frag_long` x as wide) for pose "burst" (0 = the whole ball, 1 = the chunks spread
+on a horizontal ring `burst_r0` + `burst_spread` ball radii wide, shrunk by `burst_shrink`: the ball bursting as it
+is thrown, f68-f74).
 Opt-in anatomy (f17-f35 at 10x: a muscular humanoid, not an egg): "torso2" (chest + pecs + abdomen + pelvis instead of
 the egg body), "face" (brow ridge, eye glints in the sockets, snout, a dark mouth with a row of teeth), "legs2" (thigh,
 knee, shin and a clawed foot) and "wing_pleats" (N accordion folds as GEOMETRY, so the vertical light/dark bands of
@@ -155,14 +161,46 @@ def _wing_mat(opts, rgb, span):
     return mat
 
 
+def _gores(rgb_dark, rgb_red, n, duty):
+    """`n` dark MERIDIAN gores (poles on the object's local Y = the spin axis), each `duty` of its period wide."""
+    m = C._mat("gores", C._srgb(*rgb_red), rough=0.35, spec=0.3)
+    N, L = m.node_tree.nodes, m.node_tree.links
+    tc, sep = N.new("ShaderNodeTexCoord"), N.new("ShaderNodeSeparateXYZ")
+    L.new(tc.outputs["Object"], sep.inputs[0])
+    az, mul, cs = N.new("ShaderNodeMath"), N.new("ShaderNodeMath"), N.new("ShaderNodeMath")
+    az.operation, mul.operation, cs.operation = 'ARCTAN2', 'MULTIPLY', 'COSINE'
+    mul.inputs[1].default_value = n
+    L.new(sep.outputs[0], az.inputs[0])
+    L.new(sep.outputs[2], az.inputs[1])
+    L.new(az.outputs[0], mul.inputs[0])
+    L.new(mul.outputs[0], cs.inputs[0])
+    mr = N.new("ShaderNodeMapRange")                                  # dark where cos(n * azimuth) > cos(pi * duty)
+    mr.clamp = True
+    t = math.cos(math.pi * duty)
+    mr.inputs["From Min"].default_value, mr.inputs["From Max"].default_value = t - 0.06, t + 0.06
+    L.new(cs.outputs[0], mr.inputs["Value"])
+    mix = N.new("ShaderNodeMix")
+    mix.data_type = 'RGBA'
+    L.new(mr.outputs["Result"], mix.inputs["Factor"])
+    mix.inputs["A"].default_value = C._srgb(*rgb_red)
+    mix.inputs["B"].default_value = C._srgb(*rgb_dark)
+    L.new(mix.outputs["Result"], N.get("Principled BSDF").inputs["Base Color"])
+    return m
+
+
 def build(opts):
     f = lambda k, d: float(opts.get(k, d))
     egg, scroll = egg_build(dict(opts.get("egg", {})))                  # clears the scene; the egg comes first
     if opts.get("ball"):
         bpy.data.objects.remove(egg, do_unlink=True)
         br = f("ball_r", 11.0)
-        egg = _ell("ball", (0, 0, 0), (br, br, br), _stripes(opts.get("ball_dark", (90, 0, 0)),
-                   opts.get("ball_red", (255, 20, 20)), f("ball_freq", 3.0)), 32)
+        if f("ball_gores", 0) > 0:                                      # meridian gores: they slide, never face on
+            ball_m = _gores(opts.get("ball_dark", (90, 0, 0)), opts.get("ball_red", (255, 20, 20)),
+                            int(f("ball_gores", 0)), f("ball_duty", 0.3))
+        else:
+            ball_m = _stripes(opts.get("ball_dark", (90, 0, 0)), opts.get("ball_red", (255, 20, 20)),
+                              f("ball_freq", 3.0))
+        egg = _ell("ball", (0, 0, 0), (br, br, br), ball_m, 32)
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)   # the pose scales it by "egg"
     stone = C._mat("stone", C._srgb(*opts.get("stone", (150, 150, 155))), rough=f("rough", 0.6), spec=f("spec", 0.2))
     gain = lambda k: tuple(max(0, min(255, int(round(v * f(k, 1.0))))) for v in opts.get("stone", (150, 150, 155)))
@@ -258,7 +296,9 @@ def build(opts):
     for sx in (-1.0, 1.0):
         sh = _empty("shoulder", (sx * f("shoulder_x", 5.0), f("shoulder_y", 50.0), -1.0), upper)
         sh.rotation_mode = 'ZXY'                                     # spread in the view plane first, then wrap
-        pts = [(x * f("wing_f", 1.0), y * f("wing_fy", 1.0)) for x, y in WING]
+        lo = f("wing_lo", 0.0)                                         # px outward at the wing's lower edge
+        pts = [(x * f("wing_f", 1.0) + (lo * min(1.0, max(0.0, (-10.0 - y) / 6.0)) if x > 0 else 0.0),
+                y * f("wing_fy", 1.0)) for x, y in WING]
         if f("wing_pleats", 0.0) > 0:
             w = _pleated_wing("wing", pts, sx, int(f("wing_pleats", 0.0)), f("pleat_amp", 1.2), 0.8, wing_m)
             w.parent = sh
@@ -305,20 +345,31 @@ def build(opts):
     k = f("egg_scale", 0.6)
     egg.location = (0, (hy + hr + f("egg_dy", 5.0)) * S, 0)
     egg.scale = (k, k, k)
+    frags = []
+    if opts.get("ball") and f("burst_n", 0) > 0:
+        fr = f("ball_r", 11.0) * f("frag_f", 0.35)
+        frag_m = C._mat("frag", C._srgb(*opts.get("ball_red", (255, 20, 20))), rough=0.35, spec=0.3)
+        for i in range(int(f("burst_n", 0))):
+            o = _ell("frag", (0, 0, 0), (fr * f("frag_long", 1.0), fr, fr * 0.8), frag_m, 16)
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            o.parent = upper
+            o.hide_render = True
+            frags.append(o)
     m = f("model_scale", 0.5)
     root.scale = (m, m, m)
     root.location = (0, f("model_dy", -37.0) * S * m, 0)
-    return root, upper, legs, wings, egg, scroll, arms, cloak
+    return root, upper, legs, wings, egg, scroll, arms, cloak, frags
 
 
 def _frames_setup(opts):
-    root, upper, legs, wings, egg, scroll, arms, cloak = build(opts)
+    root, upper, legs, wings, egg, scroll, arms, cloak, frags = build(opts)
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
     f = lambda k, d: float(opts.get(k, d))
     return {"upper": upper, "legs": legs, "wings": wings, "egg": egg, "scroll": scroll, "hip_y": f("hip_y", 22.0),
             "egg_k": f("egg_scale", 0.6), "egg_y0": egg.location.y, "arms": arms, "ball": bool(opts.get("ball")),
-            "spin": f("ball_spin", 12.0), "cloak": cloak}
+            "spin": f("ball_spin", 12.0), "cloak": cloak, "frags": frags, "br": f("ball_r", 11.0) * S,
+            "burst": (f("burst_r0", 0.6), f("burst_spread", 2.2), f("burst_shrink", 0.7))}
 
 
 def _frames_pose(ctx, pose):
@@ -337,6 +388,19 @@ def _frames_pose(ctx, pose):
     ctx["scroll"].outputs[0].default_value = g("scroll")
     if ctx["ball"]:                                                  # stripes along local Z -> world X, spun about Y
         ctx["egg"].rotation_euler = (0, math.pi / 2 + math.radians(g("scroll") * ctx["spin"]), 0)
+    t = g("burst")
+    if ctx["frags"]:
+        r0, spread, shrink = ctx["burst"]
+        k = ctx["egg_k"] * max(e, 0.02)
+        if t > 0.001:
+            ctx["egg"].hide_render = True
+        n, (ex, ey, ez) = len(ctx["frags"]), ctx["egg"].location
+        for i, o in enumerate(ctx["frags"]):
+            a = 2 * math.pi * i / n + math.radians(g("scroll") * ctx["spin"])
+            rr = ctx["br"] * k * (r0 + t * spread)
+            o.location = (ex + rr * math.cos(a), ey + ctx["br"] * k * 0.35 * (1 - t) * math.sin(3 * a), ez + rr * math.sin(a))
+            o.scale = (k * max(0.02, 1 - t * shrink),) * 3
+            o.hide_render = t <= 0.001 or e <= 0.02
     for sh, el, sx in ctx["arms"]:
         sh.rotation_euler = (0, 0, sx * math.radians(g("arm")))
         el.rotation_euler = (0, 0, sx * math.radians(g("elbow")))

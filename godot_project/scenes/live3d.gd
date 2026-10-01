@@ -273,6 +273,10 @@ func _apply_materials(root: Node) -> void:
 		sm.roughness = float(m["rough"])
 		sm.metallic = float(m["metal"])
 		sm.metallic_specular = clampf(sqrt(float(m["spec"]) * 0.5), 0.0, 1.0)
+		if float(m.get("coat", 0.0)) > 0.0:
+			sm.clearcoat_enabled = true
+			sm.clearcoat = float(m["coat"])
+			sm.clearcoat_roughness = float(m.get("coat_rough", 0.03))
 		if float(m.get("emit", 0.0)) > 0.0:
 			sm.emission_enabled = true
 			var ec: Array = m["emit_color"]
