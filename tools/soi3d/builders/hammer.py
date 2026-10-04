@@ -34,7 +34,8 @@ def build(opts):
     rgb = lambda name, dflt: tuple(max(0, min(255, int(round(v * f(name + "_gain", 1.0))))) for v in opts.get(name, dflt))
     skin = bpy.data.objects["head"].data.materials[0]
     socks = C._mat("socks", C._srgb(*rgb("socks", (64, 56, 52))), rough=f("rough", 0.45), spec=f("spec", 0.25))
-    parts = {"knee_ball_": skin, "shin_": socks if opts.get("dark_socks", False) else skin}
+    parts = {"knee_ball_": skin, "shin_": socks if opts.get("dark_socks", False) else skin,
+             "ankle_ball_": socks if opts.get("dark_socks", False) else skin}
     if opts.get("bare_thighs", False):                             # the green shorts are only the pelvis
         parts["thigh_"] = skin
     for side in ("n", "f"):

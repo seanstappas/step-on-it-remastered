@@ -179,7 +179,36 @@ def _gift(opts, f, col):
         _rbox("edge_x", (0, 0, 0), (h + 0.15, h + 0.15, rw + ew), 0.3, edge).parent = root
         _rbox("edge_z", (0, 0, 0), (rw + ew, h + 0.15, h + 0.15), 0.3, edge).parent = root
     R, r, tilt = f("loop_R", 3.2), f("loop_r", 1.3), math.radians(f("loop_tilt", 35.0))
-    for sx in (-1.0, 1.0):
+    n = int(f("bow_loops", 0))
+    if n > 0:                                                      # a rosette: petal loops round the top centre
+        rr = f("rosette_r", 2.5)
+        for ring, (cnt, rad, lift, sc) in enumerate(((n, rr, 0.0, 1.0), (max(3, n // 2), rr * 0.4, R * 0.5, 0.8))):
+            for i in range(cnt):
+                a = 2 * math.pi * (i + 0.5 * ring) / cnt
+                bpy.ops.mesh.primitive_torus_add(major_radius=R * sc * S, minor_radius=r * S, major_segments=24,
+                                                 minor_segments=10)
+                loop = bpy.context.active_object
+                loop.rotation_mode = 'ZYX'                         # lean outward, then turn to its azimuth
+                loop.rotation_euler = (0.0, -a, -tilt)
+                rad_o = rad + R * sc * math.sin(tilt)
+                loop.location = (math.cos(a) * rad_o * S, (h + lift + R * sc * math.cos(tilt) * 0.8) * S,
+                                 math.sin(a) * rad_o * S)
+                loop.data.materials.append(ribbon)
+                bpy.ops.object.shade_smooth()
+                loop.parent = root
+                le = f("loop_edge", 0.0)                           # red rims: a red loop the blue one sits inside
+                if le > 0:
+                    loop.scale = (1.0, 1.0, 1.0 - le)
+                    bpy.ops.mesh.primitive_torus_add(major_radius=R * sc * S, minor_radius=r * 0.94 * S,
+                                                     major_segments=24, minor_segments=10)
+                    rim = bpy.context.active_object
+                    rim.rotation_mode = 'ZYX'
+                    rim.rotation_euler = loop.rotation_euler
+                    rim.location = loop.location
+                    rim.data.materials.append(_mat(opts, "edge", (200, 20, 40), 0.5, 0.2))
+                    bpy.ops.object.shade_smooth()
+                    rim.parent = root
+    for sx in ((-1.0, 1.0) if n <= 0 else ()):
         bpy.ops.mesh.primitive_torus_add(major_radius=R * S, minor_radius=r * S, major_segments=32, minor_segments=12,
                                          location=(sx * R * 0.8 * S, (h + R * 0.7) * S, 0), rotation=(0, 0, -sx * tilt))
         loop = bpy.context.active_object
@@ -201,11 +230,28 @@ SHIELD = [(1, 4.5), (4, 4), (6.5, 6.5), (8.5, 8), (10.5, 5), (12, 3), (19, 3), (
 WING = [(9.5, 12), (7, 8.5), (4, 6.5), (1.5, 5), (1.5, 13.5), (3, 14), (3, 18.5), (5, 19), (5, 21.5), (8, 22.5), (10.5, 20)]
 
 
+def _round_corners(pts, r, n=4):
+    """Replace each vertex by a quadratic arc cut back up to r px along both edges."""
+    out = []
+    for i, p in enumerate(pts):
+        a, b = pts[i - 1], pts[(i + 1) % len(pts)]
+        da, db = math.dist(p, a), math.dist(p, b)
+        d = min(r, 0.45 * da, 0.45 * db)
+        p1 = (p[0] + (a[0] - p[0]) * d / da, p[1] + (a[1] - p[1]) * d / da)
+        p2 = (p[0] + (b[0] - p[0]) * d / db, p[1] + (b[1] - p[1]) * d / db)
+        for k in range(n + 1):
+            t = k / n
+            out.append(tuple((1 - t) ** 2 * u + 2 * (1 - t) * t * v + t * t * w for u, v, w in zip(p1, p, p2)))
+    return out
+
+
 def _shield(opts, f, col):
     from .quadruped import _ell
     silver = _mat(opts, "color", (235, 235, 235), 0.3, 0.45)
     gold = _mat(opts, "gold", (215, 175, 10), 0.3, 0.6)
     pts = _px(SHIELD)[::-1]                                          # counter-clockwise in +y-up space
+    if f("sh_round", 0.0) > 0:
+        pts = _round_corners(pts, f("sh_round", 0.0))
     sh = _prism("shield", [(x * S, y * S) for x, y in pts], -f("sh_back", 4.0) * S, (f("sh_back", 4.0) + 4.0) * S, silver, 0.0)
     R = f("bulge_R", 40.0)                                          # keep only what lies inside a big sphere: a cap
     bpy.ops.mesh.primitive_uv_sphere_add(radius=R * S, segments=64, ring_count=32, location=(0, f("bulge_y", 2.0) * S, (f("sh_top", 3.0) - R) * S))
@@ -224,7 +270,16 @@ def _shield(opts, f, col):
     sr = f("stud_r", 2.0)
     for c, r in ((3.5, 7.5), (27.5, 7.5), (15.5, 24.5)):
         x, y = c - 15.5, 15.5 - r
-        _ell("stud", (x, y, f("stud_z", 1.0)), (sr, sr, sr * 0.8), gold, 16)
+        if opts.get("stud_ring"):                                  # a rivet ring round a dark hollow
+            zs = f("sh_top", 3.0) - R + math.sqrt(max(R * R - x * x - (y - f("bulge_y", 2.0)) ** 2, 0.0)) + f("ring_z", 0.2)
+            bpy.ops.mesh.primitive_torus_add(major_radius=sr * f("ring_major", 0.65) * S, minor_radius=sr * f("ring_minor", 0.35) * S,
+                                             major_segments=24, minor_segments=10, location=(x * S, y * S, zs * S))
+            bpy.context.active_object.data.materials.append(gold)
+            bpy.ops.object.shade_smooth()
+            core = _mat(opts, "stud_core", (50, 35, 0), 0.6, 0.1)
+            _ell("stud_core", (x, y, zs - 0.1 * sr), (sr * 0.45, sr * 0.45, sr * 0.2), core, 12)
+        else:
+            _ell("stud", (x, y, f("stud_z", 1.0)), (sr, sr, sr * 0.8), gold, 16)
 
 
 def _helmet(opts, f, col):
@@ -234,9 +289,9 @@ def _helmet(opts, f, col):
     _ell("dome", (0, f("dome_y", 3.0), 0), (f("dome_rx", 8.0), f("dome_ry", 8.0), f("dome_rz", 7.0)), white, 48)
     _ell("rim", (0, f("rim_y", -7.5), -1.0), (f("rim_rx", 10.0), f("rim_ry", 4.0), f("rim_rz", 6.0)), dark, 32)
     wd = f("wing_d", 1.2)
-    left = _px(WING)                                                 # already counter-clockwise (y up)
+    left = _px(opts.get("wing_pts", WING))                          # already counter-clockwise (y up)
     for pts in (left, [(-x, y) for x, y in left][::-1]):
-        w = _prism("wing", [(x * S, y * S) for x, y in pts], -wd / 2 * S + f("wing_z", 1.0) * S, wd * S, col, 0.3 * S)
+        w = _prism("wing", [(x * S, y * S) for x, y in pts], -wd / 2 * S + f("wing_z", 1.0) * S, wd * S, col, f("wing_bevel", 0.3) * S)
         w.rotation_euler = (0, math.radians(f("wing_yaw", 0.0)) * (1 if pts is left else -1), 0)
 
 

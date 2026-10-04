@@ -7,7 +7,9 @@ stands `statue_dz` in front of the face of tile.py's red slab, so the key light 
 red. Statue placement in tile px (1 px = 1/16 of the tile half): `statue_k` (scale), `statue_x`/`statue_y`
 (offset of the model origin from the tile centre), `statue_fz` (depth squash), `statue_mirror` (face right).
 An option "m_<key>" overrides the monster's own option <key> (the statue's stance, e.g. the ant's legs hanging
-below its body instead of crossing it as in its walk frames).
+below its body instead of crossing it as in its walk frames). "dark_parts" (object-name prefixes, e.g. ["mouth"])
+stay a dark `dark` colour instead of silver: the original statues keep an open mouth as a black gap. "cut_parts"
+(prefixes) are carved out of the monster's "head" instead (a real opening, e.g. the hippo's open mouth).
 """
 import math
 
@@ -26,14 +28,26 @@ def _frames_setup(opts):
     mctx = msetup(mo)                                             # clears the scene: the monster + its scene
     mpose(mctx, dict(opts.get("monster_pose", {})))
     bpy.context.view_layer.update()
+    cut_parts = tuple(opts.get("cut_parts", ()))
+    head = bpy.data.objects.get("head")
+    if cut_parts and head is not None:
+        for o in [o for o in bpy.data.objects if o.type == 'MESH' and o.name.startswith(cut_parts)]:
+            m = head.modifiers.new("cut_" + o.name, 'BOOLEAN')
+            m.operation, m.object = 'DIFFERENCE', o
+            bpy.context.view_layer.objects.active = head
+            bpy.ops.object.modifier_apply(modifier=m.name)
+            bpy.data.objects.remove(o, do_unlink=True)
     silver = C._mat("silver", C._srgb(*_rgb(opts, "silver", (205, 205, 210))), rough=f("silver_rough", 0.35),
                     spec=f("silver_spec", 0.4))
+    dark = C._mat("dark", C._srgb(*_rgb(opts, "dark", (20, 20, 22))), rough=0.6, spec=0.1)
+    dark_parts = tuple(opts.get("dark_parts", ()))
     for o in bpy.data.objects:
         if o.type in ('MESH', 'CURVE', 'FONT', 'SURFACE', 'META'):
+            m = dark if dark_parts and o.name.startswith(dark_parts) else silver
             if not o.material_slots:
-                o.data.materials.append(silver)
+                o.data.materials.append(m)
             for sl in o.material_slots:
-                sl.material = silver
+                sl.material = m
             o.visible_shadow = True
     for o in bpy.data.objects:
         if o.type == 'LIGHT':

@@ -58,6 +58,8 @@ var _data: Dictionary
 var _proto: Node3D
 var _names: Array = []
 var _xf := {}                     # frame -> Array[Transform3D] of the moving nodes
+var _blend_shapes: Array = []     # [{node, shape}] channels exported from Blender
+var _bs := {}                     # frame -> Array[float] of blend-shape weights
 var _p0 := {}                     # frame -> Vector2: SD px from the canvas corner where the world origin lands
 var _u := {}                      # frame -> world units per SD px
 var _size := {}                   # frame -> Vector2i (SD px)
@@ -94,6 +96,7 @@ static func load_family(fam: String, holder: Node) -> Live3D:
 	lv._holder = holder
 	lv._proto = doc.generate_scene(st)
 	lv._names = data["nodes"]
+	lv._blend_shapes = data.get("blend_shapes", [])
 	var sc := float(data.get("scale", 4))
 	for stp in data.get("post", []):
 		if (stp as Dictionary).has("fringe"):
@@ -111,6 +114,7 @@ static func load_family(fam: String, holder: Node) -> Live3D:
 		var h := int(fr["h"])
 		var u := float(fr["cam"]["ortho_scale"]) / float(maxi(w, h))
 		lv._xf[n] = xs
+		lv._bs[n] = fr.get("bs", [])
 		lv._u[n] = u
 		lv._p0[n] = Vector2(w * 0.5 - float(fr["cam"]["x"]) / u, h * 0.5 + float(fr["cam"]["y"]) / u)
 		lv._size[n] = Vector2i(w, h)
@@ -152,6 +156,14 @@ func texture_for(key: String, a: int, b: int, f: float, scale: int, red: bool = 
 				(nodes[i] as Node3D).transform = xa[i] if f < 0.5 else xb[i]
 			else:
 				(nodes[i] as Node3D).transform = (xa[i] as Transform3D).interpolate_with(xb[i], f)
+	var ba: Array = _bs.get(a, [])
+	var bb: Array = _bs.get(b, [])
+	var blends: Array = e["blends"]
+	for i in mini(blends.size(), mini(ba.size(), bb.size())):
+		var blend: Dictionary = blends[i]
+		if not blend.is_empty():
+			(blend["node"] as MeshInstance3D).set_blend_shape_value(
+				int(blend["index"]), lerpf(float(ba[i]), float(bb[i]), f))
 	var u := lerpf(_u[a], _u[b], f)
 	var p0: Vector2 = (_p0[a] as Vector2).lerp(_p0[b], f)
 	var cam: Camera3D = e["cam"]
@@ -243,6 +255,14 @@ func _make(scale: int) -> Dictionary:
 	var nodes: Array = []
 	for n in _names:
 		nodes.append(model.find_child(String(n).validate_node_name(), true, false))
+	var blends: Array = []
+	for channel in _blend_shapes:
+		var spec: Dictionary = channel
+		var mesh := model.find_child(String(spec["node"]).validate_node_name(), true, false) as MeshInstance3D
+		var index := -1
+		if mesh != null and mesh.mesh != null:
+			index = mesh.find_blend_shape_by_name(StringName(spec["shape"]))
+		blends.append({"node": mesh, "index": index} if index >= 0 else {})
 	var vp2 := SubViewport.new()
 	vp2.size = px
 	vp2.transparent_bg = true
@@ -259,7 +279,7 @@ func _make(scale: int) -> Dictionary:
 	vp2.add_child(rect)
 	vp2.add_child(vp3)                    # a child viewport renders before its parent: same-frame pose
 	_holder.add_child(vp2)
-	return {"vp3": vp3, "vp2": vp2, "cam": cam, "nodes": nodes, "mat": sm, "s": scale,
+	return {"vp3": vp3, "vp2": vp2, "cam": cam, "nodes": nodes, "blends": blends, "mat": sm, "s": scale,
 		"used": Engine.get_process_frames()}
 
 ## Godot's own materials for the exported surfaces: the Principled values, with Blender's "Specular IOR

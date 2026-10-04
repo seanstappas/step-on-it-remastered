@@ -13,22 +13,33 @@ from .. import common as C
 from .. import register, register_frames
 
 
-def _star_poly(name, r_out, r_in, points, z, thick, mat, rot_deg=90.0):
+def _star_poly(name, r_out, r_in, points, z, thick, mat, rot_deg=90.0, flat=False):
     """A raised N-point star: alternating outer/inner rim verts fanned from a central apex (slightly
-    proud) down to a flat back, so it reads as a convex embossed star with clean facets."""
+    proud) down to a flat back, so it reads as a convex embossed star with clean facets. `flat`: a flat-topped
+    slab instead (the source's star is one flat gold face)."""
     import bmesh
     bm = bmesh.new()
-    apex = bm.verts.new((0.0, 0.0, z + thick))          # slightly raised centre -> convex relief
-    rim = []
     n = points * 2
-    for i in range(n):
-        ang = math.radians(rot_deg) + math.pi * i / points
-        r = r_out if i % 2 == 0 else r_in
-        rim.append(bm.verts.new((r * math.cos(ang), r * math.sin(ang), z)))
-    back = bm.verts.new((0.0, 0.0, z - thick * 0.5))    # shallow back cone -> solid body
-    for i in range(n):
-        bm.faces.new((apex, rim[i], rim[(i + 1) % n]))  # top facets
-        bm.faces.new((back, rim[(i + 1) % n], rim[i]))  # bottom facets
+    if flat:
+        ring = lambda zz: [bm.verts.new(((r_out if i % 2 == 0 else r_in) * math.cos(math.radians(rot_deg) + math.pi * i / points),
+                                         (r_out if i % 2 == 0 else r_in) * math.sin(math.radians(rot_deg) + math.pi * i / points), zz))
+                           for i in range(n)]
+        top, bot = ring(z + thick), ring(z - thick * 0.5)
+        bm.faces.new(top)
+        bm.faces.new(bot[::-1])
+        for i in range(n):
+            bm.faces.new((bot[i], bot[(i + 1) % n], top[(i + 1) % n], top[i]))
+    else:
+        apex = bm.verts.new((0.0, 0.0, z + thick))          # slightly raised centre -> convex relief
+        rim = []
+        for i in range(n):
+            ang = math.radians(rot_deg) + math.pi * i / points
+            r = r_out if i % 2 == 0 else r_in
+            rim.append(bm.verts.new((r * math.cos(ang), r * math.sin(ang), z)))
+        back = bm.verts.new((0.0, 0.0, z - thick * 0.5))    # shallow back cone -> solid body
+        for i in range(n):
+            bm.faces.new((apex, rim[i], rim[(i + 1) % n]))  # top facets
+            bm.faces.new((back, rim[(i + 1) % n], rim[i]))  # bottom facets
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
@@ -36,8 +47,10 @@ def _star_poly(name, r_out, r_in, points, z, thick, mat, rot_deg=90.0):
     obj = bpy.data.objects.new(name, me)
     bpy.context.collection.objects.link(obj)
     mo = obj.modifiers.new("bev", 'BEVEL')
-    mo.width = 0.015
+    mo.width = 0.015 if not flat else 0.03
     mo.segments = 2
+    if flat:
+        mo.limit_method = 'ANGLE'
     obj.data.materials.append(mat)
     return obj
 
@@ -67,7 +80,7 @@ def build_star(opts=None):
     bpy.ops.object.shade_smooth()
 
     _star_poly("star", r_out=f("r_out", 0.72), r_in=f("r_in", 0.30), points=5, z=f("star_z", 0.92),
-               thick=f("thick", 0.10), mat=gold, rot_deg=90.0)
+               thick=f("thick", 0.10), mat=gold, rot_deg=90.0, flat=bool(opts.get("flat", False)))
 
     # soft top-left catch light for a real highlight under the composited glint
     bpy.ops.object.light_add(type='POINT', location=(-2.7, 3.3, 2.6))

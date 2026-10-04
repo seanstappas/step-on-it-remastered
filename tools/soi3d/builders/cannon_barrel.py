@@ -87,11 +87,23 @@ def build_cannon_barrel(opts=None):
                 bpy.context.view_layer.objects.active = o
                 bpy.ops.object.shade_smooth()
         by = f("bottom_y", -1.1)                                 # C._box takes FULL extents
-        parts.append(C._box("end_wall", (-s * 1.48, 0.15, 0.0), (0.24, 2.5, 0.4), light, bevel=0.05, seg=2))
-        parts.append(C._box("backplate", (0.0, 0.15, -0.3), (3.2, 2.9, 0.3), light, bevel=f("plate_bevel", 0.05), seg=3))
-        parts.append(C._box("upper_flange", (0.0, f("top_y", 1.4), 0.0), (3.2, 0.4, 0.4), light, bevel=0.05, seg=3))
-        parts.append(C._box("lower_flange", (0.0, by, 0.0), (3.2, 0.4, 0.4), light, bevel=0.05, seg=3))
-        parts.append(C._box("dark_foot", (0.0, by - 0.35, -0.1), (2.6, 0.3, 0.32), dark, bevel=0.05, seg=2))
+        if opts.get("block_base"):                               # the plain white block tile under the barrel
+            u = 0.1 / 0.06                                       # cannon units per tile.py unit (1 px = 0.1 vs 0.06)
+            hb = f("base_half", 0.96) * u
+            slab = C._box("block", (0.0, f("base_y", 0.0), z - f("base_dz", 1.2)), (2 * hb, 2 * hb, f("base_h", 0.9) * u),
+                          light, bevel=f("base_bevel", 0.16) * u, seg=6)
+            bpy.ops.object.select_all(action='DESELECT')
+            slab.select_set(True)
+            bpy.context.view_layer.objects.active = slab
+            bpy.ops.object.shade_smooth()
+            parts.append(slab)
+        else:
+            parts.append(C._box("end_wall", (-s * 1.48, 0.15, 0.0), (0.24, 2.5, 0.4), light, bevel=0.05, seg=2))
+            parts.append(C._box("backplate", (0.0, 0.15, f("plate_z", -0.3)), (3.2, 2.9, 0.3), light,
+                                bevel=f("plate_bevel", 0.05), seg=3))
+            parts.append(C._box("upper_flange", (0.0, f("top_y", 1.4), 0.0), (3.2, 0.4, 0.4), light, bevel=0.05, seg=3))
+            parts.append(C._box("lower_flange", (0.0, by, 0.0), (3.2, 0.4, 0.4), light, bevel=0.05, seg=3))
+            parts.append(C._box("dark_foot", (0.0, by - 0.35, -0.1), (2.6, 0.3, 0.32), dark, bevel=0.05, seg=2))
         bpy.ops.object.empty_add(location=(0.0, 0.0, 0.0))
         pivot = bpy.context.active_object
         pivot.name = "pivot"

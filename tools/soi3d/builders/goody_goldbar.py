@@ -19,7 +19,7 @@ def build_goldbar(opts=None):
     C._clear()
     # semi-metallic gold: warm albedo + strong spec so facet edges flash like the source highlights.
     # Lower metalness => diffuse (directional) shading dominates => strong top-left->bottom-right relief.
-    gold = C._mat("gb_gold", C._srgb(*opts.get("gold", (184, 149, 12))), rough=0.34,
+    gold = C._mat("gb_gold", C._srgb(*opts.get("gold", (184, 149, 12))), rough=float(opts.get("rough", 0.34)),
                   metal=float(opts.get("metal", 0.45)), spec=0.55, coat=0.08)
     gd = gold.node_tree.nodes.get("Principled BSDF")
     ec = gd.inputs.get("Emission Color"); es = gd.inputs.get("Emission Strength")
@@ -37,10 +37,24 @@ def build_goldbar(opts=None):
         ("gb_t0", (-0.31, 0.03, 0.0)),
         ("gb_t1", (0.31, 0.03, 0.0)),
     ]
+    if opts.get("layout") == "stack2":           # SD f26: two long ingots along X, the top one shorter, ends lit left
+        lx, h, w = float(opts.get("stack_len", 1.7)), float(opts.get("bar_h", 0.3)), float(opts.get("stack_w", 0.5))
+        top = float(opts.get("top_len", 0.8))
+        bars = [("gb_b0", (0.0, -h / 2, 0.0), (lx, h, w)),
+                ("gb_t0", (float(opts.get("top_dx", 0.05)), h / 2, float(opts.get("top_dz", 0.0))), (lx * top, h, w))]
+    elif opts.get("layout") == "pyr3":           # SD f26 read end-on: 2 ingots side by side + 1 on top, ends lit left
+        lx, h, w = float(opts.get("stack_len", 1.7)), float(opts.get("bar_h", 0.3)), float(opts.get("stack_w", 0.5))
+        g = float(opts.get("bar_gap", 0.02))
+        bars = [("gb_b0", (0.0, -h / 2, -(w + g) / 2), (lx, h, w)),
+                ("gb_b1", (0.0, -h / 2, (w + g) / 2), (lx, h, w)),
+                ("gb_t0", (float(opts.get("top_dx", 0.0)), h / 2 + g / 2, float(opts.get("top_dz", 0.0))),
+                 (lx * float(opts.get("top_len", 1.0)), h, w))]
+    else:
+        bars = [(n, p, size) for n, p in bars]
     grot = Euler((math.radians(float(opts.get("tilt", 14))), math.radians(float(opts.get("turn", -17))), 0.0), 'XYZ')
-    for name, (x, y, z) in bars:
+    for name, (x, y, z), sz in bars:
         p = Vector((x, y, z)); p.rotate(grot)
-        b = C._box(name, (p.x, p.y, p.z), size, gold, bevel=0.04, seg=2)
+        b = C._box(name, (p.x, p.y, p.z), sz, gold, bevel=0.04, seg=2)
         b.rotation_euler = grot
 
     # warm key glint on the upper-left bar tops (strong => deep TL->BR relief like the source)

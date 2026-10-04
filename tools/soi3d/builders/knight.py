@@ -20,7 +20,14 @@ camera, "grip2" (0 = the screen-left arm hangs at its side, 1 = its fist on the 
 "yaw", "roll" / "twist" (the upper body about the waist `pivot_y`: in the view plane / about the vertical; the
 swing f22-f44 turns the chest with the sword).
 Opt-in surface: "env" (the world becomes blotchy noise, 1 +- env at `env_scale`, for polished steel ("metal") to
-reflect: the source's armour is a mottled mirror, not a flat grey).
+reflect: the source's armour is a mottled mirror, not a flat grey); "rough_var" (+- roughness from fine noise at
+`rough_scale`: scuffed metal, not a uniform plastic gloss) and "aniso" (brushed-steel anisotropic highlights).
+Opt-in helmet: "helm_point" (px: the dome rises to a point that high above the old flat top, a classic
+bascinet), "keel_wedge" (the face keel becomes a sharp ridge, a box turned 45 deg, `keel_d` px proud).
+Opt-in no-clip posing: "grip_clear" (px: the sword fist always sits that far in front of the breastplate),
+"elbow_fwd" (the IK elbow pole's forward share: elbows out to the sides instead of back into the body) and
+"tip_fwd" (a blade tipped away from the camera is mirrored toward it: the same view-plane projection, but the
+blade stays in front of the body).
 """
 import math
 
@@ -106,7 +113,36 @@ def _orb_mat(opts):
     if bsdf.inputs.get("Emission Color") is not None:
         nt.links.new(mix.outputs["Result"], bsdf.inputs["Emission Color"])
         bsdf.inputs["Emission Strength"].default_value = float(opts.get("orb_emit", 0.5))
+    # linked inputs ignore their defaults in Cycles; the live export reads them: the speckle's mean gold
+    cdf = lambda x: 0.5 * (1.0 + math.erf((x - 0.5) / (0.1 * math.sqrt(2.0))))   # noise Fac ~ N(0.5, 0.1)
+    lo, hi = float(opts.get("orb_lo", 0.38)), float(opts.get("orb_hi", 0.62))
+    parts = ((cdf(lo), opts.get("orb_dark", (173, 148, 0))), (cdf(hi) - cdf(lo), opts.get("orb_gold", (210, 174, 0))),
+             (1.0 - cdf(hi), opts.get("orb_peach", (240, 198, 170))))
+    tan_w = float(opts.get("orb_live_tan", 0.35))                    # live: the grazing tan rim's share of the lens
+    avg = [sum(w * c[i] for w, c in parts) * (1 - tan_w) + tan_w * opts.get("orb_tan", (164, 152, 115))[i]
+           for i in range(3)]
+    bsdf.inputs["Base Color"].default_value = C._srgb(*avg)
+    if bsdf.inputs.get("Emission Color") is not None:
+        g = float(opts.get("orb_live_emit", 0.8))
+        bsdf.inputs["Emission Color"].default_value = C._srgb(*(v * g for v in avg))
     return mat
+
+
+def _scuff(mat, rough, var, scale, aniso):
+    """Scuffed / brushed steel: roughness rough +- var from fine noise, and an anisotropic highlight."""
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if aniso > 0 and bsdf.inputs.get("Anisotropic") is not None:
+        bsdf.inputs["Anisotropic"].default_value = aniso
+    if var <= 0:
+        return
+    nt = mat.node_tree
+    nz, mr = nt.nodes.new("ShaderNodeTexNoise"), nt.nodes.new("ShaderNodeMapRange")
+    nz.inputs["Scale"].default_value = scale
+    nz.inputs["Detail"].default_value = 6.0
+    mr.inputs["From Min"].default_value, mr.inputs["From Max"].default_value = 0.3, 0.7
+    mr.inputs["To Min"].default_value, mr.inputs["To Max"].default_value = max(0.02, rough - var), rough + var
+    nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
+    nt.links.new(mr.outputs["Result"], bsdf.inputs["Roughness"])
 
 
 def _joint(name, parent):
@@ -143,6 +179,7 @@ def build(opts):
     f = lambda k, d: float(opts.get(k, d))
     steel = C._mat("steel", C._srgb(*opts.get("steel", (175, 175, 180))), rough=f("rough", 0.35), spec=f("spec", 0.6),
                    metal=f("metal", 0.0))
+    _scuff(steel, f("rough", 0.35), f("rough_var", 0.0), f("rough_scale", 60.0), f("aniso", 0.0))
     dark = C._mat("slit", C._srgb(*opts.get("slit", (20, 20, 22))), rough=0.9, spec=0.0)
     blade_m = C._mat("blade", C._srgb(*opts.get("blade", (220, 220, 228))), rough=f("blade_rough", 0.25), spec=0.8)
     bpy.ops.object.empty_add(location=(0, 0, 0))
@@ -172,16 +209,32 @@ def build(opts):
         p.rotation_euler = (0.0, 0.0, -sx * math.radians(f("pauldron_droop", 0.0)))
         p.parent = upper
     hy, hr = f("helmet_y", 0.0), f("helmet_r", 5.4)
-    _lathe("helmet", [(hy + y, r * hr / 5.4, d * hr / 5.4, 0.0) for y, r, d in (
-        (54.0, 3.6, 3.4), (55.2, 4.9, 4.5), (56.5, 5.4, 5.0), (61.5, 5.4, 5.0), (62.2, 5.0, 4.6), (62.6, 3.0, 2.8))], steel).parent = upper
-    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=f("finial_r", 2.4) * S, radius2=0.0, depth=f("finial_h", 3.0) * S,
+    hp = f("helm_point", 0.0)
+    prof = ((54.0, 3.6, 3.4), (55.2, 4.9, 4.5), (56.5, 5.4, 5.0), (61.5, 5.4, 5.0), (62.2, 5.0, 4.6), (62.6, 3.0, 2.8))
+    if hp > 0:                                                       # an ogive: the dome narrows to a point
+        prof = ((54.0, 3.6, 3.4), (55.2, 4.9, 4.5), (56.5, 5.4, 5.0), (60.0, 5.4, 5.0), (61.5, 5.0, 4.6),
+                (62.2 + hp * 0.3, 3.9, 3.6), (62.2 + hp * 0.65, 2.2, 2.0), (62.2 + hp * 0.9, 0.7, 0.65),
+                (62.2 + hp, 0.05, 0.05))
+    _lathe("helmet", [(hy + y, r * hr / 5.4, d * hr / 5.4, 0.0) for y, r, d in prof], steel).parent = upper
+    if hp > 0:
+        bpy.ops.mesh.primitive_cone_add(vertices=12, radius1=0.9 * S, radius2=0.0, depth=f("finial_h", 3.0) * S,
+                                        location=(0, (hy + 62.2 + hp - 0.6 + f("finial_h", 3.0) / 2) * S, 0),
+                                        rotation=(-math.pi / 2, 0, 0))
+    else:
+        bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=f("finial_r", 2.4) * S, radius2=0.0, depth=f("finial_h", 3.0) * S,
                                     location=(0, (hy + 62.2 + f("finial_h", 3.0) / 2) * S, 0), rotation=(-math.pi / 2, 0, 0))
     fin = bpy.context.active_object
     fin.name = "finial"
     fin.data.materials.append(steel)
     bpy.ops.object.shade_smooth()
     fin.parent = upper
-    _rbox("keel", (0, hy + 58.3, hr * 0.92), (0.5, 3.2, 0.6), 0.4, steel).parent = upper
+    if opts.get("keel_wedge"):                                        # a sharp ridge down the face
+        kd = f("keel_d", 0.9)
+        kl = _rbox("keel", (0, hy + 58.0, hr * 0.92 - kd * 0.3), (kd, f("keel_h", 3.6), kd), 0.05, steel)
+        kl.rotation_euler = (0.0, math.pi / 4, 0.0)
+        kl.parent = upper
+    else:
+        _rbox("keel", (0, hy + 58.3, hr * 0.92), (0.5, 3.2, 0.6), 0.4, steel).parent = upper
     for sx in (-1.0, 1.0):
         _rbox("slot", (sx * 2.4, hy + f("slot_y", 59.3), hr * 0.86), (1.5, f("slot_h", 0.45), 0.5), 0.2, dark).parent = upper
     arms = {}
@@ -250,8 +303,22 @@ def _frames_setup(opts):
         nt.links.new(mr.outputs["Result"], nt.nodes["Background"].inputs["Color"])
     ctx.update({"hip": (f("hip_x", 3.9), f("hip_y", 28.0)), "ankle": f("ankle_y", 5.0), "thigh": f("thigh_l", 18.0),
                 "shin": f("shin_l", 5.0), "shoulder": (f("shoulder_x", 10.8), f("shoulder_y", 48.5), f("shoulder_z", 0.0)),
-                "ua": f("uarm_l", 8.5), "fd": f("fist_d", 14.5), "gap": f("grip_gap", 3.6), "pivot": f("pivot_y", 31.0)})
+                "ua": f("uarm_l", 8.5), "fd": f("fist_d", 14.5), "gap": f("grip_gap", 3.6), "pivot": f("pivot_y", 31.0),
+                "clear": opts.get("grip_clear"), "efwd": f("elbow_fwd", -0.5), "tip_fwd": bool(opts.get("tip_fwd")),
+                "rings": [(y, r * f("torso_k", 1.0), d, c) for y, r, d, c in (tuple(v) for v in opts.get("torso_rings", (
+                    (37.0, 7.0, 4.2, 0.0), (39.5, 7.4, 4.6, 0.2), (43.0, 7.7, 5.0, 0.4), (46.5, 7.6, 4.9, 0.3),
+                    (49.0, 6.8, 4.2, 0.0), (50.5, 4.5, 3.0, 0.0))))]})
     return ctx
+
+
+def _front_z(rings, x, y):
+    """The breastplate's front depth at (x, y) px (0 outside its height or width)."""
+    for (y0, rx0, rz0, c0), (y1, rx1, rz1, c1) in zip(rings, rings[1:]):
+        if y0 <= y <= y1:
+            t = (y - y0) / (y1 - y0)
+            rx, rz, cz = rx0 + (rx1 - rx0) * t, rz0 + (rz1 - rz0) * t, c0 + (c1 - c0) * t
+            return cz + rz * math.sqrt(max(0.0, 1.0 - min(1.0, abs(x) / rx) ** 2))
+    return 0.0
 
 
 def _frames_pose(ctx, pose):
@@ -275,8 +342,13 @@ def _frames_pose(ctx, pose):
         kn.location = tuple(v * S for v in knee)
         ft.location = (g("f" + side) * S, 0.0, 0.0)
     sw, st = math.radians(g("sw")), math.radians(g("st"))
+    if ctx["tip_fwd"]:
+        st = abs(st)                                                 # same projection, tip toward the camera
     v = Vector((math.sin(sw) * math.cos(st), math.cos(sw) * math.cos(st), math.sin(st)))
-    grip = Vector((dx + g("hx"), g("hy") - cr, g("hz")))
+    hz = g("hz")
+    if ctx["clear"] is not None:                                     # the fist stays in front of the breastplate
+        hz = max(hz, _front_z(ctx["rings"], g("hx"), g("hy") - cr) + float(ctx["clear"]))
+    grip = Vector((dx + g("hx"), g("hy") - cr, hz))
     ctx["sword"].location = tuple(c * S for c in grip)
     ctx["sword"].rotation_euler = (st, 0.0, -sw)
     sxo, syo, szo = ctx["shoulder"]
@@ -288,7 +360,7 @@ def _frames_pose(ctx, pose):
         else:
             rest = s + Vector((-0.8, 0.2 - ctx["ua"] - ctx["fd"], 0.5))
             t = rest.lerp(grip - v * ctx["gap"], min(1.0, max(0.0, g("grip2"))))
-        elbow, _ = _ik(s, t, ctx["ua"], ctx["fd"], (sx * 0.5, -1.0, -0.5))
+        elbow, _ = _ik(s, t, ctx["ua"], ctx["fd"], (sx * 0.5, -1.0, ctx["efwd"]))
         _aim(up, s, elbow)
         _aim(lo, elbow, t)
     r = g("glow")

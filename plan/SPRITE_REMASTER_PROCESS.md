@@ -87,7 +87,7 @@ family's own 3D rig between any two frames and renders it live, per entity, at t
 continuous pose instead of 4 fixed in-betweens per step. Pipeline:
 `framematch.py <family> live` (`tools/soi3d/live_blender.py`) builds the fitted model in Blender, poses
 every frame and exports `extracted/sprites_live/<family>/model.glb` + `live.json` (each frame's
-transforms of the moving nodes, its fitted camera, the lights, world and Principled materials);
+transforms of the moving nodes, blend-shape weights, its fitted camera, the lights, world and Principled materials);
 `livecal` fits the sun vs ambient balance (Godot's ambient light is not shadowed by the model the way
 Cycles' world light is, so it needs ~0.35× — sun-only and ambient-only passes mixed in linear light,
 grid-searched by dE → `key_scale` / `amb_scale`); `livegate` renders every frame through the game's own
@@ -95,7 +95,7 @@ renderer (`godot_project/scenes/live_check.tscn`) and scores it like `verify`, n
 frames (`_verify/live_sheet.png` = SD | Cycles | live), and writes `gate.json`. The game draws a sheet
 live only from rigs whose `gate.json` passed (`game.gd _scan_live` indexes them by sheet; a pose between
 frames of two different rigs, e.g. a player's run → idle, falls back to the frames). `live3d.gd`
-(`Live3D`) interpolates every node's transform (rotations slerped) and the fitted canvas placement,
+(`Live3D`) interpolates every node's transform (rotations slerped), blend-shape weights and the fitted canvas placement,
 renders into a viewport of the family's largest frame at the window's scale (MSAA 8×, filtered sun
 shadows — Godot's soft PCSS reads as a dot pattern at sprite size); a 2D pass applies the family's
 `matte` / `fringe` post steps, mirrors left-facing entities and recolours P3. Robo: live IoU min 0.860,
@@ -111,12 +111,51 @@ per-face materials, `beenie.py` `gore_faces`) and the Knight's gift box (`live_b
 objects to meshes — its glyphs had been dropped from the export). Still pre-rendered: the swirl ball and the egg
 (animated shader textures), the M block (per-frame visibility and deform modifiers), the winged shoe, the static
 1UP and Teeth emblem frames, the Gargoyle (per-frame model variants, `frame_opts`) and the Knight (a trial rig
-passed 54/65: the gift orb's teardrop is a shape key and its speckled gold a shader, which a rig of node
-transforms + Principled values cannot carry). The live materials also carry the Principled clearcoat
+passed 54/65: live rigs now carry the gift orb's teardrop shape keys, and since 2026-10-03 the orb's speckled gold
+exports as its mean colour -- the Knight is live, 65/65). The live materials also carry the Principled clearcoat
 (`coat` / `coat_rough` → Godot clearcoat). `livegate` scores live IoU with `live_iou`: Godot's MSAA leaves
 edge pixels at exactly half coverage, which count as hits where the source has a pixel and are left out where
 it has none (a fixed threshold either way flipped a near-miss: the Ant's f12 fell from 0.850 to 0.841 when
 they all counted as opaque).
+
+**Late-fringe oversize (2026-10-01).** The post `fringe` grows the alpha by 2 render px (0.5 SD px) of black.
+Families whose placement was fitted before the fringe was added stood ~0.5 SD px too large all round
+(3D-only ring, no SD-only pixels; the gate's blurred dE barely notices black over black). A pose-preserving
+placement refit (ortho camera: a placement change is an exact 2D similarity of the render) with fringe 1 fixed
+disk, both coins, compound, star, Smiley, transporter, weapons and cannon ball (e.g. Smiley IoU 0.959 -> 0.987,
+silver coin 0.921 -> 0.997); goldbar and spinner took the placement alone; live rigs re-calibrated and passed.
+The potion's fitted k had blown its SD-px-measured flask up 1.27x (lip clipped off the frame): back to the
+native k = ORTHO / R / S, measured geometry, look, then placement (IoU 0.862 -> 0.956, dE 14.33 -> 13.41). The
+gift bow is a bushy ROSETTE (`goodies.py` `bow_loops`). Live rigs now also carry blend-shape weights (Knight
+orb shape matches live; its speckled-gold shader still keeps Knight pre-rendered). Rejected: egg stripe grooves.
+Same-instant IN-GAME A/B (script `HOLD` + `F2` + `SHOT`, boards chosen to cover every tile kind) found what the
+per-frame gate passed: the grey HOLE-BLOCK f140 (`tile.py` porthole `hole_shape` diamond + `corner_r` gusset
+holes + `frame_w` border round a darker recessed `panel_gain` panel; dE 9.22 -> 6.33, its crack/quarters follow)
+and the BLACK DONUT f104, whose hole the key light's cast shadow filled (shadows false: the SD hole shows the
+white tile; dE 8.12 -> 7.50 -- the coloured donuts and the ball score better WITH shadows). Also: the Hippo
+statue keeps its open mouth dark (`emblem3d.py` `dark_parts`), the cannon ball 0.9x light (dE 13.17 -> 12.79).
+A second A/B sweep (boards 1040 429 301 417 1007 465 410 468): the hole-block's corners are SQUARE in the source
+(the cage blocks join into one lattice; f140 bevel 0.02 -> IoU 1.000, dE 3.0); the cannon housing is a FLUSH lit
+face round the barrel (`cannon_barrel.py` `plate_z` 0: the recessed backplate had sat in shadow, dE 12.1 -> 9.1);
+the gold bar is TWO stacked long ingots, end faces lit on the left (`goody_goldbar.py` layout stack2, dE 13.0 -> 11.6);
+the winged helmet's wings re-measured and set in front of the dome (`wing_pts`, `wing_z`; dE 14.4 -> 12.8).
+Not bugs: smooth REMASTERED draws movers SMOOTH_DELAY (2 ticks) behind, so a frozen A/B shows a spinning ball's
+earlier frame; the Smiley statue face only LOOKS smaller at nearest-neighbour zoom (bigger = dE +2.6..+14).
+KNIGHT LIVE (2026-10-03): a linked (procedural) Base/Emission Color exports its unused DEFAULT -- the orb went live
+as flat grey. Cycles ignores a linked input's default, so `knight.py` sets it to the speckle's mean gold (ramp
+weights from the noise distribution + `orb_live_tan` rim share, `orb_live_emit`): Cycles frames unchanged, live
+54/65 -> 65/65 (live dE max 34.2 -> 15.5); the Knight now draws live. Same trick for any procedural material.
+Gold bar albedo [175,135,0] (dE 11.59 -> 10.92). Coloured donut holes: the source shows a fainter shadow than
+ours, but no-shadow / self-shadow-only (Cycles light linking) / partial shadow all scored WORSE -- kept.
+USER FEEDBACK ROUND 31 (2026-10-03): one shared human face on the players, the Hammer and the Beenie -- eyes level
+with pupils centred (`eye_el` 6, `eye_az` 16, `eye_pupil_dy` 2; the old 10 deg default pupil drop looked down, and
+`eye_el` up to 25 put the eyes on the fringe line = "hair behind the eyes") plus a slight skin nose
+(`kid.py` `nose_skin_r` .55); `ankle_ball` (a leg-coloured ball at the ankle) keeps feet on the legs (not on the
+tumbles: dE +1.3). Beenie stands like the source: walk amplitudes 0, legs and free arm held, propeller turns a
+uniform 22.5 deg/frame, no red nose, shorter smile, skin hands, a ribbed gun with a barrel. Knight (`knight.py`):
+ogive helmet `helm_point`, sharp `keel_wedge`, scuffed/brushed steel (`rough_var`, `aniso`), thicker blade, and
+no-clip posing (`grip_clear` keeps the sword fist in front of the breastplate, `tip_fwd` mirrors a blade tipped
+away from the camera toward it -- same projection, never behind the body): 65/65, dE max 15.6.
 
 **Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
 can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)

@@ -106,6 +106,26 @@ def build(opts):
     gl = f("gun_l", 9.0)
     _rbox("gun_body", (-gl * 0.35, 0.6, 0), (gl / 2, f("gun_h", 2.2), f("gun_w", 1.8)), 1.0, green).parent = gun
     _rbox("gun_grip", (0.4, -1.8, 0), (0.9, 1.6, 1.2), 0.5, green).parent = gun
+    if opts.get("gun_detail", False):                                  # SD: a ribbed blaster, dark muzzle, top sight
+        dark = C._mat("gun_dark", C._srgb(*opts.get("gun_dark", (0, 60, 0))), rough=0.5, spec=0.2)
+        gh, gw, x0 = f("gun_h", 2.2), f("gun_w", 1.8), -gl * 0.35
+        for i in range(int(f("gun_ribs", 3))):
+            rx = x0 - gl * 0.3 + i * gl * 0.25
+            _rbox("gun_rib%d" % i, (rx, 0.6 - gh * 0.95, 0), (0.35, 0.45, gw * 0.9), 0.15, dark).parent = gun
+        bl, br = f("barrel_l", 2.5), f("barrel_r", 0.9)
+        b = _cyl("gun_barrel", (0, 0, 0), br, bl, green, 0.2, gun)
+        b.rotation_euler = (0.0, 0.0, math.pi / 2)
+        b.location = ((x0 - gl * 0.5 - bl * 0.4) * S, 0.6 * S, 0.0)
+        m = _cyl("gun_muzzle", (0, 0, 0), br * 0.6, 0.6, dark, 0.05, gun)
+        m.rotation_euler = (0.0, 0.0, math.pi / 2)
+        m.location = ((x0 - gl * 0.5 - bl * 0.9) * S, 0.6 * S, 0.0)
+        _rbox("gun_sight", (x0 + gl * 0.15, 0.6 + gh * 0.95, 0), (1.2, 0.45, 0.5), 0.15, green).parent = gun
+    if opts.get("hand_skin"):                                          # the clown face is white; the hands are skin
+        hs = C._mat("hand_skin", C._srgb(*opts["hand_skin"]), rough=f("rough", 0.45), spec=f("spec", 0.25))
+        for side in ("n", "f"):
+            h = bpy.data.objects.get("hand_" + side)
+            if h is not None:
+                h.data.materials[0] = hs
     return root, arms, legs, post, gun
 
 
