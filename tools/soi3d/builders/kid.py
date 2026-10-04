@@ -66,11 +66,12 @@ def build(opts):
         et = er * f("eye_t", 0.35)                  # thin along the head normal: flush, no profile bump
         white, pupil = mat("eye_white", (240, 240, 240)), mat("eye_pupil", (70, 70, 210))
         pr = er * f("eye_pupil_f", 0.5)
+        fy = f("eye_fy", 1.0)                       # < 1: an oval eye, wider than tall (the 1030 title art)
         rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
         for sz, tag in ((1.0, "n"), (-1.0, "f")):
-            for name, el, az, r3, m, lift in (("eye_", el0, az0, (et, er, er), white, 0.0),
+            for name, el, az, r3, m, lift in (("eye_", el0, az0, (et, er * fy, er), white, 0.0),
                                               ("pupil_", el0 - f("eye_pupil_dy", 10.0), az0 - f("eye_pupil_daz", 0.0),
-                                               (et * 0.6, pr, pr), pupil, et * 0.5)):
+                                               (et * 0.6, pr * min(1.0, fy * 1.1), pr), pupil, et * 0.5)):
                 e, a = math.radians(el), math.radians(az)
                 d = (-math.cos(e) * math.cos(a), math.sin(e), sz * math.cos(e) * math.sin(a))
                 t = 1.0 / math.sqrt(sum((d[i] / rad[i]) ** 2 for i in range(3))) + lift
@@ -85,9 +86,20 @@ def build(opts):
         d = (-math.cos(e), math.sin(e), 0.0)
         t = 1.0 / math.sqrt(sum((d[i] / rad[i]) ** 2 for i in range(3)))
         nr = f("nose_skin_r", 0.0)
-        o = _ell("nose_skin", (d[0] * t, hy + d[1] * t, 0.0), (nr * 0.8, nr, nr * 0.75), skin, 16)
+        o = _ell("nose_skin", (d[0] * t, hy + d[1] * t, 0.0), (nr * f("nose_skin_px", 0.8), nr, nr * 0.75), skin, 16)
         o.parent = neckj
         o.matrix_parent_inverse = neckj.matrix_world.inverted()
+    if opts.get("ears", False):    # skin ears on the sides of the head, level with the nose
+        rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
+        e = math.radians(f("ear_el", -5.0))
+        for sz in (1.0, -1.0):
+            a = math.radians(f("ear_az", 88.0))
+            d = (-math.cos(e) * math.cos(a), math.sin(e), sz * math.cos(e) * math.sin(a))
+            t = 1.0 / math.sqrt(sum((d[i] / rad[i]) ** 2 for i in range(3)))
+            o = _ell("ear", (d[0] * t, hy + d[1] * t, d[2] * t),
+                     (hr * f("ear_w", 0.22), hr * f("ear_h", 0.32), hr * f("ear_t", 0.12)), skin, 16)
+            o.parent = neckj
+            o.matrix_parent_inverse = neckj.matrix_world.inverted()
     if opts.get("mouth", False):   # a red mouth below the eyes (the Hammer's face, f19/f29)
         rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
         e, a = math.radians(f("mouth_el", -25.0)), math.radians(f("mouth_az", 10.0))
@@ -115,10 +127,12 @@ def build(opts):
         cu.bevel_resolution = 3
         sp = cu.splines.new('POLY')
         sp.points.add(16)
+        tap = f("smile_taper", 0.0)                 # > 0: a crescent, thick in the middle, thin at the corners
         for i, p in enumerate(sp.points):
             a = w * (i / 8.0 - 1.0)
             x, y, z = on_face(e0 - dip * (1.0 - (a / w) ** 2), a)
             p.co = (x * S, y * S, z * S, 1.0)
+            p.radius = 1.0 - tap * (a / w) ** 2
         o = bpy.data.objects.new("smile", cu)
         bpy.context.collection.objects.link(o)
         o.data.materials.append(mat("lips", (200, 20, 20)))
