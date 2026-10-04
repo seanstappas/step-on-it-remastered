@@ -5,7 +5,7 @@
   52
  ],
  "mode": "goodies",
- "note": "Round 13: the bow knot is RED as in the source (knot [200,20,40], knot_r 2.5 so it shows between the loops). The gift box f52 (goodies.py kind gift): a green cube turned 27 deg and tipped 18 deg, blue ribbon bands with red borders, a two-loop bow; lit from above-left (the front face sits in shadow as in the original), matte. Reproduce: sweep fit look final verify.",
+ "note": "Round 30: the source bow is a bushy ROSETTE covering most of the top, not two loops -> goodies.py bow_loops 7 (petal tori round the top + an inner ring; IoU .904 -> .915, dE 15.31 -> 14.61). Round 13: the bow knot is RED as in the source (knot [200,20,40], knot_r 2.5 so it shows between the loops). The gift box f52 (goodies.py kind gift): a green cube turned 27 deg and tipped 18 deg, blue ribbon bands with red borders, a two-loop bow; lit from above-left (the front face sits in shadow as in the original), matte. Reproduce: sweep fit look final verify. Round 31 (user feedback): tipped more top-down (gift_tilt 26) and the rosette loops given red rims like the band ribbon (loop_edge 0.12): dE 14.6 -> 12.8.",
  "opts": {
   "key_dir": [
    -0.5,
@@ -30,7 +30,14 @@
    20,
    40
   ],
-  "knot_r": 2.5
+  "knot_r": 2.5,
+  "bow_loops": 7,
+  "loop_R": 3.0,
+  "loop_r": 1.6,
+  "loop_tilt": 40,
+  "rosette_r": 2.0,
+  "gift_tilt": 26.0,
+  "loop_edge": 0.12
  },
  "frame_opts": {
   "52": {

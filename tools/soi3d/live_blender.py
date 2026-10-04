@@ -56,13 +56,17 @@ def main():
         bpy.context.view_layer.objects.active = curves[0]
         bpy.ops.object.convert(target="MESH")
     model = [o for o in bpy.data.objects if o.type in ("MESH", "EMPTY")]
+    blend_shapes = [(o, k) for o in model if o.type == "MESH" and o.data.shape_keys
+                    for k in o.data.shape_keys.key_blocks[1:]]
     order = sorted(job["frames"], key=int)
     per = {}
+    weights = {}
     for nn in order:
         if pose(ctx, job["frames"][nn]["pose"]) is True:
             raise SystemExit("live: builder %r rebuilds its scene per pose -- no fixed rig to export" % job["mode"])
         bpy.context.view_layer.update()
         per[nn] = {o.name: _flat(o.matrix_local) for o in model}
+        weights[nn] = [round(float(k.value), 6) for _, k in blend_shapes]
     moving = sorted(n for n in per[order[0]] if any(per[nn][n] != per[order[0]][n] for nn in order))
     lights = []
     for o in bpy.data.objects:
@@ -85,9 +89,11 @@ def main():
                               export_cameras=False, export_lights=False)
     out = {"sheet": job["sheet"], "family": job["family"], "scale": job["scale"], "world": float(world),
            "gamma": float(scn.view_settings.gamma), "lights": lights, "materials": mats, "nodes": moving,
+            "blend_shapes": [{"node": o.name, "shape": k.name} for o, k in blend_shapes],
            "post": job.get("post", []),
            "frames": {nn: {"w": job["frames"][nn]["w"], "h": job["frames"][nn]["h"],
-                           "cam": job["frames"][nn]["cam"], "xf": [per[nn][n] for n in moving]} for nn in order}}
+                      "cam": job["frames"][nn]["cam"], "xf": [per[nn][n] for n in moving],
+                      "bs": weights[nn]} for nn in order}}
     with open(os.path.join(job["out"], "live.json"), "w", encoding="utf-8") as fh:
         json.dump(out, fh)
     print("LIVE_DONE %d" % len(order))

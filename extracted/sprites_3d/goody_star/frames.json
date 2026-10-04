@@ -9,8 +9,9 @@
   "key": 3.0,
   "fill": 0.18,
   "r_out": 0.72,
-  "r_in": 0.3,
-  "thick": 0.22
+  "r_in": 0.31,
+  "thick": 0.08,
+  "flat": true
  },
  "sweep": [
   {
@@ -72,7 +73,7 @@
  "post": [
   {
    "fringe": {
-    "px": 2
+    "px": 1
    }
   }
  ],

@@ -99,15 +99,50 @@ def build_tile(opts):
                           spec=float(opts.get("base_spec", 0.25)))
     if kind == "porthole":
         tile = _slab("tile", half, height, bevel, body_mat)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=float(opts.get("hole_r", 0.62)), depth=4.0)
-        cut = bpy.context.active_object
-        m = tile.modifiers.new("hole", 'BOOLEAN')
-        m.operation = 'DIFFERENCE'
-        m.object = cut
         bpy.context.view_layer.objects.active = tile
         bpy.ops.object.modifier_apply(modifier="bev")
-        bpy.ops.object.modifier_apply(modifier="hole")
-        bpy.data.objects.remove(cut, do_unlink=True)
+        cuts = []
+        fw = float(opts.get("frame_w", 0.0))
+        if fw > 0:                               # SD f140: a 3 px border frame round a recessed, darker panel
+            wd = float(opts.get("well_d", 0.08))
+            pg = float(opts.get("panel_gain", 1.0))
+            panel = C._mat("panel", C._srgb(*(max(0, min(255, int(v * pg))) for v in base)),
+                           rough=float(opts.get("rough", 0.4)), spec=float(opts.get("base_spec", 0.25)))
+            cuts.append(C._box("panel_cut", (0, 0, top), (2 * (half - fw), 2 * (half - fw), 2 * wd), panel, bevel=0.0))
+        if opts.get("hole_shape", "round") == "diamond":
+            d = float(opts.get("hole_d", 0.9))   # half-diagonal; the tips are clipped at +-hole_clip (blunt, as in SD)
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0), rotation=(0, 0, math.pi / 4))
+            dia = bpy.context.active_object
+            dia.scale = (d * math.sqrt(2), d * math.sqrt(2), 4.0)
+            clip = float(opts.get("hole_clip", d))
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0))
+            box = bpy.context.active_object
+            box.scale = (2 * clip, 2 * clip, 5.0)
+            bi = dia.modifiers.new("clip", 'BOOLEAN')
+            bi.operation, bi.object = 'INTERSECT', box
+            bpy.context.view_layer.objects.active = dia
+            bpy.ops.object.modifier_apply(modifier="clip")
+            bpy.data.objects.remove(box, do_unlink=True)
+            cuts.append(dia)
+        else:
+            bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=float(opts.get("hole_r", 0.62)), depth=4.0)
+            cuts.append(bpy.context.active_object)
+        cr = float(opts.get("corner_r", 0.0))
+        if cr > 0:                               # a small round hole in each corner gusset
+            cxy = float(opts.get("corner_xy", 0.57))
+            for sx in (-1.0, 1.0):
+                for sy in (-1.0, 1.0):
+                    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=cr, depth=4.0, location=(sx * cxy, sy * cxy, 0))
+                    cuts.append(bpy.context.active_object)
+        for i, cut in enumerate(cuts):
+            m = tile.modifiers.new("cut%d" % i, 'BOOLEAN')
+            m.operation = 'DIFFERENCE'
+            m.object = cut
+            if cut.data.materials:
+                m.material_mode = 'TRANSFER'     # the cut's faces (the panel floor) take the cutter's material
+            bpy.context.view_layer.objects.active = tile
+            bpy.ops.object.modifier_apply(modifier=m.name)
+            bpy.data.objects.remove(cut, do_unlink=True)
         C._box("well", (0, 0, -top - 0.05), (2 * half - 0.1, 2 * half - 0.1, 0.05),
                C._mat("dark", C._srgb(0, 0, 0), rough=1.0, spec=0.0), bevel=0.0)
         return

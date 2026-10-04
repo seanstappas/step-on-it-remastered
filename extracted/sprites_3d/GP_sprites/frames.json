@@ -86,12 +86,15 @@
   "rough": 0.25,
   "spec": 0.0,
   "gamma": 0.8625,
-  "eye_el": 10.75,
+  "eye_el": 6,
   "eye_r": 1.225,
-  "eye_az": 17.0,
+  "eye_az": 16,
   "hair_cut": 25.0,
   "fringe_x": 0.4,
-  "fringe_y": 0.1
+  "fringe_y": 0.1,
+  "eye_pupil_dy": 2,
+  "nose_skin_r": 0.55,
+  "ankle_ball": true
  },
  "sweep": [
   {

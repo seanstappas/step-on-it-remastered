@@ -11,7 +11,16 @@
   "bell": 1.2,
   "flare_x": 1.0,
   "flare_p": 2.5,
-  "rivets": true
+  "rivets": false,
+  "plate_z": 0.0,
+  "block_base": true,
+  "base_half": 1.0,
+  "base_bevel": 0.12,
+  "housing_rgb": [
+   205,
+   205,
+   205
+  ]
  },
  "sweep": [
   {

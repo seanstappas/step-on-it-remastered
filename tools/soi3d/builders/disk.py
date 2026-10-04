@@ -186,16 +186,19 @@ def build_disk(blade_angles=(45, 135, 225, 315), tilt_x=0.0, tilt_y=0.0, spin=0.
         p.scale = (hr, hr, 0.02)
         p.data.materials.append(pit)
         kr = float(hub.get("knob_r", 0.09))
-        knob = C._mat("knob", C._srgb(*hub.get("knob", (60, 200, 60))), rough=0.5, spec=0.2)
-        kb = knob.node_tree.nodes["Principled BSDF"]
-        kb.inputs["Emission Color"].default_value = C._srgb(*hub.get("knob", (60, 200, 60)))
-        kb.inputs["Emission Strength"].default_value = float(hub.get("knob_emit", 0.3))
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=kr, segments=24, ring_count=12, location=(0, 0, 1.0))
-        k = bpy.context.active_object
-        k.name = "knob"
-        k.data.materials.append(knob)
-        bpy.ops.object.shade_smooth()
-        for o in (p, k):
+        parts = [p]
+        if kr > 0:
+            knob = C._mat("knob", C._srgb(*hub.get("knob", (60, 200, 60))), rough=0.5, spec=0.2)
+            kb = knob.node_tree.nodes["Principled BSDF"]
+            kb.inputs["Emission Color"].default_value = C._srgb(*hub.get("knob", (60, 200, 60)))
+            kb.inputs["Emission Strength"].default_value = float(hub.get("knob_emit", 0.3))
+            bpy.ops.mesh.primitive_uv_sphere_add(radius=kr, segments=24, ring_count=12, location=(0, 0, 1.0))
+            k = bpy.context.active_object
+            k.name = "knob"
+            k.data.materials.append(knob)
+            bpy.ops.object.shade_smooth()
+            parts.append(k)
+        for o in parts:
             o.parent = pivot
             o.matrix_parent_inverse.identity()
     pivot.rotation_euler = (math.radians(tilt_x), math.radians(tilt_y), math.radians(spin))

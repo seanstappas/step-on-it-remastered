@@ -122,7 +122,12 @@
   "grip_hand": "f",
   "s_f0": 22.5,
   "e_f0": 105.0,
-  "two_hand": true
+  "two_hand": true,
+  "eye_pupil_dy": 2,
+  "eye_el": 6,
+  "eye_az": 16,
+  "nose_skin_r": 0.55,
+  "ankle_ball": true
  },
  "sweep": [
   {

@@ -86,12 +86,15 @@
   "rough": 0.25,
   "spec": 0.0,
   "gamma": 1.1375,
-  "eye_el": 25.0,
+  "eye_el": 6,
   "eye_r": 1.2,
-  "eye_az": 18.0,
+  "eye_az": 16,
   "hair_cut": 25.0,
   "fringe_x": 0.4,
-  "fringe_y": 0.1
+  "fringe_y": 0.1,
+  "eye_pupil_dy": 2,
+  "nose_skin_r": 0.55,
+  "ankle_ball": true
  },
  "sweep": [
   {
@@ -525,7 +528,7 @@
     "step": 5,
     "min": 0,
     "max": 50,
-    "init": 25.0
+    "init": 6
    },
    "eye_r": {
     "step": 0.15,
@@ -537,7 +540,7 @@
     "step": 3,
     "min": 6,
     "max": 33,
-    "init": 18.0
+    "init": 16
    }
   },
   "refine_rounds": 8,

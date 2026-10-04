@@ -6,7 +6,7 @@
   50
  ],
  "mode": "goodies",
- "note": "The silver shield f49 (goodies.py kind shield: the crest outline measured per row, extruded and intersected with a big sphere into a convex cap, gold studs) and the winged helmet f50 (kind helmet: white dome, dark rim, jagged red wing prisms). Reproduce: sweep fit look final verify.",
+ "note": "The silver shield f49 (goodies.py kind shield: the crest outline measured per row, extruded and intersected with a big sphere into a convex cap, gold studs) and the winged helmet f50 (kind helmet: white dome, dark rim, jagged red wing prisms). Round 30: the helmet's wings re-measured from f50 (down to row 24, inner edge to col 13.5) and set IN FRONT of the dome (wing_z 5): IoU .882 -> .920, dE 14.4 -> 12.8. Reproduce: sweep fit look final verify. Round 31 (user feedback): shield outline corners rounded (sh_round 1.2) and studs made dimpled rivet rings with a dark core (stud_ring); helmet wings re-cut as sharp stacked tiers on both edges (wing_bevel 0.1), dome a sphere (dome_rz 8) and whiter.",
  "opts": {
   "key_dir": [
    -0.4,
@@ -28,7 +28,13 @@
     235,
     235,
     235
-   ]
+   ],
+   "sh_round": 1.2,
+   "stud_ring": true,
+   "stud_r": 2.4,
+   "ring_major": 0.55,
+   "ring_minor": 0.45,
+   "ring_z": 0.5
   },
   "50": {
    "kind": "helmet",
@@ -36,7 +42,89 @@
     215,
     0,
     0
-   ]
+   ],
+   "wing_pts": [
+    [
+     8.8,
+     9.2
+    ],
+    [
+     5.5,
+     6.5
+    ],
+    [
+     3.5,
+     5.5
+    ],
+    [
+     0.5,
+     5.5
+    ],
+    [
+     0.3,
+     14.3
+    ],
+    [
+     2.5,
+     13.8
+    ],
+    [
+     2.3,
+     18.3
+    ],
+    [
+     4.5,
+     17.8
+    ],
+    [
+     4.5,
+     21.5
+    ],
+    [
+     6.5,
+     22
+    ],
+    [
+     6.5,
+     24.5
+    ],
+    [
+     8.5,
+     24.5
+    ],
+    [
+     8.5,
+     21.5
+    ],
+    [
+     13.8,
+     20.8
+    ],
+    [
+     11.3,
+     18.3
+    ],
+    [
+     12.6,
+     16.6
+    ],
+    [
+     10.0,
+     14.6
+    ],
+    [
+     10.6,
+     13.3
+    ],
+    [
+     8.0,
+     11.5
+    ]
+   ],
+   "wing_z": 5.0,
+   "wing_bevel": 0.1,
+   "dome_rz": 8.0,
+   "white_gain": 1.2
   }
  },
  "sweep": [

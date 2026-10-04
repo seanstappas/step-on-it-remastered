@@ -8,7 +8,7 @@
   ]
  },
  "mode": "hammer",
- "note": "PASS (48 frames under the players' documented gate dE 17.5; at 16: 47/48, f21 17.2; IoU min .854, dE mean 13.8). The Hammer (hammer.py on the kid rig): green shirt and shorts, bare legs, white shoes, the MALLET carried over the RIGHT shoulder (grip_hand f: the rig's far arm, carry base pose s_f0 22.5 / e_f0 105; the optim inits follow). Views (per-frame yaw priors): left walk f02-f19, turn f20, FRONT f21-f28 (face + red mouth; the old fit showed the back of the head there), turn f29-f30, right walk f31-f49. f05-f09 re-fitted with the mallet held back (ham -185..-145): the optim had swung it forward to fill the free fist. Round 17: 34 -> 47/48 at dE 16. Re-optimized frame 21 with hold_pose, bringing all 48 frames <= 16.0 (max 15.99, mean 13.70) and tightening gate dE to 16.0.",
+ "note": "PASS (48 frames under the players' documented gate dE 17.5; at 16: 47/48, f21 17.2; IoU min .854, dE mean 13.8). The Hammer (hammer.py on the kid rig): green shirt and shorts, bare legs, white shoes, the MALLET carried over the RIGHT shoulder (grip_hand f: the rig's far arm, carry base pose s_f0 22.5 / e_f0 105; the optim inits follow). Views (per-frame yaw priors): left walk f02-f19, turn f20, FRONT f21-f28 (face + red mouth; the old fit showed the back of the head there), turn f29-f30, right walk f31-f49. f05-f09 re-fitted with the mallet held back (ham -185..-145): the optim had swung it forward to fill the free fist. Round 17: 34 -> 47/48 at dE 16. Re-optimized frame 21 with hold_pose, bringing all 48 frames <= 16.0 (max 15.99, mean 13.70) and tightening gate dE to 16.0. Round 31 (user feedback): shared human face (level eyes, slight skin nose), ankle balls, short sleeves (half arm skin), slimmer legs/torso (leg_r 2.2, torso_fx .92) -> back on the players' documented gate dE 17.5 (max 16.4, mean 14.0).",
  "place_iou_w": 200,
  "shift": "auto",
  "shift_range": 4,
@@ -49,7 +49,7 @@
   "torso_y": 4.8,
   "torso_h": 10.0,
   "torso_r": 3.6,
-  "torso_fx": 0.99,
+  "torso_fx": 0.92,
   "torso_bevel": 1.2,
   "hip_r": 2.8125,
   "hip_h": 2.4,
@@ -73,7 +73,7 @@
   "hip_z": 1.825,
   "thigh_l": 5.15,
   "shin_l": 5.825,
-  "leg_r": 2.4,
+  "leg_r": 2.2,
   "foot_rx": 3.45,
   "foot_ry": 1.4312,
   "foot_rz": 1.6,
@@ -104,7 +104,7 @@
   "ham0": -135.0,
   "bare_thighs": false,
   "dark_socks": false,
-  "short_sleeves": false,
+  "short_sleeves": true,
   "mouth": true,
   "skin_gain": 1.025,
   "hair_gain": 1.0,
@@ -121,7 +121,12 @@
   "mouth_r": 0.9,
   "grip_hand": "f",
   "s_f0": 22.5,
-  "e_f0": 105.0
+  "e_f0": 105.0,
+  "ankle_ball": true,
+  "eye_el": 6,
+  "eye_az": 16,
+  "eye_pupil_dy": 2,
+  "nose_skin_r": 0.55
  },
  "sweep": [
   {
@@ -372,7 +377,7 @@
     "step": 0.08,
     "min": 0.5,
     "max": 1.2,
-    "init": 0.99
+    "init": 0.92
    },
    "hip_r": {
     "step": 0.25,
@@ -468,7 +473,7 @@
     "step": 0.15,
     "min": 1,
     "max": 2.4,
-    "init": 2.4
+    "init": 2.2
    },
    "foot_rx": {
     "step": 0.25,
@@ -628,7 +633,7 @@
  ],
  "gate": {
   "iou": 0.85,
-  "de": 16.0,
+  "de": 17.5,
   "rank_tol": 1
  },
  "fps": 15,

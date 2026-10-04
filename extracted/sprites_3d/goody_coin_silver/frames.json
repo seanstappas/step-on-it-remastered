@@ -8,10 +8,10 @@
  "opts": {
   "kind": "silver",
   "glyph_size": 2.3,
-  "glyph_extrude": 0.06,
+  "glyph_extrude": 0.12,
   "glyph_dark": 0.9,
-  "rim_fz": 1.1,
-  "rim_minor": 0.075
+  "rim_fz": 1.6,
+  "rim_minor": 0.085
  },
  "sweep": [
   {
@@ -115,7 +115,7 @@
   },
   {
    "fringe": {
-    "px": 2
+    "px": 1
    }
   }
  ],

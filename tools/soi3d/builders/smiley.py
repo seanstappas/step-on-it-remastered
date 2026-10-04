@@ -21,7 +21,7 @@ def _surface_z(x, y, r=1.0):
     return math.sqrt(max(0.0, r * r - x * x - y * y))
 
 
-def _nose(name, base_w, base_y, top_w, top_y, height, mat):
+def _nose(name, base_w, base_y, top_w, top_y, height, mat, bevel=0.02):
     """A raised nose RIDGE on the sphere front: a trapezoid footprint (base_w wide at base_y, top_w at
     top_y) whose centre line is lifted by `height` at the base (less at the top), so it has a lit left
     flank, a shaded right flank and a downward-facing base end."""
@@ -42,9 +42,14 @@ def _nose(name, base_w, base_y, top_w, top_y, height, mat):
     obj = bpy.data.objects.new(name, me)
     bpy.context.collection.objects.link(obj)
     bev = obj.modifiers.new("bev", 'BEVEL')
-    bev.width = 0.02
-    bev.segments = 2
+    bev.width = bevel
+    bev.segments = 2 if bevel <= 0.02 else 5
     obj.data.materials.append(mat)
+    if bevel > 0.02:                                     # a rounded ridge: unclamped round bevel, smooth shaded
+        bev.use_clamp_overlap = False
+        bev.profile = 0.5
+        for p in obj.data.polygons:
+            p.use_smooth = True
     return obj
 
 
@@ -89,13 +94,43 @@ def build_smiley(opts=None):
         sl = float(opts.get("slit_len", 0.65)) * 2 * er * float(opts.get("eye_sx", 1.1))
         st = float(opts.get("slit_t", 0.07))
         top = z + er * float(opts.get("eye_sz", 0.6))
-        slit = C._box("slit%d" % sx, (x, y + float(opts.get("slit_y", 0.0)), top - st * 0.4), (sl, st, st),
-                      black, bevel=0.005)
+        sx_off = x + sx * float(opts.get("slit_dx", 0.0))
+        if opts.get("slit_inset"):                               # painted INTO the eyeball: trimmed to its skin
+            slit = C._box("slit%d" % sx, (sx_off, y + float(opts.get("slit_y", 0.0)), top - er * 0.5), (sl, st, er),
+                          black, bevel=0.0)
+            bpy.ops.mesh.primitive_uv_sphere_add(radius=er, segments=40, ring_count=20, location=(x, y, z))
+            skin = bpy.context.active_object
+            skin.scale = tuple(s * 1.006 for s in eye.scale)
+            m = slit.modifiers.new("skin", 'BOOLEAN')
+            m.operation = 'INTERSECT'
+            m.object = skin
+            bpy.context.view_layer.objects.active = slit
+            bpy.ops.object.modifier_apply(modifier="skin")
+            bpy.data.objects.remove(skin, do_unlink=True)
+            slit.visible_shadow = False
+        else:
+            slit = C._box("slit%d" % sx, (sx_off, y + float(opts.get("slit_y", 0.0)), top - st * 0.4), (sl, st, st),
+                          black, bevel=0.005)
         parts.append(slit)
     # nose: a white RIDGE pointing UP between the eyes, flaring down to its base above the mouth
     nose = _nose("nose", float(opts.get("nose_w", 0.6)), float(opts.get("nose_base", -0.1)),
                  float(opts.get("nose_top_w", 0.2)), float(opts.get("nose_top", 0.5)),
-                 float(opts.get("nose_h", 0.14)), white)
+                 float(opts.get("nose_h", 0.14)), white, float(opts.get("nose_bevel", 0.02)))
+    if opts.get("nose_round"):                                     # a rounded ridge: a half-buried cone
+        bw, by = float(opts.get("nose_w", 0.6)), float(opts.get("nose_base", -0.1))
+        tw, ty = float(opts.get("nose_top_w", 0.2)), float(opts.get("nose_top", 0.5))
+        nh = float(opts.get("nose_h", 0.14))
+        bpy.data.objects.remove(nose, do_unlink=True)
+        L = math.hypot(ty - by, _surface_z(0, ty) - _surface_z(0, by))
+        bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=bw / 2, radius2=tw / 2, depth=L)
+        nose = bpy.context.active_object
+        nose.name = "nose"
+        zb, zt = _surface_z(0, by), _surface_z(0, ty)
+        nose.rotation_euler = (math.atan2(-(ty - by), zt - zb), 0.0, 0.0)      # local +Z: base -> top
+        nose.scale = (1.0, nh * float(opts.get("nose_round", 1.0)) / (bw / 2), 1.0)
+        nose.location = (0.0, (by + ty) / 2, (zb + zt) / 2 - 0.02)
+        nose.data.materials.append(white)
+        bpy.ops.object.shade_smooth()
     nose.location.x = fx
     parts.append(nose)
     # mouth: a huge THICK white torus low on the sphere, its axis along the surface normal
@@ -107,7 +142,7 @@ def build_smiley(opts=None):
     mouth = bpy.context.active_object
     mouth.name = "mouth"
     mouth.rotation_euler = (math.asin(-my) * float(opts.get("mouth_tilt", 1.0)), 0.0, 0.0)
-    mouth.scale = (float(opts.get("mouth_sx", 1.0)), float(opts.get("mouth_sy", 0.8)), 0.8)
+    mouth.scale = (float(opts.get("mouth_sx", 1.0)), float(opts.get("mouth_sy", 0.8)), float(opts.get("mouth_sz", 0.8)))
     mouth.data.materials.append(white)
     bpy.ops.object.shade_smooth()
     parts.append(mouth)

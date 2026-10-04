@@ -182,6 +182,12 @@ def build_potion_px(opts):
                   float(opts.get("body_rz", 10.0)) * S)
     body.data.materials.append(glass)
     bpy.ops.object.shade_smooth()
+    tp = float(opts.get("body_taper", 0.0))                        # hand-blown: broader shoulders than base
+    if tp:
+        for v in body.data.vertices:
+            v.co.x *= 1.0 + tp * v.co.y
+            v.co.z *= 1.0 + tp * v.co.y
+    body.rotation_euler = (0.0, 0.0, math.radians(float(opts.get("body_tilt", 0.0))))
     nr = float(opts.get("neck_r", 3.3)) * S
     top, bot = float(opts.get("neck_top", 4.5)), cy - 5.0
     bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=nr, depth=(bot - top) * S,
@@ -191,6 +197,15 @@ def build_potion_px(opts):
     bpy.ops.object.shade_smooth()
     lr = nr + max(0.5, float(opts.get("lip_extra", 1.7))) * S      # the lip always overhangs the neck
     l0, l1 = float(opts.get("lip_top", 1.0)), float(opts.get("lip_bot", 4.6))
+    if opts.get("lip_shape") == "torus":                          # a rolled rim: round in section
+        mr = (l1 - l0) / 2 * S
+        bpy.ops.mesh.primitive_torus_add(major_radius=max(lr - mr, nr * 0.6), minor_radius=mr, major_segments=48,
+                                         minor_segments=16, location=(*_px(16, (l0 + l1) / 2), 0), rotation=(math.pi / 2, 0, 0))
+        lip = bpy.context.active_object
+        lip.scale = (1.0, 1.0, float(opts.get("lip_flat", 1.0)))
+        lip.data.materials.append(plain)
+        bpy.ops.object.shade_smooth()
+        return
     bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=lr, depth=(l1 - l0) * S,
                                         location=(*_px(16, (l0 + l1) / 2), 0), rotation=(math.pi / 2, 0, 0))
     lip = bpy.context.active_object

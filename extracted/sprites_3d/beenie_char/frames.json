@@ -78,9 +78,9 @@
   "foot_ry": 1.375,
   "foot_rz": 1.6,
   "foot_dx": 1.2375,
-  "swing": 30.0,
-  "knee_amp": 40.0,
-  "arm_swing": 20.0,
+  "swing": 0,
+  "knee_amp": 0,
+  "arm_swing": 0,
   "elbow0": 25.0,
   "tilt": 0.0,
   "rough": 0.25,
@@ -150,16 +150,16 @@
   "cap_turn": 120,
   "eye_r": 1.75,
   "eye_el": 15.0,
-  "eye_az": 21.25,
+  "eye_az": 23,
   "hair_cut": 35,
   "fringe_x": 0.1,
   "fringe_y": 0.1,
   "smile": true,
-  "smile_w": 75.0,
+  "smile_w": 60,
   "smile_el": -9.0,
   "smile_dip": 17.0,
   "smile_t": 1.0125,
-  "nose_r": 0.95,
+  "nose_r": 0,
   "nose_el": 2,
   "gun_hand": "f",
   "sweater_gain": 1.0,
@@ -170,7 +170,15 @@
   "cap_reps": 2,
   "prop_h": 0.7,
   "bill_l": 4.0,
-  "gore_faces": true
+  "gore_faces": true,
+  "hand_skin": [
+   230,
+   180,
+   140
+  ],
+  "gun_detail": true,
+  "barrel_l": 1.5,
+  "ankle_ball": true
  },
  "sweep": [
   {
@@ -359,21 +367,11 @@
     "min": -60,
     "max": 420
    },
-   "phase": {
-    "step": 20,
-    "min": -360,
-    "max": 720
-   },
-   "prop": {
-    "step": 15,
-    "min": -180,
-    "max": 360
-   },
    "s_n": {
-    "step": 12,
-    "min": -90,
-    "max": 180,
-    "init": 30
+    "step": 6,
+    "min": -15,
+    "max": 15,
+    "init": 0
    },
    "s_f": {
     "step": 12,
@@ -382,39 +380,15 @@
     "init": 0
    },
    "e_n": {
-    "step": 12,
-    "min": -40,
-    "max": 130,
-    "init": 65
+    "step": 6,
+    "min": 0,
+    "max": 35,
+    "init": 15
    },
    "e_f": {
     "step": 12,
     "min": -40,
     "max": 130,
-    "init": 0
-   },
-   "t_n": {
-    "step": 10,
-    "min": -70,
-    "max": 90,
-    "init": 0
-   },
-   "t_f": {
-    "step": 10,
-    "min": -70,
-    "max": 90,
-    "init": 0
-   },
-   "k_n": {
-    "step": 10,
-    "min": -20,
-    "max": 120,
-    "init": 0
-   },
-   "k_f": {
-    "step": 10,
-    "min": -20,
-    "max": 120,
     "init": 0
    },
    "gun": {
@@ -685,7 +659,7 @@
     "step": 3,
     "min": 10,
     "max": 36,
-    "init": 21.25
+    "init": 23
    },
    "world": {
     "step": 0.03,
@@ -751,7 +725,7 @@
     "step": 5,
     "min": 40,
     "max": 80,
-    "init": 75.0
+    "init": 60
    },
    "smile_el": {
     "step": 3,
@@ -773,9 +747,9 @@
    },
    "nose_r": {
     "step": 0.15,
-    "min": 0.3,
+    "min": 0,
     "max": 1.4,
-    "init": 0.95
+    "init": 0
    }
   },
   "refine_rounds": 8,

@@ -18,7 +18,7 @@
   "key": 4.6,
   "hub": true,
   "hub_r": 0.15,
-  "knob_r": 0.045,
+  "knob_r": 0.0,
   "knob_emit": 0.15
  },
  "sweep": [
@@ -131,7 +131,7 @@
   },
   {
    "fringe": {
-    "px": 2
+    "px": 1
    }
   }
  ],

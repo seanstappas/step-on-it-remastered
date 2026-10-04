@@ -15,11 +15,13 @@
   "key": 4.6,
   "world": 0.06,
   "glyph_size": 2.3,
-  "glyph_extrude": 0.06,
+  "glyph_extrude": 0.12,
   "glyph_dark": 0.9,
   "groove_r": 0.76,
   "groove_w": 0.015,
-  "groove_dark": 0.35
+  "groove_dark": 0.35,
+  "rim_fz": 1.35,
+  "rim_minor": 0.085
  },
  "sweep": [
   {
@@ -141,7 +143,7 @@
   },
   {
    "fringe": {
-    "px": 2
+    "px": 1
    }
   }
  ],

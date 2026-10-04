@@ -38,7 +38,7 @@
   {
    "frame": 4,
    "iou": 0.8541,
-   "de": 10.742,
+   "de": 10.741,
    "de_raw": 16.123,
    "best_src": 4,
    "rank_dist": 0,
@@ -511,7 +511,7 @@
    "frame": 39,
    "iou": 0.8799,
    "de": 10.814,
-   "de_raw": 16.341,
+   "de_raw": 16.34,
    "best_src": 39,
    "rank_dist": 0,
    "rank_gap": 0.0,
@@ -566,7 +566,7 @@
   {
    "frame": 43,
    "iou": 0.8801,
-   "de": 9.85,
+   "de": 9.849,
    "de_raw": 15.02,
    "best_src": 43,
    "rank_dist": 0,

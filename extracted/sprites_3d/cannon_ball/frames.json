@@ -11,9 +11,9 @@
  "opts": {
   "poles_y": true,
   "tilt": -5.5,
-  "world": 0.02,
-  "key": 3.0,
-  "fill": 0.16,
+  "world": 0.018,
+  "key": 2.7,
+  "fill": 0.144,
   "spec": 0.05,
   "rough": 0.28
  },
@@ -30,7 +30,7 @@
   "spin": "loop"
  },
  "scale": 4,
- "post": [{"fringe": {"px": 2}}],
+ "post": [{"fringe": {"px": 1}}],
  "samples": {
   "sweep": 16,
   "final": 256

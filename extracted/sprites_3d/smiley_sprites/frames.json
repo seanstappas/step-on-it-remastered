@@ -42,7 +42,12 @@
   "mouth_sy": 0.7,
   "mouth_sx": 1.15,
   "mouth_y": 0.54,
-  "mouth_tilt": 0.8
+  "mouth_tilt": 0.8,
+  "slit_inset": true,
+  "slit_dx": 0.07,
+  "slit_t": 0.08,
+  "nose_bevel": 0.06,
+  "mouth_sz": 1.15
  },
  "sweep": [
   {
@@ -57,7 +62,13 @@
   "roll": "loop"
  },
  "scale": 4,
- "post": [{"fringe": {"px": 1}}],
+ "post": [
+  {
+   "fringe": {
+    "px": 1
+   }
+  }
+ ],
  "samples": {
   "sweep": 16,
   "final": 256

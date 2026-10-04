@@ -69,7 +69,7 @@ def build(opts):
         rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
         for sz, tag in ((1.0, "n"), (-1.0, "f")):
             for name, el, az, r3, m, lift in (("eye_", el0, az0, (et, er, er), white, 0.0),
-                                              ("pupil_", el0 - f("eye_pupil_dy", 10.0), az0,
+                                              ("pupil_", el0 - f("eye_pupil_dy", 10.0), az0 - f("eye_pupil_daz", 0.0),
                                                (et * 0.6, pr, pr), pupil, et * 0.5)):
                 e, a = math.radians(el), math.radians(az)
                 d = (-math.cos(e) * math.cos(a), math.sin(e), sz * math.cos(e) * math.sin(a))
@@ -79,6 +79,15 @@ def build(opts):
                 o.rotation_euler = (0.0, sz * a, -e)
                 o.parent = neckj
                 o.matrix_parent_inverse = neckj.matrix_world.inverted()
+    if f("nose_skin_r", 0.0) > 0:  # a slight skin nose on the face centre line
+        rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
+        e = math.radians(f("nose_skin_el", -5.0))
+        d = (-math.cos(e), math.sin(e), 0.0)
+        t = 1.0 / math.sqrt(sum((d[i] / rad[i]) ** 2 for i in range(3)))
+        nr = f("nose_skin_r", 0.0)
+        o = _ell("nose_skin", (d[0] * t, hy + d[1] * t, 0.0), (nr * 0.8, nr, nr * 0.75), skin, 16)
+        o.parent = neckj
+        o.matrix_parent_inverse = neckj.matrix_world.inverted()
     if opts.get("mouth", False):   # a red mouth below the eyes (the Hammer's face, f19/f29)
         rad = (hr, hr * f("head_fy", 1.05), hr * f("head_fz", 0.95))
         e, a = math.radians(f("mouth_el", -25.0)), math.radians(f("mouth_az", 10.0))
@@ -144,6 +153,8 @@ def build(opts):
         _ell("knee_ball_" + side, (0, 0, 0), (lr,) * 3, legs_m).parent = kn
         _cyl("shin_" + side, (0, -sl / 2, 0), lr * 0.95, sl, legs_m, 0.3, kn)
         an = _empty("ankle_" + side, (0, -sl, 0), kn)
+        if opts.get("ankle_ball", False):    # fills the ankle joint so a turned foot stays on its shin
+            _ell("ankle_ball_" + side, (0, 0, 0), (lr * 0.95,) * 3, legs_m).parent = an
         _rbox("shoe_" + side, (-f("foot_dx", 0.9), -f("foot_ry", 1.0), 0),
               (f("foot_rx", 2.6), f("foot_ry", 1.0), f("foot_rz", 1.5)), 0.6, shoe).parent = an
         legs[side] = (hp, kn, an)

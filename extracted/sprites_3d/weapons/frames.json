@@ -22,7 +22,7 @@
   "spin": "loop"
  },
  "scale": 4,
- "post": [{"fringe": {"px": 2}}],
+ "post": [{"fringe": {"px": 1}}],
  "samples": {
   "sweep": 16,
   "final": 256
