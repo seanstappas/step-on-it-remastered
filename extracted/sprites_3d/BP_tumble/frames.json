@@ -86,9 +86,9 @@
   "rough": 0.25,
   "spec": 0.1,
   "gamma": 0.8375,
-  "eye_el": 6,
-  "eye_r": 1.8,
-  "eye_az": 16,
+  "eye_el": 8,
+  "eye_r": 1.109,
+  "eye_az": 24,
   "t_n0": 90.0,
   "t_f0": 90.0,
   "k_n0": 40.0,
@@ -99,11 +99,21 @@
   "e_f0": 60.0,
   "pivot_y": 4.5,
   "pivot_x": -2.5,
-  "hair_cut": 25.0,
-  "fringe_x": 0.4,
-  "fringe_y": 0.1,
+  "hair_cut": 60,
+  "fringe_x": 0.2,
+  "fringe_y": 0.35,
   "eye_pupil_dy": 2,
-  "nose_skin_r": 0.55
+  "nose_skin_r": 0.88,
+  "eye_fy": 0.75,
+  "eye_pupil_f": 0.7,
+  "smile": true,
+  "smile_w": 38,
+  "smile_el": -22,
+  "smile_dip": 14,
+  "smile_t": 0.421,
+  "smile_taper": 0.7,
+  "nose_skin_px": 1.4,
+  "ears": true
  },
  "sweep": [
   {
@@ -473,19 +483,19 @@
     "step": 5,
     "min": -10,
     "max": 45,
-    "init": 6
+    "init": 8
    },
    "eye_r": {
     "step": 0.15,
     "min": 0.6,
     "max": 1.8,
-    "init": 1.8
+    "init": 1.109
    },
    "eye_az": {
     "step": 4,
     "min": 6,
     "max": 42,
-    "init": 16
+    "init": 24
    },
    "pivot_x": {
     "step": 0.5,

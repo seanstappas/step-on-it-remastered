@@ -156,6 +156,17 @@ uniform 22.5 deg/frame, no red nose, shorter smile, skin hands, a ribbed gun wit
 ogive helmet `helm_point`, sharp `keel_wedge`, scuffed/brushed steel (`rough_var`, `aniso`), thicker blade, and
 no-clip posing (`grip_clear` keeps the sword fist in front of the breastplate, `tip_fwd` mirrors a blade tipped
 away from the camera toward it -- same projection, never behind the body): 65/65, dE max 15.6.
+PLAYER FACE + SMOOTH RUN (round 32, 2026-10-03): the player face follows the 1030 "blue wins" title art -- a brown
+hair CAP with a level hairline (`hair_cut` 60), wide-set OVAL eyes (`eye_fy` .75, big irises, looking straight),
+a protruding skin nose (`nose_skin_px`), a red crescent smile (`smile_taper`) and ears (`ears`), all 8 player
+families (eye/nose/smile sizes scale with `head_r`). The run (two 24-frame loops the core plays, f02-f25 / f26-f49;
+the SD repeats every 12 frames) had per-frame independent fits: the walk phase jumped, ankles flipped +-90 deg,
+the head snapped. `tmp/run_smooth.py` refits each loop's TOTAL joint angles as one 3-harmonic curve shared by both
+sides (far limb = near limb half a cycle later, per-frame near/far relabelling, trimmed), a constant -15 deg/frame
+phase, and stores it as each frame's fit.json "anchor"; the new optim `"tether": {param: tol}` keeps a refit within
+tol of its anchor (smooth -> refit -> re-smooth -> refit at 3-8 deg). Residual vs a smooth cycle: legs 14-16 -> 3-4
+deg, ankles 40-50 -> 7-8, head 10-14 -> 2-3; BP_run dE max 14.8, GP_run 13.9, live 48/48; tweens now cover both
+loops ([[2,25],[26,49]], was [[37,48]]). Plain smoothing without the refit scored IoU .74.
 
 **Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
 can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)

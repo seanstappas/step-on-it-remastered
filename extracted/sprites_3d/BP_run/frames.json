@@ -86,15 +86,25 @@
   "rough": 0.25,
   "spec": 0.0,
   "gamma": 0.8875,
-  "eye_el": 6,
-  "eye_r": 0.925,
-  "eye_az": 16,
-  "hair_cut": 25.0,
-  "fringe_x": 0.4,
-  "fringe_y": 0.1,
+  "eye_el": 8,
+  "eye_r": 0.979,
+  "eye_az": 24,
+  "hair_cut": 60,
+  "fringe_x": 0.2,
+  "fringe_y": 0.35,
   "eye_pupil_dy": 2,
-  "nose_skin_r": 0.55,
-  "ankle_ball": true
+  "nose_skin_r": 0.776,
+  "ankle_ball": true,
+  "eye_fy": 0.75,
+  "eye_pupil_f": 0.7,
+  "smile": true,
+  "smile_w": 38,
+  "smile_el": -22,
+  "smile_dip": 14,
+  "smile_t": 0.371,
+  "smile_taper": 0.7,
+  "nose_skin_px": 1.4,
+  "ears": true
  },
  "sweep": [
   {
@@ -322,7 +332,23 @@
      90
     ]
    }
-  ]
+  ],
+  "tether": {
+   "phase": 0,
+   "s_n": 6,
+   "s_f": 6,
+   "e_n": 6,
+   "e_f": 6,
+   "t_n": 5,
+   "t_f": 5,
+   "k_n": 5,
+   "k_f": 5,
+   "a_n": 8,
+   "a_f": 8,
+   "yaw": 3,
+   "pitch": 2,
+   "hd": 4
+  }
  },
  "scale": 4,
  "samples": {
@@ -518,19 +544,19 @@
     "step": 5,
     "min": -10,
     "max": 45,
-    "init": 6
+    "init": 8
    },
    "eye_r": {
     "step": 0.15,
     "min": 0.6,
     "max": 1.8,
-    "init": 0.925
+    "init": 0.979
    },
    "eye_az": {
     "step": 4,
     "min": 6,
     "max": 42,
-    "init": 16
+    "init": 24
    }
   },
   "refine_rounds": 8,
@@ -576,8 +602,12 @@
   "n": 4,
   "cycles": [
    [
-    37,
-    48
+    2,
+    25
+   ],
+   [
+    26,
+    49
    ]
   ]
  }

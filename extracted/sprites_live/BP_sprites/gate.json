@@ -72,8 +72,8 @@
   117
  ],
  "pass": true,
- "iou_min": 0.8484,
- "de_mean": 12.127,
- "de_max": 15.946,
- "cycles_de_mean": 11.943
+ "iou_min": 0.8545,
+ "de_mean": 12.185,
+ "de_max": 15.65,
+ "cycles_de_mean": 11.928
 }

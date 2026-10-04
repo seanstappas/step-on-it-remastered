@@ -936,7 +936,8 @@ def stage_optim(family, cfg, only=None):
               "finish": {"rounds": 3, "scale": 4, "samples": 32, "step_f": 0.5}} -- the optional finish re-scores
     every frame at full fidelity and polishes it with steps restarted at step_f x the start step.
     "fix": [{"frames": [a, b], "param": p, "value": v}] pins p to v on those frames (e.g. no red ball in the
-    Gargoyle's first animation): it is never moved, and reseeds / probes / hops keep it."""
+    Gargoyle's first animation): it is never moved, and reseeds / probes / hops keep it.
+    "tether": {p: tol} keeps p within tol of the frame's fit.json "anchor" pose (a smoothed run cycle stays smooth)."""
     op = cfg.get("optim")
     if not op:
         print("optim: no \"optim\" block, skipping")
@@ -967,9 +968,20 @@ def stage_optim(family, cfg, only=None):
     for fx in op.get("fix") or []:
         for nn in range(int(fx["frames"][0]), int(fx["frames"][1]) + 1):
             fixed.setdefault(nn, {})[fx["param"]] = float(fx["value"])
+    tether = op.get("tether") or {}          # {param: tol}: stay within tol of fit.json's per-frame "anchor"
+    anchors = {int(n): v["anchor"] for n, v in fit["frames"].items() if "anchor" in v}
+
+    def tie(nn, k, v):
+        a = anchors.get(nn, {}).get(k)
+        if k in tether and a is not None:
+            v = max(a - float(tether[k]), min(a + float(tether[k]), v))
+        return v
 
     def pin(nn, pose):
         pose.update(fixed.get(nn, {}))
+        for k in tether:
+            if k in pose:
+                pose[k] = tie(nn, k, pose[k])
         return pose
     st = {}
     for fr in frames:
@@ -980,8 +992,9 @@ def stage_optim(family, cfg, only=None):
         st[nn] = {"fr": fr, "pose": pin(nn, pose), "step": {k: float(v["step"]) for k, v in params.items()},
                   "score": None, "opts": dict(frame_opts(cfg, nn, base=base), **lfo.get(str(nn), {}))}
 
-    def clamp(k, v):
-        return max(float(params[k].get("min", -1e9)), min(float(params[k].get("max", 1e9)), v))
+    def clamp(k, v, nn=None):
+        v = max(float(params[k].get("min", -1e9)), min(float(params[k].get("max", 1e9)), v))
+        return v if nn is None else tie(nn, k, v)
 
     if op.get("reseed") or only is not None:
         win = 2 if only is not None else int(op["reseed"].get("window", 3))
@@ -1022,12 +1035,12 @@ def stage_optim(family, cfg, only=None):
             trials.append(((nn, "base"), s["fr"], dict(s["pose"]), s["opts"]))
             for ci, vals in enumerate(combos):
                 trials.append(((nn, "probe", ci), s["fr"],
-                               pin(nn, dict(s["pose"], **{k: clamp(k, v) for k, v in zip(names, vals)})), s["opts"]))
+                               pin(nn, dict(s["pose"], **{k: clamp(k, v, nn) for k, v in zip(names, vals)})), s["opts"]))
         sc = _render_score(cfg, fit, trials, d, "%s_probe" % family, sc_, smp)
         for nn, s in st.items():
             v, key = min(((v, key) for key, v in sc.items() if key[0] == nn), key=lambda t: t[0])
             if key[1] == "probe":
-                s["pose"].update({k: clamp(k, val) for k, val in zip(names, combos[key[2]])})
+                s["pose"].update({k: clamp(k, val, nn) for k, val in zip(names, combos[key[2]])})
                 pin(nn, s["pose"])
                 print("optim: probe moved f%02d to %s" % (nn, dict(zip(names, combos[key[2]]))))
             s["score"] = v
@@ -1045,7 +1058,7 @@ def stage_optim(family, cfg, only=None):
                     if k in fixed.get(nn, {}) or s["step"][k] < float(params[k]["step"]) * float(op.get("min_step", 0.1)):
                         continue
                     for sgn in (1, -1):
-                        v = clamp(k, s["pose"][k] + sgn * s["step"][k])
+                        v = clamp(k, s["pose"][k] + sgn * s["step"][k], nn)
                         if v != s["pose"][k]:
                             trials.append(((nn, k, sgn), s["fr"], dict(s["pose"], **{k: v}), s["opts"]))
             if not trials:
@@ -1061,7 +1074,7 @@ def stage_optim(family, cfg, only=None):
                     good = [c for c in cand if c[0] < s["score"] - 1e-3]
                     if good:
                         v, sg = min(good)
-                        moves[k] = clamp(k, s["pose"][k] + sg * s["step"][k])
+                        moves[k] = clamp(k, s["pose"][k] + sg * s["step"][k], nn)
                         if best1 is None or v < best1[0]:
                             best1 = (v, k, moves[k])
                     else:
@@ -1100,7 +1113,7 @@ def stage_optim(family, cfg, only=None):
             keep = {nn: (dict(s["pose"]), s["score"]) for nn, s in st.items()}
             for nn, s in st.items():
                 for k, spec in params.items():
-                    s["pose"][k] = clamp(k, s["pose"][k] + rng.uniform(-2.0, 2.0) * float(spec["step"]))
+                    s["pose"][k] = clamp(k, s["pose"][k] + rng.uniform(-2.0, 2.0) * float(spec["step"]), nn)
                 pin(nn, s["pose"])
                 s["score"] = None
                 s["step"] = {k: float(v["step"]) * 0.5 for k, v in params.items()}
