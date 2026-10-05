@@ -182,6 +182,10 @@ def build_tile(opts):
         return
     tile = _slab("tile", half, height, bevel, body_mat)
     col = _rgb(opts, "color", (200, 0, 0))
+    if kind == "inset" and opts.get("tube_frame"):
+        _tube_frame(opts, half, top, body_mat, col)
+        bpy.data.objects.remove(tile, do_unlink=True)
+        return
     if kind == "emblem":
         _emblem(opts, top, half, tile)
         return
@@ -225,6 +229,19 @@ def build_tile(opts):
         bpy.ops.object.modifier_apply(modifier="bev")
         bpy.ops.object.modifier_apply(modifier="cut")
         bpy.data.objects.remove(cut, do_unlink=True)
+        wb = float(opts.get("well_bevel", 0.0))
+        if wb > 0:                                       # the card's block: the recess edges are rounded, not cut
+            import bmesh
+            bm = bmesh.new()
+            bm.from_mesh(tile.data)
+            lim = inner + 0.02                                    # the cutter meets the top at exactly +-inner
+            in_well = lambda v: max(abs(v.co.x), abs(v.co.y)) <= lim and floor_z - 1e-3 <= v.co.z <= top + 1e-3
+            edges = [e for e in bm.edges if all(in_well(v) for v in e.verts) and not e.is_boundary
+                     and e.calc_face_angle(0.0) > math.radians(10)]
+            bmesh.ops.bevel(bm, geom=edges, offset=wb, segments=4, profile=0.5, affect='EDGES', clamp_overlap=False)
+            bm.to_mesh(tile.data)
+            bm.free()
+            bpy.ops.object.shade_smooth_by_angle(angle=math.radians(float(opts.get("well_smooth", 50.0))))
         pc = col if kind in ("inset", "arrows", "switch") else _rgb(opts, "well_col", tuple(int(v * 0.45) for v in base))
         fl = inner - slope
         C._box("panel", (0, 0, floor_z - 0.02), (2 * fl - 0.02, 2 * fl - 0.02, 0.1),   # top 0.03 above the floor
@@ -237,6 +254,46 @@ def build_tile(opts):
             _switch(opts, floor_z + 0.03)
     elif kind == "symbol":
         _glyph(opts, top, col)
+
+
+def _tube_frame(opts, half, top, mat, col):
+    """The reference card's block: a rounded-square TUBE (round in section, `tube_fz` flattened) round a recessed
+    flat `color` panel; outer edge at +-half, inner lip at +-inner."""
+    inner = float(opts.get("inner", 0.56)) - float(opts.get("well_slope", 0.0))   # the panel's half-size
+    inner = float(opts.get("tube_inner", inner))
+    r = (half - inner) / 2
+    ph, cr = half - r, min(half - r, float(opts.get("tube_corner", r)))      # path half-size, path corner radius
+    pts = []
+    for qx, qy, a0 in ((1, 1, 0), (-1, 1, 90), (-1, -1, 180), (1, -1, 270)):
+        cx, cy = qx * (ph - cr), qy * (ph - cr)
+        for k in range(9):
+            a = math.radians(a0 + 90 * k / 8)
+            pts.append((cx + cr * math.cos(a), cy + cr * math.sin(a)))
+    cu = bpy.data.curves.new("tube", 'CURVE')
+    cu.dimensions = '3D'
+    cu.bevel_depth = r
+    cu.bevel_resolution = 8
+    sp = cu.splines.new('POLY')
+    sp.points.add(len(pts) - 1)
+    for p, (x, y) in zip(sp.points, pts):
+        p.co = (x, y, 0.0, 1.0)
+    sp.use_cyclic_u = True
+    fz = float(opts.get("tube_fz", 0.8))
+    o = bpy.data.objects.new("tube", cu)
+    bpy.context.collection.objects.link(o)
+    o.location = (0, 0, top - r * fz)
+    o.scale = (1.0, 1.0, fz)
+    o.data.materials.append(mat)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = o
+    o.select_set(True)
+    bpy.ops.object.convert(target='MESH')
+    bpy.ops.object.shade_smooth()
+    floor_z = top - float(opts.get("depth", 0.22))
+    pw = inner + r * 0.6                                         # the panel runs in under the tube
+    C._box("panel", (0, 0, floor_z - 0.05), (2 * pw, 2 * pw, 0.1),
+           C._mat("panel", C._srgb(*col), rough=0.45, spec=0.15), bevel=0.02)
+    C._box("tube_base", (0, 0, top - 2 * r * fz), (2 * ph, 2 * ph, 0.05), mat, bevel=0.0)   # hidden inside the tube
 
 
 SYM_FONTS = {"arial": r"C:\Windows\Fonts\arialbd.ttf", "arialblack": r"C:\Windows\Fonts\ariblk.ttf",

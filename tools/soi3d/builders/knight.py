@@ -215,7 +215,15 @@ def build(opts):
         prof = ((54.0, 3.6, 3.4), (55.2, 4.9, 4.5), (56.5, 5.4, 5.0), (60.0, 5.4, 5.0), (61.5, 5.0, 4.6),
                 (62.2 + hp * 0.3, 3.9, 3.6), (62.2 + hp * 0.65, 2.2, 2.0), (62.2 + hp * 0.9, 0.7, 0.65),
                 (62.2 + hp, 0.05, 0.05))
-    _lathe("helmet", [(hy + y, r * hr / 5.4, d * hr / 5.4, 0.0) for y, r, d in prof], steel).parent = upper
+    if hp > 0 and opts.get("helm_sharp"):                            # the 300 title: a straight cone, a crisp rim
+        prof = ((54.0, 3.6, 3.4), (54.6, 5.2, 4.8), (56.5, 5.5, 5.1), (59.0, 5.5, 5.1), (59.4, 5.0, 4.6),
+                (62.2 + hp, 0.05, 0.05))
+    helm = _lathe("helmet", [(hy + y, r * hr / 5.4, d * hr / 5.4, 0.0) for y, r, d in prof], steel)
+    helm.parent = upper
+    if opts.get("helm_sharp") and helm.modifiers.get("sub"):
+        helm.modifiers.remove(helm.modifiers["sub"])                  # keep the cone's point and the rim's edge
+        for p in helm.data.polygons:
+            p.use_smooth = True
     if hp > 0:
         bpy.ops.mesh.primitive_cone_add(vertices=12, radius1=0.9 * S, radius2=0.0, depth=f("finial_h", 3.0) * S,
                                         location=(0, (hy + 62.2 + hp - 0.6 + f("finial_h", 3.0) / 2) * S, 0),

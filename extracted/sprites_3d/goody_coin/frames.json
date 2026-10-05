@@ -21,7 +21,8 @@
   "groove_w": 0.015,
   "groove_dark": 0.35,
   "rim_fz": 1.35,
-  "rim_minor": 0.085
+  "rim_minor": 0.085,
+  "glyph_bevel": 0.03
  },
  "sweep": [
   {

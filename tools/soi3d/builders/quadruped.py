@@ -131,6 +131,10 @@ def build(opts):
             parts.append(_box("head", (hx, hy, 0), hr, float(opts.get("snout_bevel", 2.0)), skin))
         else:
             parts.append(_ell("head", (hx, hy, 0), hr, skin))
+        sf = float(opts.get("snout_f", 0.0))
+        if sf > 0:                           # the card's hippo: a wide muzzle bulging out in front of the head
+            parts.append(_ell("snout", (hx - hr[0] * float(opts.get("snout_fx", 0.6)), hy + float(opts.get("snout_dy", -0.6)), 0),
+                              (hr[0] * 0.5 * sf, hr[1] * 0.75 * sf, hr[2] * 1.05 * sf), skin))
         if opts.get("mouth_band", False):    # f02 row 5, x 4-7: a 1 px dark line from the snout tip back
             parts.append(_band("mouth_line", (hx, hy, 0), hr, float(opts.get("band_y", 0.0)),
                                float(opts.get("band_h", 0.15)), float(opts.get("band_x", -0.3)), dark))
@@ -151,9 +155,25 @@ def build(opts):
             parts.append(_ell("mouth", (hx - hr[0] * 0.75, hy - 0.8, 0), (hr[0] * 0.45, mw, hr[2] * 0.75), dark, 24))
             for zz in (-1.8, 1.8):
                 parts.append(_ell("tooth", (hx - hr[0] * 0.9, hy - 0.2, zz), (0.7, 0.9, 0.7), white, 12))
+        gr = float(opts.get("googly_r", 0.0))                        # the card's hippo: bulging eyes on top
         for zz in (-2.2, 2.2):
-            parts.append(_ell("ear", (hx + 1.0, hy + hr[1] + 0.3, zz), (0.9, 1.1, 0.7), white, 12))
-            parts.append(_ell("eye", (hx - 1.0, hy + hr[1] * 0.55, zz * 1.2), (0.7, 0.7, 0.7), dark, 12))
+            bf = float(opts.get("bump_f", 1.0))
+            parts.append(_ell("ear", (hx + 1.0, hy + hr[1] + 0.3 * bf, zz), (0.9 * bf, 1.1 * bf, 0.7 * bf), white, 12))
+            if opts.get("ear_pupils"):                              # the card: the white bumps are eyeballs
+                pp = float(opts.get("pupil_r", 0.4))
+                parts.append(_ell("pupil", (hx + 1.0 - 0.9 * bf + 0.15, hy + hr[1] + 0.3 * bf + float(opts.get("pupil_dy", 0.1)), zz),
+                                  (pp * 0.5, pp * 1.2, pp), dark, 12))
+            if gr > 0:
+                gx = hx + float(opts.get("googly_dx", -0.5))
+                gy = hy + hr[1] * float(opts.get("googly_fy", 0.8))
+                gz = zz * float(opts.get("googly_fz", 0.75))
+                parts.append(_ell("eye", (gx, gy, gz), (gr, gr, gr), white, 16))
+                pr = gr * float(opts.get("pupil_f", 0.5))
+                parts.append(_ell("pupil", (gx - gr * 0.75, gy + gr * 0.1, gz + math.copysign(gr * 0.35, zz)),
+                                  (pr * 0.6, pr, pr), dark, 12))
+            else:
+                if opts.get("cheek_eyes", True):            # off when the white bumps carry the pupils
+                    parts.append(_ell("eye", (hx - 1.0, hy + hr[1] * 0.55, zz * 1.2), (0.7, 0.7, 0.7), dark, 12))
         if float(opts.get("tail_l", 0.0)) > 0:   # f02 rows 8-10: a stub at the rump, pointing back and down
             tl = float(opts["tail_l"])
             parts.append(_ell("tail", (bx + bl + tl * 0.3, float(opts.get("tail_y", -1.0)), 0),
@@ -229,6 +249,12 @@ def build(opts):
                 cl = _ell("claw_" + key, (-lr * float(opts.get("claw_fx", 0.8)), -ll - 0.3, 0),
                           (float(opts.get("claw_r", 0.7)), 0.8, lr * 0.9), white, 12)
                 cl.parent = hip
+            nt = int(opts.get("toe_n", 0))
+            for t in range(nt):                 # the card's hippo: little white toes round the foot's front
+                a = math.radians(-50 + 100 * t / max(nt - 1, 1))
+                tr = float(opts.get("toe_r", 0.6))
+                _ell("toe_%s%d" % (key, t), (-lr * math.cos(a) * 0.95, -ll - 0.5, lr * math.sin(a) * 0.95),
+                     (tr, tr * 0.8, tr), white, 12).parent = hip
         legs.append((key, hip))
     return root, legs
 

@@ -10,7 +10,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools", "soi3d"))
 import framematch as fm  # noqa: E402
 
-fam, new = sys.argv[1], json.loads(sys.argv[2])
+a = sys.argv[2]
+fam, new = sys.argv[1], json.load(open(a[1:])) if a.startswith("@") else json.loads(a)   # @file: PS 5.1 eats quotes
 p = os.path.join(fm.FAM_DIR, fam, "frames.json")
 raw = open(p, encoding="utf-8-sig").read()
 d = json.loads(raw, object_pairs_hook=collections.OrderedDict)

@@ -154,7 +154,10 @@
   157
  ],
  "mode": "tile",
- "opts": {},
+ "opts": {
+  "well_bevel": 0.03,
+  "tube_frame": true
+ },
  "frame_opts": {
   "8": {
    "kind": "solid",

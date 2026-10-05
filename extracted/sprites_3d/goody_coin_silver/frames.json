@@ -11,7 +11,8 @@
   "glyph_extrude": 0.12,
   "glyph_dark": 0.9,
   "rim_fz": 1.6,
-  "rim_minor": 0.085
+  "rim_minor": 0.085,
+  "glyph_bevel": 0.03
  },
  "sweep": [
   {

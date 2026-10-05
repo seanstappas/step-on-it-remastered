@@ -18,9 +18,9 @@
   "gold_gain": 1.25,
   "white_gain": 1.1,
   "gamma": 0.6,
-  "shoe_roll": 56,
-  "shoe_yaw": 10.0,
-  "shoe_tilt": 15.0,
+  "shoe_roll": 50,
+  "shoe_yaw": 20,
+  "shoe_tilt": 10,
   "stripe_gain": 1.3,
   "stripe": [
    90,
@@ -35,7 +35,17 @@
   "mid_h": 3.0,
   "upper_bevel": 0.55,
   "lace_w": 0.45,
-  "sole_h": 0.7
+  "sole_h": 0.7,
+  "wing_n": 5,
+  "wing_cuff": true,
+  "feather_l": 4.5,
+  "feather_w": 2.0,
+  "wing_a0": 0,
+  "wing_a1": 70,
+  "wing_x": 0.8,
+  "wing_y": 0.8,
+  "feather_taper": 0.2,
+  "wing_out": 30
  },
  "frame_opts": {
   "51": {
@@ -71,19 +81,19 @@
     "step": 3,
     "min": 30,
     "max": 90,
-    "init": 56
+    "init": 50
    },
    "shoe_yaw": {
     "step": 5,
     "min": -70,
     "max": 80,
-    "init": 10.0
+    "init": 20
    },
    "shoe_tilt": {
     "step": 5,
     "min": -30,
     "max": 60,
-    "init": 15.0
+    "init": 10
    },
    "shoe_x": {
     "step": 0.4,

@@ -49,9 +49,9 @@
   "head_rx": 5.4,
   "head_ry": 2.8,
   "head_rz": 3.2,
-  "beak_l": 6.8,
-  "beak_h": 1.15,
-  "beak_w": 0.8,
+  "beak_l": 6.0,
+  "beak_h": 1.0,
+  "beak_w": 2.0,
   "beak_in": 1.0,
   "beak_y": 0.0,
   "eye_r": 1.55,
@@ -83,10 +83,17 @@
    215,
    215
   ],
-  "beak_cone": true,
+  "beak_cone": false,
   "beak_tilt": 0.0,
   "wing_box": true,
-  "wing_bevel": 1.1625
+  "wing_bevel": 1.1625,
+  "wing_fan": 3,
+  "wing_fan_keep": true,
+  "wfeather_l": 3.0,
+  "wfeather_w": 1.3,
+  "wfan_root": -2.0,
+  "wfan_a0": -15,
+  "wfan_a1": 25
  },
  "sweep": [
   {
@@ -357,13 +364,13 @@
     "step": 0.6,
     "min": 3,
     "max": 10,
-    "init": 6.8
+    "init": 6.0
    },
    "beak_h": {
     "step": 0.15,
     "min": 0.5,
     "max": 1.6,
-    "init": 1.15
+    "init": 1.0
    },
    "eye_r": {
     "step": 0.15,

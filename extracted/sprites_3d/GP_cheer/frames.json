@@ -75,7 +75,7 @@
   "shin_l": 4.925,
   "leg_r": 1.85,
   "foot_rx": 3.1688,
-  "foot_ry": 1.075,
+  "foot_ry": 1.3,
   "foot_rz": 1.6,
   "foot_dx": 0.6,
   "swing": 30.0,
@@ -104,7 +104,12 @@
   "smile_t": 0.38,
   "smile_taper": 0.7,
   "nose_skin_px": 1.4,
-  "ears": true
+  "ears": true,
+  "shoulder_ball_f": 1.2,
+  "elbow_ball_f": 1.15,
+  "knee_ball_f": 1.1,
+  "seg_bulge": 1.08,
+  "shoe_bevel": 1.2
  },
  "sweep": [
   {
@@ -296,7 +301,10 @@
      50
     ]
    }
-  ]
+  ],
+  "tether": {
+   "yaw": 3
+  }
  },
  "scale": 4,
  "samples": {

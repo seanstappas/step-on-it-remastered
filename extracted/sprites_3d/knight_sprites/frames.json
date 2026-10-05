@@ -40,15 +40,16 @@
   "orb_scale": 14,
   "env": 1.0,
   "env_scale": 3.0,
-  "helm_point": 2.8,
-  "finial_h": 1.2,
+  "helm_point": 4.5,
+  "finial_h": 2.0,
   "keel_wedge": true,
   "rough_var": 0.12,
   "aniso": 0.5,
   "blade_w": 2.6,
   "blade_t": 1.4,
   "grip_clear": 1.5,
-  "tip_fwd": true
+  "tip_fwd": true,
+  "helm_sharp": true
  },
  "sweep": [
   {

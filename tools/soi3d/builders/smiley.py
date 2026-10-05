@@ -96,8 +96,16 @@ def build_smiley(opts=None):
         top = z + er * float(opts.get("eye_sz", 0.6))
         sx_off = x + sx * float(opts.get("slit_dx", 0.0))
         if opts.get("slit_inset"):                               # painted INTO the eyeball: trimmed to its skin
-            slit = C._box("slit%d" % sx, (sx_off, y + float(opts.get("slit_y", 0.0)), top - er * 0.5), (sl, st, er),
-                          black, bevel=0.0)
+            if opts.get("slit_round"):                           # the card: a lens-shaped pupil, round-ended
+                bpy.ops.mesh.primitive_uv_sphere_add(radius=1.0, segments=32, ring_count=16,
+                                                     location=(sx_off, y + float(opts.get("slit_y", 0.0)), top - er * 0.5))
+                slit = bpy.context.active_object
+                slit.scale = (sl / 2, st * float(opts.get("slit_round", 1.6)) / 2, er)
+                slit.data.materials.append(black)
+                bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            else:
+                slit = C._box("slit%d" % sx, (sx_off, y + float(opts.get("slit_y", 0.0)), top - er * 0.5), (sl, st, er),
+                              black, bevel=0.0)
             bpy.ops.mesh.primitive_uv_sphere_add(radius=er, segments=40, ring_count=20, location=(x, y, z))
             skin = bpy.context.active_object
             skin.scale = tuple(s * 1.006 for s in eye.scale)

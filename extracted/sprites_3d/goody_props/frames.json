@@ -27,7 +27,9 @@
   "color_gain": 1.1,
   "gold_gain": 1.25,
   "white_gain": 1.0,
-  "gamma": 0.85
+  "gamma": 0.85,
+  "frame_tube": true,
+  "keyhole": true
  },
  "frame_opts": {
   "2": {

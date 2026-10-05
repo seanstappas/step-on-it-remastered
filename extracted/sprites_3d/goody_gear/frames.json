@@ -19,7 +19,8 @@
   "gold_gain": 1.25,
   "white_gain": 1.1,
   "gamma": 0.9,
-  "rim_gain": 1.5
+  "rim_gain": 1.5,
+  "sh_ridge": 0.2
  },
  "frame_opts": {
   "49": {

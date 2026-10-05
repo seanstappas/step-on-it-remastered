@@ -178,7 +178,10 @@
   ],
   "gun_detail": true,
   "barrel_l": 1.5,
-  "ankle_ball": true
+  "ankle_ball": true,
+  "gun_coil": 4,
+  "coil_R": 0.85,
+  "coil_r": 0.38
  },
  "sweep": [
   {

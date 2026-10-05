@@ -83,9 +83,10 @@ def _arrow(opts, f, col, white):
 
 def _door(opts, f, col, white):
     wf, fd = f("frame_w", 2.5), f("frame_d", 2.0)
-    _rbox("frame_top", (0, 13.75, 0), (16.0, 2.0, fd), 0.7, white)
+    fb = min(wf, fd) * 0.95 if opts.get("frame_tube") else 0.7     # the card's door: a round tube frame
+    _rbox("frame_top", (0, 13.75, 0), (16.0, 2.0, fd), fb, white)
     for sx in (-1.0, 1.0):
-        _rbox("jamb", (sx * (16.0 - wf), -2.0, 0), (wf, 14.0, fd), 0.7, white)
+        _rbox("jamb", (sx * (16.0 - wf), -2.0, 0), (wf, 14.0, fd), fb, white)
     gold = _mat(opts, "gold", (215, 175, 10), 0.3, 0.6)
     inner = 16.0 - 2 * wf
     pd = f("panel_d", 1.0)
@@ -100,6 +101,11 @@ def _door(opts, f, col, white):
             _cyl("knuckle", (sx0, ky, pz), 1.0, 2 * kh, gold, (math.pi / 2, 0, 0), 16)
         lx = inner - f("lock_x", 4.5)
         _rbox("lock2", (lx, f("lock2_y", -9.0), pz), (f("lock2_w", 1.5), f("lock2_h", 4.0), 0.5), 0.4, gold)   # keyhole plate
+        if opts.get("keyhole"):                                    # a dark keyhole (round top + slot) in the plate
+            dk = _mat(opts, "dark", (18, 12, 12), 0.8, 0.1)
+            ky = f("lock2_y", -9.0) + f("keyhole_dy", 1.0)
+            _cyl("keyhole", (lx, ky, pz + 0.45), f("keyhole_r", 0.8), 0.3, dk, (0, 0, 0), 16)
+            _rbox("keyslot", (lx, ky - 1.3, pz + 0.45), (f("keyhole_r", 0.8) * 0.45, 1.3, 0.15), 0.1, dk)
         kr = f("knob_r", 2.6)                                        # the knob (its shadow falls down-right)
         bpy.ops.mesh.primitive_uv_sphere_add(radius=kr * S, location=(lx * S, f("knob_y", 1.0) * S, (pz + kr * 0.8) * S))
         knob = bpy.context.active_object
@@ -262,11 +268,38 @@ def _shield(opts, f, col):
     bpy.context.view_layer.objects.active = sh
     bpy.ops.object.modifier_apply(modifier="cap")
     bpy.data.objects.remove(ball, do_unlink=True)
+    rs = f("sh_ridge", 0.0)
+    if rs > 0:                                                     # the reference card's centre crease: two roof facets
+        import bmesh
+        z0, X, Y = f("sh_top", 3.0) + f("ridge_lift", 0.3), 20.0, 20.0
+        prof = [(-X, z0 - rs * X), (0.0, z0), (X, z0 - rs * X), (X, -30.0), (-X, -30.0)]
+        bm = bmesh.new()
+        ring = [[bm.verts.new((x * S, y * S, z * S)) for x, z in prof] for y in (-Y, Y)]
+        for i in range(len(prof)):
+            j = (i + 1) % len(prof)
+            bm.faces.new((ring[0][i], ring[0][j], ring[1][j], ring[1][i]))
+        bm.faces.new(ring[0][::-1])
+        bm.faces.new(ring[1])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        me = bpy.data.meshes.new("roof")
+        bm.to_mesh(me)
+        bm.free()
+        roof = bpy.data.objects.new("roof", me)
+        bpy.context.collection.objects.link(roof)
+        m = sh.modifiers.new("ridge", 'BOOLEAN')
+        m.operation = 'INTERSECT'
+        m.object = roof
+        bpy.context.view_layer.objects.active = sh
+        bpy.ops.object.modifier_apply(modifier="ridge")
+        bpy.data.objects.remove(roof, do_unlink=True)
     bev = sh.modifiers.new("bev", 'BEVEL')
     bev.width = f("sh_bevel", 0.8) * S
     bev.segments = 3
     bev.limit_method = 'ANGLE'
-    bpy.ops.object.shade_smooth()
+    if rs > 0:                                                     # smooth the boolean facets, keep the ridge crease
+        bpy.ops.object.shade_smooth_by_angle(angle=math.radians(f("ridge_smooth", 15.0)))
+    else:
+        bpy.ops.object.shade_smooth()
     sr = f("stud_r", 2.0)
     for c, r in ((3.5, 7.5), (27.5, 7.5), (15.5, 24.5)):
         x, y = c - 15.5, 15.5 - r
@@ -295,6 +328,14 @@ def _helmet(opts, f, col):
         w.rotation_euler = (0, math.radians(f("wing_yaw", 0.0)) * (1 if pts is left else -1), 0)
 
 
+def _empty_at(loc, parent):
+    """An empty at loc (px) parented to `parent`."""
+    bpy.ops.object.empty_add(location=tuple(v * S for v in loc))
+    e = bpy.context.active_object
+    e.parent = parent
+    return e
+
+
 def _shoe(opts, f, col):
     white = _mat(opts, "white", (235, 235, 235), 0.35, 0.4)
     blue = _mat(opts, "stripe", (70, 80, 210), 0.35, 0.3)
@@ -308,11 +349,26 @@ def _shoe(opts, f, col):
     if opts.get("sneaker", False):                                 # a sneaker profile: low toe box rising to the ankle
         vh, W = f("vamp_h", 3.4), f("shoe_w", 3.6)
         y0 = -vh                                                   # the sole's top
+        winged = f("wing_n", 0) > 0                                # the card's winged shoe: a white ankle + a red wing
         tops = []
         for name, xc, hx, hh, mat in (("toe", -0.62, 0.38, f("toe_h", 2.2), white), ("mid", -0.12, 0.3, f("mid_h", 3.0), white),
-                                      ("quarter", 0.52, 0.48, f("quarter_h", 4.2), col)):   # the red high-top ankle
+                                      ("quarter", 0.52, 0.48, f("quarter_h", 4.2), white if winged and not opts.get("wing_cuff") else col)):
             _rbox(name, (xc * L, y0 + hh, 0), (hx * L, hh, W), min(hh, W) * f("upper_bevel", 0.8), mat).parent = root
             tops.append((xc * L, y0 + 2 * hh))
+        if winged:                                                 # feathers fanned up from the heel, both sides
+            n, fl, fw = int(f("wing_n", 4)), f("feather_l", 7.0), f("feather_w", 1.5)
+            px, py = L * f("wing_x", 0.6), y0 + 2 * f("quarter_h", 4.2) * f("wing_y", 0.6)
+            a0, a1 = math.radians(f("wing_a0", 45.0)), math.radians(f("wing_a1", 105.0))
+            for sz in (1.0, -1.0):
+                side = _empty_at((px, py, sz * W), root)          # the wing plane, tilted out from the shoe's side
+                side.rotation_euler = (math.radians(sz * f("wing_out", 0.0)), 0.0, 0.0)
+                for i in range(n):
+                    t = i / max(n - 1, 1)
+                    a, ln = a0 + (a1 - a0) * t, fl * (1.0 - f("feather_taper", 0.25) * t)
+                    fe = _rbox("feather", (math.cos(a) * ln / 2, math.sin(a) * ln / 2, sz * 0.3),
+                               (ln / 2, fw / 2, 0.35), fw * 0.45, col)
+                    fe.rotation_euler = (0.0, 0.0, a)
+                    fe.parent = side
         if f("sole_h", 0.8) > 0:                                   # a flat ellipsoid: no plate corners past the shoe
             from .quadruped import _ell
             _ell("sole", (0, y0 - 0.2, 0), (L * 1.0, f("sole_h", 0.8), W + 0.2), sole, 32).parent = root
