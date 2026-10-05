@@ -120,6 +120,17 @@ def build(opts):
         m.rotation_euler = (0.0, 0.0, math.pi / 2)
         m.location = ((x0 - gl * 0.5 - bl * 0.9) * S, 0.6 * S, 0.0)
         _rbox("gun_sight", (x0 + gl * 0.15, 0.6 + gh * 0.95, 0), (1.2, 0.45, 0.5), 0.15, green).parent = gun
+    if f("gun_coil", 0) > 0:                                           # the card's ray gun: rings down the barrel
+        gh, x0, n = f("gun_h", 2.2), -gl * 0.35, int(f("gun_coil", 0))
+        for i in range(n):
+            bpy.ops.mesh.primitive_torus_add(major_radius=gh * f("coil_R", 0.95) * S, minor_radius=f("coil_r", 0.45) * S,
+                                             major_segments=24, minor_segments=8)
+            ring = bpy.context.active_object
+            ring.rotation_euler = (0.0, math.pi / 2, 0.0)
+            ring.location = ((x0 - gl * 0.4 + i * gl * 0.8 / max(n - 1, 1)) * S, 0.6 * S, 0.0)
+            ring.data.materials.append(green)
+            bpy.ops.object.shade_smooth()
+            ring.parent = gun
     if opts.get("hand_skin"):                                          # the clown face is white; the hands are skin
         hs = C._mat("hand_skin", C._srgb(*opts["hand_skin"]), rough=f("rough", 0.45), spec=f("spec", 0.25))
         for side in ("n", "f"):

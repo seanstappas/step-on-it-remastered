@@ -68,9 +68,9 @@
   65,
   66
  ],
- "pass": true,
- "iou_min": 0.8673,
- "de_mean": 14.436,
- "de_max": 16.431,
- "cycles_de_mean": 13.116
+ "pass": false,
+ "iou_min": 0.8598,
+ "de_mean": 14.57,
+ "de_max": 16.616,
+ "cycles_de_mean": 13.34
 }

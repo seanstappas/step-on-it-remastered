@@ -69,6 +69,10 @@ def build(opts):
                 fl = f("foot_l", 0.0)
                 L["foot"] = _rbox("foot_%s%d" % (side, i + 1), (0, 0, 0), (fl / 2, f("foot_h", 0.6), f("leg_d", 0.8)), 0.3, grey)
                 L["foot"].parent = root
+            for key in ("foot_ball", "knee_ball"):                   # the card's ant: round feet / knee joints
+                if f(key, 0.0) > 0:
+                    L[key] = _ell(key, (0, 0, 0), (f(key, 0.0),) * 3, grey, 16)
+                    L[key].parent = root
             legs.append(L)
     return root, legs, ants
 
@@ -84,7 +88,7 @@ def _frames_setup(opts):
             "top": f("leg_top", 3.2), "ground": f("ground", 9.0), "z": f("leg_z", 4.2), "kamp": f("knee_swing", 0.0),
             "splay": f("splay", 0.0), "ants": ants, "wig": f("ant_wig", 0.0), "hip_y": f("hip_y", 0.0),
             "hip_dx": f("hip_dx", 0.0), "hip_z": f("body_hz", 3.2) * f("hip_zf", 0.8), "foot_dir": f("foot_dir", -1.0),
-            "foot_l": f("foot_l", 0.0)}
+            "foot_l": f("foot_l", 0.0), "fb": f("foot_ball", 0.0) * f("foot_ball_lift", 0.6)}
 
 
 def _bar(o, a, b):
@@ -122,6 +126,10 @@ def _frames_pose(ctx, pose):
         if "foot" in L:
             fl = ctx["foot_l"]
             L["foot"].location = ((xf + ctx["foot_dir"] * fl / 2) * S, (yb + 0.3) * S, zb * S)
+        if "foot_ball" in L:
+            L["foot_ball"].location = (xf * S, (yb + ctx["fb"]) * S, zb * S)
+        if "knee_ball" in L:
+            L["knee_ball"].location = (xt * S, yt * S, zt * S)
     wig = ctx["wig"] * math.sin(ph) + float(pose.get("ant_t", 0.0))    # the antennae wiggle with the walk
     for piv in ctx["ants"]:
         piv.rotation_euler = (0.0, 0.0, math.radians(wig))

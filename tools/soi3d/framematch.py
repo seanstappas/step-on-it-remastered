@@ -970,11 +970,13 @@ def stage_optim(family, cfg, only=None):
             fixed.setdefault(nn, {})[fx["param"]] = float(fx["value"])
     tether = op.get("tether") or {}          # {param: tol}: stay within tol of fit.json's per-frame "anchor"
     anchors = {int(n): v["anchor"] for n, v in fit["frames"].items() if "anchor" in v}
+    tscale = {int(n): float(v.get("tether_scale", 1.0)) for n, v in fit["frames"].items()}   # per-frame widening
 
     def tie(nn, k, v):
         a = anchors.get(nn, {}).get(k)
         if k in tether and a is not None:
-            v = max(a - float(tether[k]), min(a + float(tether[k]), v))
+            t = float(tether[k]) * tscale.get(nn, 1.0)
+            v = max(a - t, min(a + t, v))
         return v
 
     def pin(nn, pose):

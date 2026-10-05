@@ -67,8 +67,33 @@ def build(opts):
     root.name = "root"
     brx, bry, brz = f("body_rx", 6.5), f("body_ry", 4.0), f("body_rz", 5.0)
     _ell("body", (0, 0, 0), (brx, bry, brz), pink).parent = root
+    n = int(f("tail_n", 0))
+    if n > 0:                                                  # the card's ostrich: a fan of tail feathers
+        tl, tw = f("tail_l", 4.0), f("tail_w", 1.6)
+        a0, a1 = math.radians(f("tail_a0", 10.0)), math.radians(f("tail_a1", 70.0))
+        tx, ty = brx * f("tail_fx", 0.85), bry * f("tail_fy", 0.3)
+        for i in range(n):
+            a = a0 + (a1 - a0) * i / max(n - 1, 1)
+            fe = _ell("tail_feather", (tx + math.cos(a) * tl * 0.5, ty + math.sin(a) * tl * 0.5, 0),
+                      (tl * 0.55, tw / 2, f("tail_d", 1.2)), pink)
+            fe.rotation_euler = (0, 0, a)
+            fe.parent = root
     wz = brz * f("wing_fz", 0.8)
+    wn = int(f("wing_fan", 0))
     for zz in (-wz, wz):
+        if wn > 0:                                             # the card's ostrich: fanned wing feathers, swept back
+            wl, ww = f("wfeather_l", 6.0), f("wfeather_w", 1.8)
+            a0, a1 = math.radians(f("wfan_a0", -20.0)), math.radians(f("wfan_a1", 50.0))
+            wx, wy = f("wing_x", 2.5) - f("wfan_root", 2.0), f("wing_y", 0.5)
+            for i in range(wn):
+                a = a0 + (a1 - a0) * i / max(wn - 1, 1)
+                ln = wl * (1.0 - 0.25 * abs(i - (wn - 1) / 2) / max((wn - 1) / 2, 1))
+                fe = _ell("wing_feather", (wx + math.cos(a) * ln * 0.5, wy + math.sin(a) * ln * 0.5, zz),
+                          (ln * 0.55, ww / 2, f("wing_rz", 1.6) * 0.6), green)
+                fe.rotation_euler = (0, 0, a)
+                fe.parent = root
+            if not opts.get("wing_fan_keep"):                  # keep: the solid wing too, the fan as its feather tips
+                continue
         wc, wh = (f("wing_x", 2.5), f("wing_y", 0.5), zz), (f("wing_rx", 4.5), f("wing_ry", 3.5), f("wing_rz", 1.6))
         w = _rbox("wing", wc, wh, f("wing_bevel", 1.2), green) if opts.get("wing_box", False) else _ell("wing", wc, wh, green)
         w.rotation_euler = (0, 0, math.radians(f("wing_tilt", 10.0)))

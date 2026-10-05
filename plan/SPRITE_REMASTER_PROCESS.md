@@ -167,6 +167,41 @@ phase, and stores it as each frame's fit.json "anchor"; the new optim `"tether":
 tol of its anchor (smooth -> refit -> re-smooth -> refit at 3-8 deg). Residual vs a smooth cycle: legs 14-16 -> 3-4
 deg, ankles 40-50 -> 7-8, head 10-14 -> 2-3; BP_run dE max 14.8, GP_run 13.9, live 48/48; tweens now cover both
 loops ([[2,25],[26,49]], was [[37,48]]). Plain smoothing without the refit scored IoU .74.
+HD REFERENCES (round 33, 2026-10-04): the Step On It reference card (refs/text/StepOnItRefCard.pdf) carries
+greyscale HD renders of Ted, a block, every goody, the arrow, the magic ball, key, door and all six nasties
+(PyMuPDF extracts them; compare greyscale renders). Adopted where the SD frames still pass: the shoe's red cuff
+carries a feathered wing (`goodies.py` `wing_n`/`wing_cuff`, feathers kept inside the cuff outline -- longer ones
+cost IoU .83), the shield a centre crease (`sh_ridge`), the door a round tube frame and a keyhole (`frame_tube`,
+`keyhole`), the coin's '$' a bevel (`glyph_bevel`; a Georgia glyph scored +2.5 dE), the ant ball feet (`ant.py`
+`foot_ball`), the hippo pupils in its white head bumps (`quadruped.py` `ear_pupils`: those bumps ARE the card's
+eyeballs), the Beenie a ring-coil ray gun (`beenie.py` `gun_coil`), the ostrich a flat duck bill. The card's
+Wheelie face is not in the game's sprites (a rolling star ball), and the manual's pages 54-55 are Crystal Crazy.
+`py tools/soi3d/ref_compare.py [family ...]` writes `_verify/ref_compare.png` for every family with HD reference
+art (HD reference | SD source | 3D | 3D greyscale; the frame is the best silhouette match unless its `REFS` entry
+names one) -- 21 families: Ted (card, box art, 1010/1030/320 pictures), block, goodies, weapons, the six nasties,
+Beenie, Knight (300/320) and Gargoyle (300).
+TED'S JOINTS (round 33): the 1010 front-view art shows Ted beaded -- ball shoulders, elbows and knees, every limb
+segment bulging mid-way. `kid.py` `shoulder_ball_f` / `elbow_ball_f` / `knee_ball_f` / `seg_bulge` (1.2 / 1.15 /
+1.1 / 1.08 on all 8 player families; 1.35 / 1.25 / 1.2 / 1.15 left a run and a turn frame per family failing after
+two refits). All 8 pass, live rigs too.
+ROUND 34 (2026-10-04): one human face -- the Hammer (walk + both swings) takes the player face (oval eyes, skin
+nose, ears, red crescent smile replacing its round mouth), all pass. The Knight's helmet rises to the 300 title's
+tall crest (`helm_point` 4.5, `finial_h` 2: 65/65, dE max 15.7). Ted's shoes are rounder (`kid.py` `shoe_bevel`
+1.2, `foot_ry` 1.3, the 1010 art). An ostrich feather-fan tail (`biped.py` `tail_n`, the card's) scored worse on
+every frame tried -- the SD ostrich shows no tail -- so it stays off. The framed blocks (`inset`) are the card's
+round TUBE frame: `tile.py` `tube_frame` sweeps a rounded square of round section (`tube_fz`, `tube_corner`) round
+the recessed panel (f110 dE 9.4 -> 8.9); `well_bevel` (rounding only the old well's edges) is kept as an option.
+ROUND 35 (2026-10-04, user review of the ref_compare sheets): Hippo -- white toes (`toe_n`), a muzzle bulging in
+front of the head (`snout_f`) with a smaller mouth on it, bigger eye bumps (`bump_f`); Smiley -- round-ended lens
+pupils (`slit_round`); Knight -- `helm_sharp` (a straight cone, no subdivision); Ostrich -- feather tips on the
+wing's trailing edge (`biped.py` `wing_fan` + `wing_fan_keep`; a full fan replacing the wing cost dE 20); shoe --
+wings out from both sides (`wing_out`) swept back off the red cuff, the shoe re-angled (a white ankle under
+card-sized wings scored dE 22-24: the SD shoe's whole upper is red); Hammer -- the players' fringe cut so the hair
+clears the eyes. Ted's head held still: the cheer's body yaw anchored at its median +-3 deg and the turn sheet's
+head turn `hd` at 0 +-8 deg (`tmp/hold_param.py` writes fit.json "anchor"s, optim "tether" keeps them). The run's
+"feet in the legs" were ankles flexed up to +-85 deg (the shoe in line with the shin; the SD shoes stay level):
+the ankle anchors are scaled x0.35 and refit at +-8 deg; a fit.json frame's `tether_scale` widens just that frame's
+tether (the run's f08/f10 needed x2.5). Rounder shoes (`shoe_bevel` 1.2) on all players.
 
 **Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
 can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)

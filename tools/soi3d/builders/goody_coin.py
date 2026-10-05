@@ -72,9 +72,13 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
     rim = _rim_ring("coin_rim", r_out=0.86, r_minor=f("rim_minor", 0.07), z=0.085, mat=face_dark, fz=f("rim_fz", 0.5))
 
     # embossed Times-Bold '$' on the front face
-    font = C.DEFAULT_SIGN_FONT if os.path.exists(C.DEFAULT_SIGN_FONT) else None
+    font = opts.get("glyph_font", C.DEFAULT_SIGN_FONT)
+    font = font if os.path.exists(font) else None
     glyph = C._text("$", z=0.085, mat=face_dark, extrude=f("glyph_extrude", 0.05), size=f("glyph_size", 1.15),
                     font=font)
+    if f("glyph_bevel", 0.0) > 0:                                     # a rounded emboss edge
+        glyph.data.bevel_depth = f("glyph_bevel", 0.0)
+        glyph.data.bevel_resolution = 3
     parts = [body, rim, glyph]
     if f("groove_r", 0.0) > 0:                                        # the engraved ring inside the rim
         gm = C._mat("coin_groove", C._srgb(*tuple(int(c * f("groove_dark", 0.35)) for c in color)),

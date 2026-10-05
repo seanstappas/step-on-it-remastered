@@ -150,13 +150,17 @@ def build(opts):
     _cyl("neck", (0, f("neck_y", 10.4), 0), f("neck_r", 1.3), 1.4, skin, 0.2, root)
     arms, legs = {}, {}
     ua, fa, ar = f("uarm_l", 3.6), f("farm_l", 3.4), f("arm_r", 1.3)
+    sbf, ebf, kbf, bul = f("shoulder_ball_f", 1.0), f("elbow_ball_f", 1.0), f("knee_ball_f", 1.0), f("seg_bulge", 0.0)
     for side, sz in (("n", 1.0), ("f", -1.0)):
         sh = _empty("shoulder_" + side, (0, f("shoulder_y", 9.0), sz * f("shoulder_z", 3.9)), root)
-        _ell("shoulder_ball_" + side, (0, 0, 0), (ar * 1.15,) * 3, top).parent = sh
+        _ell("shoulder_ball_" + side, (0, 0, 0), (ar * 1.15 * sbf,) * 3, top).parent = sh
         _cyl("uarm_" + side, (0, -ua / 2, 0), ar, ua, top, 0.3, sh)
         el = _empty("elbow_" + side, (0, -ua, 0), sh)
-        _ell("elbow_ball_" + side, (0, 0, 0), (ar,) * 3, top).parent = el
+        _ell("elbow_ball_" + side, (0, 0, 0), (ar * ebf,) * 3, top).parent = el
         _cyl("farm_" + side, (0, -fa / 2, 0), ar * 0.95, fa, top, 0.3, el)
+        if bul > 0:                                   # the 1010 art's beaded limbs: each segment bulges mid-way
+            _ell("uarm_bulge_" + side, (0, -ua / 2, 0), (ar * bul, ua * 0.42, ar * bul), top, 16).parent = sh
+            _ell("farm_bulge_" + side, (0, -fa / 2, 0), (ar * 0.95 * bul, fa * 0.42, ar * 0.95 * bul), top, 16).parent = el
         fp = _empty("fist_" + side, (0, -fa, 0), el)
         _ell("hand_" + side, (0, -f("hand_r", 1.1) * 0.6, 0), (f("hand_r", 1.1),) * 3, skin, 16).parent = fp
         arms[side] = (sh, el, fp)
@@ -164,13 +168,16 @@ def build(opts):
         tl, sl, lr = f("thigh_l", 5.4), f("shin_l", 5.0), f("leg_r", 1.6)
         _cyl("thigh_" + side, (0, -tl / 2, 0), lr, tl, legs_m, 0.3, hp)
         kn = _empty("knee_" + side, (0, -tl, 0), hp)
-        _ell("knee_ball_" + side, (0, 0, 0), (lr,) * 3, legs_m).parent = kn
+        _ell("knee_ball_" + side, (0, 0, 0), (lr * kbf,) * 3, legs_m).parent = kn
         _cyl("shin_" + side, (0, -sl / 2, 0), lr * 0.95, sl, legs_m, 0.3, kn)
+        if bul > 0:
+            _ell("thigh_bulge_" + side, (0, -tl / 2, 0), (lr * bul, tl * 0.42, lr * bul), legs_m, 16).parent = hp
+            _ell("shin_bulge_" + side, (0, -sl / 2, 0), (lr * 0.95 * bul, sl * 0.42, lr * 0.95 * bul), legs_m, 16).parent = kn
         an = _empty("ankle_" + side, (0, -sl, 0), kn)
         if opts.get("ankle_ball", False):    # fills the ankle joint so a turned foot stays on its shin
-            _ell("ankle_ball_" + side, (0, 0, 0), (lr * 0.95,) * 3, legs_m).parent = an
-        _rbox("shoe_" + side, (-f("foot_dx", 0.9), -f("foot_ry", 1.0), 0),
-              (f("foot_rx", 2.6), f("foot_ry", 1.0), f("foot_rz", 1.5)), 0.6, shoe).parent = an
+            _ell("ankle_ball_" + side, (0, 0, 0), (lr * 0.95 * f("ankle_ball_f", 1.0),) * 3, legs_m).parent = an
+        _rbox("shoe_" + side, (-f("foot_dx", 0.9), -f("foot_ry", 1.0) + f("foot_lift", 0.0), 0),
+              (f("foot_rx", 2.6), f("foot_ry", 1.0), f("foot_rz", 1.5)), f("shoe_bevel", 0.6), shoe).parent = an
         legs[side] = (hp, kn, an)
     return root, arms, legs
 
