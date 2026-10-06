@@ -63,13 +63,13 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
     body = bpy.context.active_object
     body.name = "coin_body"
     bev = body.modifiers.new("bev", 'BEVEL')
-    bev.width = 0.05
+    bev.width = f("body_bevel", 0.05)
     bev.segments = 4                      # rounded reeded-looking rim edge
     body.data.materials.append(metal)
     bpy.ops.object.shade_smooth()
 
     # raised outer RIM ring on the FRONT face (z = +half depth)
-    rim = _rim_ring("coin_rim", r_out=0.86, r_minor=f("rim_minor", 0.07), z=0.085, mat=face_dark, fz=f("rim_fz", 0.5))
+    rim = _rim_ring("coin_rim", r_out=f("rim_out", 0.86), r_minor=f("rim_minor", 0.07), z=0.085, mat=face_dark, fz=f("rim_fz", 0.5))
 
     # embossed Times-Bold '$' on the front face
     font = opts.get("glyph_font", C.DEFAULT_SIGN_FONT)
@@ -80,7 +80,22 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
         glyph.data.bevel_depth = f("glyph_bevel", 0.0)
         glyph.data.bevel_resolution = 3
     parts = [body, rim, glyph]
-    if f("groove_r", 0.0) > 0:                                        # the engraved ring inside the rim
+    if not opts.get("rim_on", True):                                # the card's coin has no raised rim ring
+        bpy.data.objects.remove(rim, do_unlink=True)
+        parts.remove(rim)
+    arc = opts.get("groove_arc") if opts else None
+    if arc and f("groove_r", 0.0) > 0:                               # the card: a crescent groove, thickest mid-arc
+        from .tile import _prism
+        gm = C._mat("coin_groove", C._srgb(*tuple(int(c * f("groove_dark", 0.35)) for c in color)),
+                    rough=0.6, metal=0.0, spec=0.05)
+        R, w = f("groove_r", 0.7), f("groove_w", 0.03)
+        ts = [i / 48 for i in range(49)]
+        ang = [math.radians(arc[0] + (arc[1] - arc[0]) * t) for t in ts]
+        hw = [w * 0.5 * math.sin(math.pi * t) + 0.002 for t in ts]
+        pts = [((R + h) * math.cos(a), (R + h) * math.sin(a)) for a, h in zip(ang, hw)]
+        pts += [((R - h) * math.cos(a), (R - h) * math.sin(a)) for a, h in zip(ang[::-1], hw[::-1])]
+        parts.append(_prism("coin_groove", pts, 0.084, 0.004, gm, 0.0))
+    elif f("groove_r", 0.0) > 0:                                      # the engraved ring inside the rim
         gm = C._mat("coin_groove", C._srgb(*tuple(int(c * f("groove_dark", 0.35)) for c in color)),
                     rough=0.6, metal=0.0, spec=0.05)
         bpy.ops.mesh.primitive_torus_add(major_radius=f("groove_r", 0.7), minor_radius=f("groove_w", 0.03),

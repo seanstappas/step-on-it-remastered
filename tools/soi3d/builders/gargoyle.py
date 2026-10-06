@@ -45,9 +45,32 @@ WING = [(0, 3), (32.5, 3), (32.5, 0), (31.5, -2), (30.5, -4), (29.5, -6), (28, -
 EAR = [(-2, -3.5), (4, -3.5), (12, -2), (17, 0.5), (14, 2.5), (5, 5), (-2, 5.5)]   # CCW, y up; f30 rows 11-20 to +-22 px
 
 
-def _pleated_wing(name, pts, sx, n, amp, thick, mat):
+def _fuse(parent, names, vox, smooth):
+    """Join `parent`'s mesh children named `names` into one voxel-remeshed, smoothed mesh: muscles blend in."""
+    objs = [c for c in parent.children if c.type == 'MESH' and c.name.split(".")[0] in names]
+    if len(objs) < 2:
+        return
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.join()
+    o = bpy.context.view_layer.objects.active
+    rm = o.modifiers.new("fuse", 'REMESH')
+    rm.mode, rm.voxel_size = 'VOXEL', vox * S / max(min(o.scale), 1e-6)
+    sm = o.modifiers.new("soft", 'CORRECTIVE_SMOOTH')
+    sm.factor, sm.iterations, sm.smooth_type = 0.5, int(smooth), 'SIMPLE'
+    sm.use_only_smooth = True
+    for m in ("fuse", "soft"):
+        bpy.ops.object.modifier_apply(modifier=m)
+    bpy.ops.object.shade_smooth()
+
+
+def _pleated_wing(name, pts, sx, n, amp, thick, mat, scallop=0.0):
     """The WING outline (top edge y = pts[0][1], lower edge = the rest) as 2n accordion strips folding +-amp in z,
-    solidified; x mirrored by sx. pts are SD px (already scaled by wing_f / wing_fy)."""
+    solidified; x mirrored by sx. pts are SD px (already scaled by wing_f / wing_fy). `scallop` px lifts the lower
+    edge in an arc between every second fold (a bat wing's membrane between its finger bones)."""
     top = pts[0][1]
     span = max(x for x, _ in pts)
     low = sorted({(x, y) for x, y in pts[2:]})                         # the lower edge, by x
@@ -58,12 +81,17 @@ def _pleated_wing(name, pts, sx, n, amp, thick, mat):
                 return y0 + (y1 - y0) * ((x - x0) / (x1 - x0) if x1 > x0 else 0.0)
         return low[0][1] if x < low[0][0] else low[-1][1]
     verts, faces = [], []
-    for i in range(2 * n + 1):
-        x = span * i / (2 * n)
-        z = 0.0 if i == 0 else (amp if i % 2 else -amp)
-        verts += [(sx * x * S, top * S, z * S), (sx * x * S, bottom(x) * S, z * S)]
-        if i:
-            a, b = 2 * (i - 1), 2 * i
+    k = 4 if scallop > 0 else 1                                        # sub-columns per strip for the arcs
+    for j in range(2 * n * k + 1):
+        u = j / k                                                      # strip coordinate: folds at integers
+        x = span * u / (2 * n)
+        i0 = min(int(u), 2 * n - 1)
+        z0, z1 = [0.0 if i == 0 else (amp if i % 2 else -amp) for i in (i0, i0 + 1)]
+        z = z0 + (z1 - z0) * (u - i0)
+        lift = scallop * math.sin(math.pi * (u % 2.0) / 2.0) if 0 < u < 2 * n else 0.0
+        verts += [(sx * x * S, top * S, z * S), (sx * x * S, (bottom(x) + lift) * S, z * S)]
+        if j:
+            a, b = 2 * (j - 1), 2 * j
             faces.append((a, b, b + 1, a + 1) if sx > 0 else (a, a + 1, b + 1, b))
     me = bpy.data.meshes.new(name)
     me.from_pydata(verts, [], faces)
@@ -219,9 +247,24 @@ def build(opts):
         if opts.get("legs2"):                                           # thigh, knee, shin, clawed foot
             lr, kn = f("leg_r", 2.0), hip_y * f("knee_f", 0.5)
             _cyl("thigh", (0, -kn / 2, 0), lr * f("thigh_f", 1.35), kn, stone, 0.6, hp)
+            if f("quad_f", 0.0) > 0:                                 # the title art: a quad bulge and a calf
+                q, tr = f("quad_f", 0.0), lr * f("thigh_f", 1.35)
+                _ell("quad", (0, -kn * 0.42, tr * 0.25), (tr * q, kn * 0.38, tr * q * 0.9), stone, 16).parent = hp
+                sl = hip_y - kn
+                _ell("calf", (0, -kn - sl * 0.3, -lr * 0.3), (lr * f("shin_f", 0.95) * q, sl * 0.28, lr * f("shin_f", 0.95) * q),
+                     stone, 16).parent = hp
             _ell("knee", (0, -kn, 0.3), (lr * 1.15, lr * 1.0, lr * 1.2), stone, 16).parent = hp
             _cyl("shin", (0, -(kn + hip_y) / 2, 0), lr * f("shin_f", 0.95), hip_y - kn, stone, 0.5, hp)
             fh = f("foot_h", 1.1)
+            if f("toes", 0) > 0:                                         # the title art: a stone foot, long white claws
+                fy = -hip_y + fh - 0.1
+                _ell("foot", (0, fy, 0.6), (lr * f("foot_w", 1.4), fh, 2.0), stone, 16).parent = hp
+                nt = int(f("toes", 3))
+                for t in range(nt):
+                    tx = lr * f("foot_w", 1.4) * 0.75 * (2 * t / max(nt - 1, 1) - 1)
+                    _ell("claw", (tx, fy - fh * 0.3, 2.2), (f("toe_r", 0.6), fh * 0.7, f("toe_l", 1.6)), claw, 12).parent = hp
+                legs.append(hp)
+                continue
             _rbox("claw", (0, -hip_y + fh - 0.1, 1.2), (lr * f("foot_w", 1.4), fh, 2.6), 0.5, claw).parent = hp
             legs.append(hp)
             continue
@@ -238,6 +281,17 @@ def build(opts):
             px = sx * f("pec_x", 4.2)
             _ell("pec", (px, py, _torso_z(rings, px, py) - 0.4), (f("pec_rx", 3.8), f("pec_ry", 2.6), f("pec_rz", 1.0)),
                  body_m, 24).parent = upper
+        for i in range(int(f("abs_n", 0))):                         # the title art: a six-pack under the pecs
+            ay = f("abs_y", 40.0) - i * f("abs_dy", 3.0)
+            for sx in (-1.0, 1.0):
+                ax = sx * f("abs_x", 1.6)
+                if opts.get("abs_box"):                              # rounded pads with narrow grooves between
+                    hx, hy_, hz = f("abs_rx", 1.5), f("abs_ry", 1.3), f("abs_rz", 0.9)
+                    _rbox("abs", (ax, ay, _torso_z(rings, ax, ay) - f("abs_in", 0.5)), (hx, hy_, hz),
+                          min(hx, hy_, hz) * 0.9, body_m).parent = upper
+                    continue
+                _ell("abs", (ax, ay, _torso_z(rings, ax, ay) - f("abs_in", 0.5)),
+                     (f("abs_rx", 1.5), f("abs_ry", 1.3), f("abs_rz", 0.9)), body_m, 16).parent = upper
         if opts.get("strap"):
             (x0, y0), (x1, y1) = opts.get("strap_from", (6.5, 50.0)), opts.get("strap_to", (-5.5, 29.0))
             cu = bpy.data.curves.new("strap", 'CURVE')
@@ -300,7 +354,8 @@ def build(opts):
         pts = [(x * f("wing_f", 1.0) + (lo * min(1.0, max(0.0, (-10.0 - y) / 6.0)) if x > 0 else 0.0),
                 y * f("wing_fy", 1.0)) for x, y in WING]
         if f("wing_pleats", 0.0) > 0:
-            w = _pleated_wing("wing", pts, sx, int(f("wing_pleats", 0.0)), f("pleat_amp", 1.2), 0.8, wing_m)
+            w = _pleated_wing("wing", pts, sx, int(f("wing_pleats", 0.0)), f("pleat_amp", 1.2), 0.8, wing_m,
+                              f("wing_scallop", 0.0))
             w.parent = sh
             wings.append((sh, sx))
             continue
@@ -314,9 +369,25 @@ def build(opts):
         for sx in (-1.0, 1.0):
             sh = _empty("arm", (sx * f("arm_x", 6.0), f("arm_y", 48.0), 1.0), upper)
             _cyl("uarm", (0, -ua / 2, 0), ar, ua, stone, 0.4, sh)
+            if f("delt_f", 0.0) > 0:                                   # a deltoid cap over the shoulder joint
+                dl = f("delt_f", 0.0)
+                _ell("delt", (0, -ar * 0.6, 0), (ar * dl, ar * dl * 1.3, ar * dl), stone, 16).parent = sh
+            if f("bicep_f", 0.0) > 0:                                  # the title art: muscled upper and fore arms
+                bf = f("bicep_f", 0.0)
+                _ell("bicep", (0, -ua * 0.45, 0.2), (ar * bf, ua * 0.32, ar * bf), stone, 16).parent = sh
             el = _empty("elbow", (0, -ua, 0), sh)
             _cyl("farm", (0, -fa / 2, 0), ar * 0.9, fa, stone, 0.4, el)
+            if f("bicep_f", 0.0) > 0:
+                _ell("forearm", (0, -fa * 0.35, 0), (ar * f("bicep_f", 0.0) * 0.85, fa * 0.3, ar * f("bicep_f", 0.0) * 0.85),
+                     stone, 16).parent = el
             _ell("hand", (0, -fa, 0), (ar * 1.4,) * 3, stone, 12).parent = el
+            for i in range(int(f("fingers", 0))):                       # claws spread past the hand
+                a = math.radians(-35 + 70 * i / max(int(f("fingers", 0)) - 1, 1))
+                fl = f("finger_l", 2.2)
+                fg = _ell("finger", (math.sin(a) * fl * 0.6, -fa - ar * 1.1 - math.cos(a) * fl * 0.5, 0),
+                          (0.45, fl * 0.55, 0.45), stone, 10)
+                fg.rotation_euler = (0, 0, a)
+                fg.parent = el
             arms.append((sh, el, sx))
     cloak = None
     if opts.get("cloak"):
@@ -355,6 +426,14 @@ def build(opts):
             o.parent = upper
             o.hide_render = True
             frags.append(o)
+    if f("fuse_vox", 0.0) > 0:                                        # blend the muscle primitives into one skin
+        vx, it = f("fuse_vox", 0.25), f("fuse_smooth", 8)
+        _fuse(upper, ("torso", "pec", "abs"), vx, it)
+        for sh, el, _ in arms:
+            _fuse(sh, ("uarm", "delt", "bicep"), vx, it)
+            _fuse(el, ("farm", "forearm", "hand"), vx, it)
+        for hp in legs:
+            _fuse(hp, ("thigh", "quad", "knee", "shin", "calf"), vx, it)
     m = f("model_scale", 0.5)
     root.scale = (m, m, m)
     root.location = (0, f("model_dy", -37.0) * S * m, 0)

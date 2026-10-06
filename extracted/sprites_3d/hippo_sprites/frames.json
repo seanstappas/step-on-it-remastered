@@ -60,7 +60,7 @@
   "tail_y": -1.5,
   "claw_fx": 0.4,
   "claw_r": 0.775,
-  "mouth_band": true,
+  "mouth_band": false,
   "band_y": 0.05,
   "band_h": 0.2,
   "band_x": -0.6,
@@ -68,10 +68,22 @@
   "pupil_r": 0.65,
   "toe_n": 3,
   "toe_r": 0.55,
-  "snout_f": 0.9,
+  "snout_f": 0,
   "bump_f": 1.4,
   "cheek_eyes": false,
-  "mouth_rz": 0.6
+  "mouth_rz": 0.6,
+  "jaw_gap": 2.6,
+  "jaw_depth": 0.4,
+  "jaw_y": -0.5,
+  "knee_r": 1.25,
+  "jtooth_h": 2.3,
+  "jtooth_w": 1.5,
+  "muzzle": 0.5,
+  "ear_z": 1.3,
+  "muz_gap": 2.4,
+  "lip_h": 1.8,
+  "jaw_h": 1.0,
+  "muz_cut": true
  },
  "sweep": [
   {

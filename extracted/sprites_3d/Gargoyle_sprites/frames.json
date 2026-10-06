@@ -107,11 +107,11 @@
   "wing_pleats": 5,
   "pleat_amp": 0.3,
   "chest_rx": 8.5,
-  "pec_rx": 4.2,
-  "pec_ry": 2.6,
+  "pec_rx": 4.6,
+  "pec_ry": 3.0,
   "pec_z": 4.2,
-  "thigh_f": 0.95,
-  "shin_f": 0.8,
+  "thigh_f": 1.25,
+  "shin_f": 0.9,
   "horn_tilt": 30.0,
   "chest_ry": 8.9,
   "abd_ry": 7.5,
@@ -178,9 +178,9 @@
     0
    ]
   ],
-  "pec_rz": 0.6,
+  "pec_rz": 1.2,
   "pec_y": 45.5,
-  "strap": true,
+  "strap": false,
   "strap_gain": 1.15,
   "strap_t": 0.8,
   "horn_sx": 1.55,
@@ -194,7 +194,26 @@
   "frag_long": 1.6,
   "burst_r0": 0.4,
   "burst_spread": 1.6,
-  "burst_shrink": 0.6
+  "burst_shrink": 0.6,
+  "wing_scallop": 2.0,
+  "bicep_f": 1.25,
+  "fingers": 3,
+  "toes": 3,
+  "toe_l": 2.0,
+  "abs_n": 3,
+  "abs_y": 41.5,
+  "abs_dy": 3.0,
+  "abs_rx": 1.55,
+  "abs_ry": 1.45,
+  "abs_rz": 0.9,
+  "abs_x": 1.6,
+  "abs_in": 0.35,
+  "pec_x": 3.8,
+  "delt_f": 1.6,
+  "quad_f": 1.15,
+  "abs_box": false,
+  "fuse_vox": 0.2,
+  "fuse_smooth": 12
  },
  "sweep": [
   {
@@ -669,7 +688,7 @@
     "step": 0.1,
     "min": 0.8,
     "max": 1.5,
-    "init": 0.95
+    "init": 1.25
    },
    "torso_k": {
     "step": 0.05,
@@ -681,7 +700,7 @@
     "step": 0.2,
     "min": 0.5,
     "max": 2.0,
-    "init": 0.6
+    "init": 1.2
    },
    "strap_gain": {
     "step": 0.1,
