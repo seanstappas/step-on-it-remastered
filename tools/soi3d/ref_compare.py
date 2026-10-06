@@ -54,7 +54,7 @@ REFS = {
     "beenie_char": [("ref card: beenie, three-quarter view", ("card", 24), 77)],
     "knight_sprites": [("300 challenge title", ("pict", "300_Challenge_Title.png", (410, 78, 548, 358)), 2),
                        ("320 congratulations (in shadow)", ("pict", "320_Congratulations.png", (300, 140, 470, 380)), 2)],
-    "Gargoyle_sprites": [("300 challenge title", ("pict", "300_Challenge_Title.png", (50, 120, 312, 358)), None)],
+    "Gargoyle_sprites": [("300 challenge title", ("pict", "300_Challenge_Title.png", (50, 120, 312, 358)), 20)],
 }
 T = 240                                                     # tile size (px)
 _pdf_cache = {}

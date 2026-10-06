@@ -23,6 +23,7 @@ lit from the top left like the board tiles. `kind`:
 import math
 
 import bpy
+import mathutils
 
 from .. import common as C
 from .. import register_frames
@@ -96,12 +97,29 @@ def _door(opts, f, col, white):
         sx0 = -inner + 2.0                                           # the knuckle strap (f05 cols 6-7)
         tl = f("hinge_l", 6.5)
         for py, ph, ky, kh in ((3.5, 1.6, 3.0, 4.5), (-9.5, 1.6, -9.0, 4.0)):   # f05 tongues rows 11-13, 24-26
+            if opts.get("hinge_leaf"):                            # the card: a tall leaf narrowing into a straight tongue
+                lh, th, lw = f("leaf_h", 2.6), f("tongue_h", 1.2), tl * f("leaf_w", 0.3)
+                tp = lw + tl * f("leaf_taper", 0.25)
+                hinge = [(sx0, py - lh), (sx0 + lw, py - lh), (sx0 + tp, py - th), (sx0 + tl, py - th),
+                         (sx0 + tl, py + th), (sx0 + tp, py + th), (sx0 + lw, py + lh), (sx0, py + lh)]
+                _prism("hinge", [(x * S, y * S) for x, y in hinge], pz * S, 0.8 * S, gold, 0.3 * S)
+                if opts.get("leaf_knuckle"):
+                    _cyl("knuckle", (sx0, py, pz), f("knuckle_r", 1.0), 2 * lh, gold, (math.pi / 2, 0, 0), 16)
+                continue
             tongue = [(sx0, py - ph), (sx0 + tl - 1.5, py - ph * 0.8), (sx0 + tl, py), (sx0 + tl - 1.5, py + ph * 0.8), (sx0, py + ph)]
             _prism("hinge", [(x * S, y * S) for x, y in tongue], pz * S, 0.8 * S, gold, 0.3 * S)
             _cyl("knuckle", (sx0, ky, pz), 1.0, 2 * kh, gold, (math.pi / 2, 0, 0), 16)
         lx = inner - f("lock_x", 4.5)
-        _rbox("lock2", (lx, f("lock2_y", -9.0), pz), (f("lock2_w", 1.5), f("lock2_h", 4.0), 0.5), 0.4, gold)   # keyhole plate
-        if opts.get("keyhole"):                                    # a dark keyhole (round top + slot) in the plate
+        if opts.get("keyplate"):                                   # the card: a flat keyhole-shaped plate under the knob
+            cy, r, w, bot = f("kp_y", -4.8), f("kp_r", 1.5), f("kp_w", 1.3), f("kp_bot", -10.0)
+            a0 = math.atan2(-math.sqrt(max(r * r - w * w, 0.0)), w)
+            arc = [(lx + r * math.cos(a), cy + r * math.sin(a))
+                   for a in (a0 + (math.pi - 2 * a0) * i / 24 for i in range(25))]
+            plate = [(lx + w, bot)] + arc + [(lx - w, bot)]
+            _prism("lock2", [(x * S, y * S) for x, y in plate], pz * S, 0.6 * S, gold, 0.25 * S)
+        else:
+            _rbox("lock2", (lx, f("lock2_y", -9.0), pz), (f("lock2_w", 1.5), f("lock2_h", 4.0), 0.5), 0.4, gold)   # keyhole plate
+        if opts.get("keyhole") and not opts.get("keyplate"):     # a dark keyhole (round top + slot) in the plate
             dk = _mat(opts, "dark", (18, 12, 12), 0.8, 0.1)
             ky = f("lock2_y", -9.0) + f("keyhole_dy", 1.0)
             _cyl("keyhole", (lx, ky, pz + 0.45), f("keyhole_r", 0.8), 0.3, dk, (0, 0, 0), 16)
@@ -256,11 +274,17 @@ def _shield(opts, f, col):
     silver = _mat(opts, "color", (235, 235, 235), 0.3, 0.45)
     gold = _mat(opts, "gold", (215, 175, 10), 0.3, 0.6)
     pts = _px(SHIELD)[::-1]                                          # counter-clockwise in +y-up space
+    half = opts.get("sh_half")                                     # the card's outline: left half, mirrored
+    if half:
+        area = lambda P: sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(P, P[1:] + P[:1]))
+        own = _px([tuple(p) for p in half] + [(31.0 - c, r) for c, r in half[::-1]][1:-1])
+        pts = own if area(own) * area(pts) > 0 else own[::-1]
     if f("sh_round", 0.0) > 0:
         pts = _round_corners(pts, f("sh_round", 0.0))
     sh = _prism("shield", [(x * S, y * S) for x, y in pts], -f("sh_back", 4.0) * S, (f("sh_back", 4.0) + 4.0) * S, silver, 0.0)
     R = f("bulge_R", 40.0)                                          # keep only what lies inside a big sphere: a cap
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=R * S, segments=64, ring_count=32, location=(0, f("bulge_y", 2.0) * S, (f("sh_top", 3.0) - R) * S))
+    bs = int(f("bulge_seg", 64))                                    # the cap's facets show as a patchy dome when coarse
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=R * S, segments=bs, ring_count=bs // 2, location=(0, f("bulge_y", 2.0) * S, (f("sh_top", 3.0) - R) * S))
     ball = bpy.context.active_object
     m = sh.modifiers.new("cap", 'BOOLEAN')
     m.operation = 'INTERSECT'
@@ -292,12 +316,32 @@ def _shield(opts, f, col):
         bpy.context.view_layer.objects.active = sh
         bpy.ops.object.modifier_apply(modifier="ridge")
         bpy.data.objects.remove(roof, do_unlink=True)
+    cv = f("sh_chevron", 0.0)
+    if cv > 0:                                                     # the card: creases from the top dips meet in a V mid-shield
+        z0, yv = f("sh_top", 3.0) + f("chev_lift", 0.3), f("chev_y", 0.0)
+        tab = cv * f("chev_tab", 1.0)
+        for n, p in (((cv, 0.0, 1.0), (0.0, 0.0, z0)), ((-cv, 0.0, 1.0), (0.0, 0.0, z0)), ((0.0, tab, 1.0), (0.0, yv, z0))):
+            nv = mathutils.Vector(n).normalized()
+            bpy.ops.mesh.primitive_cube_add(size=200 * S)
+            cut = bpy.context.active_object
+            cut.rotation_mode = 'QUATERNION'
+            cut.rotation_quaternion = mathutils.Vector((0, 0, 1)).rotation_difference(nv)
+            cut.location = mathutils.Vector(p) * S - nv * (100 * S)   # its top face through p
+            m = sh.modifiers.new("chev", 'BOOLEAN')
+            m.operation = 'INTERSECT'
+            m.object = cut
+            bpy.context.view_layer.objects.active = sh
+            bpy.ops.object.modifier_apply(modifier="chev")
+            bpy.data.objects.remove(cut, do_unlink=True)
     bev = sh.modifiers.new("bev", 'BEVEL')
     bev.width = f("sh_bevel", 0.8) * S
-    bev.segments = 3
+    bev.segments = int(f("sh_bev_seg", 3))
     bev.limit_method = 'ANGLE'
-    if rs > 0:                                                     # smooth the boolean facets, keep the ridge crease
+    if rs > 0 or cv > 0:                                           # smooth the boolean facets, keep the ridge crease
         bpy.ops.object.shade_smooth_by_angle(angle=math.radians(f("ridge_smooth", 15.0)))
+        wn = sh.modifiers.new("wn", 'WEIGHTED_NORMAL')            # the cut leaves long ngon slivers: area-weight them
+        wn.keep_sharp = True
+        wn.weight = 100
     else:
         bpy.ops.object.shade_smooth()
     sr = f("stud_r", 2.0)
@@ -309,23 +353,103 @@ def _shield(opts, f, col):
                                              major_segments=24, minor_segments=10, location=(x * S, y * S, zs * S))
             bpy.context.active_object.data.materials.append(gold)
             bpy.ops.object.shade_smooth()
+            if f("stud_cone", 0.0) > 0:                           # the card: a raised pointed nipple inside the ring
+                ch = f("stud_cone", 0.0) * sr
+                bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=sr * f("cone_r", 0.5) * S, radius2=0.0,
+                                                depth=ch * S, location=(x * S, y * S, (zs + ch / 2 - 0.1 * sr) * S))
+                cone = bpy.context.active_object
+                cone.data.materials.append(gold)
+                bpy.ops.object.shade_smooth()
+                continue
             core = _mat(opts, "stud_core", (50, 35, 0), 0.6, 0.1)
             _ell("stud_core", (x, y, zs - 0.1 * sr), (sr * 0.45, sr * 0.45, sr * 0.2), core, 12)
         else:
             _ell("stud", (x, y, f("stud_z", 1.0)), (sr, sr, sr * 0.8), gold, 16)
 
 
+def _tree_wing(root, tip, tiers, w0, notch, droop):
+    """A fir-tree wing outline (cell (col, row) px): a trunk from `root` to `tip`, `tiers` sharp branches per side,
+    each `w0` px wide at the base narrowing to the tip, cut back to `notch` x width between tiers, the branch points
+    hanging `droop` px down the trunk."""
+    (rx, ry), (tx, ty) = root, tip
+    L = math.hypot(tx - rx, ty - ry)
+    ux, uy = (tx - rx) / L, (ty - ry) / L
+    vx, vy = -uy, ux
+    pt = lambda t, s: (rx + ux * t * L + vx * s, ry + uy * t * L + vy * s)
+    side = []
+    for i in range(tiers):                                     # base tier first
+        t0, t1 = i / tiers, (i + 1) / tiers
+        w = w0 * (1.0 - t0 * 0.75)
+        side.append((t0 + droop / L * -1.0, w))                # the branch point, hanging back down the trunk
+        side.append((t1, w0 * (1.0 - t1 * 0.75) * notch))      # the notch where the next tier starts
+    pts = [pt(0.0, -w0 * 0.25)]
+    pts += [pt(t, -s) for t, s in side]
+    pts.append(pt(1.0, 0.0))
+    pts += [pt(t, s) for t, s in reversed(side)]
+    pts.append(pt(0.0, w0 * 0.25))
+    return pts
+
+
+def _serrate(pts, pitch, depth, lean=0.8):
+    """Saw the edges (y-up, counter-clockwise) of a polygon into sharp teeth `pitch` px apart, each tip `depth` px
+    out and leaning `lean` of the way along its edge (the card helmet's arrow-barbed wings); area kept by sinking
+    the tooth bases depth/2."""
+    out = []
+    for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+        L = math.hypot(bx - ax, by - ay)
+        n = int(L // pitch)
+        out.append((ax, ay))
+        if n < 1:
+            continue
+        nx, ny = (by - ay) / L, -(bx - ax) / L                    # outward normal of a CCW edge
+        for j in range(n):
+            t0, tt = j / n, (j + lean) / n
+            out.append((ax + (bx - ax) * t0 - nx * depth * 0.5, ay + (by - ay) * t0 - ny * depth * 0.5))
+            out.append((ax + (bx - ax) * tt + nx * depth * 0.5, ay + (by - ay) * tt + ny * depth * 0.5))
+    return out
+
+
 def _helmet(opts, f, col):
     from .quadruped import _ell
     white = _mat(opts, "white", (240, 240, 240), 0.3, 0.45)
     dark = _mat(opts, "rim", (70, 70, 72), 0.5, 0.2)
-    _ell("dome", (0, f("dome_y", 3.0), 0), (f("dome_rx", 8.0), f("dome_ry", 8.0), f("dome_rz", 7.0)), white, 48)
-    _ell("rim", (0, f("rim_y", -7.5), -1.0), (f("rim_rx", 10.0), f("rim_ry", 4.0), f("rim_rz", 6.0)), dark, 32)
+    if f("ball_r", 0.0) > 0:                                       # the card: one ball, its underside dark grey
+        br, by = f("ball_r", 11.0), f("ball_y", -0.5)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=br * S, segments=64, ring_count=48, location=(0, by * S, 0),
+                                             rotation=(math.pi / 2, 0, 0))   # rings level: a straight shade line
+        b = bpy.context.active_object
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        b.data.materials.append(white)
+        b.data.materials.append(dark)
+        cut = (f("ball_split", -5.2) - by) * S
+        for p in b.data.polygons:
+            p.material_index = 1 if p.center.y < cut else 0
+        bpy.ops.object.shade_smooth()
+    else:
+        _ell("dome", (0, f("dome_y", 3.0), 0), (f("dome_rx", 8.0), f("dome_ry", 8.0), f("dome_rz", 7.0)), white, 48)
+        _ell("rim", (0, f("rim_y", -7.5), -1.0), (f("rim_rx", 10.0), f("rim_ry", 4.0), f("rim_rz", 6.0)), dark, 32)
     wd = f("wing_d", 1.2)
-    left = _px(opts.get("wing_pts", WING))                          # already counter-clockwise (y up)
+    tw = opts.get("wing_tree")                                     # the card's helmet: fir-tree wings + hanging spikes
+    raw = _tree_wing(tw["root"], tw["tip"], int(tw.get("tiers", 4)), tw.get("w0", 5.0), tw.get("notch", 0.45),
+                     tw.get("droop", 1.5)) if tw else opts.get("wing_pts", WING)
+    left = _px(raw)
+    area = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(left, left[1:] + left[:1]))
+    if area < 0:
+        left = left[::-1]                                          # counter-clockwise in y-up space
+    if f("wing_saw", 0.0) > 0:
+        left = _serrate(left, f("wing_saw", 0.0), f("saw_depth", 1.5), f("saw_lean", 0.8))
     for pts in (left, [(-x, y) for x, y in left][::-1]):
         w = _prism("wing", [(x * S, y * S) for x, y in pts], -wd / 2 * S + f("wing_z", 1.0) * S, wd * S, col, f("wing_bevel", 0.3) * S)
         w.rotation_euler = (0, math.radians(f("wing_yaw", 0.0)) * (1 if pts is left else -1), 0)
+        w.visible_shadow = bool(opts.get("wing_shadow", True))
+    for sp in (tw or {}).get("spikes", []):                        # [col, row, length, width]: thin spikes hanging down
+        c, r, ln, sw = sp
+        for sx in (1.0, -1.0):
+            x, y = sx * (c - 15.5), 15.5 - r
+            tri = [(x - sw / 2, y), (x + sw / 2, y), (x + sx * ln * 0.15, y - ln)]
+            if sx < 0:
+                tri = tri[::-1]
+            _prism("spike", [(px * S, py * S) for px, py in tri], -wd / 2 * S + f("wing_z", 1.0) * S, wd * 0.6 * S, col, 0.0)
 
 
 def _empty_at(loc, parent):

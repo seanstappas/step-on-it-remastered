@@ -10,7 +10,8 @@ Documentation for the remaster project, in two layers:
 
 The RE phase is complete and the port is **playable** — the unknowns listed below were all resolved
 in the decompiled core ([`../core/`](../core/)) and cross-checked by the deterministic gate.
-Planning/architecture lives in [`../plan/`](../plan/).
+Planning/architecture lives in [`../plan/`](../plan/). **3D sprite remaster handoff** (state, the HD-reference
+review loop, traps, open items): [`../plan/SPRITE_REMASTER_PROCESS.md`](../plan/SPRITE_REMASTER_PROCESS.md) §H.
 
 ## Contents
 

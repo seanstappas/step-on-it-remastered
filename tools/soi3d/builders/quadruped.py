@@ -139,7 +139,60 @@ def build(opts):
             parts.append(_band("mouth_line", (hx, hy, 0), hr, float(opts.get("band_y", 0.0)),
                                float(opts.get("band_h", 0.15)), float(opts.get("band_x", -0.3)), dark))
         mw = float(opts.get("mouth_h", 1.6))
-        if opts.get("open_mouth", False):
+        jg = float(opts.get("jaw_gap", 0.0))
+        mu = float(opts.get("muzzle", 0.0))
+        if mu > 0:                           # the card's hippo: a boxy open muzzle out of the head, 2 peg teeth below
+            g = lambda k, d: float(opts.get(k, d))
+            jy, gap = hy + g("muz_y", -0.8), g("muz_gap", 2.2)
+            xb, xf = hx - hr[0] * g("muz_back", 0.3), hx - hr[0] - mu      # back (inside the head) and front faces
+            mx, ml, mz = (xb + xf) / 2, (xb - xf) / 2, hr[2] * g("muz_w", 0.85)
+            uh, lh = g("lip_h", 1.8), g("jaw_h", 0.9)
+            if opts.get("muz_cut", False):         # hollow the head out of the gap: no head sphere inside the mouth
+                bpy.ops.mesh.primitive_cube_add(size=2.0, location=((xf + xb) / 2 * S, jy * S, 0))
+                cut = bpy.context.active_object
+                cut.scale = ((xb - xf) / 2 * S, gap / 2 * S, mz * 0.95 * S)
+                for o in parts:
+                    if o.name.startswith("head"):
+                        m = o.modifiers.new("mouth", 'BOOLEAN')
+                        m.operation, m.object = 'DIFFERENCE', cut
+                        bpy.context.view_layer.objects.active = o
+                        bpy.ops.object.modifier_apply(modifier="mouth")
+                bpy.data.objects.remove(cut, do_unlink=True)
+            parts.append(_box("snout_up", (mx, jy + gap / 2 + uh / 2, 0), (ml, uh / 2, mz), min(uh / 2, 1.0), skin))
+            parts.append(_box("snout_lo", (mx + g("jaw_back", 0.4), jy - gap / 2 - lh / 2, 0),
+                              (ml - g("jaw_back", 0.4), lh / 2, mz * 0.95), min(lh / 2, 0.6), skin))
+            parts.append(_box("mouth_inside", (mx + 0.6, jy, 0), (ml - 0.6, gap / 2 + 0.1, mz * 0.9), 0.2, dark))
+            pr, ph = g("peg_r", 0.55), gap * g("peg_h", 0.75)
+            for zz in (-1.0, 1.0):
+                bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=pr * S, depth=ph * S,
+                                                    location=((xf + pr + g("peg_in", 0.5)) * S, (jy - gap / 2 + ph / 2) * S,
+                                                              zz * mz * g("peg_z", 0.55) * S),
+                                                    rotation=(math.pi / 2, 0, 0))
+                peg = bpy.context.active_object
+                peg.name = "tooth_lo"
+                peg.data.materials.append(white)
+                bpy.ops.object.shade_smooth()
+                parts.append(peg)
+        elif jg > 0:                         # the card's hippo: a real open jaw -- a wedge cut out of head + snout
+            jy = hy + float(opts.get("jaw_y", -0.8))
+            x0 = hx - hr[0] * float(opts.get("jaw_depth", 0.35))           # how far back the gap runs
+            bpy.ops.mesh.primitive_cube_add(size=2.0, location=((x0 - 20.0) * S, jy * S, 0))
+            cut = bpy.context.active_object
+            cut.scale = (20.0 * S, jg / 2 * S, 20.0 * S)
+            for o in parts:
+                if o.name.startswith(("head", "snout")):
+                    m = o.modifiers.new("jaw", 'BOOLEAN')
+                    m.operation, m.object = 'DIFFERENCE', cut
+                    bpy.context.view_layer.objects.active = o
+                    bpy.ops.object.modifier_apply(modifier="jaw")
+            bpy.data.objects.remove(cut, do_unlink=True)
+            parts.append(_ell("mouth_inside", (x0 + 0.3, jy, 0), (1.2, jg * 0.6, hr[2] * 0.75), dark, 16))   # the cavity
+            tw, th = float(opts.get("jtooth_w", 0.9)), float(opts.get("jtooth_h", 1.4))
+            tx = hx - hr[0] * float(opts.get("jtooth_fx", 0.85))
+            for zz in (-1.0, 1.0):                    # two square teeth hanging from the upper jaw
+                parts.append(_box("tooth_up", (tx, jy + jg / 2 - th / 2 + 0.2, zz * float(opts.get("tooth_z", 1.4))),
+                                  (tw / 2, th / 2, tw / 2), 0.15, white))
+        elif opts.get("open_mouth", False):
             # f02 rows 5-8: a black gap across the snout's front, one white tooth hanging from the upper lip and
             # one rising from the lower jaw on each side, the green lower jaw below
             mx = hx - hr[0] * float(opts.get("mouth_fx", 0.8))
@@ -156,7 +209,8 @@ def build(opts):
             for zz in (-1.8, 1.8):
                 parts.append(_ell("tooth", (hx - hr[0] * 0.9, hy - 0.2, zz), (0.7, 0.9, 0.7), white, 12))
         gr = float(opts.get("googly_r", 0.0))                        # the card's hippo: bulging eyes on top
-        for zz in (-2.2, 2.2):
+        ez = float(opts.get("ear_z", 2.2))
+        for zz in (-ez, ez):
             bf = float(opts.get("bump_f", 1.0))
             parts.append(_ell("ear", (hx + 1.0, hy + hr[1] + 0.3 * bf, zz), (0.9 * bf, 1.1 * bf, 0.7 * bf), white, 12))
             if opts.get("ear_pupils"):                              # the card: the white bumps are eyeballs
@@ -230,6 +284,14 @@ def build(opts):
         tail.name = "tail"
     for o in parts:
         o.parent = root
+    tail_pivot = None
+    if sp != "hippo":                         # the tail swings about its base (pose "a_tail", "a_tail_y")
+        bpy.ops.object.empty_add(location=tuple(tbase))
+        tail_pivot = bpy.context.active_object
+        tail_pivot.name = "tail_pivot"
+        tail_pivot.parent = root
+        tail.location = tail.location - tbase
+        tail.parent = tail_pivot
     legs = []
     ll, lr = float(opts.get("leg_l", 6.5)), float(opts.get("leg_r", 2.0))
     fx, rx = float(opts.get("front_x", -2.5)), float(opts.get("rear_x", 9.5))
@@ -242,6 +304,13 @@ def build(opts):
         hip.parent = root
         leg = _capsule("leg_" + key, ll, lr, skin)
         leg.parent = hip
+        kr = float(opts.get("knee_r", 0.0))
+        if kr > 0:                            # the card's hippo: a round knee joint part-way down each leg
+            _ell("knee_" + key, (-lr * float(opts.get("knee_fx", 0.25)), -ll * float(opts.get("knee_y", 0.45)), 0),
+                 (lr * kr, lr * kr * 0.9, lr * kr), skin, 20).parent = hip
+        ff = float(opts.get("foot_f", 0.0))
+        if ff > 0 and sp != "hippo":         # the card's piggy: legs end in round bulbs
+            _ell("foot_" + key, (0, -ll * float(opts.get("foot_y", 1.0)), 0), (lr * ff, lr * ff * 0.85, lr * ff), skin, 20).parent = hip
         if sp == "hippo":
             hoof = _ell("hoof_" + key, (0, -ll - 0.4, 0), (lr * 1.05, 0.9, lr * 1.05), grey, 16)
             hoof.parent = hip
@@ -256,14 +325,15 @@ def build(opts):
                 _ell("toe_%s%d" % (key, t), (-lr * math.cos(a) * 0.95, -ll - 0.5, lr * math.sin(a) * 0.95),
                      (tr, tr * 0.8, tr), white, 12).parent = hip
         legs.append((key, hip))
-    return root, legs
+    return root, legs, tail_pivot
 
 
 def _frames_setup(opts):
-    root, legs = build(opts)
+    root, legs, tail_pivot = build(opts)
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
-    return {"root": root, "legs": legs, "amp": float(opts.get("swing", 22.0)), "tilt": math.radians(float(opts.get("tilt", 0.0)))}
+    return {"root": root, "legs": legs, "tail": tail_pivot, "amp": float(opts.get("swing", 22.0)),
+            "tilt": math.radians(float(opts.get("tilt", 0.0)))}
 
 
 def _frames_pose(ctx, pose):
@@ -278,6 +348,9 @@ def _frames_pose(ctx, pose):
         off = 0.0 if key in ("fn", "rf") else math.pi
         a = amp * math.sin(ph + off) + math.radians(float(pose.get("a_" + key, 0.0)))
         hip.rotation_euler = (0.0, 0.0, a)
+    if ctx.get("tail") is not None:
+        ctx["tail"].rotation_euler = (0.0, math.radians(float(pose.get("a_tail_y", 0.0))),
+                                      math.radians(float(pose.get("a_tail", 0.0))))
 
 
 register_frames("quadruped", _frames_setup, _frames_pose)

@@ -15,6 +15,99 @@ claim board [SPRITE_REMASTER_STATUS.md](SPRITE_REMASTER_STATUS.md); ready‑to�
 
 ---
 
+## H. HANDOFF (2026-10-05): state, the HD-reference review loop, and what is open
+
+**State.** All 67 families are published (frame-matched 3D, `extracted/sprites_3d_frames/`), the full gate
+(`tools/verify.ps1`) passes, and rounds 31-42 (user review against the HD reference art) are uncommitted --
+the user commits. The per-round detail is in §F's ROUND 31-42 paragraphs; this section is the short version.
+
+**Keep these when committing (git-ignored today):**
+- `tmp/soi3d_work/<family>/{fit.json,look.json}` hold every family's fitted poses, anchors and calibrated look.
+  `look.json` opts OVERRIDE `frames.json` opts. Without them a clone cannot reproduce the published frames
+  (`final` needs fit.json). Force-add them (`git add -f`) or back them up before any cleanup.
+- The review tools below live in `tmp/` (ignored). Only `apply_opts.py`, `hold_pose.py`, `frame_test.py`,
+  `pop_scan.py`, `opt_grid.py`, `set_opts.py` are tracked. Force-add the rest or promote them to
+  `tools/soi3d/`. Per-round backups: `tmp/fb_backup/<family>/*_rNN_pre.json`.
+
+**Review tools (`tmp/`):** `opt_probe.py` (variant probe + montage), `apply_both.py` / `apply_opts.py` (set opts),
+`zoom_review.py out.png fam:nn ...` (LANCZOS close-up sheet of published frames), `gear_design.py` /
+`gear_wing.py` / `shield_design.py` (outline tracing on the card grid), `hold_param.py <fam> <param> <v|median>
+<tol>` + `set_tether.py` + `tether_scale.py` + `scale_anchor.py` (fit.json anchors + optim tether),
+`run_smooth.py` (one smooth run cycle -> anchors), `hold_pose.py` (seed + re-optimise chosen frames),
+`refit_place.py <fam> --apply --rerender` (placement-only refit), `players_opts.ps1` (opts on all 8 player
+families), `pdf_imgs.py` (card images), `pose_table.py`, `pop_scan.py`, `de_map.py`, `row_bias.py`.
+Inline refine of chosen frames: `py -c "import sys; sys.path.insert(0,'tools/soi3d'); import framematch as fm;
+fm.stage_optim('<fam>', fm.load_cfg('<fam>'), only=[16,17])"` then `final verify ...`.
+
+**The review loop (one user remark -> one fix):**
+1. `py tools/soi3d/ref_compare.py [family ...]` -> `extracted/sprites_3d/<family>/_verify/ref_compare.png`
+   (HD reference | SD | 3D | 3D grey). References: `REFS` in ref_compare.py -- the reference card
+   (`refs/text/StepOnItRefCard.pdf`, image index: 6 Ted run, 7 block, 9 shoe, 10 kill-all ball, 11 coin,
+   12 bar, 13 door, 14 key, 15 shield, 16 ant, 17 ostrich, 18 hippo, 19 piggy, 20 smiley ("Wheelie"), 21 arrow,
+   23 magic ball, 24 Beenie), box art pages 3/4, picts 300 (Knight, Gargoyle), 320, 1010, 1030 (Ted).
+2. LOOK CLOSER before modelling: crop the card and our frame side by side at 400-500 px (the 990 px sheet hides
+   most faults); also the SD at 8-16x NEAREST -- the SD decides what the gate will accept.
+3. Trace shapes on a grid: `tmp/gear_design.py` (wing outline vs card + SD red), `tmp/shield_design.py`
+   (mirrored half outline vs card + SD silhouette, prints IoU). Outlines are `(col,row)` cell coords.
+4. Add an OPT-IN builder option (default = old behaviour) in `tools/soi3d/builders/<mode>.py`.
+5. Probe: `py tmp/opt_probe.py <family> <nn> '@variants.json' --zoom N` (one Blender job; prints IoU / dE /
+   visIoU / miss per variant, montage `tmp/opt_probe_<family>.png`). Probe the family's TIGHTEST frames too
+   (`_verify/frames_report.json` rows sorted by de).
+6. Apply: `py tmp/apply_both.py <family> '@opts.json'` (frames.json + the same keys in look.json; per-frame
+   options -> edit `frame_opts` with json.dumps(indent=1) + LF). Then the stages:
+   goodies `final verify`; animated families `final verify optimfail final verify tweens live livecal livegate`;
+   families with `frame_opts` (Gargoyle) have no live rig: `final verify optimfail final verify tweens`.
+   Template for a multi-family batch: `tmp/r42_apply.ps1`.
+7. Full gate (visible terminal), then delete only UNTRACKED screenshots:
+   `powershell -ExecutionPolicy Bypass -File tools/verify.ps1 2>&1 | Select-String '^\[|STAGE|FAILED|FAIL \['`
+   then `git ls-files --others --exclude-standard media/screenshots | ForEach-Object { Remove-Item $_ }`.
+
+**Traps found in this pass:**
+- Removing a key from frames.json does not remove it: look.json still applies it (old wing saw kept cutting new
+  wings). Sync both (`apply_both.py`).
+- A raised part can hide another: the coin's crescent at r 0.76 sat under the rim torus (0.69-0.86).
+- Cast shadows of front parts read as offset copies (kill-all wings); the HD art's dark areas may BE shadows,
+  not materials (the ball's lower half) -- try white + shadows before a dark material.
+- An open mouth cut only in the jaw shows the head sphere inside it (hippo `muz_cut` hollows the head).
+- Primitive muscles look stuck-on (abs as ovals/boxes); join a limb's parts and voxel-remesh + smooth
+  (`gargoyle.py` `_fuse`, `fuse_vox`/`fuse_smooth`).
+- A new pose key (piggy `a_tail`) needs an object pivot + `_frames_pose` support + an `optim.params` entry, then a
+  full `optim`; the live export records every object's transform, so it carries over.
+- `live` refuses families with `frame_opts`; a Godot "!configured" crash in livegate is transient -- re-run
+  `live livecal livegate`.
+- PS 5.1 strips quotes from inline JSON args: always `'@file.json'`. PowerShell's ConvertFrom-Json rejects some
+  valid files (case-duplicate keys): validate JSON with Python.
+- The PC crashes under sustained load (CPU degradation): run ONE Blender job at a time; after a crash check the
+  work JSONs with Python and re-run the interrupted stage.
+- `view_image` can return a "previously shown" placeholder with no pixels: never describe it; ~20 images per
+  request -- combine views into one sheet.
+
+**Tight frames (near the dE 16 gate; re-check after any change there):** blue door goody_props f06 (15.75),
+Gargoyle f09/f73 (~15.7), piggy live f16 (15.68).
+
+**Open items (tried and kept as is, or not started):**
+- Magic shoe: the card's broad feather fan drops IoU below the gate (0.81 at `feather_w` 2.6).
+- Gold bar: the card shows one framed bar, the game sprite is a stacked pile (silhouette IoU 0.40) -- no fix.
+- Beenie: the card shows sunglasses, the game sprite a clown face -- kept the game's.
+- Ostrich: the card's three-claw feet; Ted kneeling/front poses have no matching game frame.
+- Gargoyle: arms still read beaded and the torso smoother than the title art; its frames are near the dE limit.
+
+**Builder options added in rounds 31-42 (all opt-in):** `kid.py` face (`eye_fy`, `ears`, `smile_taper`,
+`nose_skin_px`), joints (`shoulder_ball_f`, `elbow_ball_f`, `knee_ball_f`, `seg_bulge`), feet (`shoe_bevel`,
+`ankle_ball_f`, `foot_lift`); `goodies.py` kill-all (`ball_r/ball_y/ball_split`, `wing_pts`, `wing_z`,
+`wing_shadow`, `wing_saw`*, `wing_tree`*), shield (`sh_half`, `sh_chevron`/`chev_*`, `sh_bev_seg`, `sh_round`,
+`stud_cone`, `bulge_seg`, `sh_ridge`*), door (`hinge_leaf`, `leaf_*`, `tongue_h`, `leaf_knuckle`, `keyplate`,
+`kp_*`, `frame_tube`, `keyhole`*), shoe (`wing_n`, `wing_cuff`, `wing_out`); `goody_coin.py` (`rim_on`,
+`rim_out`, `body_bevel`, `groove_arc`); `quadruped.py` hippo (`muzzle`, `muz_*`, `muz_cut`, `lip_h`, `jaw_h`,
+`peg_*`, `ear_z`, `knee_r`, `toe_n`, `jaw_gap`*), piggy (`foot_f`, pose `a_tail`/`a_tail_y`); `gargoyle.py`
+(`wing_scallop`, `strap`, `abs_*`, `abs_box`*, `bicep_f`, `delt_f`, `quad_f`, `fingers`, `toes`, `fuse_vox`,
+`fuse_smooth`); `tile.py` (`tube_frame`, `well_bevel`); `knight.py` (`helm_point`, `helm_sharp`, `keel_wedge`,
+`rough_var`, `aniso`, `grip_clear`, `tip_fwd`); `biped.py` (`wing_fan`, `wing_fan_keep`); `smiley.py`
+(`slit_round`); `ant.py` (`foot_ball`, `knee_ball`); `beenie.py` (`gun_coil`). * = tried, superseded or off.
+framematch: optim `tether` against fit.json `anchor`, per-frame `tether_scale`.
+
+---
+
 ## F. Frame-matched 3D (2026-09-22): the current publishing path
 
 **Principle.** Each ORIGINAL SD frame (`extracted/sprites/<sheet>/fNN_WxH.png`, never the HD upscale,
@@ -202,6 +295,45 @@ head turn `hd` at 0 +-8 deg (`tmp/hold_param.py` writes fit.json "anchor"s, opti
 "feet in the legs" were ankles flexed up to +-85 deg (the shoe in line with the shin; the SD shoes stay level):
 the ankle anchors are scaled x0.35 and refit at +-8 deg; a fit.json frame's `tether_scale` widens just that frame's
 tether (the run's f08/f10 needed x2.5). Rounder shoes (`shoe_bevel` 1.2) on all players.
+ROUND 36 (2026-10-04): the shield's studs are raised nipples in their rings (`stud_cone`), its dome finer-meshed
+(`bulge_seg` 192: the coarse boolean sphere showed as blotches). The hippo's jaw is a real gap cut through head +
+snout (`quadruped.py` `jaw_gap`, `jtooth_*`; superseded by `muzzle` in round 41), its legs carry knees (`knee_r`),
+and its old cheek eyes are gone (`cheek_eyes` false; the white head bumps are the eyes).
+ROUND 37 (2026-10-05): the card's "kill all" goody is a ball with two red arrow wings (not a helmet): one sphere
+whose underside is the dark grey (`goodies.py` `ball_r`/`ball_y`/`ball_split`, replacing dome + rim), wings a
+hand-drawn arrow outline traced over the card + SD red (`tmp/gear_design.py`; one diagonal band, small inner teeth,
+thin hanging spikes) in front of it (`wing_z` 10.5) casting no shadow (`wing_shadow` false -- their
+shadows on the ball read as offset grey copies that broke the symmetry); dE max 12.9 -> 11.4. (Sawn edges
+`wing_saw` and a generated fir-tree `wing_tree` were tried first and dropped. Dropping an option from frames.json
+is not enough: the work dir's look.json carries its own copy of the opts and kept sawing the new outline.)
+The ball's lower half is NOT a dark material (`ball_split` -30): the grey there is the wings' shadow, as on the
+card (dE max 10.9). Gargoyle wings: a scalloped lower edge between every second fold (`gargoyle.py` `wing_scallop`
+2.0, the title art's bat membrane; its ref_compare uses the emerged f20, not the cloaked f05). Piggy: a thick
+donut snout (`rim_t` 1.4, `flare_l` 1.0). Hippo: a wider jaw with big square teeth (`jaw_gap` 2.6, `jtooth_h` 2.3).
+Shoe: bigger feather fingers cost IoU below the gate (0.81 at `feather_w` 2.6) -- kept.
+Door (card): hinges are a tall leaf narrowing into a straight tongue with a pin knuckle (`hinge_leaf`, `leaf_*`,
+`tongue_h`, `leaf_knuckle`; without the knuckle the blue door f06 lost its gold mass and went dE 18.7), the lock a flat
+keyhole-shaped plate under the knob (`keyplate`, `kp_*`). Coin (card): a tapered crescent groove from 1 to 8 o'clock
+(`goody_coin.py` `groove_arc`); at r 0.76 the full-ring groove sat under the raised rim and never showed -- r 0.6.
+ROUND 41: coins -- a thin crisp rim (`rim_minor` 0.04, `rim_out` 0.88, `body_bevel` 0.012; silver dE 8.0 -> 5.8).
+Kill-all: the arrow base thinned. Shield (card): sharp corners (`sh_round` 0, `sh_bevel` 0.3) and two straight creases
+from the top dips meeting in a V mid-shield (`sh_chevron` 0.35 / `chev_y`: three half-space booleans -- two roof
+planes and a tab plane falling back toward the top notch) in place of the vertical `sh_ridge`. Hippo (card): a boxy
+open muzzle out of the head with two peg teeth standing on the lower jaw (`quadruped.py` `muzzle`, `muz_*`, `lip_h`,
+`jaw_h`, `peg_*`), eyes closer (`ear_z` 1.3). Piggy: bulb feet (`foot_f`), a smaller donut, and the tail swings per
+frame like the SD (pose `a_tail` / `a_tail_y` on a `tail_pivot` empty, fitted by optim). Gargoyle: the diagonal strap
+removed (the title art only has the arm's shadow there); opt-in muscle detail -- abs (`abs_n`), biceps/forearms
+(`bicep_f`), clawed fingers (`fingers`), a stone foot with long white claws (`toes`) in place of the white box.
+`tmp/apply_both.py` sets opts in frames.json AND overwrites the same keys in the work look.json.
+ROUND 42: coins have NO raised rim ring (the card's coin is a plain disc -- `rim_on` false; the rim read as a 2nd
+circle) and the crescent hugs the edge (`groove_r` 0.75, arc 75-240 deg). Shield: the outline traced from the card
+(`sh_half`, a mirrored left half: higher pointed horns, a wide top tab with concave shoulders, bulged sides;
+silhouette IoU vs SD 0.91 -> 0.96, `tmp/shield_design.py`), chamfered edges (`sh_bev_seg` 1), smaller studs.
+Kill-all: the wing base ends in needle spikes. Hippo: the head sphere showed green inside the open mouth -- the
+gap is now cut out of the head (`muz_cut`). Piggy: a pointed tail (`tail_r1` 0.15). Gargoyle: the muscle
+primitives (torso + pecs + abs, upper arm + deltoid + bicep, forearm + hand, thigh + quad + knee + shin + calf) are
+joined per limb and voxel-remeshed + corrective-smoothed into one skin (`fuse_vox` 0.2, `fuse_smooth` 12) so the
+abs read as a blended six-pack, not stuck-on ovals; new `delt_f`, `quad_f` (quad + calf).
 
 **Detail audit (2026-09-26).** The gate's blurred dE deliberately discounts sub-pixel texture, so a frame
 can pass with an eye or a stripe gone. `tools/soi3d/detail_audit.py` (metric `framematch.detail_miss`)
