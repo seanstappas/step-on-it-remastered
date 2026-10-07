@@ -43,6 +43,8 @@ public:
     void new_game(int64_t mode);        /* set the mode + apply the new-game stats (FUN_1002b060) */
     bool challenge_round() const;       /* board holds a Knight/Gargoyle (FUN_10017a70) */
     bool challenge_failed() const;      /* challenge round lost: every active player is down */
+    void set_input_assist(bool on);
+    void abort_game();
 
     /* one deterministic logic frame */
     void tick(int64_t p1_input, int64_t p2_input);

@@ -3738,6 +3738,46 @@ int main(void)
         CHECK(okf, "jumpfeel: the right tumble cycles frames 0x86..0x8d");
     }
 
+    /* ---- 62. Remaster input assist (soi_set_input_assist): tap capture, verb buffering,
+     * cancel stop/settle on jump, and simultaneous action+jump preservation. ---- */
+    {
+        int t;
+        soi_world_init(w, 1); w->level_loaded = 1;
+        soi_set_input_assist(w, 1);
+        reset_player(w, 1, 8, 9);
+        { int c; for (c = 1; c <= 17; c++) soi_set_cell(w, c, 9, SOI_CELL_SUPPORTIVE); }
+        w->players[1].y = soi_cell_y(8) + 1;
+
+        /* (a) Tap capture: a key pressed ONLY on an even (unsampled) tick is captured by in_pend */
+        w->tick = 0; /* tick 1 will be odd (sample), tick 0 is even */
+        soi_tick(w, 0, 0); /* tick 1: sampled, in = 0 */
+        soi_tick(w, SOI_IN_RIGHT, 0); /* tick 2: even, but in_pend accumulates SOI_IN_RIGHT */
+        soi_tick(w, 0, 0); /* tick 3: odd, in_pend applied -> starts running right */
+        CHECK(w->players[1].ground_state == SOI_ST_RUN, "assist: tap on unsampled tick is captured");
+
+        /* (b) Jump cancels STOP: start stopping, then press jump with assist on -> immediate leap */
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0); /* finish stride */
+        soi_tick(w, 0, 0); soi_tick(w, 0, 0); /* enters STOP */
+        CHECK(w->players[1].ground_state == SOI_ST_STOP, "assist: player entered stop");
+        soi_tick(w, SOI_IN_JUMP, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_JUMP, "assist: jump cancels stop state immediately");
+
+        /* (c) Action spamming & simultaneous jump+block:
+         * Land the player, then press BLOCK and JUMP together. The block action starts,
+         * and the jump is held in buf, leaping as soon as the block action completes. */
+        for (t = 0; t < 60 && w->players[1].in_air; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_IDLE, "assist: player landed into idle");
+        soi_tick(w, SOI_IN_BLOCK_HIGH | SOI_IN_JUMP, 0); soi_tick(w, 0, 0);
+        CHECK(w->players[1].pose != 0, "assist: block action started");
+        /* Press block again on frame 3 of the action to test spam buffer */
+        soi_tick(w, SOI_IN_BLOCK_HIGH, 0); soi_tick(w, 0, 0);
+        /* Advance through the rest of the 7-frame block action */
+        for (t = 0; t < 20 && w->players[1].pose != 0; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].pose == 0, "assist: first block action ended");
+        /* Buffered jump leaps right after block finishes */
+        CHECK(w->players[1].ground_state == SOI_ST_JUMP, "assist: buffered jump fired after block action completed");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");

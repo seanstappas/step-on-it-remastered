@@ -122,8 +122,11 @@ const WARP_FRAMES := 72.0
 # Options -> Speed (About doc 8; plan 10 -- a LOCAL sim-rate option; Medium = the canonical
 # deterministic rate). This scales Godot's physics tick (which drives the core tick), NOT the
 # core logic, so determinism is unaffected. Rates are reasonable multiples (exact originals
-# undocumented).
-const SPEED_HZ := [90, 75, 60, 45]   # Really Fast / Fast / Medium / Slow
+const SPEED_HZ := [111, 91, 71, 56]   # Really Fast (9ms / 111Hz) / Fast (11ms / 91Hz) / Medium (14ms / 71Hz) / Slow (18ms / 56Hz)
+var _game_over_active := false
+var _game_over_aborting := false
+var _game_over_ticks := 0
+var _game_over_letters := []
 var _tally_pre := {}        # idx -> score before the current tick (to size the bonus award)
 var _tally_bonus := {}      # idx -> total awarded at completion (bonus x mult + no-weapons reward)
 var _tally_final := {}      # idx -> final score at completion
@@ -1261,6 +1264,8 @@ func _exit_tree() -> void:
 ## SFX set + soundtrack) changes, so a switch mid-board is seamless.
 func _apply_presentation(on: bool) -> void:
 	_remastered = on
+	if _core != null:
+		_core.set_input_assist(true)
 	_sprites_dir = "res://../extracted/sprites_hd" if on else SPRITES_DIR
 	_sprite_scale = 4 if on else 1
 	_pict_dir = PICT_DIR
@@ -1339,7 +1344,12 @@ func _core_mode() -> int:
 
 ## (re)start the current board from a clean core state.
 func _start() -> void:
+	_game_over_active = false
+	_game_over_aborting = false
+	_game_over_ticks = 0
+	_game_over_letters.clear()
 	_core.init(1)
+	_core.set_input_assist(true)
 	_core.load_level(_level_bytes)
 	_core.set_play_mode(_core_mode())
 	if _num_players >= 3:
@@ -1510,6 +1520,15 @@ func _physics_process(_delta: float) -> void:
 	if not _alt and _core.challenge_failed() and not _challenge_forfeited:
 		_challenge_forfeited = true   # FUN_10016f80(failed): "Nothing!" + event 8
 		Audio.play_snd(32129)
+	if _core.game_over():
+		if not _game_over_active:
+			_game_over_active = true
+			_game_over_ticks = 0
+			Audio.stop_music()
+			Audio.play_snd(26486)
+			_init_game_over_letters()
+		else:
+			_game_over_ticks += 1
 	if not _hs_checked and _hs_game_ended():
 		_hs_checked = true
 		var sc := _hs_final_score()
@@ -1679,7 +1698,13 @@ func _input(e: InputEvent) -> void:
 		return
 	match e.keycode:
 		KEY_ESCAPE:
-			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+			if _core.game_over() or (_alt and _alt_state == "results"):
+				get_tree().change_scene_to_file("res://scenes/menu.tscn")
+			elif not _game_over_aborting:
+				_game_over_aborting = true
+				_core.abort_game()
+			else:
+				get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		KEY_TAB, KEY_P:
 			if not _core.game_over():
 				_paused = not _paused   # pause (the original pauses on Tab; P also works)
@@ -1940,7 +1965,7 @@ func _draw() -> void:
 	elif _alt and _alt_state == "transition":
 		_draw_alt_transition()
 	elif _core.game_over():
-		_draw_banner("GAME OVER", "Enter: retry     Esc: menu")
+		_draw_game_over()
 	elif _core.challenge_failed():
 		_draw_challenge_failed()
 	elif _core.level_complete():
@@ -1963,6 +1988,42 @@ func _draw() -> void:
 		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
 	if _pres_toast > 0:
 		_draw_presentation_toast()
+
+func _init_game_over_letters() -> void:
+	_game_over_letters.clear()
+	# Matches original FUN_1002401c:
+	# 8 letters for "G A M E O V E R" (extra_s frames 20..27)
+	# Target positions: y = 225, x = 160 + i * 40
+	# Starts at random positions: start_x = (Random() / 110 + 300) & ~1; start_y = (Random() / 150 + 220)
+	for i in range(8):
+		var sx: float = float((randi_range(-150, 150) + 300) & ~1)
+		var sy: float = float(randi_range(-100, 100) + 220)
+		var tx: float = float(160 + i * 40)
+		var ty: float = 225.0
+		_game_over_letters.append({
+			"start": Vector2(sx, sy),
+			"target": Vector2(tx, ty),
+			"frame": 20 + i
+		})
+
+func _draw_game_over() -> void:
+	# Authentic Game Over screen matching FUN_1002401c and board_game_over.png:
+	# Dimensions: Rect (150, 215, 490, 275) -> 340x60
+	var box_rect := Rect2(150, 215, 340, 60)
+	draw_rect(box_rect, Color.BLACK, true)
+	# 3px blue border (50000 / 65535 -> Color(0, 0, 0.76))
+	draw_rect(box_rect, Color(0.0, 0.0, 0.76), false, 3.0)
+
+	# Red 3D letters G A M E O V E R flying into place over 100 ticks
+	var t: float = clampf(float(_game_over_ticks) / 100.0, 0.0, 1.0)
+	for entry in _game_over_letters:
+		var pos: Vector2 = (entry["start"] as Vector2).lerp(entry["target"] as Vector2, t)
+		var tex := _sprite("extra_s", int(entry["frame"]))
+		if tex != null:
+			_dtex(tex, pos)
+
+	if _game_over_ticks >= 100:
+		draw_string(_font, Vector2(0, 305), "Enter: retry     Esc: menu", HORIZONTAL_ALIGNMENT_CENTER, 640, 14, Color(0.8, 0.8, 0.8, 0.85))
 
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))
@@ -2119,8 +2180,6 @@ func _draw_hud() -> void:
 	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(28, x + 28, y)                       # "Board#"
 	_ex_num(_board_number(), 3, x + 2, y)
-	if _core.player_has_key(1) >= 1:
-		_draw_key(Vector2(610, 2))
 
 ## Compete HUD (asm FUN_1000fb18 / FUN_1000efb4 / FUN_1000f500 two-player branch): the same
 ## icons, but every counter is drawn TWICE -- player 1's values on the top line (asm y=0) and

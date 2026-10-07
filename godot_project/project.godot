@@ -19,6 +19,7 @@ window/size/viewport_height=480
 ; 2D at the window's resolution so the opt-in --hd assets (sprites_hd/pict_hd) show detail.
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
+window/subwindows/embed_subwindows=true
 
 [rendering]
 textures/canvas_textures/default_texture_filter=0  ; nearest — crisp retro pixels

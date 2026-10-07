@@ -158,6 +158,9 @@ int    soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len);
 /* Overwrite a player's PERSISTENT stats (Resume restores a saved board-start game). */
 void   soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arrows, int balls, int shield);
 
+/* Abort the current round (e.g. Esc pressed): kills all active players into death-throw with lives drained to 0 */
+void   soi_abort_game(SoiWorld *w);
+
 /* Play modes, numbered as the original's mode selector (asm FUN_100263d8). */
 enum { SOI_MODE_ONE = 1, SOI_MODE_ALTERNATE = 2, SOI_MODE_COOPERATE = 3, SOI_MODE_COMPETE = 4 };
 /* Select the play mode. COOPERATE pools every player's score/lives/ammo/multiplier/Bonus
@@ -181,6 +184,10 @@ int    soi_challenge_failed(const SoiWorld *w);
 void   soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input);
 /* Same, with a THIRD input channel for the remaster's 3rd co-op player (slot 3). */
 void   soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input);
+/* REMASTER input assist (default OFF = faithful): when on, a key tapped between the 2-frame
+ * input samples still registers, and a jump/block/arrow/ball press that cannot act yet (mid
+ * action, mid stop/settle, in the air) is buffered for a few player frames instead of lost. */
+void   soi_set_input_assist(SoiWorld *w, int on);
 /* Remaster: activate the 3rd co-op player (BORD has no 3rd spawn; P1-derived). Call
  * after soi_load_level when 3 players are in the game. */
 void   soi_spawn_player3(SoiWorld *w);

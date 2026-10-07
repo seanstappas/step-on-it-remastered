@@ -76,6 +76,7 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
     font = font if os.path.exists(font) else None
     glyph = C._text("$", z=0.085, mat=face_dark, extrude=f("glyph_extrude", 0.05), size=f("glyph_size", 1.15),
                     font=font)
+    glyph.location = (f("glyph_dx", 0.0), f("glyph_dy", -0.04), 0.085)
     if f("glyph_bevel", 0.0) > 0:                                     # a rounded emboss edge
         glyph.data.bevel_depth = f("glyph_bevel", 0.0)
         glyph.data.bevel_resolution = 3
@@ -115,7 +116,7 @@ def build_coin(color=(183, 150, 0), spin=0.0, kind="gold", opts=None):
     bpy.ops.object.light_add(type='POINT', location=(-2.6, 3.2, 3.0))
     gl = bpy.context.active_object
     gl.name = "coin_glint"
-    gl.data.energy = 380
+    gl.data.energy = f("glint_energy", 180.0)
     gl.data.shadow_soft_size = 0.4
 
 

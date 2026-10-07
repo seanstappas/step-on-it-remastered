@@ -11,6 +11,10 @@
 *.o
 *.obj
 *.exe
+*.pdb
+*.lib
+*.idb
+*.ilk
 
 # Emulator ROMs / OS images — never commit (copyright)
 *.rom
@@ -20,9 +24,8 @@
 # GDExtension build output
 /godot_project/bin/
 /godot_project/.godot/
-# media/ (screenshots + gameplay clips) is kept tracked for posterity
-/tools/__pycache__
-/tools/soi3d/**/__pycache__/
+**/__pycache__/
+*.pyc
 # tools/soi3d/framematch.py scratch (pose sweeps, look trials, job files) -- regenerable
 /tmp/soi3d_work/
 /media/video/_diag
@@ -34,4 +37,16 @@ tmp/fb_backup/Gargoyle_sprites/fit_r18_rebuild1.json
 tmp/fb_backup/Gargoyle_sprites/frames_r18_rebuild1.json
 tmp/fb_backup/Gargoyle_sprites/look_r18_rebuild1.json
 /tmp
-/tmp
+/qa_out
+/godot_project/tmp
+/hf-cache
+/raw_game
+/refs
+/media
+
+# Heavy generated/experimental renders
+/extracted/music/renders/
+/extracted/music/first_pass/
+/extracted/music/pass*/
+/extracted/sprites_uhd/
+/extracted/sprites_3d/

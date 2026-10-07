@@ -83,11 +83,19 @@ def _arrow(opts, f, col, white):
 
 
 def _door(opts, f, col, white):
-    wf, fd = f("frame_w", 2.5), f("frame_d", 2.0)
-    fb = min(wf, fd) * 0.95 if opts.get("frame_tube") else 0.7     # the card's door: a round tube frame
-    _rbox("frame_top", (0, 13.75, 0), (16.0, 2.0, fd), fb, white)
-    for sx in (-1.0, 1.0):
-        _rbox("jamb", (sx * (16.0 - wf), -2.0, 0), (wf, 14.0, fd), fb, white)
+    wf, fd, fb = f("frame_w", 2.5), f("frame_d", 2.0), f("frame_b", 0.35)
+    inner = 16.0 - 2 * wf
+    pts = [
+        (16.0, -16.0),
+        (16.0, 15.75),
+        (-16.0, 15.75),
+        (-16.0, -16.0),
+        (-inner, -16.0),
+        (-inner, 11.75),
+        (inner, 11.75),
+        (inner, -16.0),
+    ]
+    _prism("door_frame", [(x * S, y * S) for x, y in pts], -fd * S, 2 * fd * S, white, fb * S)
     gold = _mat(opts, "gold", (215, 175, 10), 0.3, 0.6)
     inner = 16.0 - 2 * wf
     pd = f("panel_d", 1.0)
