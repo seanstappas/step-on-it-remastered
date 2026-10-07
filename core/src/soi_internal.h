@@ -116,6 +116,11 @@ typedef struct {
                                      * Stop/Go switch entry edge (asm FUN_1002bc64 bVar12 = cell
                                      * changed this frame). Seeded to the spawn cell so spawning ON
                                      * a switch tile does not toggle it. */
+    /* REMASTER input assist (w->input_assist; NOT in the original, NOT serialized). */
+    uint8_t  in_pend;               /* keys seen down on any tick since the last input sample, so a
+                                     * tap shorter than the 2-frame sampling interval is not lost */
+    uint8_t  buf;                   /* buffered verb presses (jump/block/arrow/ball) not yet usable */
+    uint8_t  buf_t;                 /* player frames left before `buf` expires */
 } SoiPlayer;
 
 typedef struct {
@@ -187,6 +192,11 @@ struct SoiWorld {
     uint8_t  play_mode;        /* SOI_MODE_* (0 behaves as SOI_MODE_ONE) */
     uint8_t  challenge;        /* 1 = CHALLENGE ROUND: the board holds a Knight or Gargoyle (asm
                                 * FUN_10017a70 -> DAT_1003ad0e, computed at load by FUN_1002d980) */
+
+    /* REMASTER input assist (soi_set_input_assist): 0 = faithful input (default); 1 = keep taps
+     * shorter than the sampling interval and buffer verb presses for a few player frames.
+     * Survives soi_load_level; zeroed by soi_world_init. NOT serialized/hashed. */
+    uint8_t  input_assist;
 
     /* transient per-tick sound-event queue (NOT serialized/hashed) */
     uint8_t  sfx_queue[SOI_SFX_QUEUE_MAX];

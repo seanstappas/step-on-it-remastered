@@ -156,7 +156,7 @@
  "mode": "tile",
  "opts": {
   "well_bevel": 0.03,
-  "tube_frame": true
+  "tube_frame": false
  },
  "frame_opts": {
   "8": {

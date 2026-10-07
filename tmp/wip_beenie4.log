@@ -1,9 +1,0 @@
-== beenie_char [look final verify] (278 s, exit 1)
-look: 14 frames [66, 70, 74, 78, 82, 86, 90, 94, 98, 102, 106, 110, 114, 118]
-look: start dE 42.417
-look: cap_turn -> 120  dE 39.338
-look: refine round 0 -> dE 36.251 {"torso_y": 2.0, "torso_h": 6.6, "torso_r": 4.5625, "torso_fx": 0.81, "hip_r": 3.25, "head_y": 11.6, "head_r": 5.7, "hair_dx": 1.3, "hair_dy": 0.0, "hair_f": 1.0, "shoulder_y": 5.8, "shoulder_z": 4.6, "uarm_l": 3.2, "farm_l": 3.0, "arm_r": 1.15, "hand_r": 1.3688, "hip_z": 1.475, "thigh_l": 4.0, "shin_l": 3.2, "leg_r": 1.775, "foot_rx": 3.075, "foot_ry": 1.45, "foot_dx": 0.9, "cap_f": 1.07, "cap_fy": 0.8, "cap_dy": 0.3, "prop_l": 8.0, "gun_l": 9.0, "gun_h": 2.225, "s_n0": 30.0, "e_n0": 65.0, "cap_turn": 120, "hair_fy": 0.88, "mouth_el": -28.0, "mouth_az": 8.0, "mouth_r": 2.2}
-look: refine round 1 -> dE 32.452 {"torso_y": 1.6, "torso_h": 6.2, "torso_r": 4.4375, "torso_fx": 0.81, "hip_r": 3.25, "head_y": 11.2, "head_r": 5.5, "hair_dx": 1.0, "hair_dy": 0.3, "hair_f": 0.97, "shoulder_y": 5.8, "shoulder_z": 4.6, "uarm_l": 3.2, "farm_l": 3.0, "arm_r": 1.0, "hand_r": 1.3688, "hip_z": 1.575, "thigh_l": 4.15, "shin_l": 3.2, "leg_r": 1.925, "foot_rx": 2.95, "foot_ry": 1.45, "foot_dx": 1.2, "cap_f": 1.05, "cap_fy": 0.75, "cap_dy": 0.3, "prop_l": 8.0, "gun_l": 9.0, "gun_h": 2.225, "s_n0": 30.0, "e_n0": 65.0, "cap_turn": 120, "hair_fy": 0.83, "mouth_el": -23.0, "mouth_az": 13.0, "mouth_r": 2.2}
-Error   : EXCEPTION_ACCESS_VIOLATION
-blender job beenie_char_ref2_look failed
-BATCH DONE

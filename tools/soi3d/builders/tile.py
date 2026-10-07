@@ -262,7 +262,7 @@ def _tube_frame(opts, half, top, mat, col):
     inner = float(opts.get("inner", 0.56)) - float(opts.get("well_slope", 0.0))   # the panel's half-size
     inner = float(opts.get("tube_inner", inner))
     r = (half - inner) / 2
-    ph, cr = half - r, min(half - r, float(opts.get("tube_corner", r)))      # path half-size, path corner radius
+    ph, cr = half - r, min(half - r, float(opts.get("tube_corner", 0.04)))      # path half-size, path corner radius
     pts = []
     for qx, qy, a0 in ((1, 1, 0), (-1, 1, 90), (-1, -1, 180), (1, -1, 270)):
         cx, cy = qx * (ph - cr), qy * (ph - cr)

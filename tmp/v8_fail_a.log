@@ -1,7 +1,0 @@
-== BP_run [optimfail final verify] (1,163 s, exit 1)
-final: 48 frames (+0 derived) -> extracted\sprites_3d_frames\BP_sprites
-verify BP_run: 48 frames, IoU min 0.852 mean 0.871, dE mean 12.56 max 18.89 -> FAIL [19]
-== BP_cheer [optimfail final verify] (136 s, exit 0)
-final: 9 frames (+0 derived) -> extracted\sprites_3d_frames\BP_sprites
-verify BP_cheer: 9 frames, IoU min 0.853 mean 0.874, dE mean 12.65 max 14.83 -> PASS
-BATCH DONE

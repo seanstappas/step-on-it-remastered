@@ -8,7 +8,7 @@ var board_index: int = -1
 var num_players: int = 2   # 1/2/3 (the main menu sets this; 3 = the remaster's co-op P3)
 var mode: int = 0          # 0 = Cooperate (shared board), 1 = Compete (separate doors, first to exit
                            # wins), 2 = Alternate (two solo games taking turns; game.gd owns the pools)
-var speed: int = 2         # Options->Speed: 0=Really Fast 1=Fast 2=Medium(default) 3=Slow (local, About 8)
+var speed: int = 0         # Options->Speed: 0=Really Fast(default) 1=Fast 2=Medium 3=Slow (local, About 8)
 
 # --- ORIGINAL <-> REMASTERED presentation, flipped live with F2 (title menu + in game) ---
 # ORIGINAL = the 1996 SD sprites/PICTs + the 8-bit SFX + the original game's music (captures in
@@ -166,6 +166,14 @@ func start_campaign() -> void:
 	board_list = PackedStringArray(files)
 	board_index = 0 if board_list.size() > 0 else -1
 	board_path = board_list[0] if board_list.size() > 0 else ""
+
+func start_campaign_at(start_num: int) -> void:
+	start_campaign()
+	for i in board_list.size():
+		if _board_num_of(board_list[i]) == start_num:
+			board_index = i
+			board_path = board_list[i]
+			break
 
 func _board_num_of(fn: String) -> int:
 	return fn.get_file().get_basename().replace("board_", "").to_int()

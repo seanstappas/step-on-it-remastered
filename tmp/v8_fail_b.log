@@ -1,7 +1,0 @@
-== BP_sprites [optimfail final verify] (249 s, exit 0)
-final: 68 frames (+0 derived) -> extracted\sprites_3d_frames\BP_sprites
-verify BP_sprites: 68 frames, IoU min 0.853 mean 0.881, dE mean 11.98 max 15.83 -> PASS
-== BP_tumble [optimfail final verify] (454 s, exit 0)
-final: 32 frames (+0 derived) -> extracted\sprites_3d_frames\BP_sprites
-verify BP_tumble: 32 frames, IoU min 0.860 mean 0.882, dE mean 13.88 max 15.72 -> PASS
-BATCH DONE

@@ -47,6 +47,8 @@ int64_t SoiCore::play_mode() const          { return soi_play_mode(w()); }
 void    SoiCore::new_game(int64_t mode)      { soi_new_game(w(), (int)mode); }
 bool    SoiCore::challenge_round() const    { return soi_challenge_round(w()) != 0; }
 bool    SoiCore::challenge_failed() const   { return soi_challenge_failed(w()) != 0; }
+void    SoiCore::set_input_assist(bool on)  { soi_set_input_assist(w(), on ? 1 : 0); }
+void    SoiCore::abort_game()               { soi_abort_game(w()); }
 
 void SoiCore::tick(int64_t p1_input, int64_t p2_input)
 {
@@ -153,6 +155,8 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("new_game", "mode"), &SoiCore::new_game);
     ClassDB::bind_method(D_METHOD("challenge_round"), &SoiCore::challenge_round);
     ClassDB::bind_method(D_METHOD("challenge_failed"), &SoiCore::challenge_failed);
+    ClassDB::bind_method(D_METHOD("set_input_assist", "on"), &SoiCore::set_input_assist);
+    ClassDB::bind_method(D_METHOD("abort_game"), &SoiCore::abort_game);
     ClassDB::bind_method(D_METHOD("tick", "p1_input", "p2_input"), &SoiCore::tick);
     ClassDB::bind_method(D_METHOD("tick3", "p1_input", "p2_input", "p3_input"), &SoiCore::tick3);
     ClassDB::bind_method(D_METHOD("spawn_player3"), &SoiCore::spawn_player3);

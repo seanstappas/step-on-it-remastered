@@ -78,6 +78,7 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
     p->pose = 0; p->pose_t = 0; p->act_verb = SOI_ACT_NONE;   /* no build/fire action running */
     p->frame = 0x3d; p->frame_save = 0x3d; p->act_dirty = 0; p->aux = 0; p->dstep = 0;   /* standing, facing right */
     p->input = 0; p->input_prev = 0;
+    p->in_pend = 0; p->buf = 0; p->buf_t = 0;
     p->prev_pcol = (int16_t)col; p->prev_prow = (int16_t)row;   /* seed switch entry-edge to spawn cell */
     p->mult = 1;                   /* multiplier resets to 1 each level (asm FUN_1002b174 -> +0x44) */
 }
@@ -455,6 +456,52 @@ void soi_tick(SoiWorld *w, uint8_t p1_input, uint8_t p2_input)
     soi_tick3(w, p1_input, p2_input, 0);   /* 2-player entry; the 3rd co-op player gets no input here */
 }
 
+void soi_set_input_assist(SoiWorld *w, int on)
+{
+    int i;
+    uint8_t v = on ? 1u : 0u;
+    if (w->input_assist == v) return;
+    w->input_assist = v;
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        w->players[i].in_pend = 0; w->players[i].buf = 0; w->players[i].buf_t = 0;
+    }
+}
+
+static void check_respawns(SoiWorld *w)
+{
+    int i, active_players = 0, living_players = 0, any_ready = 0;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        SoiPlayer *rp = &w->players[i];
+        if (rp->active && !rp->eliminated) {
+            active_players++;
+            if (rp->alive) {
+                living_players++;
+            } else if (rp->respawn_timer > 0) {
+                if (--rp->respawn_timer == 0) any_ready = 1;
+            } else {
+                any_ready = 1; /* timer was already 0 while waiting for partner to die */
+            }
+        }
+    }
+    if (active_players > 0 && living_players == 0 && any_ready) {
+        if (w->bord_len > 0) {
+            reload_board_on_death(w);
+        } else {
+            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+                SoiPlayer *rp = &w->players[i];
+                if (rp->active && !rp->alive && !rp->eliminated) {
+                    rp->x = rp->spawn_x; rp->y = rp->spawn_y;
+                    rp->alive = 1; rp->in_air = 0; rp->move_ctr = 0; rp->run_dir = 0;
+                    rp->ground_state = SOI_ST_IDLE;
+                    rp->pose = 0; rp->pose_t = 0; rp->act_verb = SOI_ACT_NONE;
+                    rp->act_dirty = 0; rp->frame = (rp->facing == 1) ? 0x3d : 0x34;
+                    rp->invuln = 90;
+                }
+            }
+        }
+    }
+}
+
 /* Advance one frame with up to THREE player inputs (the remaster's 3rd co-op player is
  * slot 3; the original is 2-player). */
 void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input)
@@ -468,19 +515,25 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
 
     /* Input is sampled every 2 frames and so is the PLAYER state machine: the asm
      * main loop (FUN_10028a0c) gates {input FUN_1002d440 + locomotion FUN_1001166c
-     * + pickup FUN_1002bc64} behind the sVar7 divider = every 2nd VBL (30Hz), while
-     * enemies run ~every frame (60Hz). Latch input on the odd tick; reuse on even. */
-    if ((w->tick & 1u) != 0u) {
-        w->players[1].input = p1_input;
-        w->players[2].input = p2_input;
-        w->players[3].input = p3_input;
-    } else {
-        /* SPEED SHOES: the asm drops the divider to 1 for a fast player (FUN_10028a0c:
-         * `if (+0x5c == 1) sVar7 = 1`), so input is sampled EVERY frame along with the
-         * doubled locomotion below -- not held over from the odd tick. */
-        if (w->players[1].fast > 0) w->players[1].input = p1_input;
-        if (w->players[2].fast > 0) w->players[2].input = p2_input;
-        if (w->players[3].fast > 0) w->players[3].input = p3_input;
+     * + pickup FUN_1002bc64} behind the sVar7 divider = every 2nd frame, while
+     * enemies run every frame. Latch input on the odd tick; reuse on even.
+     * SPEED SHOES: the asm drops the divider to 1 for a fast player (FUN_10028a0c:
+     * `if (+0x5c == 1) sVar7 = 1`), so input is sampled EVERY frame along with the
+     * doubled locomotion below -- not held over from the odd tick. */
+    {
+        const uint8_t ins[4] = { 0, p1_input, p2_input, p3_input };
+        for (i = 1; i < SOI_MAX_PLAYERS && i < 4; i++) {
+            SoiPlayer *ip = &w->players[i];
+            const int sample = ((w->tick & 1u) != 0u) || ip->fast > 0;
+            if (w->input_assist) {
+                /* REMASTER assist: remember every key seen down since the last sample, so a
+                 * tap that lands only on the unsampled tick still registers. */
+                ip->in_pend |= ins[i];
+                if (sample) { ip->input = ip->in_pend; ip->in_pend = 0; }
+            } else if (sample) {
+                ip->input = ins[i];
+            }
+        }
     }
 
     for (i = 0; i < SOI_MAX_PLAYERS; i++)
@@ -489,30 +542,7 @@ void soi_tick3(SoiWorld *w, uint8_t p1_input, uint8_t p2_input, uint8_t p3_input
         if (w->players[i].fire_cd > 0) w->players[i].fire_cd--; /* vestigial: player weapons now
                                                                 * gate on one-shot-in-flight, not a
                                                                 * timer (asm has no fire cooldown) */
-    /* Respawn commit. FAITHFUL death recovery: the asm reloads the whole board after
-     * every death (session loop FUN_1001f4f8 -> FUN_10029acc -> FUN_1002b448), so the
-     * grid, enemies, positions and the Bonus timer all reset while score / lives / ammo /
-     * shield persist -- a death RESETS THE BOARD and a runout comes back with a fresh
-     * clock. A captured board is required; a bare unit-test world (no board loaded) keeps
-     * the simple in-place respawn. reload_board_on_death revives every active player at
-     * once, so break out of the per-player loop after it runs. */
-    for (i = 0; i < SOI_MAX_PLAYERS; i++) {                      /* respawn timer */
-        SoiPlayer *rp = &w->players[i];
-        if (rp->active && !rp->alive && !rp->eliminated && rp->respawn_timer > 0) {
-            if (--rp->respawn_timer == 0) {
-                if (w->bord_len > 0) {
-                    reload_board_on_death(w);
-                    break;
-                }
-                rp->x = rp->spawn_x; rp->y = rp->spawn_y;
-                rp->alive = 1; rp->in_air = 0; rp->move_ctr = 0; rp->run_dir = 0;
-                rp->ground_state = SOI_ST_IDLE;
-                rp->pose = 0; rp->pose_t = 0; rp->act_verb = SOI_ACT_NONE;
-                rp->act_dirty = 0; rp->frame = (rp->facing == 1) ? 0x3d : 0x34;
-                rp->invuln = 90;                                /* spawn grace (no-board fallback) */
-            }
-        }
-    }
+    check_respawns(w);
 
     /* Player logic at 30Hz (odd tick); a DYING player's death-throw keeps animating
      * every frame (the asm loop runs the state machine while the dying flag is set).
@@ -623,6 +653,21 @@ static const SoiPlayer *pget(const SoiWorld *w, int i)
 int32_t  soi_player_score(const SoiWorld *w, int p) { return pget(w, p)->score; }
 int      soi_player_lives(const SoiWorld *w, int p) { return pget(w, p)->lives; }
 int      soi_player_mult(const SoiWorld *w, int p)  { return pget(w, p)->mult; } int      soi_player_no_weapons_reward(const SoiWorld *w, int p) { return pget(w, p)->no_weapons_reward; }int      soi_player_alive(const SoiWorld *w, int p) { return pget(w, p)->active && pget(w, p)->alive && !pget(w, p)->eliminated; }
+void     soi_abort_game(SoiWorld *w)
+{
+    int i;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        SoiPlayer *p = &w->players[i];
+        if (p->active && p->alive) {
+            p->invuln = 0;
+            soi_player_hit(w, i);
+        }
+    }
+    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+        w->players[i].lives = 0;
+    }
+}
+
 int      soi_game_over(const SoiWorld *w)
 {
     int i, any = 0;

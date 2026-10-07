@@ -85,9 +85,30 @@ func _populate() -> void:
 		f = da.get_next()
 	da.list_dir_end()
 	names.sort_custom(func(a, b): return _board_num(a) < _board_num(b))
+	var is_dev := _is_dev_mode()
+	var ua := OS.get_cmdline_user_args()
+	for a in ua:
+		if a.begins_with("--board=") or a.begins_with("--play=") or a.begins_with("--script=") or a == "--demo" or a == "--bug3" or a == "--shot":
+			is_dev = true
+			break
+	if not is_dev:
+		const STARTING_BOARDS := [401, 421, 441, 461, 481]
+		var filtered: Array[String] = []
+		for n in names:
+			if _board_num(n) in STARTING_BOARDS:
+				filtered.append(n)
+		names = filtered
 	for n in names:
 		_files.append(_levels_dir.path_join(n))
-		_list.add_item(_board_label(_board_num(n)))
+		_list.add_item(_board_label(_board_num(n), is_dev))
+
+func _is_dev_mode() -> bool:
+	var all_args: Array = OS.get_cmdline_user_args()
+	all_args.append_array(OS.get_cmdline_args())
+	for a in all_args:
+		if a == "--dev" or a == "--debug" or a == "--admin":
+			return true
+	return false
 
 func _board_num(fn: String) -> int:
 	return fn.get_basename().replace("board_", "").to_int()
@@ -96,7 +117,17 @@ func _board_num(fn: String) -> int:
 ## in five tiers of 20 -- Beginner / Novice / Intermediate / Advanced / Expert; 1001-1050 are
 ## the Compete set (asm FUN_1002b448: BORD N+1000 in Compete mode). Label each board by tier so
 ## "Set Starting Board" reads by difficulty.
-func _board_label(num: int) -> String:
+func _board_label(num: int, is_dev: bool = true) -> String:
+	if not is_dev:
+		var start_labels := {
+			401: "1, Beginner",
+			421: "21, Novice",
+			441: "41, Intermediate",
+			461: "61, Advanced",
+			481: "81, Expert"
+		}
+		if start_labels.has(num):
+			return start_labels[num]
 	if num >= 401 and num <= 500:
 		var tiers := ["Beginner", "Novice", "Intermediate", "Advanced", "Expert"]
 		return "%s  %d   (board_%d)" % [tiers[(num - 401) / 20], (num - 401) % 20 + 1, num]

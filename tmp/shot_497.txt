@@ -1,3 +1,0 @@
-0 200
-SHOT live_497
-QUIT

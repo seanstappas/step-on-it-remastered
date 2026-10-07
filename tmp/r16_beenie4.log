@@ -1,5 +1,0 @@
-== beenie_char [optimfail final verify] (1,738 s, exit 1)
-final: 56 frames (+0 derived) -> extracted\sprites_3d_frames\beenie_sprites
-verify beenie_char: 56 frames, IoU min 0.857 mean 0.866, dE mean 16.43 max 18.91 -> FAIL [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 88, 89, 90, 91, 92, 94, 99, 100, 101, 108, 109, 110, 111, 112, 113, 114, 119, 120, 121]
-verify: beenie_char is not published and failed -> removed its 56 overlay frames
-BATCH DONE

@@ -265,6 +265,10 @@ func set_music_enabled(on: bool) -> void:
 func is_music_enabled() -> bool:
 	return _music_enabled
 
+func stop_music() -> void:
+	if _music_player != null and _music_player.playing:
+		_music_player.stop()
+
 ## "Hurry up" tempo control (asm FUN_10018b24 / FUN_10018ac4). Engage (on=true) when a
 ## player's Bonus timer passes 1000; release (on=false) when it is lifted back above 1000
 ## or a new board starts. Faithful behaviour is TEMPO ONLY (pitch constant), so we swap the

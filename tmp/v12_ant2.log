@@ -1,6 +1,0 @@
-== ant_sprites [final verify optimfail final verify tweens live livecal livegate] (310 s, exit 1)
-final: 49 frames (+0 derived) -> extracted\sprites_3d_frames\ant_sprites
-verify ant_sprites: 49 frames, IoU min 0.836 mean 0.868, dE mean 10.89 max 14.70 -> FAIL [4, 10, 19, 22, 26, 44, 46]
-blender job ant_sprites_shift121 failed
-Error   : EXCEPTION_ACCESS_VIOLATION
-BATCH DONE

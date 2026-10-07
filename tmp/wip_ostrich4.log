@@ -1,5 +1,0 @@
-== ostrich_sprites [optimfail final verify] (203 s, exit 1)
-final: 32 frames (+0 derived) -> extracted\sprites_3d_frames\ostrich_sprites
-verify ostrich_sprites: 32 frames, IoU min 0.850 mean 0.880, dE mean 12.87 max 17.73 -> FAIL [28, 32]
-verify: ostrich_sprites is not published and failed -> removed its 32 overlay frames
-BATCH DONE

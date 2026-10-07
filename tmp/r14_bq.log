@@ -1,4 +1,0 @@
-== block_question [final verify] (1 s, exit 0)
-final: 1 frames (+5 derived) -> extracted\sprites_3d_frames\block_sprites
-verify block_question: 6 frames, IoU min 0.965 mean 0.981, dE mean 8.96 max 10.24 -> PASS
-BATCH DONE

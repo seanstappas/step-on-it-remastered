@@ -1,4 +1,0 @@
-== ant_sprites [optimfail final verify] (95 s, exit 0)
-final: 49 frames (+0 derived) -> extracted\sprites_3d_frames\ant_sprites
-verify ant_sprites: 49 frames, IoU min 0.851 mean 0.881, dE mean 11.03 max 15.72 -> PASS
-BATCH DONE

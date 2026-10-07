@@ -255,6 +255,28 @@ static void do_head_break(SoiWorld *w, int player)
     }
 }
 
+/* Enter the jump (a jump press seen by the idle / run / turn handlers): the asm only sets
+ * state 2 with its counter at 0 on the press frame; the launch itself -- headroom test, bonk
+ * or leap -- happens on the NEXT player frame, in jump_step. */
+static void begin_jump(SoiPlayer *p)
+{
+    p->ground_state = SOI_ST_JUMP;
+    p->in_air = 1;
+    p->jump_t = 0;
+}
+
+static int check_jump_trigger(const SoiWorld *w, SoiPlayer *p, uint8_t in, uint8_t edge)
+{
+    if (w->input_assist) {
+        if ((in & SOI_IN_JUMP) || (p->buf & SOI_IN_JUMP) || (edge & SOI_IN_JUMP)) {
+            p->buf &= ~SOI_IN_JUMP;
+            return 1;
+        }
+        return 0;
+    }
+    return (edge & SOI_IN_JUMP) != 0;
+}
+
 /* One head-bonk frame (asm ground-state 4, FUN_10014524): a fixed 10-frame recoil. The
  * frame counter is jump_t -- the asm reuses field 0x1003a9e2 for both the jump arc and
  * this bonk (you cannot jump and bonk at once), so the port does too. Each frame advances
@@ -270,17 +292,9 @@ static void bonk_step(SoiWorld *w, int player)
         if (p->jump_t == 5) do_head_break(w, player);
     } else {
         p->ground_state = SOI_ST_IDLE;            /* asm: counter reaches 10 -> ground_state 0 */
+        p->frame = stand_frame(p);
+        p->jump_t = 0;
     }
-}
-
-/* Enter the jump (a jump press seen by the idle / run / turn handlers): the asm only sets
- * state 2 with its counter at 0 on the press frame; the launch itself -- headroom test, bonk
- * or leap -- happens on the NEXT player frame, in jump_step. */
-static void begin_jump(SoiPlayer *p)
-{
-    p->ground_state = SOI_ST_JUMP;
-    p->in_air = 1;
-    p->jump_t = 0;
 }
 
 /* Commit a finished death: debit a life (from the co-op pool, FUN_1000e9c8) and either
@@ -294,6 +308,7 @@ static void commit_death(SoiWorld *w, int player)
     SoiPlayer *p = &w->players[player];
     p->in_air = 0;
     p->alive = 0;
+    p->ground_state = SOI_ST_IDLE;
     if (w->challenge) return;
     if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
     else p->respawn_timer = 90;
@@ -400,6 +415,9 @@ static void fall_step(SoiWorld *w, int player)
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
         snap_to_ground(p);
+        p->frame = stand_frame(p);
+        p->jump_t = 0;
+        return;
     }
 }
 
@@ -448,7 +466,7 @@ static void idle_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
     }
     /* (the asm also re-snaps y to the row here, FUN_100137f8 -- a no-op for a player at rest,
      * which an idle player always is: every landing and spawn already rests him on the row) */
-    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (check_jump_trigger(w, p, in, edge)) { begin_jump(p); return; }
     if (in & SOI_IN_RIGHT) {
         p->jump_t = 0;
         if (p->facing == 1) p->ground_state = SOI_ST_RUN;
@@ -488,7 +506,7 @@ static void run_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
     }
     if (p->facing == 1) {
         if (p->jump_t == 0) p->frame = (p->x & 2) ? 0x1a : 0x19;
-        if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+        if (check_jump_trigger(w, p, in, edge)) { begin_jump(p); return; }
         if (R || (p->x & 2)) {
             if (move_clear(w, p, 1))  { p->x += 2; run_frame_r(p); }
             else if (!R)              { p->x -= 2; run_frame_r(p); }   /* blocked mid-stride: back */
@@ -501,7 +519,7 @@ static void run_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
         }
     } else if (p->facing == -1) {
         if (p->jump_t == 0) p->frame = (p->x & 2) ? 1 : 2;
-        if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+        if (check_jump_trigger(w, p, in, edge)) { begin_jump(p); return; }
         if (L || (p->x & 2)) {
             if (move_clear(w, p, -1)) { p->x -= 2; run_frame_l(p); }
             else if (!L)              { p->x += 2; run_frame_l(p); }
@@ -525,7 +543,7 @@ static void turn_idle_step(SoiWorld *w, int player, uint8_t in, uint8_t edge, in
     restore_frame(p);
     p->facing = (int16_t)(right ? 1 : -1);
     if (p->jump_t++ == 0) p->frame = right ? 0x5a : 0x5d;
-    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (check_jump_trigger(w, p, in, edge)) { begin_jump(p); return; }
     if (++p->frame > (right ? 0x5d : 0x60)) {
         if (in & (right ? SOI_IN_RIGHT : SOI_IN_LEFT)) {
             p->ground_state = SOI_ST_RUN;             /* the counter stays > 0: no stride restart */
@@ -539,12 +557,12 @@ static void turn_idle_step(SoiWorld *w, int player, uint8_t in, uint8_t edge, in
 /* TURN mid-run (asm FUN_10013c18, state 0xb; the facing is already the new one): a 4-frame
  * turn standing still -- three frames from TURN_FROM[stride frame], then the run carries on in
  * the new direction from TURN_TO[stride frame]. A jump press leaps out of it. */
-static void turn_run_step(SoiWorld *w, int player, uint8_t edge)
+static void turn_run_step(SoiWorld *w, int player, uint8_t in, uint8_t edge)
 {
     SoiPlayer *p = &w->players[player];
     (void)w;
     restore_frame(p);
-    if (edge & SOI_IN_JUMP) { begin_jump(p); return; }
+    if (check_jump_trigger(w, p, in, edge)) { begin_jump(p); return; }
     if (p->jump_t++ == 0) {
         p->aux = TURN_TO[run_index(p->frame)];
         p->frame = TURN_FROM[run_index(p->frame)];
@@ -570,6 +588,10 @@ static void stop_step(SoiWorld *w, int player)
         p->frame = stand_frame(p);
         return;
     }
+    if (w->input_assist && check_jump_trigger(w, p, p->input, 0)) {
+        begin_jump(p);
+        return;
+    }
     if (p->jump_t++ == 0) p->aux = STOP_TO[run_index(p->frame)];
     p->frame = (int16_t)(p->frame + ((p->aux < p->frame) ? -2 : 2));
     /* A stride always ends on a frame of the target's parity (the run advances one frame per
@@ -593,6 +615,10 @@ static void settle_step(SoiWorld *w, int player)
         restore_frame(p);
         p->ground_state = SOI_ST_IDLE; p->jump_t = 0;
         p->frame = stand_frame(p);
+        return;
+    }
+    if (w->input_assist && check_jump_trigger(w, p, p->input, 0)) {
+        begin_jump(p);
         return;
     }
     if (p->jump_t++ == 0) {
@@ -625,10 +651,12 @@ static int action_step(SoiWorld *w, int player, uint8_t edge)
     SoiPlayer *p = &w->players[player];
     const int right = (p->facing >= 0);
     if (p->pose == 0) {
-        if      (edge & SOI_IN_BLOCK_HIGH) { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BLOCK; }
-        else if (edge & SOI_IN_BLOCK_LOW)  { p->pose = right ? 4 : 2; p->act_verb = SOI_ACT_BLOCK; }
-        else if (edge & SOI_IN_ARROW)      { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_ARROW; }
-        else if (edge & SOI_IN_BALL)       { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BALL; }
+        uint8_t act = edge;
+        if (w->input_assist) act |= p->buf;
+        if      (act & SOI_IN_BLOCK_HIGH) { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BLOCK; p->buf &= ~SOI_IN_BLOCK_HIGH; }
+        else if (act & SOI_IN_BLOCK_LOW)  { p->pose = right ? 4 : 2; p->act_verb = SOI_ACT_BLOCK; p->buf &= ~SOI_IN_BLOCK_LOW; }
+        else if (act & SOI_IN_ARROW)      { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_ARROW; p->buf &= ~SOI_IN_ARROW; }
+        else if (act & SOI_IN_BALL)       { p->pose = right ? 3 : 1; p->act_verb = SOI_ACT_BALL; p->buf &= ~SOI_IN_BALL; }
         else return 0;
         p->pose_t = 0;
         p->act_dirty = 1;                  /* FUN_10014700: remember the frame it interrupts */
@@ -661,6 +689,16 @@ void soi_player_update(SoiWorld *w, int player)
     p->input_prev = in;
 
     if (!p->active || p->eliminated || !p->alive) return;
+
+    if (w->input_assist) {
+        uint8_t verbs = edge & (SOI_IN_JUMP | SOI_IN_BLOCK_HIGH | SOI_IN_BLOCK_LOW | SOI_IN_ARROW | SOI_IN_BALL);
+        if (verbs) {
+            p->buf |= verbs;
+            p->buf_t = 6;
+        } else if (p->pose == 0 && p->ground_state != SOI_ST_BONK && p->buf_t > 0) {
+            if (--p->buf_t == 0) p->buf = 0;
+        }
+    }
 
     /* A player mid death-throw does ONLY the somersault. In the asm, TWO gates on the
      * SAME per-player death flag enforce this: FUN_1001166c line 13 gates the build/fire
@@ -708,7 +746,7 @@ void soi_player_update(SoiWorld *w, int player)
         case SOI_ST_BONK:   bonk_step(w, player);                   break;
         case SOI_ST_TURN_R: turn_idle_step(w, player, in, edge, 1); break;
         case SOI_ST_TURN_L: turn_idle_step(w, player, in, edge, 0); break;
-        case SOI_ST_TURN:   turn_run_step(w, player, edge);         break;
+        case SOI_ST_TURN:   turn_run_step(w, player, in, edge);     break;
         case SOI_ST_STOP:   stop_step(w, player);                   break;
         case SOI_ST_SETTLE: settle_step(w, player);                 break;
         default:                                                    break;

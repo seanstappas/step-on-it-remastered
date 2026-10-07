@@ -1,5 +1,0 @@
-== Gargoyle_sprites [sweep fit optim final verify] (1,430 s, exit 1)
-final: 73 frames (+0 derived) -> extracted\sprites_3d_frames\Gargoyle_sprites
-verify Gargoyle_sprites: 73 frames, IoU min 0.758 mean 0.867, dE mean 15.90 max 19.78 -> FAIL [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 33, 34, 35, 36, 37, 38, 40, 41, 42, 43, 44, 45, 46, 48, 56, 57, 58, 64, 65, 66, 70, 71, 72, 73, 74]
-verify: Gargoyle_sprites is not published and failed -> removed its 73 overlay frames
-BATCH DONE

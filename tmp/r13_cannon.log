@@ -1,8 +1,0 @@
-== cannon_barrel [sweep fit look final verify] (15 s, exit 0)
-look: 2 frames [2, 3]
-look: start dE 14.186
-look: world -> 0.12  dE 13.952
-look: dE 14.186 -> 13.952 with {"barrel": true, "world": 0.12}
-final: 2 frames (+0 derived) -> extracted\sprites_3d_frames\cannon_sprites
-verify cannon_barrel: 2 frames, IoU min 0.870 mean 0.870, dE mean 13.95 max 14.31 -> PASS
-BATCH DONE

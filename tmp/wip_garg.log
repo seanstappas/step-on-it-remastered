@@ -1,4 +1,0 @@
-== Gargoyle_sprites [sweep fit optim look final verify optimfail final verify] (1,348 s, exit 1)
-Traceback (most recent call last):
-KeyError: 'elbow'
-BATCH DONE
