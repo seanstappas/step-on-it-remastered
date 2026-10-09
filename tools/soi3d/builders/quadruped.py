@@ -11,6 +11,7 @@ rounded-box hippo head with the flat front f02 shows) scored worse than the elli
 """
 import math
 
+import bmesh
 import bpy
 import mathutils
 
@@ -90,30 +91,89 @@ def _box(name, c, half, bevel, mat):
 
 
 def _capsule(name, length, r, mat):
-    """A capsule hanging straight down from its origin (the hip) by `length` px."""
-    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=r * S, depth=length * S,
-                                        location=(0, -length * S / 2, 0), rotation=(math.pi / 2, 0, 0))
-    cyl = bpy.context.active_object
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=False)
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=r * S, segments=24, ring_count=12, location=(0, -length * S, 0))
-    cap = bpy.context.active_object
-    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in (cyl, cap):
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = cyl
-    bpy.ops.object.join()
-    cyl.name = name
-    cyl.data.materials.append(mat)
-    bpy.ops.object.shade_smooth()
-    return cyl
+    """A seamless capsule hanging straight down from its origin (the hip) by `length` px,
+    rounded at both the top (hip) and bottom (foot) as a single continuous pill surface with no seams."""
+    L = length * S
+    R = r * S
+    segments = 24
+    rings = 8
+
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+
+    v_top = bm.verts.new((0, R, 0))
+
+    top_rings = []
+    for i in range(1, rings + 1):
+        theta = (math.pi / 2) * (1.0 - i / rings)
+        y = R * math.sin(theta)
+        rr = R * math.cos(theta)
+        ring = []
+        for k in range(segments):
+            phi = 2 * math.pi * k / segments
+            x = rr * math.cos(phi)
+            z = rr * math.sin(phi)
+            ring.append(bm.verts.new((x, y, z)))
+        top_rings.append(ring)
+
+    for k in range(segments):
+        k_next = (k + 1) % segments
+        bm.faces.new((v_top, top_rings[0][k], top_rings[0][k_next]))
+
+    for i in range(len(top_rings) - 1):
+        r1, r2 = top_rings[i], top_rings[i + 1]
+        for k in range(segments):
+            k_next = (k + 1) % segments
+            bm.faces.new((r1[k], r2[k], r2[k_next], r1[k_next]))
+
+    bot_rings = []
+    for j in range(rings):
+        phi = (math.pi / 2) * (j / rings)
+        y = -L - R * math.sin(phi)
+        rr = R * math.cos(phi)
+        ring = []
+        for k in range(segments):
+            ang = 2 * math.pi * k / segments
+            x = rr * math.cos(ang)
+            z = rr * math.sin(ang)
+            ring.append(bm.verts.new((x, y, z)))
+        bot_rings.append(ring)
+
+    r_top_eq = top_rings[-1]
+    r_bot_eq = bot_rings[0]
+    for k in range(segments):
+        k_next = (k + 1) % segments
+        bm.faces.new((r_top_eq[k], r_bot_eq[k], r_bot_eq[k_next], r_top_eq[k_next]))
+
+    for j in range(len(bot_rings) - 1):
+        r1, r2 = bot_rings[j], bot_rings[j + 1]
+        for k in range(segments):
+            k_next = (k + 1) % segments
+            bm.faces.new((r1[k], r2[k], r2[k_next], r1[k_next]))
+
+    v_bot = bm.verts.new((0, -L - R, 0))
+    r_last = bot_rings[-1]
+    for k in range(segments):
+        k_next = (k + 1) % segments
+        bm.faces.new((r_last[k], v_bot, r_last[k_next]))
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    for f in obj.data.polygons:
+        f.use_smooth = True
+    return obj
 
 
 def build(opts):
     C._clear()
     sp = opts.get("species", "hippo")
     body_rgb = tuple(opts.get("body", (0, 150, 0) if sp == "hippo" else (230, 30, 110)))
-    skin = C._mat("skin", C._srgb(*body_rgb), rough=float(opts.get("rough", 0.4)), spec=float(opts.get("spec", 0.25)))
+    skin = C._mat("skin", C._srgb(*body_rgb), rough=float(opts.get("rough", 0.4)), spec=float(opts.get("spec", 0.25)), coat=float(opts.get("coat", 0.0)))
     dark = C._mat("dark", C._srgb(*opts.get("dark", (10, 10, 10))), rough=0.6, spec=0.1)
     white = C._mat("white", C._srgb(*opts.get("white", (230, 230, 230))), rough=0.3, spec=0.4)
     grey = C._mat("grey", C._srgb(*opts.get("hoof", (150, 150, 150))), rough=0.4, spec=0.3)
@@ -253,8 +313,8 @@ def build(opts):
         sl, sr, nr = float(opts.get("snout_l", 9.0)), float(opts.get("snout_r", 2.2)), float(opts.get("neck_r", 1.1))
         fl = float(opts.get("flare_l", 2.5))
         base = mathutils.Vector(((bx - bl * float(opts.get("snout_fx", 0.8))) * S, bh * float(opts.get("snout_fy", 0.5)) * S, 0))
-        tube("snout", base, sdir, sl - fl, nr, nr, skin)
-        tube("flare", base + sdir * ((sl - fl) * S), sdir, fl, nr, sr, skin)
+        snout = tube("snout", base, sdir, sl - fl, nr, nr, skin)
+        flare = tube("flare", base + sdir * ((sl - fl) * S), sdir, fl, nr, sr, skin)
         bpy.ops.mesh.primitive_torus_add(major_radius=sr * S, minor_radius=float(opts.get("rim_t", 0.6)) * S,
                                          major_segments=24, minor_segments=8)
         rim = bpy.context.active_object
@@ -285,6 +345,7 @@ def build(opts):
     for o in parts:
         o.parent = root
     tail_pivot = None
+    snout_pivot = None
     if sp != "hippo":                         # the tail swings about its base (pose "a_tail", "a_tail_y")
         bpy.ops.object.empty_add(location=tuple(tbase))
         tail_pivot = bpy.context.active_object
@@ -292,6 +353,14 @@ def build(opts):
         tail_pivot.parent = root
         tail.location = tail.location - tbase
         tail.parent = tail_pivot
+
+        bpy.ops.object.empty_add(location=tuple(base))
+        snout_pivot = bpy.context.active_object
+        snout_pivot.name = "snout_pivot"
+        snout_pivot.parent = root
+        for o in (snout, flare, rim):
+            o.location = o.location - base
+            o.parent = snout_pivot
     legs = []
     ll, lr = float(opts.get("leg_l", 6.5)), float(opts.get("leg_r", 2.0))
     fx, rx = float(opts.get("front_x", -2.5)), float(opts.get("rear_x", 9.5))
@@ -325,15 +394,20 @@ def build(opts):
                 _ell("toe_%s%d" % (key, t), (-lr * math.cos(a) * 0.95, -ll - 0.5, lr * math.sin(a) * 0.95),
                      (tr, tr * 0.8, tr), white, 12).parent = hip
         legs.append((key, hip))
-    return root, legs, tail_pivot
+    return root, legs, tail_pivot, snout_pivot
 
 
 def _frames_setup(opts):
-    root, legs, tail_pivot = build(opts)
+    root, legs, tail_pivot, snout_pivot = build(opts)
     C.setup_scene(256, world_strength=0.1, fill_energy=0.1)
     C.apply_look(opts)
-    return {"root": root, "legs": legs, "tail": tail_pivot, "amp": float(opts.get("swing", 22.0)),
-            "tilt": math.radians(float(opts.get("tilt", 0.0)))}
+    return {"root": root, "legs": legs, "tail": tail_pivot, "snout": snout_pivot,
+            "amp": float(opts.get("swing", 22.0)),
+            "tilt": math.radians(float(opts.get("tilt", 0.0))),
+            "hip_y": -float(opts.get("hip_y", 2.5)),
+            "leg_lift": float(opts.get("leg_lift", 0.0)),
+            "snout_bob": math.radians(float(opts.get("snout_bob", 0.0))),
+            "tail_wag": math.radians(float(opts.get("tail_wag", 0.0)))}
 
 
 def _frames_pose(ctx, pose):
@@ -344,13 +418,23 @@ def _frames_pose(ctx, pose):
     ctx["root"].rotation_euler = (ctx["tilt"], math.radians(float(pose.get("yaw", 0.0))), 0.0)
     ph = math.radians(float(pose.get("phase", 0.0)))
     amp = math.radians(float(pose.get("swing", ctx["amp"])))
+    leg_lift = float(pose.get("leg_lift", ctx.get("leg_lift", 0.0)))
+    hip_y = ctx.get("hip_y", -2.5)
     for key, hip in ctx["legs"]:
         off = 0.0 if key in ("fn", "rf") else math.pi
         a = amp * math.sin(ph + off) + math.radians(float(pose.get("a_" + key, 0.0)))
         hip.rotation_euler = (0.0, 0.0, a)
+        lift = max(0.0, -a) / math.radians(25.0) * leg_lift if leg_lift > 0 else 0.0
+        dy = float(pose.get("dy_" + key, 0.0))
+        hip.location.y = (hip_y + lift + dy) * S
     if ctx.get("tail") is not None:
-        ctx["tail"].rotation_euler = (0.0, math.radians(float(pose.get("a_tail_y", 0.0))),
+        wag = math.sin(ph) * ctx.get("tail_wag", 0.0)
+        ctx["tail"].rotation_euler = (0.0, math.radians(float(pose.get("a_tail_y", 0.0))) + wag,
                                       math.radians(float(pose.get("a_tail", 0.0))))
+    if ctx.get("snout") is not None:
+        sbob = math.sin(ph) * ctx.get("snout_bob", 0.0)
+        ctx["snout"].rotation_euler = (0.0, 0.0,
+                                       -math.radians(float(pose.get("a_snout", 0.0))) - sbob)
 
 
 register_frames("quadruped", _frames_setup, _frames_pose)
