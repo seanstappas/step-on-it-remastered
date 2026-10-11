@@ -77,13 +77,19 @@ class World:
         return int(self.lib.soi_state_hash(self.p))
 
 
-def record(lib, bord: bytes, seed: int, nticks: int) -> dict:
+def record(lib, bord: bytes, seed: int, nticks: int, action_interval: int) -> dict:
+    """Record a fixture by stepping the core for ``nticks`` ticks.
+
+    The default input pattern walks right every tick and injects an ACTION
+    (block high) every ``action_interval`` ticks. ``action_interval`` can be
+    changed via the ``--action-interval`` CLI flag.
+    """
     w = World(lib, seed)
     if bord and not w.load(bord):
         raise SystemExit("load_level failed")
     ticks = []
     for n in range(nticks):
-        p1 = SOI_IN_RIGHT | (SOI_IN_ACTION if n % 13 == 0 else 0)
+        p1 = SOI_IN_RIGHT | (SOI_IN_ACTION if action_interval and n % action_interval == 0 else 0)
         w.tick(p1, 0)
         ticks.append({"n": n, "inputs": [p1, 0], "expected": {"globals": w.globals()}})
     return {"seed": seed, "final_hash": "0x%016x" % w.hash(), "ticks": ticks}
@@ -124,20 +130,29 @@ def main() -> None:
     ap.add_argument("--record")
     ap.add_argument("--replay")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument(
+        "--action-interval",
+        type=int,
+        default=13,
+        help="Interval (in ticks) at which the ACTION button is pressed during recording. "
+             "0 disables the action entirely.",
+    )
     a = ap.parse_args()
 
     lib = load_core(a.lib)
     bord = Path(a.bord).read_bytes() if a.bord else b""
 
     if a.selftest:
-        fx = record(lib, bord, a.seed, min(a.ticks, 300))
+        fx = record(lib, bord, a.seed, min(a.ticks, 300), a.action_interval)
         m = replay(lib, bord, fx)
         print("SELFTEST: %s (%d mismatches)" % ("PASS" if m == 0 else "FAIL", m))
         sys.exit(0 if m == 0 else 1)
     if a.record:
-        fx = record(lib, bord, a.seed, a.ticks)
+        fx = record(lib, bord, a.seed, a.ticks, a.action_interval)
         Path(a.record).write_text(json.dumps(fx, indent=1))
-        print("recorded %d ticks -> %s (final hash %s)" % (len(fx["ticks"]), a.record, fx["final_hash"]))
+        print(
+            "recorded %d ticks -> %s (final hash %s)" % (len(fx["ticks"]), a.record, fx["final_hash"])
+        )
     elif a.replay:
         fx = json.loads(Path(a.replay).read_text())
         m = replay(lib, bord, fx)
