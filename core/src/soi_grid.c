@@ -9,18 +9,25 @@ int soi_cell_y(int row) { return row * SOI_CELL_PX + SOI_ORIGIN_Y; }
 
 int soi_in_bounds(int col, int row)
 {
-    return col >= 0 && col < SOI_GRID_COLS && row >= 0 && row < SOI_GRID_ROWS;
+    return col >= 0 && col < SOI_MAX_GRID_COLS && row >= 0 && row < SOI_MAX_GRID_ROWS;
+}
+
+static inline int in_world_bounds(const SoiWorld *w, int col, int row)
+{
+    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    return col >= 0 && col < max_c && row >= 0 && row < max_r;
 }
 
 uint32_t soi_get_cell(const SoiWorld *w, int col, int row)
 {
-    if (!soi_in_bounds(col, row)) return SOI_WALL; /* out of bounds = solid */
+    if (!in_world_bounds(w, col, row)) return SOI_WALL; /* out of bounds = solid */
     return w->cell[row][col];
 }
 
 void soi_set_cell(SoiWorld *w, int col, int row, uint32_t v)
 {
-    if (soi_in_bounds(col, row)) w->cell[row][col] = v;
+    if (in_world_bounds(w, col, row)) w->cell[row][col] = v;
 }
 
 /* ---------------------------------------------------------------------------
@@ -40,7 +47,7 @@ void soi_blockanim_start(SoiWorld *w, int col, int row, int step, int type, uint
 {
     int i, slot = -1;
     SoiBlockAnim *a;
-    if (!soi_in_bounds(col, row)) return;
+    if (!in_world_bounds(w, col, row)) return;
     for (i = 0; i < SOI_BLOCKANIM_MAX; i++)            /* FUN_10027834: this cell already animating? */
         if (w->banim[i].active && w->banim[i].col == col && w->banim[i].row == row) slot = i;
     for (i = 0; slot < 0 && i < SOI_BLOCKANIM_MAX; i++)
@@ -81,7 +88,7 @@ void soi_blockanims_update(SoiWorld *w)
 void soi_block_remove(SoiWorld *w, int col, int row)
 {
     uint32_t c = soi_get_cell(w, col, row);
-    if (!soi_in_bounds(col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
+    if (!in_world_bounds(w, col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
     soi_blockanim_start(w, col, row, -1, 0, (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u);
 }
 
@@ -102,7 +109,7 @@ void soi_block_shatter(SoiWorld *w, int col, int row, int kind, int vx, int vy)
     static const int8_t SPREAD[4][2] = { { -3, -3 }, { 3, -3 }, { 3, 3 }, { -3, 3 } };   /* FUN_10027c34 */
     uint32_t c = soi_get_cell(w, col, row);
     int t, x, y, k;
-    if (!soi_in_bounds(col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
+    if (!in_world_bounds(w, col, row) || (c & SOI_CELL_PERMANENT) || SOI_CELL_TYPE(c) == 0) return;
     t = (int)SOI_CELL_TYPE(c);
     x = soi_cell_x(col); y = soi_cell_y(row);
     w->cell[row][col] = (c & SOI_CELL_SPECIAL) ? SOI_CELL_PAYLOAD(c) : 0u;
@@ -165,9 +172,11 @@ static void soi_switch_register(SoiWorld *w, int low, int col, int row)
 void soi_switch_load_scan(SoiWorld *w)
 {
     int r, c;
+    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
     w->sw_count = 0;
-    for (r = 0; r < SOI_GRID_ROWS; r++)
-        for (c = 0; c < SOI_GRID_COLS; c++) {
+    for (r = 0; r < max_r; r++)
+        for (c = 0; c < max_c; c++) {
             uint32_t cell = w->cell[r][c];
             if (cell == 0) continue;
             if (cell & (SOI_CELL_DOOR | 0x400u)) continue;   /* door / badguy spawn */
@@ -247,7 +256,7 @@ void soi_pickup_check(SoiWorld *w, int player)
      * player was fully centred/past it; +0xc/+0x10 collects it on first real touch. */
     int pcol = (p->x + 0x0C - SOI_ORIGIN_X) / SOI_CELL_PX;
     int prow = (p->y + 0x10 - SOI_ORIGIN_Y) / SOI_CELL_PX;
-    if (!soi_in_bounds(pcol, prow)) return;
+    if (!in_world_bounds(w, pcol, prow)) return;
     c = w->cell[prow][pcol];
     t = SOI_CELL_TYPE(c);
 
@@ -286,7 +295,9 @@ void soi_pickup_check(SoiWorld *w, int player)
      * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
      * of the key collector can exit too. The asm DOES require the box not to straddle two
      * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
-    if ((c & SOI_CELL_DOOR) && t <= 3u && (t == 1u || t == (unsigned)player + 1u)) {
+    if ((c & SOI_CELL_DOOR) &&
+        ((t <= 3u && (t == 1u || t == (unsigned)player + 1u)) ||
+         ((player == 3 || w->play_mode != SOI_MODE_COMPETE) && c == 0x0935u))) {
         int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         if (p->y < SOI_ORIGIN_Y) yrow = -1;
         if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
@@ -314,29 +325,54 @@ void soi_pickup_check(SoiWorld *w, int player)
         }
         return;
     }
-    /* COLORED KEY (low 7/8/9 with 0x800) -- the real boards' key/exit system
+    /* COLORED KEY (low 7/8/9 with 0x800, and discrete P3 Red Key 0x0933) -- the real boards' key/exit system
      * (FUN_1002bc64). No board ships a plain 0x0B key or a pre-open 0x80x door;
      * instead each board pairs a colored key (0x0907/8/9) with matching LOCK
      * cells (0x0904/5/6, low = key-3). Collecting the key holds it and sweeps the
      * grid, turning every matching lock into an OPENED DOOR (cell = low + 0x8fd
      * => 0x901/0x902/0x903 = low 1/2/3 + 0x800). Stepping on an opened door then
      * hits the DOOR branch above and completes the level. Key 7 is universal;
-     * 8/9 are per-player, but low-1 doors (from key 7) are universal exits. */
-    if ((c & SOI_CELL_DOOR) && t >= 7u && t <= 9u && (t == 7u || t == (unsigned)player + 7u)) {
+     * 8/9 are per-player, but low-1 doors (from key 7) are universal exits.
+     * Discrete P3 Red Key 0x0933 unlocks P3 Red Lock 0x0934 into 0x0935. */
+    if ((c & SOI_CELL_DOOR) &&
+        ((t >= 7u && t <= 9u && (t == 7u || t == (unsigned)player + 7u)) ||
+         (c == 0x0933u && (player == 3 || w->play_mode != SOI_MODE_COMPETE)))) {
         int cc, rr;
         give_key(w, player);                         /* the key is now held (player-gated:
                                                       * key 7 universal, key player+7 own; asm
                                                       * FUN_1002bc64 uVar10 == sVar14+7 || == 7) */
-        for (rr = 0; rr < SOI_GRID_ROWS; rr++)
-            for (cc = 0; cc < SOI_GRID_COLS; cc++) {
+        if (c == 0x0933u) {
+            if (w->play_mode != SOI_MODE_COMPETE) {
+                int pj;
+                for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
+                    if (w->players[pj].active) w->players[pj].keys |= (1u << 10);
+                }
+            } else {
+                p->keys |= (1u << 10);
+            }
+        }
+        int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+        int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+        for (rr = 0; rr < max_r; rr++) {
+            for (cc = 0; cc < max_c; cc++) {
                 uint32_t lc = w->cell[rr][cc];
                 unsigned lt = SOI_CELL_TYPE(lc);
-                if ((lc & SOI_CELL_DOOR) && lt + 3u == t)
-                    w->cell[rr][cc] = lt + 0x8FDu;   /* lock -> opened door (asm) */
+                if (c == 0x0933u) {
+                    if (lc == 0x0934u)
+                        w->cell[rr][cc] = 0x0935u;
+                } else {
+                    if ((lc & SOI_CELL_DOOR) && lt + 3u == t)
+                        w->cell[rr][cc] = lt + 0x8FDu;   /* lock -> opened door (asm) */
+                }
             }
+        }
         soi_sfx_emit(w, SOI_SFX_KEY);                /* colored-key collect (evt 0x14 -> 17661 "Announce") */
-        soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)t, soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
+        soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)(c == 0x0933u ? 0x33 : t), soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
         w->cell[prow][pcol] = SOI_CELL_EMPTY;        /* consume the key */
+        return;
+    }
+    if (c == 0x0934u && (player == 3 || w->play_mode != SOI_MODE_COMPETE) && (p->keys & (1u << 10))) {
+        w->cell[prow][pcol] = 0x0935u;
         return;
     }
     if (t == 0) return;
@@ -368,8 +404,10 @@ void soi_pickup_check(SoiWorld *w, int player)
              * right -- a window the wall makes unreachable.) Stops a half-stride step onto
              * an edge-of-cell IN from zapping before the player is over it. */
             if ((p->x + 0x12 - SOI_ORIGIN_X) / SOI_CELL_PX != pcol) return;
-            for (r = 0; r < SOI_GRID_ROWS; r++)
-                for (col = 0; col < SOI_GRID_COLS; col++)
+            int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+            int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+            for (r = 0; r < max_r; r++)
+                for (col = 0; col < max_c; col++)
                     if (SOI_CELL_TYPE(w->cell[r][col]) == out_type &&
                         !(w->cell[r][col] & SOI_CELL_SUPPORTIVE)) {   /* a walk-on OUT marker,
                               * NOT a solid block that shares the low byte (pink = 0x1F) */
@@ -377,6 +415,9 @@ void soi_pickup_check(SoiWorld *w, int player)
                         p->x += (col - pcol) * SOI_CELL_PX;
                         p->y += (r - prow) * SOI_CELL_PX;
                         soi_sfx_emit(w, SOI_SFX_TELEPORT);
+                        if (w->play_mode != SOI_MODE_COMPETE) {
+                            w->tp_freeze = 211;
+                        }
                         return;
                     }
         }
@@ -492,4 +533,25 @@ void soi_pickup_check(SoiWorld *w, int player)
      * jumps up two cells (64 px at frame 16) and falls off the bottom of the board. */
     soi_fx_emit(w, SOI_FX_SHEET_GOODY, (int)t, soi_cell_x(pcol), soi_cell_y(prow), 0, -80, 1);
     w->cell[prow][pcol] = SOI_CELL_EMPTY; /* a collected goodie clears its cell */
+}
+
+int soi_switch_block_frame(const SoiWorld *w, int col, int row)
+{
+    int i;
+    if (!w) return -1;
+    for (i = 0; i < w->sw_count; i++) {
+        if (w->sw_col[i] == col && w->sw_row[i] == row) {
+            int g = w->sw_group[i];
+            int stop_f = 2 + 8 * g;
+            int go_f   = 9 + 8 * g;
+            if (w->sw_state[i] == 2) return stop_f;
+            if (w->sw_state[i] == 1) return go_f;
+            if (w->sw_state[i] == 3 || w->sw_state[i] == 4) {
+                int ctr = w->sw_ctr[i];
+                if (ctr > 7) ctr = 7;
+                return stop_f + ctr;
+            }
+        }
+    }
+    return -1;
 }

@@ -72,6 +72,9 @@ const CELL_SPECIAL := 0x1000
 const CELL_CRACKED := 0x4000     # head-bonked once; a second bonk breaks it
 
 var _core: SoiCore
+var _net: RollbackNet = null
+var _net_status_banner: String = ""
+var _online_leave_confirm: bool = false
 var _font: Font
 var _font_hud: Font   # bold serif (original HUD font = Mac "New York" bold)
 var _shot_countdown := -1
@@ -86,17 +89,13 @@ var _enemy_walk := {}      # slot -> float, accumulated movement distance
 var _proj_lastpos := {}    # projectile idx -> Vector2, to aim the arrow along travel
 var _debris := []          # flying debris (asm FUN_100278bc/FUN_10028060): shattered-block quarters, popped goodies
 var _death_pops := []      # active enemy death "pops" (asm FUN_10028014 flying death sprite): { folder,frame,flip,x0,y0,t,px,py }
-# Stop/Go SWITCH flip (asm FUN_10016544/10016784): stepping onto a switch cell (low 0x24-0x2D)
-# flips its paired block group's sign (Stop octagon <-> Go circle) over an ~8-frame animation +
-# a click. Both states stay solid, so this is a purely COSMETIC front-end overlay (no core/sim).
-var _sg_toggled := [false, false, false, false, false]   # per group g=0..4: show the FLIPPED sign?
-var _sg_anim := [0.0, 0.0, 0.0, 0.0, 0.0]                # per group: flip animation timer (1 -> 0)
-var _sg_t0 := [-1e6, -1e6, -1e6, -1e6, -1e6]             # per group: engine tick its flip started
-var _sg_last := [-1, -1, -1, -1]                          # per player 1..3: last switch cell key (edge-detect)
+# Joypad analog stick hysteresis state per player 0..2: -1 engaged left, 0 neutral, +1 engaged right
+var _stick_engaged := [0, 0, 0]
 var _mode := 0   # display mode: 0 = Retro (faithful 1996 look), 1 = Remastered (glow + vignette)
 var _paused := false
 var _num_players := 2   # 2 = original co-op; 3 = remaster's extra RED co-op player (--players=3)
 var _mode_compete := false   # Session.mode: false = Cooperate (shared), true = Compete (first to exit wins)
+var _mode_versus := false    # Session.mode == 3: Versus mode (PvP arena, friendly fire, win rules)
 var _win_video: VideoStreamPlayer = null   # Compete victory animation (extracted/movies/*.ogv)
 var _win_clip := ""                          # currently-loaded win clip path ("" = none) -> avoid restarts
 var _level_bytes: PackedByteArray
@@ -379,8 +378,8 @@ func _dtex(tex: Texture2D, pos: Vector2) -> void:
 
 ## Draw a sprite centered in a 32x32 cell at pos (nearest-neighbour, no scaling
 ## up beyond native). Returns true if a real sprite was drawn.
-func _blit(folder: String, frame: int, pos: Vector2) -> bool:
-	var tex := _sprite(folder, frame)
+func _blit(folder: String, frame: int, pos: Vector2, red: bool = false) -> bool:
+	var tex := _sprite(folder, frame, false, red)
 	if tex == null:
 		return false
 	var s := _texsize(tex)
@@ -470,7 +469,9 @@ func _draw_ghosts(prefix: String) -> void:
 				if lv != null:
 					(lv as Live3D).release(key)
 		else:
-			_draw_hist(key, h, Rect2(ORIGIN_X, ORIGIN_Y, GRID_COLS * CELL_PX, GRID_ROWS * CELL_PX) if key.begins_with("j") else Rect2(), false)
+			var cols := int(_core.grid_cols()) if _core else GRID_COLS
+			var rows := int(_core.grid_rows()) if _core else GRID_ROWS
+			_draw_hist(key, h, Rect2(ORIGIN_X, ORIGIN_Y, cols * CELL_PX, rows * CELL_PX) if key.begins_with("j") else Rect2(), false)
 
 ## Draw a history at the render time: between the keyframe before it and the next one (a keyframe =
 ## a sample whose drawn state changed), the step spread over its last SMOOTH_SPAN ticks.
@@ -625,7 +626,8 @@ func _tween_sprite(folder: String, a: int, b: int, f: float, flip: bool, red: bo
 
 ## The board as the delayed REMASTERED picture shows it (the live grid when not smoothing).
 func _grid_at(c: int, r: int, snap: PackedInt32Array) -> int:
-	return snap[r * GRID_COLS + c] if not snap.is_empty() else int(_core.grid_cell(c, r))
+	var cols := int(_core.grid_cols()) if _core else GRID_COLS
+	return snap[r * cols + c] if not snap.is_empty() else int(_core.grid_cell(c, r))
 
 ## Draw the Magic Arrow (goody f19, a red arrow whose art points UP) rotated so
 ## it aims along its travel direction, inferred from frame-to-frame movement (the
@@ -726,7 +728,7 @@ func _draw_complete_tally() -> void:
 	var lx := 212.0
 	var vr := 425.0        # right edge the values right-align to
 	var fs := 17           # cap-height ~11px, matched to the reference labels ("No Weapons Reward" ~155px)
-	if _num_players <= 1 or not _mode_compete:
+	if _num_players <= 1 or (not _mode_compete and not _mode_versus):
 		# Co-op tallies ONE team pool (player 1's slot, asm FUN_100153d0 -> FUN_10015714(3)), so it
 		# shares this single centred panel.
 		# Faithful single-player tally (asm FUN_100159f4 + FUN_10015714): the LABELS
@@ -841,7 +843,7 @@ func _start_transport_slide() -> void:
 			_tp_to = np
 	if best > 0:
 		_tp_player = best
-		_tp_frames = TRANSPORT_FRAMES
+		_tp_frames = int(_core.tp_freeze()) if (_core != null and _core.tp_freeze() > 0) else TRANSPORT_FRAMES
 
 ## Draw the transporter WARP-SLIDE: the spinning `transporter/` sprite gliding IN->OUT over
 ## TRANSPORT_FRAMES (asm FUN_1002b9bc). Cosmetic; the sim is frozen while it plays.
@@ -877,8 +879,12 @@ func _draw_challenge_rewards() -> void:
 	_tally_digits(_tally_prebonus, 429.0, 156.0)
 	_tally_digits(final_score - int(round(delta * (1.0 - _tally_anim))), 429.0, 191.0)
 
-## Compete mode: the FIRST player to exit through their door wins (has_key == 2).
+## Compete / Versus mode: the winner is the versus victor or first player to exit through their door (has_key == 2).
 func _winner() -> int:
+	if _mode_versus and _core.has_method("versus_winner"):
+		var vw: int = int(_core.versus_winner())
+		if vw > 0:
+			return vw
 	for idx in range(1, mini(_num_players, 3) + 1):
 		if _core.player_has_key(idx) == 2:
 			return idx
@@ -893,6 +899,7 @@ func _draw_win_screen() -> void:
 		var title := "NO WINNER"
 		if w == 1: title = "BLUE WINS!"
 		elif w == 2: title = "GREEN WINS!"
+		elif w == 3: title = "RED WINS!"
 		draw_string(_font, Vector2(0, 72), title, HORIZONTAL_ALIGNMENT_CENTER, 640, 30, Color.WHITE)
 		return
 	match _winner():
@@ -926,7 +933,7 @@ func _win_clip_path(w: int) -> String:
 func _update_win_video() -> void:
 	if _win_video == null:
 		return
-	var want := _win_clip_path(_winner()) if (_mode_compete and _core.level_complete()) else ""
+	var want := _win_clip_path(_winner()) if ((_mode_compete or _mode_versus) and _core.level_complete()) else ""
 	if want == _win_clip:
 		return
 	_win_clip = want
@@ -1160,6 +1167,7 @@ func _ready() -> void:
 	_num_players = Session.num_players if Session.num_players > 0 else 2
 	_mode_compete = Session.mode == 1
 	_alt = Session.mode == 2
+	_mode_versus = Session.mode == 3
 	for arg in ua:
 		if arg == "--mode=retro": _mode = 0
 		elif arg == "--mode=remastered": _mode = 1
@@ -1168,6 +1176,7 @@ func _ready() -> void:
 		elif arg == "--players=1": _num_players = 1
 		elif arg == "--compete": _mode_compete = true
 		elif arg == "--alternate": _alt = true
+		elif arg == "--versus": _mode_versus = true
 	if ("--demo" in ua) or ("--fx" in ua) or ("--bug3" in ua):
 		_num_players = 1   # the showcase demos are single-player, so the faithful 1-player
 		                   # Board-Completed tally (PICT 1020 panel + sprite digits) shows
@@ -1177,8 +1186,24 @@ func _ready() -> void:
 		var s := maxi(Session.board_index, 0)
 		_alt_board = [s, s]
 		_alt_lives = [3, 3]; _alt_ammo = [[1, 1], [1, 1]]; _alt_score = [0, 0]; _alt_active = 0
-		_alt_out = [false, false]; _alt_prev_alive = true; _alt_state = "play"
+	if Session.is_online and Session.net != null:
+		_net = Session.net
+		_net.reset()
+		_net.desync_detected.connect(func(tick: int, lhash: int, rhash: int) -> void:
+			print("DESYNC DETECTED at tick %d: local=%X remote=%X" % [tick, lhash, rhash]))
+		_net.peer_disconnected.connect(func(slot: int) -> void:
+			if slot == 0:
+				_net_status_banner = "Host disconnected — match ended. Esc: menu"
+			else:
+				if _net.get_active_remote_peer_count() == 0:
+					_net_status_banner = "Player %d disconnected — match ended. Esc: menu" % (slot + 1)
+				else:
+					_net_status_banner = "Player %d disconnected." % (slot + 1)
+			queue_redraw()
+		)
+		_net.board_loaded.connect(_on_net_board_loaded)
 	_start()
+	Input.joy_connection_changed.connect(_on_joy_connection_changed)
 	if not _harness_run and not Session.presentation_hint_shown:
 		Session.presentation_hint_shown = true
 		_pres_toast = 240   # once per launch: say which presentation this is + that F2 switches it
@@ -1256,6 +1281,11 @@ func _exit_tree() -> void:
 			(lv as Live3D).dispose()
 	_live.clear()
 	_core = null
+	if _net != null:
+		_net.close()
+		_net = null
+	Session.is_online = false
+	Session.net = null
 
 
 ## Switch the whole presentation live (F2): ORIGINAL = the 1996 SD sprite sheets + PICTs;
@@ -1264,8 +1294,6 @@ func _exit_tree() -> void:
 ## SFX set + soundtrack) changes, so a switch mid-board is seamless.
 func _apply_presentation(on: bool) -> void:
 	_remastered = on
-	if _core != null:
-		_core.set_input_assist(true)
 	_sprites_dir = "res://../extracted/sprites_hd" if on else SPRITES_DIR
 	_sprite_scale = 4 if on else 1
 	_pict_dir = PICT_DIR
@@ -1340,6 +1368,8 @@ func _core_mode() -> int:
 		return 2
 	if _num_players <= 1:
 		return 1
+	if _mode_versus:
+		return 5
 	return 4 if _mode_compete else 3
 
 ## (re)start the current board from a clean core state.
@@ -1348,10 +1378,16 @@ func _start() -> void:
 	_game_over_aborting = false
 	_game_over_ticks = 0
 	_game_over_letters.clear()
-	_core.init(1)
+	var seed_val: int = Session.online_seed if (Session.is_online and Session.online_seed != 0) else 1
+	_core.init(seed_val)
 	_core.set_input_assist(true)
+	if Session.is_online and not Session.online_bord_bytes.is_empty():
+		_level_bytes = Session.online_bord_bytes
 	_core.load_level(_level_bytes)
 	_core.set_play_mode(_core_mode())
+	_core.set_victory_rule(Session.victory_rule)
+	if _mode_versus or Session.friendly_fire != 0:
+		_core.set_friendly_fire(1)
 	if _num_players >= 3:
 		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
 	_core.limit_players(_num_players)   # BORD always spawns P1+P2 -> turn P2/P3 off for a 1-player game
@@ -1384,10 +1420,6 @@ func _reset_round_ui() -> void:
 	_hs_checked = false
 	_hs_state = ""
 	_challenge_forfeited = false
-	_sg_toggled = [false, false, false, false, false]
-	_sg_anim = [0.0, 0.0, 0.0, 0.0, 0.0]
-	_sg_t0 = [-1e6, -1e6, -1e6, -1e6, -1e6]
-	_sg_last = [-1, -1, -1, -1]
 	_death_pops.clear()
 	_debris.clear()
 	_reset_smoothing()
@@ -1396,78 +1428,127 @@ func _reset_round_ui() -> void:
 		_challenge_intro = 150   # "Challenge Round" intro before a challenge board
 		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
 
-## Stop/Go SWITCH flip (asm FUN_10016544): a player stepping onto a switch cell (low 0x24-0x2D,
-## 0x800 class) flips its paired block group's sign over an ~8-frame animation + a click (evt 0x2c
-## -> snd 1006). Purely COSMETIC -- both Stop and Go blocks stay solid, so the core/sim is untouched.
-func _update_stopgo() -> void:
-	for g in 5:
-		if _sg_anim[g] > 0.0:
-			_sg_anim[g] = maxf(_sg_anim[g] - 0.14, 0.0)
-	for idx in range(1, mini(_num_players, 3) + 1):
-		if not _core.player_alive(idx):
-			_sg_last[idx] = -1
-			continue
-		var col := int((_core.player_x(idx) + 0x0C - ORIGIN_X) / CELL_PX)
-		var row := int((_core.player_y(idx) + 0x10 - ORIGIN_Y) / CELL_PX)
-		if col < 0 or col >= GRID_COLS or row < 0 or row >= GRID_ROWS:
-			_sg_last[idx] = -1
-			continue
-		var cell := int(_core.grid_cell(col, row))
-		var t := cell & 0xFF
-		if (cell & CELL_DOOR) and t >= 0x24 and t <= 0x2D:
-			var key := row * GRID_COLS + col
-			if _sg_last[idx] != key:
-				var g := (t - 0x24) / 2
-				_sg_toggled[g] = not _sg_toggled[g]
-				_sg_anim[g] = 1.0
-				_sg_t0[g] = float(_core.tick_count())
-				Audio.play_snd(1006)   # switch click (evt 0x2c; sequential after clock 0x2B -> 1005)
-				_sg_last[idx] = key
+func _on_joy_connection_changed(device: int, connected: bool) -> void:
+	if not connected:
+		for p in Session.player_device.size():
+			if Session.player_device[p] == device:
+				_paused = true
+				break
+
+func _prune_render_history(from_tick: int) -> void:
+	for k in _hist.keys():
+		var samples: Array = _hist[k]
+		var keep: Array = []
+		for s in samples:
+			if int(s[0]) < from_tick:
+				keep.append(s)
+		if keep.is_empty():
+			_hist.erase(k)
 		else:
-			_sg_last[idx] = -1
+			_hist[k] = keep
+	var keep_snaps: Array = []
+	for gs in _grid_snaps:
+		if int(gs[0]) < from_tick:
+			keep_snaps.append(gs)
+	_grid_snaps = keep_snaps
 
 func _physics_process(_delta: float) -> void:
 	_core_ticked = false
-	if _tp_frames > 0:
-		_tp_frames -= 1              # transporter slide in progress: FREEZE the sim (skip the core tick)
-	elif _script_hold:
+	if _core != null and _core.tp_freeze() > 0:
+		_tp_frames = int(_core.tp_freeze())
+	else:
+		_tp_frames = 0
+	if _net != null:
+		_net.poll_network(Time.get_ticks_msec() / 1000.0)
+	if _script_hold:
 		pass
 	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0 and (_alt or not _core.challenge_failed()):
+		# 1. Check Rift Stall (unconfirmed gap >= 16 ticks)
+		if _net != null and _net.check_rift_stall():
+			queue_redraw()
+			return
+
+		# 3. Handle Rollback / Resimulation if misprediction detected
+		if _net != null and _net.earliest_mispredicted_tick >= 0:
+			var rb_tick: int = _net.earliest_mispredicted_tick
+			_net.earliest_mispredicted_tick = -1
+			if rb_tick < _net.current_tick:
+				if _net.current_tick - rb_tick >= RollbackNet.RING_BUFFER_SIZE:
+					rb_tick = _net.current_tick - RollbackNet.RING_BUFFER_SIZE + 1
+				var snap: PackedByteArray = _net.snapshot_ring[rb_tick % RollbackNet.RING_BUFFER_SIZE]
+				if not snap.is_empty():
+					_core.snapshot_load(snap)
+					_net.is_resimulating = true
+					for sim_t in range(rb_tick, _net.current_tick):
+						var s_p1: int = _net.get_or_predict_input(0, sim_t)
+						var s_p2: int = _net.get_or_predict_input(1, sim_t) if _num_players >= 2 else 0
+						var s_p3: int = _net.get_or_predict_input(2, sim_t) if _num_players >= 3 else 0
+						_net.snapshot_ring[sim_t % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
+						_core.tick3(s_p1, s_p2, s_p3)
+						_net.record_state_hash(sim_t, int(_core.net_hash() & 0xFFFFFFFF))
+					_prune_render_history(rb_tick)
+					_net.is_resimulating = false
+
 		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
 		for idx in range(1, mini(_num_players, 3) + 1):
 			_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
 			_tp_pre[idx] = Vector2(_core.player_x(idx), _core.player_y(idx))   # pre-tick pos (teleport detect)
-		var p1 := _read_input(0)
-		var p2 := _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
-		if not _script.is_empty():
-			var seg: Array = _script_seg()
-			p1 = int(seg[0])
-			p2 = int(seg[2])
-		elif _demo_frames > 0:
-			p1 = _demo_input()         # scripted play for the --demo movie / capture
-		elif _play_frames > 0:
-			p1 = _play_input()         # scripted play on a real board (--play recording)
-		elif _shot_countdown > 0:
-			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
-		var p3 := _read_input(2) if _num_players >= 3 else 0
+
+		var p1: int
+		var p2: int
+		var p3: int
+		if _net != null:
+			# Local input scheduled for current_tick + 2 (D = 2)
+			var local_in := _read_input(_net.local_slot)
+			_net.send_local_input(local_in)
+			_net.snapshot_ring[_net.current_tick % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
+			p1 = _net.get_or_predict_input(0, _net.current_tick)
+			p2 = _net.get_or_predict_input(1, _net.current_tick) if _num_players >= 2 else 0
+			p3 = _net.get_or_predict_input(2, _net.current_tick) if _num_players >= 3 else 0
+		else:
+			p1 = _read_input(0)
+			p2 = _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
+			if not _script.is_empty():
+				var seg: Array = _script_seg()
+				p1 = int(seg[0])
+				p2 = int(seg[2])
+			elif _demo_frames > 0:
+				p1 = _demo_input()         # scripted play for the --demo movie / capture
+			elif _play_frames > 0:
+				p1 = _play_input()         # scripted play on a real board (--play recording)
+			elif _shot_countdown > 0:
+				p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
+			p3 = _read_input(2) if _num_players >= 3 else 0
+
 		_core.tick3(p1, p2, p3)
 		_core_ticked = true
+		if _net != null:
+			_net.record_state_hash(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
+			_net.current_tick += 1
+
+		if _core != null and _core.tp_freeze() > 0:
+			_tp_frames = int(_core.tp_freeze())
+
+		# Zero-lag audio and particle gate during resimulation
+		var audio_gated: bool = (_net != null and _net.is_resimulating)
 		var teleported := false
 		for i in _core.sfx_count():
 			var ev := _core.sfx_get(i)
-			Audio.play(ev)                 # SOI_SFX_HURRY (39) plays its warning cue here too
+			if not audio_gated:
+				Audio.play(ev)                 # SOI_SFX_HURRY (39) plays its warning cue here too
 			if ev == SFX_TELEPORT:
 				teleported = true
-		if teleported:
+		if teleported and not audio_gated:
 			_start_transport_slide()   # a transporter fired -> glide the player to the OUT pad
-		for di in _core.death_count():   # every enemy killed this tick -> spawn its cosmetic death "pop"
-			_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
-				int(_core.death_type(di)), int(_core.death_dir(di)))
+		if not audio_gated:
+			for di in _core.death_count():   # every enemy killed this tick -> spawn its cosmetic death "pop"
+				_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
+					int(_core.death_type(di)), int(_core.death_dir(di)))
 		_step_death_pops()   # advance/cull the pops in lock-step with the sim (frozen when paused)
-		for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
-			_spawn_debris(fi)
+		if not audio_gated:
+			for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
+				_spawn_debris(fi)
 		_step_debris()
-		_update_stopgo()
 		if _alt:
 			if _alt_prev_alive and not _core.player_alive(1):
 				_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
@@ -1497,17 +1578,17 @@ func _physics_process(_delta: float) -> void:
 			_tally_captured = true
 			# Board-clear warp "whoosh": asm event 0x1f -> snd 16969 "Lore" (FUN_10028a0c /
 			# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). A Challenge Round warps too.
-			if not _alt and not _mode_compete:
+			if not _alt and not _mode_compete and not _mode_versus:
 				Audio.play_snd(16969)
 			# Beat the whole campaign -> switch to the ending tune (Angel Pie, FUN_1001768c).
 			# Co-op/single only; Alternate + Compete have their own end screens.
-			if not _alt and not _mode_compete and not _has_next_board():
+			if not _alt and not _mode_compete and not _mode_versus and not _has_next_board():
 				Audio.play_ending_music()
 	if _core.level_complete():
 		# The board-clear WARP plays first (coop/single, Challenge Rounds included -- FUN_10028a0c
 		# runs FUN_10026bb8 before choosing the tally or the challenge reward); the count-up waits
 		# until the tunnel finishes. Compete/Alternate have no warp -> tally at once.
-		if not _alt and not _mode_compete and _warp_anim < 1.0:
+		if not _alt and not _mode_compete and not _mode_versus and _warp_anim < 1.0:
 			_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
 		elif _tally_anim < 1.0:
 			var prev_anim := _tally_anim
@@ -1515,7 +1596,7 @@ func _physics_process(_delta: float) -> void:
 			# The count-up scale rings on the coop "Board Completed" tally (FUN_10015714) and the
 			# Challenge reward (FUN_10016f80 plays the same 0x2e / 0x30+i / 0x2f notes) -- not the
 			# Compete wins screens or Alternate's hand-off.
-			if not _alt and not _mode_compete:
+			if not _alt and not _mode_compete and not _mode_versus:
 				_tally_dings(prev_anim, _tally_anim)
 	if not _alt and _core.challenge_failed() and not _challenge_forfeited:
 		_challenge_forfeited = true   # FUN_10016f80(failed): "Nothing!" + event 8
@@ -1688,6 +1769,48 @@ func _demo_input() -> int:
 	return 0
 
 func _input(e: InputEvent) -> void:
+	if e is InputEventJoypadButton and e.pressed:
+		if e.button_index == JOY_BUTTON_START:
+			# Online: pause is local-only (would freeze one peer's ticks -> rift stall), so disabled.
+			if not _core.game_over() and not Session.is_online:
+				_paused = not _paused
+			return
+		elif e.button_index == JOY_BUTTON_A:
+			if Session.is_online and _online_leave_confirm:
+				if _net != null: _net.close(); _net = null
+				Session.is_online = false; Session.net = null
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+				return
+			if _challenge_intro > 0 or _core.level_complete() or _core.game_over() or _core.challenge_failed():
+				_press_enter()
+				return
+		elif e.button_index == JOY_BUTTON_B:
+			if Session.is_online and _online_leave_confirm:
+				_online_leave_confirm = false
+				queue_redraw()
+				return
+		elif e.button_index == JOY_BUTTON_BACK:
+			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
+				Session.remove_meta("editor_return")
+				get_tree().change_scene_to_file("res://scenes/editor.tscn")
+				return
+			if Session.is_online:
+				if not _online_leave_confirm and _net != null and _net.get_active_remote_peer_count() > 0:
+					_online_leave_confirm = true
+					queue_redraw()
+					return
+				if _net != null: _net.close(); _net = null
+				Session.is_online = false; Session.net = null
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+				return
+			if _core.game_over() or (_alt and _alt_state == "results"):
+				get_tree().change_scene_to_file("res://scenes/menu.tscn")
+			elif not _game_over_aborting:
+				_game_over_aborting = true
+				_core.abort_game()
+			else:
+				get_tree().change_scene_to_file("res://scenes/menu.tscn")
+			return
 	if not (e is InputEventKey and e.pressed):
 		return
 	if _challenge_intro > 0:
@@ -1698,6 +1821,22 @@ func _input(e: InputEvent) -> void:
 		return
 	match e.keycode:
 		KEY_ESCAPE:
+			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
+				Session.remove_meta("editor_return")
+				get_tree().change_scene_to_file("res://scenes/editor.tscn")
+				return
+			if Session.is_online:
+				if not _online_leave_confirm and _net != null and _net.get_active_remote_peer_count() > 0:
+					_online_leave_confirm = true
+					queue_redraw()
+					return
+				if _net != null:
+					_net.close()
+					_net = null
+				Session.is_online = false
+				Session.net = null
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+				return
 			if _core.game_over() or (_alt and _alt_state == "results"):
 				get_tree().change_scene_to_file("res://scenes/menu.tscn")
 			elif not _game_over_aborting:
@@ -1705,8 +1844,26 @@ func _input(e: InputEvent) -> void:
 				_core.abort_game()
 			else:
 				get_tree().change_scene_to_file("res://scenes/menu.tscn")
-		KEY_TAB, KEY_P:
-			if not _core.game_over():
+		KEY_Y:
+			if Session.is_online and _online_leave_confirm:
+				if _net != null: _net.close(); _net = null
+				Session.is_online = false; Session.net = null
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+				return
+		KEY_N:
+			if Session.is_online and _online_leave_confirm:
+				_online_leave_confirm = false
+				queue_redraw()
+				return
+		KEY_TAB:
+			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
+				Session.remove_meta("editor_return")
+				get_tree().change_scene_to_file("res://scenes/editor.tscn")
+				return
+			if not _core.game_over() and not Session.is_online:
+				_paused = not _paused
+		KEY_P:
+			if not _core.game_over() and not Session.is_online:   # online: local pause would desync peers
 				_paused = not _paused   # pause (the original pauses on Tab; P also works)
 		KEY_M:
 			_mode = 1 - _mode   # toggle Retro <-> Remastered display
@@ -1761,6 +1918,11 @@ func _press_f4() -> void:
 
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
 func _press_enter() -> void:
+	if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
+		if _core.game_over() or _core.level_complete():
+			Session.remove_meta("editor_return")
+			get_tree().change_scene_to_file("res://scenes/editor.tscn")
+			return
 	if _challenge_intro > 0:
 		_challenge_intro = 0
 		return
@@ -1772,27 +1934,128 @@ func _press_enter() -> void:
 		elif _core.level_complete():
 			_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
 	elif _core.game_over():
+		if Session.is_online:
+			if _net != null and _net.is_host:
+				var next_seed := randi() % 1000000 + 1
+				_net.send_board_load(_level_bytes, next_seed, true)
+			return
 		_start()   # retry the board
 		_core.new_game(_core_mode())
 		_capture_board_start()
 	elif _core.challenge_failed():
+		if Session.is_online:
+			if _net != null and _net.is_host:
+				if Session.advance():
+					var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+					var next_seed := randi() % 1000000 + 1
+					_net.send_board_load(next_bytes, next_seed, false)
+				else:
+					if _net != null: _net.close(); _net = null
+					Session.is_online = false; Session.net = null
+					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+			return
 		_challenge_fail_advance()
 	elif _core.level_complete():
+		if Session.is_online:
+			if _net != null and _net.is_host:
+				if Session.advance():
+					var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+					var next_seed := randi() % 1000000 + 1
+					_net.send_board_load(next_bytes, next_seed, false)
+				else:
+					if _mode_versus or _mode_compete:
+						var next_seed := randi() % 1000000 + 1
+						_net.send_board_load(_level_bytes, next_seed, true)
+					else:
+						if _net != null: _net.close(); _net = null
+						Session.is_online = false; Session.net = null
+						get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+			return
 		if Session.advance():
 			_level_bytes = _load_level_bytes()   # next board (Session.board_path)
 			_next_board()   # keep score/lives/ammo across boards
 		else:
 			get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
+
+func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool) -> void:
+	print("Online board loaded: size=%d seed=%d retry=%s" % [bord_bytes.size(), rng_seed, str(is_retry)])
+	_level_bytes = bord_bytes
+	Session.online_bord_bytes = bord_bytes
+	Session.online_seed = rng_seed
+	if _net != null:
+		_net.reset()
+	if is_retry:
+		_start()
+		_core.new_game(_core_mode())
+		_capture_board_start()
+	else:
+		_next_board()
+
 # --- input -------------------------------------------------------------------
 
-## Translate the keyboard into a player's input bitmask (7-action platformer).
-## Player 0 (P1): Left/Right arrows, Up = jump, Z = block-high, X = block-low,
-##   C = magic arrow, V = magic ball.
-## Player 1 (P2): A/D, W = jump, F = block-high, G = block-low, H = arrow, J = ball.
+## Translate the keyboard / controller into a player's input bitmask (7-action platformer).
+## Device routing in Session.player_device: -1 = KB1, -2 = KB2, 0..3 = Joypads.
+## Analog stick hysteresis: engage at |axis_x| > 0.50, release at |axis_x| < 0.35.
 func _read_input(which: int) -> int:
+	if Session.is_online:
+		# For online multiplayer, each player is at their own computer.
+		# Accept Arrow keys, WASD, and connected joypads so client slots aren't locked to WASD/numpad.
+		var om := 0
+		for joy in Input.get_connected_joypads():
+			var ax: float = Input.get_joy_axis(joy, JOY_AXIS_LEFT_X)
+			if ax < -0.50 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_LEFT): om |= IN_LEFT
+			if ax > 0.50 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_RIGHT): om |= IN_RIGHT
+			if Input.is_joy_button_pressed(joy, JOY_BUTTON_A) or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_UP): om |= IN_JUMP
+			if Input.is_joy_button_pressed(joy, JOY_BUTTON_X) or Input.is_joy_button_pressed(joy, JOY_BUTTON_Y): om |= IN_BLOCK_HIGH
+			if Input.is_joy_button_pressed(joy, JOY_BUTTON_B): om |= IN_BLOCK_LOW
+			if Input.is_joy_button_pressed(joy, JOY_BUTTON_RIGHT_SHOULDER) or Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_RIGHT) > 0.40: om |= IN_ARROW
+			if Input.is_joy_button_pressed(joy, JOY_BUTTON_LEFT_SHOULDER) or Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_LEFT) > 0.40: om |= IN_BALL
+		if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A): om |= IN_LEFT
+		if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D): om |= IN_RIGHT
+		if Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_W): om |= IN_JUMP
+		if Input.is_key_pressed(KEY_Z) or Input.is_key_pressed(KEY_F): om |= IN_BLOCK_HIGH
+		if Input.is_key_pressed(KEY_X) or Input.is_key_pressed(KEY_G): om |= IN_BLOCK_LOW
+		if Input.is_key_pressed(KEY_C) or Input.is_key_pressed(KEY_H): om |= IN_ARROW
+		if Input.is_key_pressed(KEY_V) or Input.is_key_pressed(KEY_J): om |= IN_BALL
+		return om
+
 	var m := 0
-	if which == 0:
+	var dev: int = Session.player_device[which] if which < Session.player_device.size() else -1
+	if dev >= 0 and dev in Input.get_connected_joypads():
+		while _stick_engaged.size() <= which:
+			_stick_engaged.append(0)
+		var ax: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_X)
+		if _stick_engaged[which] == -1:
+			if ax > -0.35:
+				_stick_engaged[which] = 0
+		elif _stick_engaged[which] == 1:
+			if ax < 0.35:
+				_stick_engaged[which] = 0
+		if _stick_engaged[which] == 0:
+			if ax < -0.50:
+				_stick_engaged[which] = -1
+			elif ax > 0.50:
+				_stick_engaged[which] = 1
+
+		if _stick_engaged[which] == -1 or Input.is_joy_button_pressed(dev, JOY_BUTTON_DPAD_LEFT):
+			m |= IN_LEFT
+		if _stick_engaged[which] == 1 or Input.is_joy_button_pressed(dev, JOY_BUTTON_DPAD_RIGHT):
+			m |= IN_RIGHT
+		if Input.is_joy_button_pressed(dev, JOY_BUTTON_A) or Input.is_joy_button_pressed(dev, JOY_BUTTON_DPAD_UP):
+			m |= IN_JUMP
+		if Input.is_joy_button_pressed(dev, JOY_BUTTON_X) or Input.is_joy_button_pressed(dev, JOY_BUTTON_Y):
+			m |= IN_BLOCK_HIGH
+		if Input.is_joy_button_pressed(dev, JOY_BUTTON_B):
+			m |= IN_BLOCK_LOW
+		if Input.is_joy_button_pressed(dev, JOY_BUTTON_RIGHT_SHOULDER) or Input.get_joy_axis(dev, JOY_AXIS_TRIGGER_RIGHT) > 0.40:
+			m |= IN_ARROW
+		if Input.is_joy_button_pressed(dev, JOY_BUTTON_LEFT_SHOULDER) or Input.get_joy_axis(dev, JOY_AXIS_TRIGGER_LEFT) > 0.40:
+			m |= IN_BALL
+		return m
+
+	var kb_mode: int = dev if dev < 0 else -(which + 1)
+	if kb_mode == -1:
 		if Input.is_key_pressed(KEY_LEFT): m |= IN_LEFT
 		if Input.is_key_pressed(KEY_RIGHT): m |= IN_RIGHT
 		if Input.is_key_pressed(KEY_UP): m |= IN_JUMP
@@ -1800,7 +2063,7 @@ func _read_input(which: int) -> int:
 		if Input.is_key_pressed(KEY_X): m |= IN_BLOCK_LOW
 		if Input.is_key_pressed(KEY_C): m |= IN_ARROW
 		if Input.is_key_pressed(KEY_V): m |= IN_BALL
-	elif which == 1:
+	elif kb_mode == -2:
 		if Input.is_key_pressed(KEY_A): m |= IN_LEFT
 		if Input.is_key_pressed(KEY_D): m |= IN_RIGHT
 		if Input.is_key_pressed(KEY_W): m |= IN_JUMP
@@ -1826,6 +2089,8 @@ func _draw() -> void:
 	_new_tick = (not _smooth) or tk != _drawn_tick
 	_drawn_tick = tk
 	_draw_serial += 1
+	var cols := int(_core.grid_cols()) if _core else GRID_COLS
+	var rows := int(_core.grid_rows()) if _core else GRID_ROWS
 	var snap := PackedInt32Array()
 	var banims := {}
 	if _smooth:
@@ -1833,10 +2098,10 @@ func _draw() -> void:
 			_rtick = float(tk) + Engine.get_physics_interpolation_fraction()
 		if _new_tick or _grid_snaps.is_empty():
 			var g := PackedInt32Array()
-			g.resize(GRID_COLS * GRID_ROWS)
-			for r in range(GRID_ROWS):
-				for c in range(GRID_COLS):
-					g[r * GRID_COLS + c] = int(_core.grid_cell(c, r))
+			g.resize(cols * rows)
+			for r in range(rows):
+				for c in range(cols):
+					g[r * cols + c] = int(_core.grid_cell(c, r))
 			_grid_snaps.append([tk, g, _block_anims()])
 			if _grid_snaps.size() > 6:
 				_grid_snaps.pop_front()
@@ -1850,11 +2115,15 @@ func _draw() -> void:
 		banims = _block_anims()
 	# black outside the frame (the original sits on a black CRT field)
 	draw_rect(Rect2(0, 0, 640, 480), Color.BLACK)
-	var W := GRID_COLS * CELL_PX
-	var H := GRID_ROWS * CELL_PX
+	var W := 19 * CELL_PX
+	var H := 13 * CELL_PX
 	var pf := Rect2(ORIGIN_X, ORIGIN_Y, W, H)
 	_draw_frame(pf)
 	draw_rect(pf, Color.BLACK)   # black playfield
+
+	var zoom := minf(19.0 / float(cols), 13.0 / float(rows))
+	draw_set_transform(Vector2(ORIGIN_X * (1.0 - zoom), ORIGIN_Y * (1.0 - zoom)), 0.0, Vector2(zoom, zoom))
+	var pf_world := Rect2(ORIGIN_X, ORIGIN_Y, cols * CELL_PX, rows * CELL_PX)
 
 	# grid cells: beveled blocks / red balls / coins / key / door. A block being BUILT grows in,
 	# and one being REMOVED (the player's toggle, a chomping nasty) shrinks out, through the
@@ -1862,27 +2131,27 @@ func _draw() -> void:
 	# animation list (asm FUN_100283a0). The cell meanwhile holds a placeholder (a locked 0x300 /
 	# a standable 0x200) that is not drawn; a removed block's payload goody shows at once under the
 	# shrinking square (FUN_1002cc10). Blocks that SHATTER instead fly apart as debris (below).
-	for r in range(GRID_ROWS):
-		for c in range(GRID_COLS):
-			var key := r * GRID_COLS + c
+	for r in range(rows):
+		for c in range(cols):
+			var key := r * cols + c
 			var cell := _grid_at(c, r, snap)
 			var pos := Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX)
 			if banims.has(key):
 				if cell & CELL_DOOR:
-					_draw_cell(cell & ~CELL_SUPPORTIVE, pos)
+					_draw_cell(cell & ~CELL_SUPPORTIVE, pos, c, r)
 				_blit("block_sprites", ((int(banims[key]) >> 16) & 0xFF) + 1, pos)
 				continue
 			if cell == 0:
 				continue
-			_draw_cell(cell, pos)
+			_draw_cell(cell, pos, c, r)
 
 	# Magnifying glass (goody 0x2F): while the reveal timer is active, mark every hidden
 	# treasure (SPECIAL 0x1000 cell) so the player can see where to dig. The asm
 	# (FUN_10016b28) flashes each hidden cell for ~5s while busy-waiting; we overlay it
 	# non-blocking so play continues.
 	if _core.reveal_timer() > 0:
-		for r in range(GRID_ROWS):
-			for c in range(GRID_COLS):
+		for r in range(rows):
+			for c in range(cols):
 				if int(_core.grid_cell(c, r)) & CELL_SPECIAL:
 					_draw_reveal_marker(Vector2(ORIGIN_X + c * CELL_PX, ORIGIN_Y + r * CELL_PX))
 
@@ -1901,17 +2170,17 @@ func _draw() -> void:
 				if _core.projectile_src_type(i) == 12:    # Cannon ball: asm frames 3..0x16 (f04-23), +1 a
 					var sp := int(_core.tick_count()) % 20  # frame heading right, -1 heading left
 					var bf := (23 - sp) if going_left else (4 + sp)
-					if not _iblit_clip(jk, "cannon_sprites", bf, pp, pf):
+					if not _iblit_clip(jk, "cannon_sprites", bf, pp, pf_world):
 						draw_circle(c, 6.0, Color(0.9, 0.3, 0.2))
 				elif _core.projectile_src_type(i) == 14:  # Gargoyle puff: green cluster, master's objects (sssf 134)
 					# asm FUN_1000b0a4 cycles frames 1..15 for a piercing puff, 0x1f..0x2d otherwise (+1 in the PNGs)
 					var gbase := 2 if _core.projectile_pierce(i) else 32
-					if not _iblit_clip(jk, "master_s_objects", gbase + int(_core.tick_count()) % 15, pp, pf):
+					if not _iblit_clip(jk, "master_s_objects", gbase + int(_core.tick_count()) % 15, pp, pf_world):
 						draw_circle(c, 6.0, Color(0.2, 0.7, 0.2))
 				elif _core.projectile_src_type(i) == 10:  # Walker bolt (0x68, FUN_1000e3c0): asm frames
 					var ks := int(_core.tick_count()) % 16  # 0x31..0x40 (f50-65) a frame each, backward left
 					var kf := (65 - ks) if going_left else (50 + ks)
-					if not _iblit_clip(jk, "walker_sprites", kf, pp, pf):
+					if not _iblit_clip(jk, "walker_sprites", kf, pp, pf_world):
 						draw_circle(c, 4.5, Color(0.85, 0.15, 0.12))
 				else:                                     # other hostile shot: a generic energy bolt
 					draw_circle(c, 5.0, Color(0.65, 0.1, 0.75))
@@ -1919,24 +2188,24 @@ func _draw() -> void:
 			elif _core.projectile_kind(i) == 3:
 				# Gargoyle BADGUY EGG in flight (asm FUN_1000b6a0: counter +1 per tick, past 0x3c back to
 				# 0x2e = 15 frames, f47-f61 in the PNGs)
-				if not _iblit_clip(jk, "master_s_objects", 47 + int(_core.tick_count()) % 15, pp, pf):
+				if not _iblit_clip(jk, "master_s_objects", 47 + int(_core.tick_count()) % 15, pp, pf_world):
 					draw_circle(c, 6.0, Color(0.6, 0.1, 0.1))
 			elif _core.projectile_kind(i) == 2:
 				# Knight GIFT in flight (enemy_knight_gift / FUN_1000c8bc): the asm mover FUN_1000c544
 				# cycles master's objects 0x10..0x1e (+1 in the PNGs) -- a harmless tumbling box.
-				if not _iblit_clip(jk, "master_s_objects", 17 + int(_core.tick_count()) % 15, pp, pf):
+				if not _iblit_clip(jk, "master_s_objects", 17 + int(_core.tick_count()) % 15, pp, pf_world):
 					_draw_gift_sparkle(c)
 			elif _core.projectile_kind(i) == 1:
 				# The straight shot (asm FUN_1000fd5c type 1, fired by FUN_100110b4) is drawn with the
 				# weapons sheet's ARROW (asm frame 10 heading right / 9 left = f11 / f10, 24x9).
-				if not _iblit_clip(jk, "weapons", 10 if going_left else 11, pp, pf):
+				if not _iblit_clip(jk, "weapons", 10 if going_left else 11, pp, pf_world):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 			else:
 				# The rolling swirl ball (types 2/3, FUN_10010d30): +0x5a steps 1..8 every frame,
 				# forward when fired right, backward when fired left (f02..f09).
 				var sp := int(_core.tick_count()) % 8
 				var af := (9 - sp) if _core.projectile_fired_left(i) else (2 + sp)
-				if not _iblit_clip(jk, "weapons", af, pp, pf):
+				if not _iblit_clip(jk, "weapons", af, pp, pf_world):
 					draw_circle(c, 7.0, Color(0.82, 0.14, 0.1))
 	_draw_ghosts("j")
 
@@ -1957,6 +2226,7 @@ func _draw() -> void:
 	_draw_ghosts("p")
 	if _tp_frames > 0:
 		_draw_transport()                     # transporter warp-slide (over the frozen board)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_post_fx()
 
 	_draw_hud()
@@ -1969,14 +2239,17 @@ func _draw() -> void:
 	elif _core.challenge_failed():
 		_draw_challenge_failed()
 	elif _core.level_complete():
-		if _mode_compete:
+		if _mode_compete or _mode_versus:
 			_draw_win_screen()
 		elif _warp_anim < 1.0:
 			_draw_board_warp()          # R/G/B tunnel wipe from the cleared board into the tally
 		elif not _alt and _is_challenge_board():
 			_draw_challenge_rewards()
 		else:
-			_draw_pict_screen("board_completed", "LEVEL CLEAR!", "Enter: next board     Esc: menu")
+			var hint := "Enter: next board     Esc: menu"
+			if Session.is_online and _net != null and not _net.is_host:
+				hint = "Waiting for host to advance...     Esc: menu"
+			_draw_pict_screen("board_completed", "LEVEL CLEAR!", hint)
 			_draw_complete_tally()
 	elif _paused:
 		_draw_pict_screen("paused", "PAUSED", "Tab: resume     Esc: menu")
@@ -1988,6 +2261,13 @@ func _draw() -> void:
 		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
 	if _pres_toast > 0:
 		_draw_presentation_toast()
+	if not _net_status_banner.is_empty():
+		_draw_banner(_net_status_banner, "")
+	elif _online_leave_confirm:
+		_draw_banner("Leave online match? (Y / N)", "Press Y to confirm, N to keep playing")
+	elif _net != null and _net.is_stalled and _net.stalled_frames > 15:
+		var sub := "Press Esc to abort" if _net.stalled_frames > 150 else ""
+		_draw_banner("Waiting for Player...", sub)
 
 func _init_game_over_letters() -> void:
 	_game_over_letters.clear()
@@ -2023,7 +2303,10 @@ func _draw_game_over() -> void:
 			_dtex(tex, pos)
 
 	if _game_over_ticks >= 100:
-		draw_string(_font, Vector2(0, 305), "Enter: retry     Esc: menu", HORIZONTAL_ALIGNMENT_CENTER, 640, 14, Color(0.8, 0.8, 0.8, 0.85))
+		var hint := "Enter: retry     Esc: menu"
+		if Session.is_online and _net != null and not _net.is_host:
+			hint = "Waiting for host to retry...     Esc: menu"
+		draw_string(_font, Vector2(0, 305), hint, HORIZONTAL_ALIGNMENT_CENTER, 640, 14, Color(0.8, 0.8, 0.8, 0.85))
 
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))
@@ -2161,7 +2444,10 @@ func _draw_hud() -> void:
 	# font + icons.
 	var y := 9.0
 	var iy := 3.0
-	if _mode_compete and _num_players >= 2 and not _alt:
+	if _num_players >= 3:
+		_draw_hud_3p(iy)
+		return
+	if (_mode_compete or _mode_versus) and _num_players >= 2 and not _alt:
 		_draw_hud_compete(iy)
 		return
 	var x := _ex(4, 14, y)                       # "Score"
@@ -2180,6 +2466,34 @@ func _draw_hud() -> void:
 	x = _ex_num(_core.player_arrows(1), 2, x + 3, y)
 	x = _ex(28, x + 28, y)                       # "Board#"
 	_ex_num(_board_number(), 3, x + 2, y)
+
+## 3-Column HUD for 3-player mode: 608 px bar split into 3 equal 202 px panels.
+## Displays Score, Bonus, Lives, Arrows ammo, Balls ammo, and held key icon for P1, P2, P3.
+func _draw_hud_3p(_iy: float) -> void:
+	for p in range(1, 4):
+		var x0: float = 16.0 + float(p - 1) * 202.0
+		if p > 1:
+			draw_line(Vector2(x0 - 1.0, 2.0), Vector2(x0 - 1.0, 46.0), Color(0.25, 0.25, 0.3), 1.0)
+		var src_p: int = p if (_mode_compete or _mode_versus) else 1
+		# Line 1: Score & Bonus
+		var score_f: int = 4 if p == 1 else (5 if p == 2 else 4)
+		var x := _ex(score_f, x0 + 2.0, 4.0, p == 3)
+		x = _ex_num(int(_core.player_score(src_p)), 7, x + 3.0, 4.0)
+		x = _ex(2, x0 + 104.0, 4.0)
+		var bval: int = int(_core.bonus_time()) if (not _mode_compete and not _mode_versus) else maxi(int(_core.player_bonus(p)), 0)
+		_ex_num(bval, 4, x + 3.0, 4.0)
+
+		# Line 2: Lives, Ammo (Arrows / Balls), Held Key
+		var x2 := _ex(16, x0 + 2.0, 20.0)
+		x2 = _ex_num(maxi(int(_core.player_lives(src_p)), 0), 2, x2 + 3.0, 22.0)
+		x2 = _ex(17, x2 + 6.0, 20.0)
+		x2 = _ex_num(_core.player_balls(src_p), 2, x2 + 3.0, 22.0)
+		x2 = _ex(18, x2 + 6.0, 20.0)
+		x2 = _ex_num(_core.player_arrows(src_p), 2, x2 + 3.0, 22.0)
+
+		if _core.player_has_key(p) == 1:
+			var key_f: int = 10 if p == 2 else 9
+			_blit("goody_sprites", key_f, Vector2(x0 + 158.0, 10.0), p == 3)
 
 ## Compete HUD (asm FUN_1000fb18 / FUN_1000efb4 / FUN_1000f500 two-player branch): the same
 ## icons, but every counter is drawn TWICE -- player 1's values on the top line (asm y=0) and
@@ -2209,8 +2523,8 @@ func _ex_w(frame: int) -> float:
 	return _texsize(tex).x if tex != null else 0.0
 
 ## Blit one `extra's` HUD sprite at (x,y); returns the x just past it.
-func _ex(frame: int, x: float, y: float) -> float:
-	var tex := _sprite("extra_s", frame)
+func _ex(frame: int, x: float, y: float, red: bool = false) -> float:
+	var tex := _sprite("extra_s", frame, false, red)
 	if tex == null:
 		return x
 	_dtex(tex, Vector2(round(x), round(y)))
@@ -2342,50 +2656,31 @@ func _draw_frame(pf: Rect2) -> void:
 ## Both block and goody sprite frame = (tile low byte + 1)  (CONFIRMED: files are
 ## the game's own sssf sheets; e.g. block 0x07->f8 white, 0x0D->f14 red,
 ## 0x2B->f44 ball; goody 0x0A->f11 silver coin, 0x17->f24 gold, door 0x01->f2).
-func _draw_cell(cell: int, pos: Vector2) -> void:
+func _draw_cell(cell: int, pos: Vector2, col: int = -1, row: int = -1) -> void:
+	# Discrete P3 Red Key (0x0933), Red Lock (0x0934), Opened Red Door (0x0935)
+	if cell == 0x0933:
+		if not _blit("goody_sprites", 9, pos, true):
+			_draw_key(pos)
+		return
+	if cell == 0x0934:
+		if not _blit("goody_sprites", 6, pos, true):
+			_draw_door(pos)
+		return
+	if cell == 0x0935:
+		if not _blit("goody_sprites", 3, pos, true):
+			_draw_door(pos)
+		return
+
 	var t := cell & 0xFF
-	if cell & CELL_SUPPORTIVE:
-		# Stop/Go BLOCK: low byte = 5 colour pairs x {Stop 0x9d+12g, Go 0xa3+12g} (g=0..4).
-		# The original draws the flip SIGN on these solid blocks (asm FUN_10016784, its own
-		# sheet Stop_Go_sprite_family) -- the block stays solid in BOTH states, only the sign
-		# graphic flips. Draw the settled Stop (octagon) / Go (circle) sign for the low byte.
-		var sgf := -1
-		if t >= 0x9D and t <= 0xD3:
-			var ds := t - 0x9D          # Stop block = 0x9d + 12*pair
-			var dg := t - 0xA3          # Go block   = 0xa3 + 12*pair
-			var g := -1
-			var loaded_stop := false
-			if ds % 12 == 0 and ds < 60:
-				g = ds / 12; loaded_stop = true
-			elif dg >= 0 and dg % 12 == 0 and dg < 60:
-				g = dg / 12
-			if g >= 0:
-				# a stepped SWITCH flips the displayed sign; animate across the group's frame run
-				# (Stop 2/10/18/26/34 <-> Go 9/17/25/33/41: five 8-frame flip runs).
-				var stop_f: int = [2, 10, 18, 26, 34][g]
-				var go_f: int = [9, 17, 25, 33, 41][g]
-				var disp_stop: bool = loaded_stop != _sg_toggled[g]
-				var new_f := stop_f if disp_stop else go_f
-				var a: float = _sg_anim[g]
-				if _smooth:                 # the same 0.14/tick run, sampled at the delayed render time
-					a = clampf(1.0 - 0.14 * (_rtick - SMOOTH_DELAY - float(_sg_t0[g])), 0.0, 1.0)
-				if a > 0.0:
-					var old_f := go_f if disp_stop else stop_f
-					var fr := float(new_f) + float(old_f - new_f) * a
-					var lo := int(floor(fr))
-					var tw := _tween_sprite("Stop_Go_sprite_family", lo, lo + 1, fr - float(lo), false, false) if _smooth else null
-					if tw != null:
-						_dtex(tw, pos + (Vector2(CELL_PX, CELL_PX) - _texsize(tw)) * 0.5)
-						if cell & CELL_CRACKED:
-							_draw_crack(pos)
-						return
-					sgf = int(round(fr))
-				else:
-					sgf = new_f
+	# Stop/Go BLOCK: frame computed deterministically by C core (handles both solid Stop and passable Go)
+	if t >= 0x9D and t <= 0xD3:
+		var sgf := _core.switch_block_frame(col, row) if (col >= 0 and row >= 0) else -1
 		if sgf >= 0 and _blit("Stop_Go_sprite_family", sgf, pos):
 			if cell & CELL_CRACKED:
 				_draw_crack(pos)
 			return
+
+	if cell & CELL_SUPPORTIVE:
 		# asm FUN_1002cc10: a CRACKED (0x4000, head-bonked once) block draws the sheet's
 		# NEXT frame -- the game's own dedicated cracked sprite (e.g. white 0x07 f8->f9,
 		# red 0x0D f14->f15) -- NOT the whole block plus a drawn-on fracture.
@@ -2420,10 +2715,11 @@ func _draw_cell(cell: int, pos: Vector2) -> void:
 ## soi_blockanim value (frame in bits 16..23).
 func _block_anims() -> Dictionary:
 	var d := {}
+	var cols := int(_core.grid_cols()) if _core else GRID_COLS
 	for i in range(BLOCKANIM_MAX):
 		var a := int(_core.blockanim(i))
 		if a >= 0:
-			d[((a >> 8) & 0xFF) * GRID_COLS + (a & 0xFF)] = a
+			d[((a >> 8) & 0xFF) * cols + (a & 0xFF)] = a
 	return d
 
 ## A jagged dark fracture over a head-bonked (cracked) block -- one more bonk breaks it.
@@ -2657,16 +2953,18 @@ func _spawn_death_pop(x0: int, y0: int, etype: int, dir: int) -> void:
 ## (or exceed a safety cap). Called once per ticked sim frame, so pops are sim-synced and freeze
 ## when paused. asm (FUN_10028060, flag=1): x(t)=x0+4t, y(t)=y0-8t+t^2/4, clamped to the top rail.
 func _step_death_pops() -> void:
-	const BOTTOM := ORIGIN_Y + GRID_ROWS * CELL_PX   # 464: below-play cull line
-	const LEFT := ORIGIN_X - CELL_PX                 # off-left cull line
-	const RIGHT := ORIGIN_X + GRID_COLS * CELL_PX    # 624: off-right cull line
+	var cols := int(_core.grid_cols()) if _core else GRID_COLS
+	var rows := int(_core.grid_rows()) if _core else GRID_ROWS
+	var bottom: float = ORIGIN_Y + rows * CELL_PX
+	var left: float = ORIGIN_X - CELL_PX
+	var right: float = ORIGIN_X + cols * CELL_PX
 	var keep := []
 	for d in _death_pops:
 		var t: float = d["t"] + 1.0
 		d["t"] = t
 		d["px"] = d["x0"] + 4.0 * t
 		d["py"] = maxf(d["y0"] - 8.0 * t + t * t * 0.25, float(ORIGIN_Y))
-		if d["py"] < float(BOTTOM) and d["px"] > float(LEFT) and d["px"] < float(RIGHT) and t < 150.0:
+		if d["py"] < bottom and d["px"] > left and d["px"] < right and t < 150.0:
 			keep.append(d)
 	_death_pops = keep
 
@@ -2699,6 +2997,10 @@ func _spawn_debris(fi: int) -> void:
 ## A gravity piece never rises above y 0x28; a piece leaves play once outside 4 < x < 0x25e,
 ## 0x27 < y < 0x1be. Runs in lock-step with the sim (frozen when paused).
 func _step_debris() -> void:
+	var cols := int(_core.grid_cols()) if _core else GRID_COLS
+	var rows := int(_core.grid_rows()) if _core else GRID_ROWS
+	var max_x: int = ORIGIN_X + cols * CELL_PX
+	var max_y: int = ORIGIN_Y + rows * CELL_PX
 	var keep := []
 	for d in _debris:
 		var t: int = int(d["t"]) + 1
@@ -2712,7 +3014,7 @@ func _step_debris() -> void:
 			y = 0x28
 		d["px"] = x
 		d["py"] = y
-		if x > 4 and x < 0x25e and y > 0x27 and y < 0x1be:
+		if x > 4 and x < max_x and y > 0x27 and y < max_y:
 			keep.append(d)
 	_debris = keep
 
@@ -2736,6 +3038,12 @@ func _enemy_color(etype: int) -> Color:
 # --- level loading -----------------------------------------------------------
 
 func _load_level_bytes() -> PackedByteArray:
+	if Session.has_meta("custom_board_bytes"):
+		var cb: PackedByteArray = Session.get_meta("custom_board_bytes")
+		if not cb.is_empty():
+			return cb
+	if Session.is_online and not Session.online_bord_bytes.is_empty():
+		return Session.online_bord_bytes
 	# 1) a board explicitly chosen in the menu (absolute path via Session autoload)
 	if Session.board_path != "":
 		var chosen := FileAccess.get_file_as_bytes(Session.board_path)

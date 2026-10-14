@@ -31,6 +31,8 @@ var _selected_starting_board := 401
 var _splash: Control = null
 var _splash_frames := 0
 var _hs_entries: Label = null
+var _online_dialog: Control = null
+var _lobby_net: RollbackNet = null
 
 # --- load an extracted PICT (they live in the repo, outside res://) ---
 func _pict(pict_name: String) -> Texture2D:
@@ -46,6 +48,9 @@ func _ready() -> void:
 	_apply_window_mode()
 	Session.init_presentation()   # ORIGINAL, or REMASTERED when launched with --3d / --hd
 	for a in OS.get_cmdline_user_args():
+		if a == "--editor" or a == "--test-editor":
+			get_tree().change_scene_to_file.call_deferred("res://scenes/editor.tscn")
+			return
 		if a.begins_with("--shot") or a.begins_with("--demo") or a.begins_with("--play=") or a.begins_with("--bug3") or a.begins_with("--script=") or a.begins_with("--board="):
 			get_tree().change_scene_to_file.call_deferred("res://scenes/menu.tscn")
 			return
@@ -111,6 +116,8 @@ func _apply_window_mode() -> void:
 				return
 
 func _process(_dt: float) -> void:
+	if _lobby_net != null:
+		_lobby_net.poll_network(Time.get_ticks_msec() / 1000.0)
 	if _splash != null:
 		_splash_frames -= 1
 		if _splash_frames <= 0:
@@ -209,6 +216,7 @@ func _build_menu_bar() -> void:
 	pop_file.add_separator()
 	pop_file.add_item("Load Board Set...", 7)
 	pop_file.add_item("Set Starting Board...", 1)
+	pop_file.add_item("Map Editor...", 8)
 	pop_file.add_separator()
 	pop_file.add_item("Quit", 2)
 
@@ -443,7 +451,8 @@ func _build_buttons() -> void:
 	modeb.add_item("Cooperate", 0)
 	modeb.add_item("Compete", 1)
 	modeb.add_item("Alternate", 2)
-	modeb.selected = clampi(Session.mode, 0, 2)
+	modeb.add_item("Versus", 3)
+	modeb.selected = clampi(Session.mode, 0, 3)
 	modeb.item_selected.connect(func(i: int) -> void:
 		Session.mode = modeb.get_item_id(i))
 	sel.add_child(modeb)
@@ -455,11 +464,13 @@ func _build_buttons() -> void:
 
 	# bottom row: the action buttons
 	var row := HBoxContainer.new()
-	row.position = Vector2(10, 444)
-	row.add_theme_constant_override("separation", 8)
+	row.position = Vector2(6, 444)
+	row.add_theme_constant_override("separation", 5)
 	add_child(row)
 	_button(row, "Start Game", _on_start)
+	_button(row, "Online Multiplayer", _show_online_lobby_dialog)
 	_button(row, "Choose Board", _on_choose_board)
+	_button(row, "Map Editor", func() -> void: get_tree().change_scene_to_file("res://scenes/editor.tscn"))
 	_button(row, "About", func() -> void: _show_picts(["600_About.png"]))
 	_button(row, "Help", func() -> void: _show_picts(["700_Help_1.png", "701_Help_2.png", "702_Help_3.png"]))
 	_button(row, "High Scores", func() -> void: _show_picts(["402_High_Scores.png"]))
@@ -525,10 +536,329 @@ func _on_file(id: int) -> void:
 		0: _on_start()          # New Game
 		3, 4: _on_resume()      # Resume Game (from a QuickSave)
 		1: _on_choose_board()   # Set Starting Board...
+		8:                      # Map Editor...
+			get_tree().change_scene_to_file("res://scenes/editor.tscn")
 		7:                      # Load Board Set...
 			if _is_dev_mode():
 				get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		2: get_tree().quit()    # Quit
+
+func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String) -> void:
+	if is_instance_valid(code_lbl) and ext_ip != "":
+		code_lbl.text = "Join Code: %s" % RollbackNet.ip_to_join_code(ext_ip)
+	if is_instance_valid(ip_lbl) and ext_ip != "":
+		ip_lbl.text = "External IP: %s:7777" % ext_ip
+
+func _show_online_lobby_dialog() -> void:
+	if _online_dialog != null:
+		_online_dialog.queue_free()
+		_online_dialog = null
+	if _lobby_net != null:
+		_lobby_net.close()
+		_lobby_net = null
+
+	var dlg := Control.new()
+	dlg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dlg.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dlg)
+	_online_dialog = dlg
+	set_process(true)
+
+	var backdrop := ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0, 0, 0, 0.45)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	dlg.add_child(backdrop)
+
+	var dw := 380.0
+	var dh := 300.0
+	var dx := (640.0 - dw) * 0.5
+	var dy := (480.0 - dh) * 0.5
+
+	var shadow := ColorRect.new()
+	shadow.position = Vector2(dx + 3, dy + 3)
+	shadow.size = Vector2(dw, dh)
+	shadow.color = Color(0, 0, 0, 0.7)
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dlg.add_child(shadow)
+
+	var body := ColorRect.new()
+	body.position = Vector2(dx, dy)
+	body.size = Vector2(dw, dh)
+	body.color = Color(0.82, 0.82, 0.82)
+	body.mouse_filter = Control.MOUSE_FILTER_STOP
+	dlg.add_child(body)
+
+	var outline := ReferenceRect.new()
+	outline.position = Vector2(dx, dy)
+	outline.size = Vector2(dw, dh)
+	outline.border_color = Color.BLACK
+	outline.border_width = 1.0
+	outline.editor_only = false
+	outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dlg.add_child(outline)
+
+	var font := _get_chicago_font()
+
+	var title := Label.new()
+	title.position = Vector2(dx + 10, dy + 10)
+	title.size = Vector2(dw - 20, 24)
+	title.text = "Online Multiplayer (Rollback Netcode)"
+	title.add_theme_font_override("font", font)
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color.BLACK)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	dlg.add_child(title)
+
+	# Mode toggle: Host / Join
+	var tab_row := HBoxContainer.new()
+	tab_row.position = Vector2(dx + 20, dy + 40)
+	tab_row.size = Vector2(dw - 40, 26)
+	tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	dlg.add_child(tab_row)
+
+	var host_tab_btn := Button.new()
+	host_tab_btn.text = "Host Match"
+	host_tab_btn.add_theme_font_override("font", font)
+	host_tab_btn.add_theme_font_size_override("font_size", 11)
+	tab_row.add_child(host_tab_btn)
+
+	var join_tab_btn := Button.new()
+	join_tab_btn.text = "Join Match"
+	join_tab_btn.add_theme_font_override("font", font)
+	join_tab_btn.add_theme_font_size_override("font_size", 11)
+	tab_row.add_child(join_tab_btn)
+
+	# Host panel
+	var host_panel := VBoxContainer.new()
+	host_panel.position = Vector2(dx + 20, dy + 75)
+	host_panel.size = Vector2(dw - 40, 180)
+	dlg.add_child(host_panel)
+
+	var h_row1 := HBoxContainer.new()
+	var h_p_lbl := Label.new()
+	h_p_lbl.text = "Players: "
+	h_p_lbl.add_theme_color_override("font_color", Color.BLACK)
+	h_p_lbl.add_theme_font_override("font", font)
+	h_p_lbl.add_theme_font_size_override("font_size", 11)
+	h_row1.add_child(h_p_lbl)
+	var host_players := OptionButton.new()
+	host_players.add_item("2 Players", 2)
+	host_players.add_item("3 Players (Co-op)", 3)
+	h_row1.add_child(host_players)
+
+	var h_m_lbl := Label.new()
+	h_m_lbl.text = "  Mode: "
+	h_m_lbl.add_theme_color_override("font_color", Color.BLACK)
+	h_m_lbl.add_theme_font_override("font", font)
+	h_m_lbl.add_theme_font_size_override("font_size", 11)
+	h_row1.add_child(h_m_lbl)
+	var host_mode := OptionButton.new()
+	host_mode.add_item("Cooperate", 0)
+	host_mode.add_item("Compete", 1)
+	host_mode.add_item("Versus", 3)
+	h_row1.add_child(host_mode)
+	host_panel.add_child(h_row1)
+
+	var host_status := Label.new()
+	host_status.text = "Port: 7777 (UDP)"
+	host_status.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
+	host_status.add_theme_font_override("font", font)
+	host_status.add_theme_font_size_override("font_size", 11)
+	host_panel.add_child(host_status)
+
+	var host_code_lbl := Label.new()
+	host_code_lbl.text = "Join Code: Not hosted yet"
+	host_code_lbl.add_theme_color_override("font_color", Color(0.1, 0.1, 0.5))
+	host_code_lbl.add_theme_font_override("font", font)
+	host_code_lbl.add_theme_font_size_override("font_size", 11)
+	host_panel.add_child(host_code_lbl)
+
+	var host_direct_lbl := Label.new()
+	host_direct_lbl.text = "Direct IP: 127.0.0.1:7777"
+	host_direct_lbl.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
+	host_direct_lbl.add_theme_font_override("font", font)
+	host_direct_lbl.add_theme_font_size_override("font_size", 10)
+	host_panel.add_child(host_direct_lbl)
+
+	var host_action_btn := Button.new()
+	host_action_btn.text = "Open Lobby & Listen"
+	host_action_btn.add_theme_font_override("font", font)
+	host_action_btn.add_theme_font_size_override("font_size", 11)
+	host_panel.add_child(host_action_btn)
+
+	var start_match_btn := Button.new()
+	start_match_btn.text = "Start Match"
+	start_match_btn.disabled = true
+	start_match_btn.add_theme_font_override("font", font)
+	start_match_btn.add_theme_font_size_override("font_size", 11)
+	host_panel.add_child(start_match_btn)
+
+	# Join panel
+	var join_panel := VBoxContainer.new()
+	join_panel.position = Vector2(dx + 20, dy + 75)
+	join_panel.size = Vector2(dw - 40, 180)
+	join_panel.visible = false
+	dlg.add_child(join_panel)
+
+	var j_prompt := Label.new()
+	j_prompt.text = "Enter Join Code (SOI-XXXX-XXXX)\nor Direct IP/port:"
+	j_prompt.add_theme_color_override("font_color", Color.BLACK)
+	j_prompt.add_theme_font_override("font", font)
+	j_prompt.add_theme_font_size_override("font_size", 11)
+	join_panel.add_child(j_prompt)
+
+	var join_input := LineEdit.new()
+	join_input.text = "SOI-7F00-0001"
+	join_input.placeholder_text = "SOI-XXXX-XXXX or 127.0.0.1:7777"
+	join_panel.add_child(join_input)
+
+	var join_status := Label.new()
+	join_status.text = "Ready to connect."
+	join_status.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
+	join_status.add_theme_font_override("font", font)
+	join_status.add_theme_font_size_override("font_size", 11)
+	join_panel.add_child(join_status)
+
+	var connect_btn := Button.new()
+	connect_btn.text = "Connect"
+	connect_btn.add_theme_font_override("font", font)
+	connect_btn.add_theme_font_size_override("font_size", 11)
+	join_panel.add_child(connect_btn)
+
+	# Bottom close button
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.position = Vector2(dx + (dw - 80) * 0.5, dy + dh - 32)
+	close_btn.size = Vector2(80, 24)
+	close_btn.add_theme_font_override("font", font)
+	close_btn.add_theme_font_size_override("font_size", 11)
+	close_btn.pressed.connect(func() -> void:
+		if _lobby_net != null:
+			_lobby_net.close()
+			_lobby_net = null
+		dlg.queue_free()
+		_online_dialog = null
+	)
+	dlg.add_child(close_btn)
+
+	host_tab_btn.pressed.connect(func() -> void:
+		host_panel.visible = true
+		join_panel.visible = false
+	)
+	join_tab_btn.pressed.connect(func() -> void:
+		host_panel.visible = false
+		join_panel.visible = true
+	)
+
+	host_action_btn.pressed.connect(func() -> void:
+		var n_players: int = host_players.get_selected_id()
+		if _lobby_net != null:
+			_lobby_net.close()
+		_lobby_net = RollbackNet.new()
+		_lobby_net.num_players = n_players
+		var err := _lobby_net.start_host(7777, n_players)
+		if err != OK:
+			host_status.text = "Failed to bind port 7777 (err %d)" % err
+			return
+		host_action_btn.disabled = true
+		start_match_btn.disabled = true
+		host_status.text = "Hosting! Connected: 1 / %d" % n_players
+		var code := RollbackNet.ip_to_join_code("127.0.0.1")
+		host_code_lbl.text = "Join Code: %s" % code
+		host_direct_lbl.text = "Direct IP: 127.0.0.1:7777"
+
+		var upnp_thread := Thread.new()
+		upnp_thread.start(func() -> void:
+			var upnp := UPNP.new()
+			var d_err := upnp.discover(1500, 2, "InternetGatewayDevice")
+			if d_err == OK and upnp.get_gateway() and upnp.get_gateway().is_valid_gateway():
+				upnp.add_port_mapping(7777, 7777, "StepOnIt", "UDP")
+				var ext_ip := upnp.query_external_address()
+				if ext_ip != "":
+					call_deferred("_update_host_labels", host_code_lbl, host_direct_lbl, ext_ip)
+		)
+
+		_lobby_net.peer_connected.connect(func(slot: int) -> void:
+			var connected := _lobby_net.get_connected_player_count()
+			host_status.text = "Peer %d connected! Total: %d / %d" % [slot, connected, n_players]
+			if connected >= n_players:
+				start_match_btn.disabled = false
+		)
+		_lobby_net.peer_disconnected.connect(func(slot: int) -> void:
+			var connected := _lobby_net.get_connected_player_count()
+			host_status.text = "Peer %d disconnected. Total: %d / %d" % [slot, connected, n_players]
+			if connected < n_players:
+				start_match_btn.disabled = true
+		)
+	)
+
+	start_match_btn.pressed.connect(func() -> void:
+		if _lobby_net == null:
+			return
+		var n_players: int = host_players.get_selected_id()
+		var g_mode: int = host_mode.get_selected_id()
+		Session.num_players = n_players
+		Session.mode = g_mode
+		Session.start_campaign()
+		var bord_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+		var seed_val := randi() % 1000000 + 1
+		Session.net = _lobby_net
+		Session.is_online = true
+		Session.online_bord_bytes = bord_bytes
+		Session.online_seed = seed_val
+		_lobby_net.send_match_init(bord_bytes, seed_val, Session.speed, g_mode, Session.victory_rule, Session.friendly_fire)
+		dlg.queue_free()
+		_online_dialog = null
+		get_tree().change_scene_to_file("res://scenes/game.tscn")
+	)
+
+	connect_btn.pressed.connect(func() -> void:
+		var raw_txt := join_input.text.strip_edges()
+		if raw_txt.is_empty():
+			return
+		var target_port := 7777
+		var host_part := raw_txt
+		if ":" in raw_txt:
+			var sp := raw_txt.rsplit(":", false, 1)
+			host_part = sp[0].strip_edges()
+			if sp[1].is_valid_int():
+				var p_num := sp[1].to_int()
+				if p_num > 0 and p_num <= 65535:
+					target_port = p_num
+		var target_ip := RollbackNet.join_code_to_ip(host_part)
+		if target_ip == "":
+			target_ip = host_part
+		if _lobby_net != null:
+			_lobby_net.close()
+		_lobby_net = RollbackNet.new()
+		var err := _lobby_net.start_client(target_ip, target_port)
+		if err != OK:
+			join_status.text = "Failed to connect to %s:%d (err %d)" % [target_ip, target_port, err]
+			return
+		join_status.text = "Connecting to %s:%d..." % [target_ip, target_port]
+		connect_btn.disabled = true
+
+		_lobby_net.peer_connected.connect(func(_slot: int) -> void:
+			join_status.text = "Connected! Waiting for host to start match..."
+		)
+		_lobby_net.peer_disconnected.connect(func(_slot: int) -> void:
+			join_status.text = "Disconnected from host."
+			connect_btn.disabled = false
+		)
+		_lobby_net.match_started.connect(func(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_p: int, mode: int, slot: int) -> void:
+			Session.net = _lobby_net
+			Session.is_online = true
+			Session.online_bord_bytes = bord_bytes
+			Session.online_seed = rng_seed
+			Session.num_players = num_p
+			Session.mode = mode
+			Session.speed = speed
+			dlg.queue_free()
+			_online_dialog = null
+			get_tree().change_scene_to_file("res://scenes/game.tscn")
+		)
+	)
 
 func _show_starting_board_dialog() -> void:
 	if _starting_board_dialog != null:

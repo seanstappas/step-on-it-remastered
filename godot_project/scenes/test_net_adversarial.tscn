@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/test_net_adversarial.gd" id="1_adv"]
+
+[node name="TestNetAdversarial" type="Node"]
+script = ExtResource("1_adv")

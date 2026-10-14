@@ -44,6 +44,12 @@ void SoiCore::set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t 
 
 void    SoiCore::set_play_mode(int64_t mode) { soi_set_play_mode(w(), (int)mode); }
 int64_t SoiCore::play_mode() const          { return soi_play_mode(w()); }
+void    SoiCore::set_friendly_fire(bool on)  { soi_set_friendly_fire(w(), on ? 1 : 0); }
+bool    SoiCore::friendly_fire() const       { return soi_friendly_fire(w()) != 0; }
+void    SoiCore::set_victory_rule(int64_t r) { soi_set_victory_rule(w(), (int)r); }
+int64_t SoiCore::victory_rule() const        { return (int64_t)soi_victory_rule(w()); }
+int64_t SoiCore::player_kills(int64_t p) const { return (int64_t)soi_player_kills(w(), (int)p); }
+int64_t SoiCore::versus_winner() const       { return (int64_t)soi_versus_winner(w()); }
 void    SoiCore::new_game(int64_t mode)      { soi_new_game(w(), (int)mode); }
 bool    SoiCore::challenge_round() const    { return soi_challenge_round(w()) != 0; }
 bool    SoiCore::challenge_failed() const   { return soi_challenge_failed(w()) != 0; }
@@ -95,6 +101,9 @@ int64_t SoiCore::tick_count() const            { return (int64_t)soi_tick_count(
 int64_t SoiCore::enemy_count() const           { return soi_enemy_count(w()); }
 int64_t SoiCore::projectile_count() const      { return soi_projectile_count(w()); }
 int64_t SoiCore::grid_cell(int64_t c, int64_t r) const { return (int64_t)soi_grid_cell(w(), (int)c, (int)r); }
+int64_t SoiCore::grid_cols() const              { return (int64_t)soi_grid_cols(w()); }
+int64_t SoiCore::grid_rows() const              { return (int64_t)soi_grid_rows(w()); }
+int64_t SoiCore::pit_death_y() const            { return (int64_t)soi_pit_death_y(w()); }
 
 int64_t SoiCore::sfx_count() const             { return soi_sfx_count(w()); }
 int64_t SoiCore::sfx_get(int64_t i) const      { return soi_sfx_get(w(), (int)i); }
@@ -143,6 +152,42 @@ PackedByteArray SoiCore::serialize() const
     return out;
 }
 
+int64_t SoiCore::snapshot_size() const
+{
+    return (int64_t)soi_snapshot_size();
+}
+
+PackedByteArray SoiCore::snapshot_save() const
+{
+    PackedByteArray out;
+    out.resize((int64_t)soi_snapshot_size());
+    soi_snapshot_save(w(), out.ptrw());
+    return out;
+}
+
+void SoiCore::snapshot_load(const PackedByteArray &buf)
+{
+    if (buf.size() >= (int64_t)soi_snapshot_size()) {
+        soi_snapshot_load(w(), buf.ptr());
+    }
+}
+
+int64_t SoiCore::net_hash() const
+{
+    return (int64_t)soi_net_hash(w());
+}
+
+int64_t SoiCore::tp_freeze() const
+{
+    return (int64_t)soi_tp_freeze(w());
+}
+
+int64_t SoiCore::switch_block_frame(int64_t col, int64_t row) const
+{
+    return (int64_t)soi_switch_block_frame(w(), (int)col, (int)row);
+}
+
+
 void SoiCore::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("init", "seed"), &SoiCore::init);
@@ -152,6 +197,12 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("set_player_stats", "player", "score", "lives", "arrows", "balls", "shield"), &SoiCore::set_player_stats);
     ClassDB::bind_method(D_METHOD("set_play_mode", "mode"), &SoiCore::set_play_mode);
     ClassDB::bind_method(D_METHOD("play_mode"), &SoiCore::play_mode);
+    ClassDB::bind_method(D_METHOD("set_friendly_fire", "on"), &SoiCore::set_friendly_fire);
+    ClassDB::bind_method(D_METHOD("friendly_fire"), &SoiCore::friendly_fire);
+    ClassDB::bind_method(D_METHOD("set_victory_rule", "rule"), &SoiCore::set_victory_rule);
+    ClassDB::bind_method(D_METHOD("victory_rule"), &SoiCore::victory_rule);
+    ClassDB::bind_method(D_METHOD("player_kills", "player"), &SoiCore::player_kills);
+    ClassDB::bind_method(D_METHOD("versus_winner"), &SoiCore::versus_winner);
     ClassDB::bind_method(D_METHOD("new_game", "mode"), &SoiCore::new_game);
     ClassDB::bind_method(D_METHOD("challenge_round"), &SoiCore::challenge_round);
     ClassDB::bind_method(D_METHOD("challenge_failed"), &SoiCore::challenge_failed);
@@ -194,6 +245,9 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("enemy_count"), &SoiCore::enemy_count);
     ClassDB::bind_method(D_METHOD("projectile_count"), &SoiCore::projectile_count);
     ClassDB::bind_method(D_METHOD("grid_cell", "col", "row"), &SoiCore::grid_cell);
+    ClassDB::bind_method(D_METHOD("grid_cols"), &SoiCore::grid_cols);
+    ClassDB::bind_method(D_METHOD("grid_rows"), &SoiCore::grid_rows);
+    ClassDB::bind_method(D_METHOD("pit_death_y"), &SoiCore::pit_death_y);
 
     ClassDB::bind_method(D_METHOD("sfx_count"), &SoiCore::sfx_count);
     ClassDB::bind_method(D_METHOD("sfx_get", "i"), &SoiCore::sfx_get);
@@ -228,4 +282,11 @@ void SoiCore::_bind_methods()
 
     ClassDB::bind_method(D_METHOD("state_hash"), &SoiCore::state_hash);
     ClassDB::bind_method(D_METHOD("serialize"), &SoiCore::serialize);
+
+    ClassDB::bind_method(D_METHOD("snapshot_size"), &SoiCore::snapshot_size);
+    ClassDB::bind_method(D_METHOD("snapshot_save"), &SoiCore::snapshot_save);
+    ClassDB::bind_method(D_METHOD("snapshot_load", "buf"), &SoiCore::snapshot_load);
+    ClassDB::bind_method(D_METHOD("net_hash"), &SoiCore::net_hash);
+    ClassDB::bind_method(D_METHOD("tp_freeze"), &SoiCore::tp_freeze);
+    ClassDB::bind_method(D_METHOD("switch_block_frame", "col", "row"), &SoiCore::switch_block_frame);
 }

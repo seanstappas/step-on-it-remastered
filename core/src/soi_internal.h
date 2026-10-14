@@ -8,9 +8,9 @@
 
 #include "soi_core.h"
 
-/* Largest BORD resource we snapshot for the faithful death-reload (biggest shipped
- * board is 656 bytes; 1024 leaves headroom). */
-#define SOI_BORD_MAX 1024u
+/* Largest BORD resource we snapshot for the faithful death-reload (up to 8192
+ * bytes for big maps with EXT1 trailer). */
+#define SOI_BORD_MAX 8192u
 
 /* Stop/Go switch-block registry capacity. VERIFIED: the densest shipped board
  * (board_1037) has 14 switch blocks; a full scan of all 152 boards never exceeds
@@ -71,6 +71,7 @@ typedef struct {
     int16_t  launch_y;    /* parabola base Y (constant during an arc) */
     uint8_t  block_type;  /* block type this player creates */
     uint8_t  has_key;     /* collected the board's key */
+    uint16_t keys;        /* bitmask of collected keys (bit 10 = Red Key 0x0933) */
     uint8_t  input;       /* input bitmask applied this frame */
     uint8_t  input_prev;  /* previous frame's input (for edge-triggered actions) */
     int16_t  lives;
@@ -121,6 +122,12 @@ typedef struct {
                                      * tap shorter than the 2-frame sampling interval is not lost */
     uint8_t  buf;                   /* buffered verb presses (jump/block/arrow/ball) not yet usable */
     uint8_t  buf_t;                 /* player frames left before `buf` expires */
+
+    /* Versus & combat additions */
+    uint8_t  last_attacker;         /* player slot who last dropped a block under this player */
+    uint16_t attacker_ttl;          /* ticks until last_attacker credit expires */
+    uint16_t kills;                 /* PvP frags credited to this player */
+    uint16_t ammo_regen_cd;         /* ticks toward dry-board arrow regen in Versus */
 } SoiPlayer;
 
 typedef struct {
@@ -167,7 +174,13 @@ struct SoiWorld {
     uint32_t rng_seed;    /* Toolbox Random() state (low-mem randSeed analogue) */
     uint32_t tick;        /* virtual frame counter (pacing-only in the original) */
 
-    uint32_t cell[SOI_GRID_ROWS][SOI_GRID_COLS];  /* live playfield */
+    uint32_t cell[SOI_MAX_GRID_ROWS][SOI_MAX_GRID_COLS];  /* live playfield (up to 38x26) */
+    uint8_t  grid_cols;        /* active columns: 19..38, default 19 */
+    uint8_t  grid_rows;        /* active rows: 13..26, default 13 */
+    uint8_t  p3_col;           /* EXT1 P3 spawn column (0 = auto fallback) */
+    uint8_t  p3_row;           /* EXT1 P3 spawn row (0 = auto fallback) */
+    uint16_t p3_block;         /* EXT1 P3 block word (default 0x020D) */
+    uint8_t  vs_spawns[4][2];  /* EXT1 4 extra Versus arena spawns [col, row] */
 
     SoiPlayer players[SOI_MAX_PLAYERS];
     SoiEnemy  enemies[SOI_MAX_ENEMIES];
@@ -181,6 +194,7 @@ struct SoiWorld {
     int16_t  bonus_div;      /* Bonus-countdown frame divider (asm _DAT_10038eb0): fires every 3rd frame */
     int16_t  reveal_timer;   /* Magnifying-glass goody 0x2F (asm FUN_10016b28): >0 = hidden 0x1000
                               * (SPECIAL) treasure cells are shown to the player; counts down (~300 frames). */
+    int16_t  tp_freeze;      /* Transporter warp-slide freeze counter: >0 freezes sim, counts down */
 
     /* level parameters (BORD header) */
     int16_t  pct_ultrabuster;  /* 0x10 */
@@ -190,6 +204,8 @@ struct SoiWorld {
     int16_t  goodies_total;    /* treasure cells present at level load */
     int16_t  goodies_left;     /* treasure still uncollected */
     uint8_t  play_mode;        /* SOI_MODE_* (0 behaves as SOI_MODE_ONE) */
+    uint8_t  friendly_fire;    /* 0 = off, 1 = weapons and Speed-Shoes hit players */
+    uint8_t  victory_rule;     /* SoiVictoryRule: 0 = Lives, 1 = Score, 2 = Door */
     uint8_t  challenge;        /* 1 = CHALLENGE ROUND: the board holds a Knight or Gargoyle (asm
                                 * FUN_10017a70 -> DAT_1003ad0e, computed at load by FUN_1002d980) */
 

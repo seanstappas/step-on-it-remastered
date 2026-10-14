@@ -55,6 +55,14 @@ Stage 'core: harness + determinism' {
     [bool]($out -match 'determinism: PASS')
 }
 
+Stage 'core: rollback synctest (152 boards)' {
+    & $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include @srcs tests/test_synctest.c -o soi_synctest.exe 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $out = & .\soi_synctest.exe (Get-ChildItem extracted/levels/*.bord | ForEach-Object FullName)
+    Remove-Item soi_synctest.exe, soi_synctest.pdb -ErrorAction SilentlyContinue
+    [bool]($out -match 'ALL SYNCTEST ROLLBACK CHECKS PASSED')
+}
+
 Stage 'core: fixture-replay selftest' {
     & $Zig cc -shared -std=c17 -Icore/include @srcs -o soi_core.dll '-Wl,--export-all-symbols' 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
@@ -110,6 +118,22 @@ if (-not $SkipGodot -and (Test-Path $Godot)) {
         $latest = Get-ChildItem 'media/screenshots/*.png' -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
         [bool]($latest) -and ($latest.LastWriteTime -gt (Get-Date).AddMinutes(-3))
+    }
+    Stage 'net: rollback soak test (120ms lag, 30ms jitter)' {
+        $soakOut = & powershell -File (Join-Path $root 'tools/test_net_soak.ps1') -Godot $Godot
+        [bool]($LASTEXITCODE -eq 0)
+    }
+    Stage 'net: 3-player adversarial soak test' {
+        $advOut = & powershell -File (Join-Path $root 'tools/test_net_adversarial.ps1') -Godot $Godot
+        [bool]($LASTEXITCODE -eq 0)
+    }
+    Stage 'net: edge cases & peer disconnect handling' {
+        $edgeOut = & powershell -File (Join-Path $root 'tools/test_net_edge_cases.ps1') -Godot $Godot
+        [bool]($LASTEXITCODE -eq 0)
+    }
+    Stage 'net: online progression & retry sync' {
+        $progOut = & powershell -File (Join-Path $root 'tools/test_net_progression.ps1') -Godot $Godot
+        [bool]($LASTEXITCODE -eq 0)
     }
 } else {
     Write-Host '==> godot stages skipped (editor not found or -SkipGodot)' -ForegroundColor Yellow

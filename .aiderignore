@@ -1,0 +1,43 @@
+# ==============================================================================
+# .aiderignore
+# Keeps Aider's repo map and token budget focused on active source code:
+#   - core/           (C++ engine & gameplay logic)
+#   - bridge/         (GDExtension Godot bindings)
+#   - godot_project/  (Godot scenes, GDScript, shaders)
+#   - tools/          (Python asset pipeline & extraction scripts)
+#   - tests/          (Test suites)
+#   - docs/ & plan/   (Design and architectural documentation)
+#
+# NOTE: You can still load any ignored file on demand in an Aider chat using:
+#   /add <file>        (to edit or reference)
+#   /read-only <file>  (to use as reference without edits)
+# ==============================================================================
+
+# --- 1. Extracted game assets (~4,300 sprites, audio, levels, images) ---
+# Exclude all heavy asset files, but keep the top-level manifest accessible
+extracted/*
+!extracted/manifest.json
+
+# --- 2. Bulk Ghidra 68k Mac decompilation archive (~1,560 raw C dumps) ---
+# Raw reverse-engineering dumps are great reference material, but should be
+# loaded on demand via `/read-only analysis/decomp/...` rather than auto-mapped.
+analysis/decomp/
+analysis/ghidra/
+
+# --- 3. Gameplay recordings, clips, and visual references ---
+media/
+
+# --- 4. Scratch work, caches, and raw game rips ---
+tmp/
+qa_out/
+hf-cache/
+raw_game/
+refs/
+
+# --- 5. Temporary logs, diffs, and benchmark dumps in repo root ---
+*.log
+verify_out.txt
+mech_out.txt
+soi_shotlog.txt
+soi_enemies_before.c
+cmp.png

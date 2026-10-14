@@ -3778,8 +3778,557 @@ int main(void)
         CHECK(w->players[1].ground_state == SOI_ST_JUMP, "assist: buffered jump fired after block action completed");
     }
 
+    /* ---- 63. Phase 1 C Core Snapshot, 64-bit State Hashing, and Bugs B10, B11, B12, B4 ---- */
+    {
+        uint8_t *snap1 = (uint8_t *)malloc(soi_snapshot_size());
+        uint8_t *snap2 = (uint8_t *)malloc(soi_snapshot_size());
+        SoiWorld *w2 = (SoiWorld *)malloc(soi_world_size());
+        CHECK(snap1 && snap2 && w2, "phase1: test buffers allocated");
+        CHECK(soi_snapshot_size() == sizeof(SoiWorld), "phase1: snapshot size equals sizeof(SoiWorld)");
+
+        /* Snapshot roundtrip & net hash determinism */
+        soi_world_init(w, 42);
+        w->level_loaded = 1;
+        reset_player(w, 1, 3, 9);
+        reset_player(w, 2, 5, 9);
+        reset_player(w, 3, 7, 9);
+        uint64_t h0 = soi_net_hash(w);
+        soi_snapshot_save(w, snap1);
+
+        /* Mutate world state */
+        w->tick += 10;
+        w->players[1].x += 20;
+        w->players[2].score += 500;
+        w->sw_count = 1;
+        w->sw_state[0] = 3;
+        w->sw_ctr[0] = 4;
+        CHECK(soi_net_hash(w) != h0, "phase1: net hash changes when state mutates");
+
+        /* Restore world state */
+        soi_snapshot_load(w, snap1);
+        CHECK(memcmp(w, snap1, sizeof(SoiWorld)) == 0, "phase1: snapshot load restores bit-identical SoiWorld");
+        CHECK(soi_net_hash(w) == h0, "phase1: net hash matches original after snapshot restore");
+
+        /* Defensive NULL checks */
+        CHECK(soi_net_hash(NULL) == 0, "phase1: soi_net_hash(NULL) returns 0 safely");
+        soi_snapshot_save(NULL, snap1);
+        soi_snapshot_save(w, NULL);
+        soi_snapshot_load(NULL, snap1);
+        soi_snapshot_load(w, NULL);
+
+        /* Net hash sensitivity checks */
+        {
+            uint64_t base_h = soi_net_hash(w);
+            w->bonus_div ^= 1;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to bonus_div");
+            w->bonus_div ^= 1;
+
+            w->input_assist ^= 1;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to input_assist");
+            w->input_assist ^= 1;
+
+            w->tp_freeze += 5;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to tp_freeze");
+            w->tp_freeze -= 5;
+
+            w->players[1].in_pend = 0x55;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to in_pend");
+            w->players[1].in_pend = 0;
+
+            w->players[1].buf = 0x04;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to buf");
+            w->players[1].buf = 0;
+
+            w->players[3].keys = (1u << 10);
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to player keys");
+            w->players[3].keys = 0;
+
+            w->sw_count = 1;
+            w->sw_state[0] = 2;
+            CHECK(soi_net_hash(w) != base_h, "phase1: net hash sensitive to switch state");
+            w->sw_count = 0;
+        }
+
+        /* Bug B10: bord_data zero-padded tail in soi_load_level */
+        {
+            uint8_t dummy_bord[32];
+            int k, tail_zero = 1;
+            memset(dummy_bord, 0xAB, sizeof(dummy_bord));
+            dummy_bord[0x06] = 0; dummy_bord[0x07] = 2;
+            dummy_bord[0x08] = 0; dummy_bord[0x09] = 2;
+            dummy_bord[0x0A] = 0; dummy_bord[0x0B] = 4;
+            dummy_bord[0x0C] = 0; dummy_bord[0x0D] = 2;
+            dummy_bord[0x0E] = 0x13; dummy_bord[0x0F] = 0x88;
+            dummy_bord[0x18] = 0; dummy_bord[0x19] = 0;
+            dummy_bord[0x1A] = 0; dummy_bord[0x1B] = 0;
+
+            memset(w->bord_data, 0xFF, sizeof(w->bord_data));
+            soi_load_level(w, dummy_bord, 28);
+            CHECK(w->bord_len == 28, "B10: bord_len set to 28");
+            CHECK(memcmp(w->bord_data, dummy_bord, 28) == 0, "B10: bord_data header matches");
+            for (k = 28; k < (int)sizeof(w->bord_data); k++) {
+                if (w->bord_data[k] != 0) { tail_zero = 0; break; }
+            }
+            CHECK(tail_zero, "B10: bord_data tail is zero-padded");
+        }
+
+        /* Bug B11: input_assist preserved across next_level and reload */
+        {
+            uint8_t mini_bord[32];
+            memset(mini_bord, 0, sizeof(mini_bord));
+            mini_bord[0x07] = 2; mini_bord[0x09] = 2;
+            mini_bord[0x0B] = 4; mini_bord[0x0D] = 2;
+            mini_bord[0x0E] = 0x13; mini_bord[0x0F] = 0x88;
+
+            soi_world_init(w, 1);
+            soi_load_level(w, mini_bord, 28);
+            soi_set_input_assist(w, 1);
+            CHECK(w->input_assist == 1, "B11: input_assist set to 1");
+
+            soi_next_level(w, mini_bord, 28);
+            CHECK(w->input_assist == 1, "B11: input_assist preserved across soi_next_level");
+
+            /* Kill player 1 to trigger reload_board_on_death */
+            w->players[1].alive = 0;
+            w->players[1].lives = 1;
+            w->players[1].respawn_timer = 1;
+            w->players[2].active = 0;
+            w->players[3].active = 0;
+            soi_tick(w, 0, 0);
+            CHECK(w->input_assist == 1, "B11: input_assist preserved across reload_board_on_death");
+        }
+
+        /* Bug B12: tp_freeze and switch block frame */
+        {
+            uint32_t t0;
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            reset_player(w, 1, 3, 9);
+            w->players[1].x = 100;
+            w->tp_freeze = 5;
+            t0 = w->tick;
+            soi_tick3(w, SOI_IN_RIGHT, 0, 0);
+            CHECK(w->tp_freeze == 4, "B12: tp_freeze decrements in tick3");
+            CHECK(w->tick == t0 + 1, "B12: tick advances during tp_freeze");
+            CHECK(w->players[1].x == 100, "B12: player locomotion frozen while tp_freeze > 0");
+
+            /* Switch block frame computation */
+            w->sw_count = 1;
+            w->sw_col[0] = 5; w->sw_row[0] = 5; w->sw_group[0] = 0;
+            w->sw_state[0] = 2;
+            CHECK(soi_switch_block_frame(w, 5, 5) == 2, "B12: switch group 0 solid -> frame 2");
+            w->sw_state[0] = 1;
+            CHECK(soi_switch_block_frame(w, 5, 5) == 9, "B12: switch group 0 passable -> frame 9");
+            w->sw_state[0] = 3; w->sw_ctr[0] = 3;
+            CHECK(soi_switch_block_frame(w, 5, 5) == 5, "B12: switch group 0 opening ctr 3 -> frame 5");
+            w->sw_group[0] = 1; w->sw_state[0] = 2;
+            CHECK(soi_switch_block_frame(w, 5, 5) == 10, "B12: switch group 1 solid -> frame 10");
+            CHECK(soi_switch_block_frame(w, 9, 9) == -1, "B12: unregistered coord returns -1");
+        }
+
+        /* Bug B4: Discrete P3 tile triplet 0x0933, 0x0934, 0x0935 */
+        {
+            /* (a) Co-op mode: P3 collects 0x0933 -> unlocks 0x0934 into 0x0935 -> P1 or P3 can exit */
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            w->play_mode = SOI_MODE_COOPERATE;
+            reset_player(w, 1, 2, 5);
+            reset_player(w, 3, 6, 5);
+            ground_player(w, 2, 5);
+            ground_player(w, 6, 5);
+            soi_set_cell(w, 6, 5, 0x0933u);
+            soi_set_cell(w, 8, 5, 0x0934u);
+            soi_pickup_check(w, 3);
+            CHECK((w->players[3].keys & (1u << 10)) != 0, "B4: P3 collects Red Key -> keys bit 10 set");
+            CHECK((w->players[1].keys & (1u << 10)) != 0, "B4: Co-op mode shares Red Key bitmask with P1");
+            CHECK(w->cell[5][6] == SOI_CELL_EMPTY, "B4: Red Key consumed");
+            CHECK(w->cell[5][8] == 0x0935u, "B4: Red Lock swept to Opened Red Door 0x0935");
+
+            /* P1 can exit through 0x0935 in Co-op */
+            w->players[1].x = soi_cell_x(8);
+            w->players[1].y = soi_cell_y(5);
+            soi_pickup_check(w, 1);
+            CHECK(w->players[1].has_key == 2, "B4: P1 completes level through opened 0x0935 in Co-op");
+            CHECK(soi_level_complete(w) == 1, "B4: level complete confirmed");
+
+            /* (b) Compete mode: P1 CANNOT pick up 0x0933, P1 CANNOT exit through 0x0935 */
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            w->play_mode = SOI_MODE_COMPETE;
+            reset_player(w, 1, 2, 5);
+            reset_player(w, 3, 6, 5);
+            ground_player(w, 2, 5);
+            ground_player(w, 6, 5);
+            soi_set_cell(w, 2, 5, 0x0933u);
+            soi_pickup_check(w, 1);
+            CHECK(w->cell[5][2] == 0x0933u, "B4: P1 cannot pick up P3 Red Key in Compete mode");
+            CHECK((w->players[1].keys & (1u << 10)) == 0, "B4: P1 did not get key");
+
+            /* Move key to P3 */
+            soi_set_cell(w, 2, 5, SOI_CELL_EMPTY);
+            soi_set_cell(w, 6, 5, 0x0933u);
+            soi_set_cell(w, 8, 5, 0x0934u);
+            soi_pickup_check(w, 3);
+            CHECK((w->players[3].keys & (1u << 10)) != 0, "B4: P3 collects Red Key in Compete mode");
+            CHECK(w->cell[5][8] == 0x0935u, "B4: Red Lock swept to Opened Red Door 0x0935");
+
+            /* P1 stepping on 0x0935 in Compete mode does NOT exit */
+            w->players[1].x = soi_cell_x(8);
+            w->players[1].y = soi_cell_y(5);
+            soi_pickup_check(w, 1);
+            CHECK(w->players[1].has_key != 2, "B4: P1 CANNOT exit through P3's 0x0935 door in Compete mode");
+
+            /* P3 stepping on 0x0935 in Compete mode DOES exit */
+            w->players[3].x = soi_cell_x(8);
+            w->players[3].y = soi_cell_y(5);
+            soi_pickup_check(w, 3);
+            CHECK(w->players[3].has_key == 2, "B4: P3 exits through 0x0935 door in Compete mode");
+            CHECK(soi_level_complete(w) == 1, "B4: level complete confirmed for P3");
+        }
+
+        free(snap1);
+        free(snap2);
+        free(w2);
+    }
+
+    /* =========================================================================
+     * 64. Bug B1 & B2: Multiplayer Individual In-Place Respawn & Bonus Time Reset
+     * ========================================================================= */
+    {
+        int t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        w->pct_badguy = 0;
+        reset_player(w, 1, 3, 5);
+        reset_player(w, 2, 8, 5);
+        w->players[1].active = 1; w->players[1].alive = 1; w->players[1].lives = 3;
+        w->players[2].active = 1; w->players[2].alive = 1; w->players[2].lives = 3;
+        soi_set_play_mode(w, SOI_MODE_COOPERATE);
+
+        /* Kill Player 1 while Player 2 is alive */
+        w->players[1].alive = 0;
+        w->players[1].respawn_timer = 90;
+        w->players[1].bonus_time = 0; /* simulate bonus time runout (Bug B2) */
+        w->players[1].fast = 5;
+        w->players[1].jump_t = 3;
+        w->players[1].dstep = 2;
+        w->players[1].in_pend = 0x04;
+        w->players[1].buf = 0x02;
+        w->players[1].buf_t = 1;
+
+        /* Tick 89 frames: P1 should still be dead, P2 still alive */
+        for (t = 0; t < 89; t++) {
+            soi_tick(w, 0, 0);
+        }
+        CHECK(w->players[1].alive == 0, "B1: P1 remains dead while respawn_timer > 0");
+        CHECK(w->players[2].alive == 1, "B1: P2 remains alive during P1 death");
+        CHECK(w->players[1].respawn_timer == 1, "B1: P1 respawn_timer is at 1 tick");
+
+        /* Tick the 90th frame: P1 should now respawn in-place (Bug B1) */
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].alive == 1, "B1: P1 respawns cleanly after 90 ticks while P2 alive");
+        CHECK(w->players[1].x == w->players[1].spawn_x && w->players[1].y == w->players[1].spawn_y,
+              "B1: P1 respawns at spawn coords");
+        CHECK(w->players[1].invuln == 90, "B2: P1 granted 90 ticks invulnerability");
+        CHECK(w->players[1].bonus_time == 5000, "B2: P1 bonus_time reset to 5000 (no runout loop)");
+        CHECK(w->players[1].fast == 0 && w->players[1].jump_t == 0 && w->players[1].dstep == 0,
+              "B2: physics state zeroed on in-place respawn");
+        CHECK(w->players[1].in_pend == 0 && w->players[1].buf == 0 && w->players[1].buf_t == 0,
+              "B2: input buffers zeroed on in-place respawn");
+
+        /* Tick 10 more frames with no death cascade */
+        for (t = 0; t < 10; t++) {
+            soi_tick(w, 0, 0);
+        }
+        CHECK(w->players[1].alive == 1, "B2: P1 remains alive without instant re-death cascade");
+        CHECK(w->players[1].frame_save == w->players[1].frame, "B2: P1 frame_save synced to frame on respawn");
+        CHECK(w->players[1].aux == 0, "B2: P1 aux reset to 0 on respawn");
+
+        /* Test Custom Bonus from BORD header (Bug B2) */
+        w->bord_len = 0x20;
+        w->bord_data[0x0E] = 0x0B; /* 3000 in big-endian (0x0BB8) */
+        w->bord_data[0x0F] = 0xB8;
+        w->players[2].alive = 0;
+        w->players[2].respawn_timer = 90;
+        w->players[2].bonus_time = 0;
+        for (t = 0; t < 90; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[2].alive == 1, "B1: P2 respawns cleanly while P1 alive");
+        CHECK(w->players[2].bonus_time == 3000, "B2: P2 bonus_time reset to 3000 from BORD header");
+
+        /* Test 3-Player Co-op P3 in-place respawn */
+        soi_spawn_player3(w);
+        CHECK(w->players[3].active == 1, "P3 spawned");
+        w->players[3].alive = 0;
+        w->players[3].respawn_timer = 90;
+        for (t = 0; t < 90; t++) soi_tick3(w, 0, 0, 0);
+        CHECK(w->players[3].alive == 1, "B1: P3 respawns cleanly while P1 & P2 alive");
+        CHECK(w->players[3].invuln == 90, "B2: P3 granted 90 ticks invulnerability");
+    }
+
+    /* ---- 65. Versus / PvP Mode, Combat Collisions & Bug Fixes (B3, B8, B9) ---- */
+    {
+        int t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        CHECK(soi_play_mode(w) == SOI_MODE_VERSUS, "Versus: mode set to SOI_MODE_VERSUS");
+        CHECK(soi_friendly_fire(w) == 1, "Versus: friendly_fire forced to 1");
+
+        /* Victory Rule 0: SOI_WIN_LIVES */
+        soi_set_victory_rule(w, SOI_WIN_LIVES);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 8, 9); ground_player(w, 8, 9);
+        CHECK(soi_level_complete(w) == 0, "Versus (Lives): not complete while both players in");
+        w->players[2].eliminated = 1;
+        w->players[2].alive = 0;
+        CHECK(soi_level_complete(w) == 1, "Versus (Lives): complete when P2 eliminated");
+        CHECK(soi_versus_winner(w) == 1, "Versus (Lives): P1 is the winner");
+
+        /* Victory Rule 1: SOI_WIN_SCORE */
+        soi_set_victory_rule(w, SOI_WIN_SCORE);
+        w->players[2].eliminated = 0;
+        w->players[2].alive = 1;
+        w->goodies_total = 5;
+        w->goodies_left = 5;
+        w->players[1].score = 3000;
+        w->players[2].score = 1500;
+        CHECK(soi_level_complete(w) == 0, "Versus (Score): not complete while goodies remain");
+        w->goodies_left = 0;
+        CHECK(soi_level_complete(w) == 1, "Versus (Score): complete when goodies cleared");
+        CHECK(soi_versus_winner(w) == 1, "Versus (Score): high score P1 is winner");
+
+        /* Victory Rule 2: SOI_WIN_DOOR */
+        soi_set_victory_rule(w, SOI_WIN_DOOR);
+        w->goodies_left = 5;
+        CHECK(soi_level_complete(w) == 0, "Versus (Door): not complete with no door exit");
+        w->players[2].has_key = 2;
+        CHECK(soi_level_complete(w) == 1, "Versus (Door): complete when P2 exits door");
+        CHECK(soi_versus_winner(w) == 2, "Versus (Door): P2 is winner");
+
+        /* PvP Weapon Hit & Bug B3: Corpse Immunity */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
+        w->players[1].arrows = 1;
+        w->players[1].facing = 1;
+        w->players[2].invuln = 0;
+        soi_projectile_fire(w, 1); /* P1 fires kind 0 rolling ball right toward P2 */
+        CHECK(soi_projectile_count(w) == 1, "Versus: P1 rolling ball in flight");
+
+        /* Advance until ball hits P2 */
+        for (t = 0; t < 60 && w->players[2].ground_state != SOI_ST_DEAD; t++) {
+            soi_tick(w, 0, 0);
+        }
+        CHECK(w->players[2].ground_state == SOI_ST_DEAD, "Versus: P2 hit by P1 weapon entered SOI_ST_DEAD");
+        CHECK(w->players[1].kills == 1, "Versus: P1 credited with kill");
+        CHECK(w->players[1].score == 1000, "Versus: P1 awarded 1000 pts for kill");
+        CHECK(soi_projectile_count(w) == 0, "Versus (B3): rolling ball despawned upon hitting player");
+
+        /* Corpse Immunity (B3): P1 fires straight arrow while P2 is still dead */
+        w->players[1].balls = 1;
+        soi_ball_fire(w, 1);
+        CHECK(soi_projectile_count(w) == 1, "Versus: P1 straight arrow in flight");
+        for (t = 0; t < 30; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].kills == 1, "Versus (B3): corpse overlap did not award additional kill");
+        CHECK(w->players[1].score == 1000, "Versus (B3): corpse overlap did not award additional score");
+
+        /* Bug B8: Per-kind shot lock & 180 tick lifespan cap */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        w->players[1].arrows = 2;
+        w->players[1].balls = 2;
+        soi_projectile_fire(w, 1); /* kind 0 */
+        CHECK(soi_projectile_count(w) == 1, "B8: rolling ball fired");
+        soi_ball_fire(w, 1);       /* kind 1 */
+        CHECK(soi_projectile_count(w) == 2, "B8: straight arrow fired concurrently with rolling ball in PvP");
+
+        /* Verify 180 tick cap for rolling ball in PvP */
+        for (t = 0; t < 185; t++) soi_tick(w, 0, 0);
+        {
+            int rolling_alive = 0, i;
+            for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
+                if (w->projectiles[i].active && w->projectiles[i].kind == 0) rolling_alive = 1;
+            }
+            CHECK(rolling_alive == 0, "B8: rolling ball fizzled at <= 180 ticks in PvP");
+        }
+
+        /* Bug B8: Dry-board ammo regen */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 8, 9); ground_player(w, 8, 9);
+        w->players[1].balls = 0;
+        w->players[1].ammo_regen_cd = 0;
+        for (t = 0; t < 305; t++) soi_tick(w, 0, 0);
+        CHECK(w->players[1].balls == 1, "B8: dry-board regen granted 1 arrow at 300 ticks in Versus");
+
+        /* Bug B9: Block placement over player prohibited */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 4, 9); ground_player(w, 4, 9);
+        CHECK(soi_player_at(w, 4, 9) == 2, "B9: soi_player_at detects P2 at (4,9)");
+        /* P1 faces right toward (4,9) and attempts high block */
+        w->players[1].facing = 1;
+        act_press(w, SOI_IN_BLOCK_HIGH);
+        act_done(w);
+        CHECK(SOI_CELL_TYPE(w->cell[9][4]) == 0, "B9: cannot build block directly inside living player");
+
+        /* Bug B9: Indirect block-drop kill attribution */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 4, 8); /* P2 standing on cell (4, 9) */
+        w->cell[9][4] = 0x19 | SOI_CELL_SUPPORTIVE; /* breakable block under P2 */
+        w->players[2].y = soi_cell_y(8) + 1;
+        /* P1 destroys block at (4, 9) */
+        w->players[1].facing = 1;
+        act_press(w, SOI_IN_BLOCK_HIGH);
+        act_done(w);
+        CHECK(w->players[2].last_attacker == 1, "B9: P2 tagged with last_attacker = 1");
+        CHECK(w->players[2].attacker_ttl > 0, "B9: P2 tagged with attacker_ttl");
+
+        /* P2 falls into pit */
+        w->players[2].ground_state = SOI_ST_FALL;
+        w->players[2].in_air = 1;
+        w->players[2].y = 444;
+        soi_tick(w, 0, 0);
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].kills == 1, "B9: P1 credited with kill for dropping block under P2");
+        CHECK(w->players[1].score == 1000, "B9: P1 credited with 1000 score for block-drop kill");
+
+        /* Speed-Shoe Body Check */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 4, 9); ground_player(w, 4, 9);
+        w->players[1].fast = 100;
+        w->players[2].fast = 0;
+        w->players[2].invuln = 0;
+        w->players[1].x = w->players[2].x - 10; /* horizontal overlap */
+        w->players[1].y = w->players[2].y;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[2].ground_state == SOI_ST_DEAD, "Speed shoes: body-check launched opponent death");
+        CHECK(w->players[1].kills == 1, "Speed shoes: body-check credited kill");
+        CHECK(w->players[1].score == 1000, "Speed shoes: body-check awarded 1000 score");
+    }
+
+    /* ---- 66. Big Maps (38x26), EXT1 Trailer Pre-scan (B5), and Dynamic Pit Death ---- */
+    {
+        uint8_t bord_buf[256];
+        memset(bord_buf, 0, sizeof(bord_buf));
+
+        /* Header 24 bytes */
+        bord_buf[7] = 2;   /* p1_col = 2 */
+        bord_buf[9] = 2;   /* p1_row = 2 */
+        bord_buf[11] = 16; /* p2_col = 16 */
+        bord_buf[13] = 2;  /* p2_row = 2 */
+        bord_buf[14] = 0x13; bord_buf[15] = 0x88; /* bonus = 5000 */
+        bord_buf[22] = 0x13; bord_buf[23] = 0x88; /* reward = 5000 */
+
+        /* Record 1: solid wall (0x0307) at (37, 25) */
+        size_t off = 24;
+        bord_buf[off + 0] = 0x00; bord_buf[off + 1] = 0x00;
+        bord_buf[off + 2] = 0x03; bord_buf[off + 3] = 0x07;
+        off += 4;
+        bord_buf[off + 0] = 37; bord_buf[off + 1] = 25; off += 2;
+        bord_buf[off + 0] = 100; bord_buf[off + 1] = 100; off += 2;
+
+        /* Terminator 0x00000000 */
+        bord_buf[off + 0] = 0; bord_buf[off + 1] = 0;
+        bord_buf[off + 2] = 0; bord_buf[off + 3] = 0;
+        off += 4;
+
+        /* EXT1 trailer (24 bytes) */
+        size_t ext_off = off;
+        bord_buf[ext_off + 0] = 'E';
+        bord_buf[ext_off + 1] = 'X';
+        bord_buf[ext_off + 2] = 'T';
+        bord_buf[ext_off + 3] = '1';
+        bord_buf[ext_off + 4] = 1; /* version */
+        bord_buf[ext_off + 5] = 7; /* flags: has_p3 | friendly_fire | big_map */
+        bord_buf[ext_off + 6] = 38; /* cols */
+        bord_buf[ext_off + 7] = 26; /* rows */
+        bord_buf[ext_off + 8] = 19; /* p3_col */
+        bord_buf[ext_off + 9] = 2;  /* p3_row */
+        bord_buf[ext_off + 10] = 0x02; bord_buf[ext_off + 11] = 0x0D; /* p3_block */
+        /* vs_spawns 8 bytes (0) */
+        bord_buf[ext_off + 20] = 1; /* victory_rule = score */
+        bord_buf[ext_off + 21] = 5; /* starting_lives = 5 */
+
+        /* Compute CRC16-CCITT over ext[0..21] */
+        uint16_t crc = 0xFFFF;
+        for (size_t ci = 0; ci < 22; ci++) {
+            crc ^= ((uint16_t)bord_buf[ext_off + ci] << 8);
+            for (int b = 0; b < 8; b++) {
+                if (crc & 0x8000)
+                    crc = (uint16_t)((crc << 1) ^ 0x1021);
+                else
+                    crc = (uint16_t)(crc << 1);
+            }
+        }
+        bord_buf[ext_off + 22] = (uint8_t)(crc >> 8);
+        bord_buf[ext_off + 23] = (uint8_t)(crc & 0xFF);
+        off += 24;
+
+        /* 66.1: Load level with EXT1 trailer */
+        soi_world_init(w, 1);
+        int ok = soi_load_level(w, bord_buf, off);
+        CHECK(ok != 0, "66.1: soi_load_level succeeds on big map with EXT1 trailer");
+        CHECK(soi_grid_cols(w) == 38, "66.1: soi_grid_cols is 38");
+        CHECK(soi_grid_rows(w) == 26, "66.1: soi_grid_rows is 26");
+        CHECK(soi_pit_death_y(w) == 862, "66.1: soi_pit_death_y is 862 for 26 rows");
+        CHECK(w->players[3].active == 1, "66.1: P3 is active from EXT1 trailer");
+        CHECK(w->players[3].x == 19 * 32 + 16, "66.1: P3 spawn x is configured from p3_col");
+
+        /* 66.2: Deep cell placement and standing collision at (col 37, row 25) */
+        CHECK(SOI_CELL_TYPE(w->cell[25][37]) == 0x07, "66.2: cell at (37, 25) is tile 0x07");
+        CHECK(w->cell[25][37] & SOI_CELL_SUPPORTIVE, "66.2: cell at (37, 25) is supportive");
+        CHECK(soi_get_cell(w, 37, 25) != 0, "66.2: soi_get_cell(w, 37, 25) returns supportive wall");
+
+        /* Position player 1 directly above (37, 25) at row 24 */
+        reset_player(w, 1, 37, 24);
+        w->players[1].x = soi_cell_x(37);
+        w->players[1].y = soi_cell_y(24) + 1;
+        w->players[1].ground_state = SOI_ST_IDLE;
+        w->players[1].in_air = 0;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].ground_state == SOI_ST_IDLE, "66.2: player stands firmly on deep cell (37, 25)");
+        CHECK(w->players[1].in_air == 0, "66.2: player not in air when standing on (37, 25)");
+
+        /* 66.3: Pit death threshold on 26-row map */
+        w->players[1].ground_state = SOI_ST_FALL;
+        w->players[1].in_air = 1;
+        w->players[1].y = 446; /* below 13-row pit death line (446), but well above 26-row pit death (862) */
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].alive == 1, "66.3: player alive at y=446 on 26-row map");
+        CHECK(w->players[1].ground_state != SOI_ST_DEAD, "66.3: player not dead at y=446 on 26-row map");
+
+        /* Now drop below 862 */
+        w->players[1].y = 862;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].alive == 0, "66.3: player dies at dynamic pit death line y=862");
+
+        /* 66.4: EXT1 trailer CRC validation rejection */
+        bord_buf[ext_off + 22] ^= 0xFF; /* Corrupt the CRC */
+        soi_world_init(w, 1);
+        soi_load_level(w, bord_buf, off);
+        CHECK(soi_grid_cols(w) == 19, "66.4: corrupt CRC falls back to 19 cols");
+        CHECK(soi_grid_rows(w) == 13, "66.4: corrupt CRC falls back to 13 rows");
+        CHECK(soi_pit_death_y(w) == 446, "66.4: pit death falls back to 446 for 13 rows");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");
     return 0;
 }
+

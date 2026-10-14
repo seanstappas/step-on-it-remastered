@@ -11,8 +11,13 @@
  */
 #include "soi_internal.h"
 
-#define IN_AIR_DEATH_Y  0x1be   /* 446: fall past this = death (asm FUN_10011fcc) */
 #define IN_AIR_TOP_Y    0x30    /* 48: top clamp */
+
+int soi_pit_death_y(const SoiWorld *w)
+{
+    int rows = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    return (rows - 1) * 32 + 62;   /* 446 px for 13 rows; 862 px for 26 rows */
+}
 
 /* ---- player sprite frames (asm numbering; the extracted BP/GP_sprites PNG is f(frame+1)) ---- */
 #define FR_STAND_R 0x3d         /* idle / fall facing right (FUN_100128f8, FUN_1001386c) */
@@ -61,13 +66,17 @@ static int px_row1(int y) { return (y < 48) ? 0 : ((y - 48) >> 5) + 1; }
 
 static uint32_t cell1(const SoiWorld *w, int col1, int row1)
 {
-    if (col1 >= 1 && col1 <= SOI_GRID_COLS && row1 >= 1 && row1 <= SOI_GRID_ROWS)
+    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    if (col1 >= 1 && col1 <= max_c && row1 >= 1 && row1 <= max_r)
         return w->cell[row1 - 1][col1 - 1];
     return SOI_WALL;                                    /* OOB = solid */
 }
 static void set_cell1(SoiWorld *w, int col1, int row1, uint32_t v)
 {
-    if (col1 >= 1 && col1 <= SOI_GRID_COLS && row1 >= 1 && row1 <= SOI_GRID_ROWS)
+    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    if (col1 >= 1 && col1 <= max_c && row1 >= 1 && row1 <= max_r)
         w->cell[row1 - 1][col1 - 1] = v;
 }
 
@@ -94,6 +103,38 @@ static void snap_to_ground(SoiPlayer *p)
     p->y = (int16_t)(y < SOI_ORIGIN_Y + 1 ? SOI_ORIGIN_Y + 1 : y);
 }
 
+/* Index of an active living player overlapping grid cell (col, row), or -1. */
+int soi_player_at(const SoiWorld *w, int col, int row)
+{
+    int i;
+    int px0 = SOI_ORIGIN_X + col * SOI_CELL_PX;
+    int py0 = SOI_ORIGIN_Y + row * SOI_CELL_PX;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        const SoiPlayer *p = &w->players[i];
+        if (!p->active || !p->alive || p->eliminated || p->ground_state == SOI_ST_DEAD) continue;
+        if (px0 < p->x + 26 && px0 + 32 > p->x + 6 && py0 < p->y + 30 && py0 + 32 > p->y) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void tag_supported_players(SoiWorld *w, int col, int row, int attacker)
+{
+    int i;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        SoiPlayer *p = &w->players[i];
+        if (i == attacker || !p->active || !p->alive || p->eliminated || p->ground_state == SOI_ST_DEAD) continue;
+        int rowF = px_row1(p->y + 0x1f);
+        int colA = px_col1(p->x + 0x10);
+        int colB = px_col1(p->x + 0x0e);
+        if (rowF - 1 == row && (colA - 1 == col || colB - 1 == col)) {
+            p->last_attacker = (uint8_t)attacker;
+            p->attacker_ttl = 120;
+        }
+    }
+}
+
 /* Toggle a block (asm FUN_1002d04c/cf08/d190): permanent -> no-op; occupied ->
  * remove it (FUN_100279c4: the shrink animation, then any 0x1000 payload shows);
  * empty -> build the player's block (FUN_1002754c: the grow animation). col1/row1
@@ -106,6 +147,7 @@ static void block_toggle(SoiWorld *w, int col1, int row1, int player)
     if (SOI_CELL_TYPE(c) != 0) {
         soi_sfx_emit(w, SOI_SFX_BLOCK_DESTROY);
         soi_block_remove(w, col1 - 1, row1 - 1);
+        tag_supported_players(w, col1 - 1, row1 - 1, player);
     } else {
         /* CREATE GATE (asm FUN_1002d04c -> FUN_100047e8 -> FUN_100033dc): the original
          * only builds where the target cell is visually UNOBSTRUCTED (it compares the
@@ -116,6 +158,7 @@ static void block_toggle(SoiWorld *w, int col1, int row1, int player)
          * the gate means create is never reached over a nasty. */
         uint8_t bt;
         if (soi_enemy_at(w, col1 - 1, row1 - 1) >= 0) return;   /* obstructed -> no build */
+        if (soi_player_at(w, col1 - 1, row1 - 1) >= 0) return;  /* player on target cell -> no build */
         bt = w->players[player].block_type ? w->players[player].block_type : 1;
         /* A block built on a hidden-payload cell (bit 0x1000 + goody in the high
          * word, low byte 0) INHERITS the payload (asm FUN_1002d04c: block_type +
@@ -252,6 +295,7 @@ static void do_head_break(SoiWorld *w, int player)
     } else {
         soi_block_shatter(w, aCol - 1, aRow - 1, SOI_SHATTER_BONK, 0, 0);
         soi_sfx_emit(w, SOI_SFX_BLOCK_BREAK);
+        tag_supported_players(w, aCol - 1, aRow - 1, player);
     }
 }
 
@@ -309,7 +353,13 @@ static void commit_death(SoiWorld *w, int player)
     p->in_air = 0;
     p->alive = 0;
     p->ground_state = SOI_ST_IDLE;
-    if (w->challenge) return;
+    if (p->attacker_ttl > 0 && p->last_attacker > 0 && p->last_attacker < SOI_MAX_PLAYERS && p->last_attacker != player) {
+        SoiPlayer *att = &w->players[p->last_attacker];
+        att->kills++;
+        att->score += 1000;
+        p->attacker_ttl = 0;
+    }
+    if (w->challenge && w->play_mode != SOI_MODE_VERSUS) return;
     if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
     else p->respawn_timer = 90;
 }
@@ -356,7 +406,7 @@ static void jump_step(SoiWorld *w, int player, uint8_t in)
     p->jump_t++;
     if (p->jump_t > 17) p->jump_t = 17;          /* clamp t, then step (asm order) */
     y = p->y + JUMP_DY[p->jump_t];
-    if (y >= IN_AIR_DEATH_Y) {                    /* leapt into a pit -> death */
+    if (y >= soi_pit_death_y(w)) {                /* leapt into a pit -> death */
         commit_death(w, player);
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
@@ -371,6 +421,7 @@ static void jump_step(SoiWorld *w, int player, uint8_t in)
         p->in_air = 0;
         p->ground_state = SOI_ST_IDLE;
         snap_to_ground(p);
+        p->attacker_ttl = 0;
         if (in & (SOI_IN_LEFT | SOI_IN_RIGHT)) {  /* landing with a direction held runs on at once */
             p->ground_state = SOI_ST_RUN;
             p->jump_t = 0;
@@ -405,7 +456,7 @@ static void fall_step(SoiWorld *w, int player)
                                                    * own pit-death check). */
     p->frame = stand_frame(p);
     y = p->y + 4;
-    if (y >= IN_AIR_DEATH_Y) {
+    if (y >= soi_pit_death_y(w)) {
         commit_death(w, player);
         soi_sfx_emit(w, SOI_SFX_PLAYER_HIT);
         return;
@@ -417,6 +468,7 @@ static void fall_step(SoiWorld *w, int player)
         snap_to_ground(p);
         p->frame = stand_frame(p);
         p->jump_t = 0;
+        p->attacker_ttl = 0;
         return;
     }
 }
@@ -438,7 +490,7 @@ static void death_step(SoiWorld *w, int player)
     t = p->jump_t;
     y = (p->launch_y * 10 - 30 * t + (t * t) / 2) / 10;
     if (y < IN_AIR_TOP_Y) y = IN_AIR_TOP_Y;
-    if (y >= IN_AIR_DEATH_Y) {
+    if (y >= soi_pit_death_y(w)) {
         commit_death(w, player);
         return;
     }

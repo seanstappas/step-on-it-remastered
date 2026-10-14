@@ -7,8 +7,15 @@ var board_list: PackedStringArray = PackedStringArray()
 var board_index: int = -1
 var num_players: int = 2   # 1/2/3 (the main menu sets this; 3 = the remaster's co-op P3)
 var mode: int = 0          # 0 = Cooperate (shared board), 1 = Compete (separate doors, first to exit
-                           # wins), 2 = Alternate (two solo games taking turns; game.gd owns the pools)
-var speed: int = 0         # Options->Speed: 0=Really Fast(default) 1=Fast 2=Medium 3=Slow (local, About 8)
+                           # wins), 2 = Alternate (two solo games taking turns), 3 = Versus (PvP arena)
+var victory_rule: int = 0  # 0 = Lives (Elimination), 1 = Score, 2 = Door
+var friendly_fire: int = 0 # 0 = off, 1 = on
+var player_device: Array = [-1, -2, 0] # Device routing: -1 KB1, -2 KB2, 0..3 Joypad device_id
+var net: RollbackNet = null
+var is_online: bool = false
+var online_bord_bytes: PackedByteArray = PackedByteArray()
+var online_seed: int = 1
+var speed: int = 1 # 0 = Really Fast, 1 = Fast, 2 = Medium, 3 = Slow
 
 # --- ORIGINAL <-> REMASTERED presentation, flipped live with F2 (title menu + in game) ---
 # ORIGINAL = the 1996 SD sprites/PICTs + the 8-bit SFX + the original game's music (captures in

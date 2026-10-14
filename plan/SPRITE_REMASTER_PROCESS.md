@@ -81,6 +81,9 @@ fm.stage_optim('<fam>', fm.load_cfg('<fam>'), only=[16,17])"` then `final verify
   work JSONs with Python and re-run the interrupted stage.
 - `view_image` can return a "previously shown" placeholder with no pixels: never describe it; ~20 images per
   request -- combine views into one sheet.
+- Pill legs vs separated feet: Quadruped legs must be generated as single continuous quad capsule meshes (`_capsule`), not cylinder-plus-sphere unions; intersecting interior caps create visible horizontal seams and crease lines.
+- Ground gliding vs step lift: A pure rotational swing (`a = amp * sin(ph)`) produces flat floor gliding; swinging recovery legs (`a < 0`) need vertical lift (`leg_lift` ~ 0.8 px) to clear the ground row while planted legs stay grounded.
+- Secondary motion pivots: Trumpet snouts and tails need dedicated pivot empties at their base (`snout_pivot`, `tail_pivot`) parented to `root`; rotating them in local object space preserves proper pitch and wagging across all yaw angles and exports cleanly to `model.glb`.
 
 **Tight frames (near the dE 16 gate; re-check after any change there):** blue door goody_props f06 (15.75),
 Gargoyle f09/f73 (~15.7), piggy live f16 (15.68).

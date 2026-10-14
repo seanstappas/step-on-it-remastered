@@ -797,6 +797,20 @@ static void enemy_step(SoiWorld *w, SoiEnemy *e)
     }
 }
 
+/* Bug B8: Reserve projectile slots for active players so enemies do not exhaust all 8 slots */
+static int can_spawn_hostile_projectile(const SoiWorld *w)
+{
+    int i, hostile_count = 0, active_players = 0;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+        if (w->players[i].active) active_players++;
+    }
+    for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
+        if (w->projectiles[i].active && (w->projectiles[i].hostile || w->projectiles[i].owner == 0))
+            hostile_count++;
+    }
+    return hostile_count < (SOI_MAX_PROJECTILES - active_players);
+}
+
 /* Cannon (FUN_100071a0): a stationary shooter that lobs a hostile Magic-Arrow
  * projectile (type 0x65) one cell ahead in its facing on a fixed reload. The
  * shot destroys destructible blocks and hits a player on contact. */
@@ -805,6 +819,7 @@ static void enemy_cannon_fire(SoiWorld *w, SoiEnemy *e)
     int i, dc;
     if (e->fire_cd > 0) { e->fire_cd--; return; }
     e->fire_cd = (e->fire_period > 0) ? e->fire_period : SOI_CANNON_RELOAD;
+    if (!can_spawn_hostile_projectile(w)) return;
     dc = (e->dir == 2) ? 1 : -1;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -839,7 +854,7 @@ static void gargoyle_egg(SoiWorld *w, const SoiEnemy *e)
 {
     int tries, tcol = -1, trow = -1, i;
     for (tries = 0; tries < 10 && tcol < 0; tries++) {
-        int c = soi_rand_range(w, SOI_GRID_COLS) - 1;
+        int c = soi_rand_range(w, (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS) - 1;
         int r = soi_rand_range(w, 3) - 1;
         if (soi_gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
     }
@@ -859,6 +874,7 @@ static void gargoyle_egg(SoiWorld *w, const SoiEnemy *e)
         }
         if (tcol < 0) return;
     }
+    if (!can_spawn_hostile_projectile(w)) return;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
         if (pr->active) continue;
@@ -918,6 +934,7 @@ static void enemy_shooter_fire(SoiWorld *w, SoiEnemy *e)
         vy = sy * 4;
         vx = (ady > 0) ? (dx * 4) / ady : 0;
     }
+    if (!can_spawn_hostile_projectile(w)) return;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
         if (pr->active) continue;
@@ -1022,8 +1039,8 @@ static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)
     if (e->fire_cd > 0) { e->fire_cd--; return; }
     e->fire_cd = (e->fire_period > 0) ? e->fire_period : SOI_CANNON_RELOAD;
     for (tries = 0; tries < 10 && tcol < 0; tries++) {
-        int c = soi_rand_range(w, SOI_GRID_COLS) - 1;
-        int r = soi_rand_range(w, SOI_GRID_ROWS) - 1;
+        int c = soi_rand_range(w, (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS) - 1;
+        int r = soi_rand_range(w, (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS) - 1;
         if (soi_gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
     }
     if (tcol < 0) {                                  /* board walled in -> aim at a player */
@@ -1039,6 +1056,7 @@ static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)
         }
         if (tcol < 0) return;                        /* no players -> nothing to drop */
     }
+    if (!can_spawn_hostile_projectile(w)) return;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
         if (pr->active) continue;
@@ -1131,6 +1149,7 @@ static void enemy_walker_fire(SoiWorld *w, SoiEnemy *e, int dir)
         if (dy < 0x20) { aligned = 1; break; }
     }
     if (!aligned && !walker_block_ahead(w, e, dir)) return;
+    if (!can_spawn_hostile_projectile(w)) return;
     e->fire_cd = (e->fire_period > 0) ? e->fire_period : 96;   /* reload = StartDelay<<2 steps (asm +0x6e) */
     dc = (dir == 2) ? 1 : -1;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
@@ -1293,12 +1312,18 @@ static void turret_anim(SoiEnemy *e)
  * until their previous shot has despawned, and the arrow and ball SHARE the one
  * slot. There is NO frame cooldown in the original: this one-shot-in-flight gate
  * IS the throttle. (The weapon-audit's guessed fire_cd=15 is now retired.) */
-static int player_has_projectile(const SoiWorld *w, int player)
+static int player_has_projectile_kind(const SoiWorld *w, int player, int kind)
 {
     int i;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         const SoiProjectile *pr = &w->projectiles[i];
-        if (pr->active && !pr->hostile && pr->owner == (uint8_t)player) return 1;
+        if (pr->active && !pr->hostile && pr->owner == (uint8_t)player) {
+            if (w->friendly_fire != 0) {
+                if (pr->kind == (uint8_t)kind) return 1;
+            } else {
+                return 1;
+            }
+        }
     }
     return 0;
 }
@@ -1333,7 +1358,7 @@ void soi_projectile_fire(SoiWorld *w, int player)
     int i, dc;
     if (player < 0 || player >= SOI_MAX_PLAYERS) return;
     p = &w->players[player];
-    if (soi_pool(w, player)->arrows <= 0 || player_has_projectile(w, player)) return;
+    if (soi_pool(w, player)->arrows <= 0 || player_has_projectile_kind(w, player, 0)) return;
     dc = (p->facing >= 0) ? 1 : -1;   /* Magic Arrow: fired horizontally, then ricochets */
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -1375,7 +1400,7 @@ void soi_ball_fire(SoiWorld *w, int player)
     int i, dc;
     if (player < 0 || player >= SOI_MAX_PLAYERS) return;
     p = &w->players[player];
-    if (soi_pool(w, player)->balls <= 0 || player_has_projectile(w, player)) return;
+    if (soi_pool(w, player)->balls <= 0 || player_has_projectile_kind(w, player, 1)) return;
     dc = (p->facing >= 0) ? 1 : -1;
     for (i = 0; i < SOI_MAX_PROJECTILES; i++) {
         SoiProjectile *pr = &w->projectiles[i];
@@ -1476,7 +1501,8 @@ void soi_projectiles_update(SoiWorld *w)
                 pr->y += (rdy < 0) ? -step : step;
                 pr->x = lx + (int)(((int64_t)(pr->y - ly) * tdx) / tdy);
             }
-            if ((pr->x == tx && pr->y == ty) || ++pr->age > 300) {
+            int max_flight = (w->grid_cols == 19 && w->grid_rows == 13) ? 300 : ((int)w->grid_cols + (int)w->grid_rows) * 10;
+            if ((pr->x == tx && pr->y == ty) || ++pr->age > max_flight) {
                 if (pr->kind == 2) {
                     soi_gift_land(w, (int)pr->tcol, (int)pr->trow, pr->gtype);
                 } else {
@@ -1509,7 +1535,26 @@ void soi_projectiles_update(SoiWorld *w)
             int X = pr->x, Y = pr->y, kl;
             victim = weapon_hit(w, X + 1, Y + 1, X + 0x17, Y + 0x17, &kl);   /* tested before the step */
             if (victim >= 0 && kl) soi_enemy_kill(w, victim, pr->owner);     /* keeps flying */
-            if (++pr->age >= 500) { pr->active = 0; continue; }   /* fizzle (asm age +0x56 >= 500) */
+            if (w->friendly_fire != 0 && pr->owner >= 1 && pr->owner < SOI_MAX_PLAYERS) {
+                int pj;
+                for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
+                    if (pj == pr->owner) continue;
+                    SoiPlayer *p = &w->players[pj];
+                    if (!p->active || !p->alive || p->eliminated || p->ground_state == SOI_ST_DEAD || p->invuln > 0) continue;
+                    int pb = p->y + (p->ground_state == SOI_ST_JUMP ? 0x19 : 0x1d);
+                    if (p->x + 0x06 <= X + 0x18 && X <= p->x + 0x1a && p->y <= Y + 0x18 && Y <= pb) {
+                        p->last_attacker = pr->owner;
+                        p->attacker_ttl = 120;
+                        w->players[pr->owner].kills++;
+                        w->players[pr->owner].score += 1000;
+                        soi_player_hit(w, pj);
+                        pr->active = 0;
+                        break;
+                    }
+                }
+                if (!pr->active) continue;
+            }
+            if (++pr->age >= (w->friendly_fire ? 180 : 500)) { pr->active = 0; continue; }   /* fizzle (asm age +0x56 >= 500) */
             if (type == 2) {
                 /* fired RIGHT: asm FUN_1000fd5c type 2 (orig lines 155-401). NOTE the
                  * UP state's middle probe is X+5 (NOT X+0x19 like its siblings) -- a
@@ -1572,6 +1617,24 @@ void soi_projectiles_update(SoiWorld *w)
             if (victim >= 0) {
                 if (kl) soi_enemy_kill(w, victim, pr->owner);
                 spent = 1;
+            }
+            if (!spent && w->friendly_fire != 0 && pr->owner >= 1 && pr->owner < SOI_MAX_PLAYERS) {
+                int pj;
+                for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
+                    if (pj == pr->owner) continue;
+                    SoiPlayer *p = &w->players[pj];
+                    if (!p->active || !p->alive || p->eliminated || p->ground_state == SOI_ST_DEAD || p->invuln > 0) continue;
+                    int pb = p->y + (p->ground_state == SOI_ST_JUMP ? 0x19 : 0x1d);
+                    if (p->x + 0x06 <= pr->x + 0x18 && pr->x <= p->x + 0x1a && p->y <= pr->y + 0x18 && pr->y <= pb) {
+                        p->last_attacker = pr->owner;
+                        p->attacker_ttl = 120;
+                        w->players[pr->owner].kills++;
+                        w->players[pr->owner].score += 1000;
+                        soi_player_hit(w, pj);
+                        spent = 1;
+                        break;
+                    }
+                }
             }
             if (!spent && !proj_solid(w, pr->x + ((pr->vx > 0) ? 0x18 : 0), pr->y + 3))
                 pr->x += (pr->vx > 0) ? 4 : -4;

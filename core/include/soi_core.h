@@ -24,8 +24,10 @@ extern "C" {
 #define SOI_MAX_PLAYERS   4     /* slots 0(reserved),1(P1),2(P2),3(P3 = remaster co-op) */
 #define SOI_MAX_ENEMIES   64    /* enemy entity pool (the original's FUN_100058ac pool holds 59) */
 #define SOI_MAX_PROJECTILES 8   /* fired Magic Arrows in flight (pool) */
-#define SOI_GRID_COLS     19    /* playable columns (X, 0x13 loop bound) */
-#define SOI_GRID_ROWS     13    /* playable rows   (Y, 0x0d loop bound) */
+#define SOI_MAX_GRID_COLS 38    /* big map max columns (EXT1) */
+#define SOI_MAX_GRID_ROWS 26    /* big map max rows (EXT1) */
+#define SOI_GRID_COLS     19    /* playable columns (X, 0x13 loop bound, default) */
+#define SOI_GRID_ROWS     13    /* playable rows   (Y, 0x0d loop bound, default) */
 #define SOI_CELL_PX       32    /* cell size, CONFIRMED (FUN_1002e6ac/bc) */
 #define SOI_ORIGIN_X      16    /* x = col*32 + 16 */
 #define SOI_ORIGIN_Y      48    /* y = row*32 + 48 */
@@ -162,13 +164,30 @@ void   soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arro
 void   soi_abort_game(SoiWorld *w);
 
 /* Play modes, numbered as the original's mode selector (asm FUN_100263d8). */
-enum { SOI_MODE_ONE = 1, SOI_MODE_ALTERNATE = 2, SOI_MODE_COOPERATE = 3, SOI_MODE_COMPETE = 4 };
+enum {
+    SOI_MODE_ONE       = 1,
+    SOI_MODE_ALTERNATE = 2,
+    SOI_MODE_COOPERATE = 3,
+    SOI_MODE_COMPETE   = 4,
+    SOI_MODE_VERSUS    = 5
+};
+
+typedef enum SoiVictoryRule {
+    SOI_WIN_LIVES = 0, /* Last player standing (default 3 lives) */
+    SOI_WIN_SCORE = 1, /* Highest score when goodies cleared / timer expires */
+    SOI_WIN_DOOR  = 2  /* First player to unlock and exit their door */
+} SoiVictoryRule;
+
 /* Select the play mode. COOPERATE pools every player's score/lives/ammo/multiplier/Bonus
- * in player 1's slot (asm DAT_100370e4 == 0); in every mode but COMPETE a collected key
+ * in player 1's slot (asm DAT_100370e4 == 0); in every mode but COMPETE and VERSUS a collected key
  * is shared by all players. Survives soi_next_level and the death-reload; soi_world_init
  * resets it to SOI_MODE_ONE. */
 void   soi_set_play_mode(SoiWorld *w, int mode);
 int    soi_play_mode(const SoiWorld *w);
+void   soi_set_friendly_fire(SoiWorld *w, int on);
+int    soi_friendly_fire(const SoiWorld *w);
+void   soi_set_victory_rule(SoiWorld *w, int rule);
+int    soi_victory_rule(const SoiWorld *w);
 /* Set the mode and apply the NEW-GAME stats (asm FUN_1002b060): every player starts with
  * score 0, 2 lives, 1 arrow, 1 ball; COOPERATE instead gives the shared pool 4/2/2. */
 void   soi_new_game(SoiWorld *w, int mode);
@@ -211,6 +230,9 @@ int      soi_player_balls(const SoiWorld *w, int player);
 int      soi_player_shield(const SoiWorld *w, int player);
 int      soi_player_facing(const SoiWorld *w, int player);
 int      soi_player_invuln(const SoiWorld *w, int player);  /* >0 = flashing/invulnerable */
+int      soi_player_kills(const SoiWorld *w, int player);
+int      soi_versus_winner(const SoiWorld *w);
+int      soi_player_at(const SoiWorld *w, int col, int row);
 int      soi_player_fast(const SoiWorld *w, int player);    /* >0 = speed-shoes (goody 0x32) active */
 int      soi_player_has_key(const SoiWorld *w, int player); /* 0 none, 1 carrying, 2 exited */
 int      soi_player_state(const SoiWorld *w, int player);   /* ground_state, the asm movement switch: 0 idle, 1 run,
@@ -237,6 +259,9 @@ int      soi_player_bonus(const SoiWorld *w, int player);   /* that player's own
 int      soi_music_hurry(const SoiWorld *w);     /* 1 if ANY in-play player is in the low-bonus "hurry" zone (shared 1.25x music) */
 uint32_t soi_tick_count(const SoiWorld *w);
 uint32_t soi_grid_cell(const SoiWorld *w, int col, int row);
+int      soi_grid_cols(const SoiWorld *w);
+int      soi_grid_rows(const SoiWorld *w);
+int      soi_pit_death_y(const SoiWorld *w);
 int      soi_enemy_count(const SoiWorld *w);
 int      soi_projectile_count(const SoiWorld *w);
 
@@ -303,7 +328,18 @@ int      soi_projectile_fired_left(const SoiWorld *w, int i); /* kind 0 rolling 
 size_t   soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap);
 uint64_t soi_state_hash(const SoiWorld *w);
 
+/* ---- rollback netcode snapshot & hash API ---- */
+size_t   soi_snapshot_size(void);
+void     soi_snapshot_save(const SoiWorld *w, uint8_t *dst_buf);
+void     soi_snapshot_load(SoiWorld *w, const uint8_t *src_buf);
+uint64_t soi_net_hash(const SoiWorld *w);
+
+/* ---- transporter & switch queries ---- */
+int      soi_tp_freeze(const SoiWorld *w);
+int      soi_switch_block_frame(const SoiWorld *w, int col, int row);
+
 #ifdef __cplusplus
 }
 #endif
 #endif /* SOI_CORE_H */
+

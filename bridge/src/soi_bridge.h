@@ -38,8 +38,14 @@ public:
     bool load_level(const PackedByteArray &bord);
     bool next_level(const PackedByteArray &bord);
     void set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t arrows, int64_t balls, int64_t shield);
-    void set_play_mode(int64_t mode);   /* 1 One, 2 Alternate, 3 Cooperate (shared pool), 4 Compete */
+    void set_play_mode(int64_t mode);   /* 1 One, 2 Alternate, 3 Cooperate (shared pool), 4 Compete, 5 Versus */
     int64_t play_mode() const;
+    void set_friendly_fire(bool on);
+    bool friendly_fire() const;
+    void set_victory_rule(int64_t rule);
+    int64_t victory_rule() const;
+    int64_t player_kills(int64_t player) const;
+    int64_t versus_winner() const;
     void new_game(int64_t mode);        /* set the mode + apply the new-game stats (FUN_1002b060) */
     bool challenge_round() const;       /* board holds a Knight/Gargoyle (FUN_10017a70) */
     bool challenge_failed() const;      /* challenge round lost: every active player is down */
@@ -85,6 +91,9 @@ public:
     int64_t enemy_count() const;
     int64_t projectile_count() const;
     int64_t grid_cell(int64_t col, int64_t row) const;
+    int64_t grid_cols() const;
+    int64_t grid_rows() const;
+    int64_t pit_death_y() const;
 
     /* sound events queued during the last tick (drain each frame) */
     int64_t sfx_count() const;
@@ -124,6 +133,14 @@ public:
     /* determinism helpers for netcode / verification */
     int64_t          state_hash() const;   /* FNV-1a 64 as a Godot int */
     PackedByteArray  serialize() const;
+
+    /* rollback snapshot & netcode hash */
+    int64_t          snapshot_size() const;
+    PackedByteArray  snapshot_save() const;
+    void             snapshot_load(const PackedByteArray &buf);
+    int64_t          net_hash() const;
+    int64_t          tp_freeze() const;
+    int64_t          switch_block_frame(int64_t col, int64_t row) const;
 };
 
 } // namespace godot
