@@ -1544,7 +1544,7 @@ void soi_projectiles_update(SoiWorld *w)
                     int pb = p->y + (p->ground_state == SOI_ST_JUMP ? 0x19 : 0x1d);
                     if (p->x + 0x06 <= X + 0x18 && X <= p->x + 0x1a && p->y <= Y + 0x18 && Y <= pb) {
                         p->last_attacker = pr->owner;
-                        p->attacker_ttl = 120;
+                        p->attacker_ttl = 0; /* Direct hit credits kill immediately; prevent double-award in commit_death */
                         w->players[pr->owner].kills++;
                         w->players[pr->owner].score += 1000;
                         soi_player_hit(w, pj);
@@ -1627,7 +1627,7 @@ void soi_projectiles_update(SoiWorld *w)
                     int pb = p->y + (p->ground_state == SOI_ST_JUMP ? 0x19 : 0x1d);
                     if (p->x + 0x06 <= pr->x + 0x18 && pr->x <= p->x + 0x1a && p->y <= pr->y + 0x18 && pr->y <= pb) {
                         p->last_attacker = pr->owner;
-                        p->attacker_ttl = 120;
+                        p->attacker_ttl = 0; /* Direct hit credits kill immediately; prevent double-award in commit_death */
                         w->players[pr->owner].kills++;
                         w->players[pr->owner].score += 1000;
                         soi_player_hit(w, pj);

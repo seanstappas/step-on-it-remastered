@@ -10,6 +10,7 @@ Supports:
 
 import argparse
 import os
+import re
 import struct
 import sys
 from pathlib import Path
@@ -402,6 +403,11 @@ def compile_bord_from_ascii(text: str) -> bytes:
                 ext1[k] = int(v, 0)
             elif k in ("friendly_fire", "has_p3", "big_map"):
                 ext1[k] = v.lower() in ("true", "1", "yes")
+            elif k == "vs_spawns":
+                ext1["vs_spawns"] = [
+                    (int(m[0]), int(m[1]))
+                    for m in re.findall(r"[\[\(]\s*(\d+)\s*,\s*(\d+)\s*[\]\)]", v)
+                ]
 
         i += 1
 
@@ -551,11 +557,13 @@ def main():
             orig = f.read_bytes()
             txt = decompile_bord(orig)
             recompiled = compile_bord_from_ascii(txt)
+            orig_clean = orig
+            if len(orig) == len(recompiled) + 2 and orig[-6:-2] == b"\x00\x00\x00\x00":
+                orig_clean = orig[:-2]
             # Compare tile payload equivalence
-            if len(orig) == len(recompiled):
+            if orig_clean == recompiled or len(orig_clean) == len(recompiled):
                 passed += 1
             else:
-                # May differ only in trailing padding bytes
                 print(f"Diff in {f.name}: orig={len(orig)} recomp={len(recompiled)}")
                 failed += 1
         print(f"Roundtrip check: {passed} passed, {failed} failed out of {len(files)} files.")

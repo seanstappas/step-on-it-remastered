@@ -57,6 +57,9 @@ public:
     void tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input);
     void spawn_player3();   /* remaster: activate the 3rd co-op player */
     void limit_players(int64_t n);   /* deactivate players beyond n (1-player: turn P2 off) */
+    void drop_player(int64_t slot);
+    void set_p3_any_key(bool on);
+    bool p3_any_key() const;
 
     /* read-only state (player 1 = P1, 2 = P2) */
     int64_t player_score(int64_t player) const;

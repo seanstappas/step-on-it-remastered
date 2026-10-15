@@ -4326,6 +4326,75 @@ int main(void)
         CHECK(soi_pit_death_y(w) == 446, "66.4: pit death falls back to 446 for 13 rows");
     }
 
+    /* ---- 67. Double-Kill Prevention and kills/p3_any_key Persistence ---- */
+    {
+        int t;
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
+        w->players[1].arrows = 1;
+        w->players[1].facing = 1;
+        w->players[2].invuln = 0;
+        soi_projectile_fire(w, 1); /* P1 fires rolling ball at P2 */
+
+        /* Advance until ball hits P2 and enters SOI_ST_DEAD */
+        for (t = 0; t < 60 && w->players[2].ground_state != SOI_ST_DEAD; t++) {
+            soi_tick(w, 0, 0);
+        }
+        CHECK(w->players[2].ground_state == SOI_ST_DEAD, "67.1: P2 hit by weapon enters SOI_ST_DEAD");
+        CHECK(w->players[1].kills == 1, "67.1: P1 credited with kill immediately on direct hit");
+        CHECK(w->players[1].score == 1000, "67.1: P1 awarded 1000 pts on direct hit");
+        CHECK(w->players[2].attacker_ttl == 0, "67.1: direct hit cleared attacker_ttl to 0");
+
+        /* Step 60 full frames into and past commit_death (when death parabola drops off) */
+        for (t = 0; t < 60; t++) {
+            soi_tick(w, 0, 0);
+        }
+        CHECK(w->players[1].kills == 1, "67.1: P1 kills remained 1 after commit_death (no double kill)");
+        CHECK(w->players[1].score == 1000, "67.1: P1 score remained 1000 after commit_death (no double score)");
+
+        /* 67.2: kills and p3_any_key preserved across soi_next_level and reload_board_on_death */
+        uint8_t mini_bord[32];
+        memset(mini_bord, 0, sizeof(mini_bord));
+        mini_bord[0x07] = 2; mini_bord[0x09] = 2;
+        mini_bord[0x0B] = 4; mini_bord[0x0D] = 2;
+        mini_bord[0x0E] = 0x13; mini_bord[0x0F] = 0x88;
+
+        soi_world_init(w, 1);
+        soi_load_level(w, mini_bord, 28);
+        w->players[1].kills = 7;
+        w->p3_any_key = 1;
+
+        soi_next_level(w, mini_bord, 28);
+        CHECK(w->players[1].kills == 7, "67.2: kills preserved across soi_next_level");
+        CHECK(w->p3_any_key == 1, "67.2: p3_any_key preserved across soi_next_level");
+
+        /* Kill player 1 to trigger reload_board_on_death */
+        w->players[1].alive = 0;
+        w->players[1].lives = 1;
+        w->players[1].respawn_timer = 1;
+        w->players[2].active = 0;
+        w->players[3].active = 0;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].kills == 7, "67.2: kills preserved across reload_board_on_death");
+        CHECK(w->p3_any_key == 1, "67.2: p3_any_key preserved across reload_board_on_death");
+
+        /* 67.3: early respawn invulnerability cancel when friendly_fire is active */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        w->friendly_fire = 1;
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        w->players[1].invuln = 90;
+        /* Tick without attack input -> invuln merely decrements by 1 */
+        soi_tick(w, SOI_IN_LEFT, 0);
+        CHECK(w->players[1].invuln == 89, "67.3: movement input does not cancel invuln");
+        /* Tick with arrow input -> invuln cancelled immediately */
+        soi_tick(w, SOI_IN_ARROW, 0);
+        CHECK(w->players[1].invuln == 0, "67.3: weapon input cancels invuln early when friendly_fire active");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");

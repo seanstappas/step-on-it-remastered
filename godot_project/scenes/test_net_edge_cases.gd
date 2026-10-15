@@ -18,12 +18,12 @@ func _ready() -> void:
 	# -------------------------------------------------------------------------
 	print("\n--- Test Suite 1: Join Code Encoding & Decoding ---")
 	var vectors := [
-		["127.0.0.1", "SOI-7F00-0001"],
-		["10.0.0.1", "SOI-0A00-0001"],
-		["192.168.1.100", "SOI-C0A8-0164"],
-		["172.16.254.1", "SOI-AC10-FE01"],
-		["0.0.0.0", "SOI-0000-0000"],
-		["255.255.255.255", "SOI-FFFF-FFFF"],
+		["127.0.0.1", "SOI-3Z000-027K1"],
+		["10.0.0.1", "SOI-0A000-027K1"],
+		["192.168.1.100", "SOI-60N00-P87K1"],
+		["172.16.254.1", "SOI-5C23Z-027K1"],
+		["0.0.0.0", "SOI-00000-007K1"],
+		["255.255.255.255", "SOI-7ZZZZ-ZY7K1"],
 	]
 
 	for v in vectors:
@@ -38,38 +38,52 @@ func _ready() -> void:
 			print("FAIL: join_code_to_ip(%s) = %s, expected %s" % [code, decoded_ip, ip])
 			failures += 1
 
-	# Edge case: 8-character plain IPs must NOT be treated as Join Codes
-	var eight_char_ips := ["10.0.0.1", "1.2.3.4", "10.1.2.3", "0.0.0.0"]
-	for ip_str in eight_char_ips:
+	# Edge case: plain IPs must NOT be treated as Join Codes
+	var plain_ips := ["10.0.0.1", "1.2.3.4", "10.1.2.3", "0.0.0.0"]
+	for ip_str in plain_ips:
 		var res := RollbackNet.join_code_to_ip(ip_str)
 		if res != "":
 			print("FAIL: join_code_to_ip('%s') returned '%s' instead of empty string!" % [ip_str, res])
 			failures += 1
 		else:
-			print("PASS: 8-char IP '%s' correctly rejected as Join Code" % ip_str)
+			print("PASS: plain IP '%s' correctly rejected as Join Code" % ip_str)
 
-	# Invalid strings / non-hex
-	var invalid_codes := ["SOI-GGGG-GGGG", "NOTAHEX!", "12-34-56", "SOI-123", "SOI-1234-5678-9999"]
+	# Invalid strings / non-Crockford
+	var invalid_codes := ["SOI-UUUUU-UUUUU", "NOTAHEX!", "12-34-56", "SOI-123", "SOI-1234-5678-9999"]
 	for inv in invalid_codes:
 		var res := RollbackNet.join_code_to_ip(inv)
 		if res != "":
 			print("FAIL: join_code_to_ip('%s') returned '%s' instead of empty string!" % [inv, res])
 			failures += 1
 
-	# Case insensitivity and whitespace tolerance
-	if RollbackNet.join_code_to_ip("soi-7f00-0001") != "127.0.0.1":
+	# Case insensitivity, whitespace tolerance and Crockford aliases (O->0, I->1, L->1)
+	if RollbackNet.join_code_to_ip("soi-3z000-027k1") != "127.0.0.1":
 		print("FAIL: Lowercase join code failed to decode")
 		failures += 1
-	if RollbackNet.join_code_to_ip("SOI - 7F00 - 0001") != "127.0.0.1":
+	if RollbackNet.join_code_to_ip("SOI - 3Z000 - 027K1") != "127.0.0.1":
 		print("FAIL: Spaced join code failed to decode")
+		failures += 1
+	if RollbackNet.join_code_to_ip("SOI-3ZOOO-027K1") != "127.0.0.1":
+		print("FAIL: O->0 Crockford alias failed to decode")
+		failures += 1
+	if RollbackNet.join_code_to_ip("SOI-3Z000-027KI") != "127.0.0.1":
+		print("FAIL: I->1 Crockford alias failed to decode")
+		failures += 1
+	if RollbackNet.join_code_to_ip("SOI-3Z000-027KL") != "127.0.0.1":
+		print("FAIL: L->1 Crockford alias failed to decode")
+		failures += 1
+
+	# Legacy 8-char hex compatibility
+	if RollbackNet.join_code_to_ip("SOI-7F00-0001") != "127.0.0.1":
+		print("FAIL: Legacy 8-char hex join code failed to decode")
 		failures += 1
 
 	# ip_to_join_code error handling
-	if RollbackNet.ip_to_join_code("not.an.ip") != "SOI-0000-0000":
-		print("FAIL: Non-ip string didn't fallback to SOI-0000-0000")
+	if RollbackNet.ip_to_join_code("not.an.ip") != "SOI-00000-00000":
+		print("FAIL: Non-ip string didn't fallback to SOI-00000-00000")
 		failures += 1
-	if RollbackNet.ip_to_join_code("256.0.0.1") != "SOI-0000-0000":
-		print("FAIL: Out of range IP byte didn't fallback to SOI-0000-0000")
+	if RollbackNet.ip_to_join_code("256.0.0.1") != "SOI-00000-00000":
+		print("FAIL: Out of range IP byte didn't fallback to SOI-00000-00000")
 		failures += 1
 
 	print("Join Code unit tests completed (Failures: %d)" % failures)

@@ -235,10 +235,11 @@ void soi_switch_animate(SoiWorld *w)
 static void give_key(SoiWorld *w, int player)
 {
     int j;
+    const int shared = (w->play_mode != SOI_MODE_COMPETE && w->play_mode != SOI_MODE_VERSUS);
     for (j = 1; j < SOI_MAX_PLAYERS; j++) {
         SoiPlayer *pj = &w->players[j];
         if (pj->has_key == 2) continue;
-        if (j == player || (w->play_mode != SOI_MODE_COMPETE && pj->active)) pj->has_key = 1;
+        if (j == player || (shared && pj->active)) pj->has_key = 1;
     }
 }
 
@@ -248,6 +249,8 @@ void soi_pickup_check(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
     SoiPlayer *cp = soi_pool(w, player);   /* who is CREDITED (the co-op pool, else self) */
+    const int competitive = (w->play_mode == SOI_MODE_COMPETE || w->play_mode == SOI_MODE_VERSUS);
+    const int p3_any = (player == 3 && w->p3_any_key);
     uint32_t c;
     unsigned t;
     /* Pick up from the player's COLLISION-BOX CENTRE, not its left/top edge: asm
@@ -296,8 +299,8 @@ void soi_pickup_check(SoiWorld *w, int player)
      * of the key collector can exit too. The asm DOES require the box not to straddle two
      * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
     if ((c & SOI_CELL_DOOR) &&
-        ((t <= 3u && (t == 1u || t == (unsigned)player + 1u)) ||
-         ((player == 3 || w->play_mode != SOI_MODE_COMPETE) && c == 0x0935u))) {
+        ((t <= 3u && (t == 1u || t == (unsigned)player + 1u || p3_any)) ||
+         ((player == 3 || !competitive || p3_any) && c == 0x0935u))) {
         int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         if (p->y < SOI_ORIGIN_Y) yrow = -1;
         if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
@@ -335,14 +338,14 @@ void soi_pickup_check(SoiWorld *w, int player)
      * 8/9 are per-player, but low-1 doors (from key 7) are universal exits.
      * Discrete P3 Red Key 0x0933 unlocks P3 Red Lock 0x0934 into 0x0935. */
     if ((c & SOI_CELL_DOOR) &&
-        ((t >= 7u && t <= 9u && (t == 7u || t == (unsigned)player + 7u)) ||
-         (c == 0x0933u && (player == 3 || w->play_mode != SOI_MODE_COMPETE)))) {
+        ((t >= 7u && t <= 9u && (t == 7u || t == (unsigned)player + 7u || p3_any)) ||
+         (c == 0x0933u && (player == 3 || !competitive || p3_any)))) {
         int cc, rr;
         give_key(w, player);                         /* the key is now held (player-gated:
                                                       * key 7 universal, key player+7 own; asm
                                                       * FUN_1002bc64 uVar10 == sVar14+7 || == 7) */
         if (c == 0x0933u) {
-            if (w->play_mode != SOI_MODE_COMPETE) {
+            if (!competitive) {
                 int pj;
                 for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
                     if (w->players[pj].active) w->players[pj].keys |= (1u << 10);
@@ -371,8 +374,8 @@ void soi_pickup_check(SoiWorld *w, int player)
         w->cell[prow][pcol] = SOI_CELL_EMPTY;        /* consume the key */
         return;
     }
-    if (c == 0x0934u && (player == 3 || w->play_mode != SOI_MODE_COMPETE) && (p->keys & (1u << 10))) {
-        w->cell[prow][pcol] = 0x0935u;
+    if (c == 0x0934u && (player == 3 || !competitive || p3_any) && (p->keys & (1u << 10))) {
+        w->cell[prow][pcol] = 0x0935u | SOI_CELL_SUPPORTIVE | SOI_CELL_DOOR;
         return;
     }
     if (t == 0) return;

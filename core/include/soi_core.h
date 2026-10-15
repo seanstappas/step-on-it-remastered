@@ -45,8 +45,8 @@ enum {
     SOI_IN_BLOCK_HIGH = 1u << 3,  /* switch the block above the head */
     SOI_IN_BLOCK_LOW  = 1u << 4,  /* switch the block at the feet */
     SOI_IN_ARROW      = 1u << 5,  /* fire the Magic Arrow (straight; key slot 5 -> latch +0x24) */
-    SOI_IN_BALL       = 1u << 6   /* fire the Magic Ball (rolls along walls; slot 6 -> +0x23) */
-
+    SOI_IN_BALL       = 1u << 6,  /* fire the Magic Ball (rolls along walls; slot 6 -> +0x23) */
+    SOI_IN_META_CONFIRM = 1u << 7 /* confirm tally / advance result screen */
 };
 
 /* Bestiary (index doubles as the enemy type id). Point values are CONFIRMED. */
@@ -214,6 +214,9 @@ void   soi_spawn_player3(SoiWorld *w);
 /* Deactivate every player with index > n (the BORD header always spawns P1+P2, so a
  * 1-player game must turn P2 off). n=1 keeps only P1; n>=3 leaves all active. */
 void   soi_limit_players(SoiWorld *w, int n);
+void   soi_drop_player(SoiWorld *w, int player_slot);
+void   soi_set_p3_any_key(SoiWorld *w, int enable);
+int    soi_p3_any_key(const SoiWorld *w);
 
 /* ---- read-only state accessors (player index 1 = P1, 2 = P2) ---- */
 int32_t  soi_player_score(const SoiWorld *w, int player);

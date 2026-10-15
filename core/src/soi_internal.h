@@ -181,6 +181,8 @@ struct SoiWorld {
     uint8_t  p3_row;           /* EXT1 P3 spawn row (0 = auto fallback) */
     uint16_t p3_block;         /* EXT1 P3 block word (default 0x020D) */
     uint8_t  vs_spawns[4][2];  /* EXT1 4 extra Versus arena spawns [col, row] */
+    uint8_t  p3_any_key;         /* 1 = 3P Compete: P3 can collect any key / exit any door */
+    uint8_t  ext_starting_lives; /* EXT1 starting lives (1..9), 0 if unset */
 
     SoiPlayer players[SOI_MAX_PLAYERS];
     SoiEnemy  enemies[SOI_MAX_ENEMIES];

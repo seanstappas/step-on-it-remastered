@@ -14,15 +14,19 @@
 
 #include "soi_core.h"
 
+#define TOTAL_TICKS 1000
+#define ROLLBACK_DEPTH 7
+#define RING_CAP 16
+
 static int test_board(const char *path, const uint8_t *bord, size_t len, size_t snap_sz)
 {
     SoiWorld *w_ref = (SoiWorld *)malloc(soi_world_size());
     SoiWorld *w_sim = (SoiWorld *)malloc(soi_world_size());
-    uint8_t *ring[16];
+    uint8_t *ring[RING_CAP];
     int i, t, k;
     int ok = 1;
     uint32_t seed = 0x54321u;
-    uint8_t in1[64], in2[64], in3[64];
+    uint8_t in1[TOTAL_TICKS], in2[TOTAL_TICKS], in3[TOTAL_TICKS];
 
     if (!w_ref || !w_sim) {
         fprintf(stderr, "Allocation failed for worlds\n");
@@ -31,7 +35,7 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
         return 0;
     }
 
-    for (i = 0; i < 16; i++) {
+    for (i = 0; i < RING_CAP; i++) {
         ring[i] = (uint8_t *)malloc(snap_sz);
         if (!ring[i]) {
             fprintf(stderr, "Allocation failed for snapshot buffer %d\n", i);
@@ -41,8 +45,8 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
         }
     }
 
-    /* Generate 64 ticks of pseudo-random inputs for 3 players */
-    for (t = 0; t < 64; t++) {
+    /* Generate TOTAL_TICKS of pseudo-random inputs for 3 players */
+    for (t = 0; t < TOTAL_TICKS; t++) {
         seed = seed * 1103515245u + 12345u; in1[t] = (uint8_t)((seed >> 16) & 0x7F);
         seed = seed * 1103515245u + 12345u; in2[t] = (uint8_t)((seed >> 16) & 0x7F);
         seed = seed * 1103515245u + 12345u; in3[t] = (uint8_t)((seed >> 16) & 0x7F);
@@ -74,40 +78,25 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
         goto cleanup;
     }
 
-    /* Simulate 64 ticks */
-    for (t = 0; t < 64; t++) {
+    /* Simulate TOTAL_TICKS with divergent remote prediction */
+    for (t = 0; t < TOTAL_TICKS; t++) {
         /* Save snapshot of w_sim before tick t */
-        soi_snapshot_save(w_sim, ring[t % 16]);
+        soi_snapshot_save(w_sim, ring[t % RING_CAP]);
 
-        /* Advance both worlds 1 tick */
+        /* w_ref steps with authoritative inputs; w_sim steps with mispredicted remote inputs */
         soi_tick3(w_ref, in1[t], in2[t], in3[t]);
-        soi_tick3(w_sim, in1[t], in2[t], in3[t]);
+        soi_tick3(w_sim, in1[t], (uint8_t)(in2[t] ^ 0x03u), (uint8_t)(in3[t] ^ 0x05u));
 
-        /* Hashes must match immediately */
-        if (soi_net_hash(w_ref) != soi_net_hash(w_sim)) {
-            fprintf(stderr, "Hash mismatch at tick %d on %s: ref=0x%016llx sim=0x%016llx\n",
-                    t, path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim));
-            ok = 0;
-            goto cleanup;
-        }
-
-        /* Forced 8-tick rollback test */
-        if (t >= 7) {
-            int rollback_tick = t - 7;
-            /* Restore w_sim to state before rollback_tick */
-            soi_snapshot_load(w_sim, ring[rollback_tick % 16]);
-
-            /* Re-simulate forward 8 ticks (from rollback_tick up to t) */
+        if (t >= ROLLBACK_DEPTH && (t % 5) == 0) {
+            int rollback_tick = t - ROLLBACK_DEPTH;
+            soi_snapshot_load(w_sim, ring[rollback_tick % RING_CAP]);
             for (k = rollback_tick; k <= t; k++) {
+                soi_snapshot_save(w_sim, ring[k % RING_CAP]);
                 soi_tick3(w_sim, in1[k], in2[k], in3[k]);
             }
-
-            /* State after re-simulation must match w_ref bit-for-bit */
-            uint64_t href = soi_net_hash(w_ref);
-            uint64_t hsim = soi_net_hash(w_sim);
-            if (href != hsim) {
-                fprintf(stderr, "Rollback hash mismatch at tick %d (rolled back to %d) on %s: ref=0x%016llx sim=0x%016llx\n",
-                        t, rollback_tick, path, (unsigned long long)href, (unsigned long long)hsim);
+            if (soi_net_hash(w_ref) != soi_net_hash(w_sim)) {
+                fprintf(stderr, "Rollback hash mismatch at tick %d on %s: ref=0x%016llx sim=0x%016llx\n",
+                        t, path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim));
                 ok = 0;
                 goto cleanup;
             }
@@ -115,7 +104,7 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
     }
 
 cleanup:
-    for (i = 0; i < 16; i++) free(ring[i]);
+    for (i = 0; i < RING_CAP; i++) free(ring[i]);
     free(w_ref);
     free(w_sim);
     return ok;

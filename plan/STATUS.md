@@ -2,7 +2,7 @@
 
 > **Tracking Document**: Updated after every milestone, bug fix, and phase.  
 > **Reference Plan**: `plan/10_09_improvements.md`  
-> **Last Updated**: 2026-10-13
+> **Last Updated**: 2026-10-15
 
 ---
 
@@ -15,6 +15,7 @@
 | **Phase 2** | Versus Mode, Friendly Fire & Combat Bugs | **COMPLETE (100%)** | `test_mechanics.c` section 65 PASS, `verify.ps1` PASS |
 | **Phase 3** | Big Maps (`38×26`), `EXT1` Loader, Map Editor | **COMPLETE (100%)** | Load/playtest 38×26 duel arena in Godot, Section 66 PASS, verify.ps1 PASS |
 | **Phase 4** | ENet Star-Hub Netcode & Loopback Soak Test | **COMPLETE (100%)** | 1,200-tick loopback soak test & `test_net_progression.ps1` PASS |
+| **10/14 Remediation** | Complete Gap & Bug Closure (`plan/10_14_improvements.md`) | **COMPLETE (100%)** | Stages 0–4 Verified: 152/152 Synctest, 10,000-Tick Soak, Editor, Roundtrip PASS |
 
 ---
 
@@ -80,6 +81,12 @@
 - **2026-10-14**: Phase 2 Versus / PvP Mode & Combat Mechanics completed & verified. Implemented `SOI_MODE_VERSUS`, 3 victory rules (`SOI_WIN_LIVES`, `SOI_WIN_SCORE`, `SOI_WIN_DOOR`), decoupled friendly fire, projectile PvP hits, corpse immunity (Bug B3), per-kind firing lock and 180-tick rolling ball lifetime cap (Bug B8), hostile projectile slot reservation, dry-board ammo regen, anti-burial block check (`soi_player_at`, Bug B9), 120-tick indirect block-drop frag attribution, Speed-Shoe lethal body check, safe farthest-point in-place respawn, GDExtension bridge bindings, and Section 65 unit test suite in `tests/test_mechanics.c`. All `verify.ps1` stages pass green.
 - **2026-10-14**: Phase 3 Big Maps ($38\times26$), EXT1 Trailer Pre-scan (Bug B5), and In-Game Map Editor completed & verified. Raised max dimensions to $38\times26$ and BORD cap to 8192. Added pre-scan EXT1 trailer loader with CRC-16-CCITT and P3 auto-spawn. Added dynamic pit death line `soi_pit_death_y(w)`. Built zoom-to-fit playfield scaling in `game.gd` under the fixed 48px HUD. Completed visual Map Editor (`editor.gd`/`editor.tscn`) supporting 3 canvas sizes, strict big-endian `.bord`+`EXT1` serialization/deserialization, save/load to `user://custom_maps/`, and memory playtesting via Tab/Esc. Verified with C unit tests in Section 66 of `test_mechanics.c`, `editor.gd` CLI roundtrip test, `tools/verify.ps1`, and live Godot screenshot rendering of a $38\times26$ duel arena.
 - **2026-10-14**: Netcode adversarial review round 3 & Versus victory audit completed. Connected Versus Mode (`SOI_MODE_VERSUS` = 5) to main menu and online lobby dialogs. Wired victory rules (Elimination, Score, Door Race) and friendly fire flags across ENet Channel 0 `MATCH_INIT` handshake and `Session` singleton. Integrated versus winner resolution into `game.gd` `_winner()` and `_draw_win_screen()` with rematching on custom boards. Enhanced Xbox controller navigation with `JOY_BUTTON_START` (pause), `JOY_BUTTON_A` (result screen advance / leave confirm), `JOY_BUTTON_B` (cancel leave), and `JOY_BUTTON_BACK` (Select / Esc). All 13 stages of `verify.ps1` pass 100% green.
+- **2026-10-15**: Complete Gap & Bug Closure Remediation (`plan/10_14_improvements.md` Stages 0–4) completed & verified:
+  - **Stage 0 (Repository & Git Sync)**: Synchronized local branches `lite` and `main` with `origin/main` (`ca05b1b`).
+  - **Stage 1 (C Core State & Snapshot/Hash)**: Fixed EXT1 attribute clobbering, implemented Manhattan outward spiral fallback in `soi_spawn_player3` with 2-tile clearance and solid floor checks, added `soi_drop_player`, `soi_set_p3_any_key`, `soi_p3_any_key`, `p3_any_key`, and `ext_starting_lives` to `SoiWorld`, extended `soi_net_hash` with all EXT1 fields and spawn points, and upgraded `test_synctest.c` to 1,000 divergent rollback ticks across all 152 boards (152/152 pass, 0 desyncs).
+  - **Stage 2 (C Core PvP Combat, Grid & Persistence)**: Fixed projectile double-kill attribution (`attacker_ttl = 0` on direct impact), fixed Bug B6 key leak in Versus mode, guarded Bug B12 teleporter freeze in competitive modes, minimized active enemy + P3 spawn distance for in-place respawns, added dual Speed-Shoe pushback separation with block break SFX, and preserved `kills` and `p3_any_key` across `soi_next_level` and `reload_board_on_death` (67/67 Section 67 tests passing).
+  - **Stage 3 (Rollback Netcode, Wire Protocol, Latency Escalation & Relay)**: Unfroze rollback processing on game over, removed snapshot clamp, pruned render history (`_debris` and `_death_pops`) by tick, implemented big-endian wire protocol helpers, 10-char Crockford Base32 join code parser/generator with Crockford aliases, dual-packet D16 retransmission on rift stall, bundled headless relay (`--relay`), and upgraded 10,000-tick 3-peer soak test (`tools/test_net_soak.ps1` with 808 rift stalls healed and 0 desyncs).
+  - **Stage 4 (Frontend UI, Map Editor, Xbox Inputs & Shaders)**: Applied luminance-preserving Crimson Red tint formula for P3 sprite/shadows and Red door, HUD `"K%d"` versus kills, `ascii2bord.py` `vs_spawns` regex parsing and legacy 2-byte Mac footer tolerance (152/152 roundtrip pass), complete categorized palette and in-memory playtest state persistence in `editor.gd` (`--test-editor` PASS), default 71 Hz speed, disconnect banner overlay, stick hysteresis deadzones, and Xbox / Space slot claiming in online lobby.
 
 ---
 

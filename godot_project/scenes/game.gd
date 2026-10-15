@@ -356,11 +356,17 @@ func _prep_hd(img: Image) -> void:
 func _redden(img: Image) -> void:
 	if img.get_format() != Image.FORMAT_RGBA8:
 		img.convert(Image.FORMAT_RGBA8)
+	var shadow := Color(0.557, 0.0, 0.0, 1.0)
+	var highlight := Color(0.898, 0.224, 0.208, 1.0)
 	for y in img.get_height():
 		for x in img.get_width():
 			var c := img.get_pixel(x, y)
-			if c.a > 0.0 and c.b > c.r + 0.06:
-				img.set_pixel(x, y, Color(c.b, c.g * 0.45, c.r, c.a))
+			if c.a > 0.01:
+				var max_bg := maxf(c.g, c.b)
+				if max_bg > c.r * 1.25 and max_bg > 0.15:
+					var luma := 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+					var tint := shadow.lerp(highlight, clampf(luma * 1.4, 0.0, 1.0))
+					img.set_pixel(x, y, Color(tint.r, tint.g, tint.b, c.a))
 
 ## A sprite's LOGICAL (SD 640x480) size. In --hd the loaded texture is _sprite_scale x
 ## bigger, so divide back to the footprint the cell/HUD layout math expects.
@@ -1192,6 +1198,8 @@ func _ready() -> void:
 		_net.desync_detected.connect(func(tick: int, lhash: int, rhash: int) -> void:
 			print("DESYNC DETECTED at tick %d: local=%X remote=%X" % [tick, lhash, rhash]))
 		_net.peer_disconnected.connect(func(slot: int) -> void:
+			if _core != null and slot >= 0 and slot < 3:
+				_core.drop_player(slot + 1)
 			if slot == 0:
 				_net_status_banner = "Host disconnected — match ended. Esc: menu"
 			else:
@@ -1217,8 +1225,6 @@ func _ready() -> void:
 				var st: Dictionary = Session.resume_stats[i - 1]
 				_core.set_player_stats(i, int(st.get("score", 0)), int(st.get("lives", 4)),
 					int(st.get("arrows", 1)), int(st.get("balls", 1)), int(st.get("shield", 2)))
-	elif not _alt:
-		_core.new_game(_core_mode())   # new-game stats per mode (asm FUN_1002b060; see _core_mode)
 	if _alt:
 		_alt_apply_turn_stats()
 	Session.resume_stats = []
@@ -1380,14 +1386,18 @@ func _start() -> void:
 	_game_over_letters.clear()
 	var seed_val: int = Session.online_seed if (Session.is_online and Session.online_seed != 0) else 1
 	_core.init(seed_val)
+	_core.new_game(_core_mode())
 	_core.set_input_assist(true)
+	_core.set_p3_any_key(Session.p3_any_key)
 	if Session.is_online and not Session.online_bord_bytes.is_empty():
 		_level_bytes = Session.online_bord_bytes
 	_core.load_level(_level_bytes)
-	_core.set_play_mode(_core_mode())
-	_core.set_victory_rule(Session.victory_rule)
-	if _mode_versus or Session.friendly_fire != 0:
+	if Session.victory_rule >= 0:
+		_core.set_victory_rule(Session.victory_rule)
+	if _mode_versus:
 		_core.set_friendly_fire(1)
+	elif Session.friendly_fire >= 0:
+		_core.set_friendly_fire(Session.friendly_fire)
 	if _num_players >= 3:
 		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
 	_core.limit_players(_num_players)   # BORD always spawns P1+P2 -> turn P2/P3 off for a 1-player game
@@ -1408,6 +1418,7 @@ func _next_board() -> void:
 func _reset_round_ui() -> void:
 	_paused = false
 	_tally_captured = false
+	_online_meta_confirmed = false
 	_tally_anim = 0.0
 	_warp_anim = 0.0
 	_tp_frames = 0
@@ -1428,12 +1439,21 @@ func _reset_round_ui() -> void:
 		_challenge_intro = 150   # "Challenge Round" intro before a challenge board
 		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
 
+var _disconnect_banner: String = ""
+var _online_stick_engaged: Array[int] = []
+
 func _on_joy_connection_changed(device: int, connected: bool) -> void:
 	if not connected:
 		for p in Session.player_device.size():
 			if Session.player_device[p] == device:
-				_paused = true
+				_disconnect_banner = "Controller Disconnected (Player %d) — Reconnect or press SPACE for Keyboard" % (p + 1)
+				if not Session.is_online:
+					_paused = true
+				queue_redraw()
 				break
+	else:
+		_disconnect_banner = ""
+		queue_redraw()
 
 func _prune_render_history(from_tick: int) -> void:
 	for k in _hist.keys():
@@ -1452,33 +1472,67 @@ func _prune_render_history(from_tick: int) -> void:
 			keep_snaps.append(gs)
 	_grid_snaps = keep_snaps
 
+	var keep_pops: Array = []
+	for p in _death_pops:
+		if int(p.get("tick", 0)) < from_tick:
+			keep_pops.append(p)
+	_death_pops = keep_pops
+
+	var keep_deb: Array = []
+	for d in _debris:
+		if int(d.get("tick", 0)) < from_tick:
+			keep_deb.append(d)
+	_debris = keep_deb
+
+	_enemy_lastpos.clear()
+	_proj_lastpos.clear()
+	if _core != null and _core.tp_freeze() == 0:
+		_tp_frames = 0
+
 func _physics_process(_delta: float) -> void:
 	_core_ticked = false
 	if _core != null and _core.tp_freeze() > 0:
 		_tp_frames = int(_core.tp_freeze())
 	else:
 		_tp_frames = 0
+
 	if _net != null:
 		_net.poll_network(Time.get_ticks_msec() / 1000.0)
-	if _script_hold:
-		pass
-	elif not _paused and not _core.game_over() and not _core.level_complete() and not (_alt and _alt_state != "play") and _challenge_intro == 0 and (_alt or not _core.challenge_failed()):
-		# 1. Check Rift Stall (unconfirmed gap >= 16 ticks)
-		if _net != null and _net.check_rift_stall():
-			queue_redraw()
-			return
+		if _net.consecutive_rift_frames > 30:
+			Engine.physics_ticks_per_second = int(SPEED_HZ[clampi(Session.speed, 0, 3)] * 0.98)
+		elif _net.consecutive_rift_frames < -30:
+			Engine.physics_ticks_per_second = int(SPEED_HZ[clampi(Session.speed, 0, 3)] * 1.02)
+		else:
+			Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]
 
-		# 3. Handle Rollback / Resimulation if misprediction detected
-		if _net != null and _net.earliest_mispredicted_tick >= 0:
-			var rb_tick: int = _net.earliest_mispredicted_tick
-			_net.earliest_mispredicted_tick = -1
-			if rb_tick < _net.current_tick:
-				if _net.current_tick - rb_tick >= RollbackNet.RING_BUFFER_SIZE:
-					rb_tick = _net.current_tick - RollbackNet.RING_BUFFER_SIZE + 1
+	if _script_hold or _paused or (_alt and _alt_state != "play") or _challenge_intro > 0:
+		return
+
+	# Always process pending rollbacks BEFORE evaluating game_over / level_complete
+	if _net != null and _net.earliest_mispredicted_tick >= 0:
+		var rb_tick: int = _net.earliest_mispredicted_tick
+		_net.earliest_mispredicted_tick = -1
+
+		if rb_tick < _net.current_tick:
+			var lag_frames: int = _net.current_tick - rb_tick
+			if lag_frames >= RollbackNet.RING_BUFFER_SIZE:
+				_net.desync_detected.emit(rb_tick, 0, 0)
+			else:
 				var snap: PackedByteArray = _net.snapshot_ring[rb_tick % RollbackNet.RING_BUFFER_SIZE]
 				if not snap.is_empty():
 					_core.snapshot_load(snap)
 					_net.is_resimulating = true
+
+					if _tally_captured and not _core.level_complete():
+						_tally_captured = false
+						_tally_anim = 0.0
+						_warp_anim = 0.0
+						_update_board_music()
+					if _game_over_active and not _core.game_over():
+						_game_over_active = false
+						_game_over_ticks = 0
+						_game_over_letters.clear()
+
 					for sim_t in range(rb_tick, _net.current_tick):
 						var s_p1: int = _net.get_or_predict_input(0, sim_t)
 						var s_p2: int = _net.get_or_predict_input(1, sim_t) if _num_players >= 2 else 0
@@ -1486,120 +1540,153 @@ func _physics_process(_delta: float) -> void:
 						_net.snapshot_ring[sim_t % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
 						_core.tick3(s_p1, s_p2, s_p3)
 						_net.record_state_hash(sim_t, int(_core.net_hash() & 0xFFFFFFFF))
+						for _i in range(_core.sfx_count()):
+							_core.sfx_get(_i)
+
 					_prune_render_history(rb_tick)
 					_net.is_resimulating = false
 
-		_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
+	if _core.game_over() or _core.level_complete() or (not _alt and _core.challenge_failed()):
+		if _core.level_complete():
+			if not _alt and not _mode_compete and not _mode_versus and _warp_anim < 1.0:
+				_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
+			elif _tally_anim < 1.0:
+				var prev_anim := _tally_anim
+				_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)
+				if not _alt and not _mode_compete and not _mode_versus:
+					_tally_dings(prev_anim, _tally_anim)
+		if not _alt and _core.challenge_failed() and not _challenge_forfeited:
+			_challenge_forfeited = true
+			Audio.play_snd(32129)
+		if _core.game_over():
+			if not _game_over_active:
+				_game_over_active = true
+				_game_over_ticks = 0
+				Audio.stop_music()
+				Audio.play_snd(26486)
+				_init_game_over_letters()
+			else:
+				_game_over_ticks += 1
+		if not _hs_checked and _hs_game_ended():
+			_hs_checked = true
+			var sc := _hs_final_score()
+			if Session.qualifies(sc):
+				_hs_score = sc; _hs_name = ""; _hs_state = "entry"
+				Audio.play_snd(1501)
+		if _net != null:
+			_poll_online_meta_confirm()
+		queue_redraw()
+		return
+
+	if _net != null and _net.check_rift_stall():
+		queue_redraw()
+		return
+
+	_tally_prebonus = int(_core.bonus_time())   # remaining bonus before this tick (for the multiplier)
+	for idx in range(1, mini(_num_players, 3) + 1):
+		_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
+		_tp_pre[idx] = Vector2(_core.player_x(idx), _core.player_y(idx))   # pre-tick pos (teleport detect)
+
+	var p1: int
+	var p2: int
+	var p3: int
+	if _net != null:
+		# Local input scheduled for current_tick + 2 (D = 2)
+		var local_in := _read_input(_net.local_slot)
+		_net.send_local_input(local_in)
+		_net.snapshot_ring[_net.current_tick % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
+		p1 = _net.get_or_predict_input(0, _net.current_tick)
+		p2 = _net.get_or_predict_input(1, _net.current_tick) if _num_players >= 2 else 0
+		p3 = _net.get_or_predict_input(2, _net.current_tick) if _num_players >= 3 else 0
+	else:
+		p1 = _read_input(0)
+		p2 = _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
+		if not _script.is_empty():
+			var seg: Array = _script_seg()
+			p1 = int(seg[0])
+			p2 = int(seg[2])
+		elif _demo_frames > 0:
+			p1 = _demo_input()         # scripted play for the --demo movie / capture
+		elif _play_frames > 0:
+			p1 = _play_input()         # scripted play on a real board (--play recording)
+		elif _shot_countdown > 0:
+			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
+		p3 = _read_input(2) if _num_players >= 3 else 0
+
+	_core.tick3(p1, p2, p3)
+	_core_ticked = true
+	if _net != null:
+		_net.record_state_hash(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
+		_net.current_tick += 1
+
+	if _core != null and _core.tp_freeze() > 0:
+		_tp_frames = int(_core.tp_freeze())
+
+	# Zero-lag audio and particle gate during resimulation
+	var audio_gated: bool = (_net != null and _net.is_resimulating)
+	var teleported := false
+	for i in _core.sfx_count():
+		var ev := _core.sfx_get(i)
+		if not audio_gated:
+			Audio.play(ev)                 # SOI_SFX_HURRY (39) plays its warning cue here too
+		if ev == SFX_TELEPORT:
+			teleported = true
+	if teleported and not audio_gated:
+		_start_transport_slide()   # a transporter fired -> glide the player to the OUT pad
+	if not audio_gated:
+		for di in _core.death_count():   # every enemy killed this tick -> spawn its cosmetic death "pop"
+			_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
+				int(_core.death_type(di)), int(_core.death_dir(di)))
+	_step_death_pops()   # advance/cull the pops in lock-step with the sim (frozen when paused)
+	if not audio_gated:
+		for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
+			_spawn_debris(fi)
+	_step_debris()
+	if _alt:
+		if _alt_prev_alive and not _core.player_alive(1):
+			_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
+		_alt_prev_alive = _core.player_alive(1)
+	if _core.level_complete() and not _tally_captured:
 		for idx in range(1, mini(_num_players, 3) + 1):
-			_tally_pre[idx] = int(_core.player_score(idx))   # pre-tick score; bonus award = post-tick delta
-			_tp_pre[idx] = Vector2(_core.player_x(idx), _core.player_y(idx))   # pre-tick pos (teleport detect)
-
-		var p1: int
-		var p2: int
-		var p3: int
-		if _net != null:
-			# Local input scheduled for current_tick + 2 (D = 2)
-			var local_in := _read_input(_net.local_slot)
-			_net.send_local_input(local_in)
-			_net.snapshot_ring[_net.current_tick % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
-			p1 = _net.get_or_predict_input(0, _net.current_tick)
-			p2 = _net.get_or_predict_input(1, _net.current_tick) if _num_players >= 2 else 0
-			p3 = _net.get_or_predict_input(2, _net.current_tick) if _num_players >= 3 else 0
-		else:
-			p1 = _read_input(0)
-			p2 = _read_input(1) if _num_players >= 2 else 0   # single-player: P2 (WASD) is off
-			if not _script.is_empty():
-				var seg: Array = _script_seg()
-				p1 = int(seg[0])
-				p2 = int(seg[2])
-			elif _demo_frames > 0:
-				p1 = _demo_input()         # scripted play for the --demo movie / capture
-			elif _play_frames > 0:
-				p1 = _play_input()         # scripted play on a real board (--play recording)
-			elif _shot_countdown > 0:
-				p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
-			p3 = _read_input(2) if _num_players >= 3 else 0
-
-		_core.tick3(p1, p2, p3)
-		_core_ticked = true
-		if _net != null:
-			_net.record_state_hash(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
-			_net.current_tick += 1
-
-		if _core != null and _core.tp_freeze() > 0:
-			_tp_frames = int(_core.tp_freeze())
-
-		# Zero-lag audio and particle gate during resimulation
-		var audio_gated: bool = (_net != null and _net.is_resimulating)
-		var teleported := false
-		for i in _core.sfx_count():
-			var ev := _core.sfx_get(i)
-			if not audio_gated:
-				Audio.play(ev)                 # SOI_SFX_HURRY (39) plays its warning cue here too
-			if ev == SFX_TELEPORT:
-				teleported = true
-		if teleported and not audio_gated:
-			_start_transport_slide()   # a transporter fired -> glide the player to the OUT pad
-		if not audio_gated:
-			for di in _core.death_count():   # every enemy killed this tick -> spawn its cosmetic death "pop"
-				_spawn_death_pop(int(_core.death_x(di)), int(_core.death_y(di)),
-					int(_core.death_type(di)), int(_core.death_dir(di)))
-		_step_death_pops()   # advance/cull the pops in lock-step with the sim (frozen when paused)
-		if not audio_gated:
-			for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
-				_spawn_debris(fi)
-		_step_debris()
-		if _alt:
-			if _alt_prev_alive and not _core.player_alive(1):
-				_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
-			_alt_prev_alive = _core.player_alive(1)
-		if _core.level_complete() and not _tally_captured:
-			for idx in range(1, mini(_num_players, 3) + 1):
-				var fin := int(_core.player_score(idx))
-				_tally_final[idx] = fin
-				var rw := int(_core.player_no_weapons_reward(idx))   # No-Weapons Reward awarded (5000 or 0)
-				_tally_reward[idx] = rw
-				var aw := maxi(fin - int(_tally_pre.get(idx, fin)), 0)   # total drained into score this tick
-				_tally_bonus[idx] = aw
-				_tally_award_max = maxi(_tally_award_max, maxi(aw - rw, 0))   # bonus-only (reward isn't x mult)
-			# rising-note count = bonus-award / remaining-bonus = the score multiplier (1..5),
-			# matching FUN_10015714's per-multiplier count-up loop. The No-Weapons Reward is added
-			# ONCE (not multiplied), so it is excluded from the multiplier estimate above.
-			_tally_mult = clampi(int(round(float(_tally_award_max) / float(maxi(_tally_prebonus, 1)))), 1, 5)
-			# Board-clear warp: the R/G/B tunnel converges on the exiting player's centre (the door
-			# they left). The original's exact vanishing-point drift is unverified -> this is a faithful
-			# approximation (gameplay-neutral, the score/tally values are unaffected).
-			var ex := 1
-			for idx2 in range(1, mini(_num_players, 3) + 1):
-				if _core.player_has_key(idx2) == 2:
-					ex = idx2
-					break
-			_warp_vp = Vector2(float(_core.player_x(ex)) + 16.0, float(_core.player_y(ex)) + 16.0)
-			_tally_captured = true
-			# Board-clear warp "whoosh": asm event 0x1f -> snd 16969 "Lore" (FUN_10028a0c /
-			# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). A Challenge Round warps too.
-			if not _alt and not _mode_compete and not _mode_versus:
-				Audio.play_snd(16969)
-			# Beat the whole campaign -> switch to the ending tune (Angel Pie, FUN_1001768c).
-			# Co-op/single only; Alternate + Compete have their own end screens.
-			if not _alt and not _mode_compete and not _mode_versus and not _has_next_board():
-				Audio.play_ending_music()
+			var fin := int(_core.player_score(idx))
+			_tally_final[idx] = fin
+			var rw := int(_core.player_no_weapons_reward(idx))   # No-Weapons Reward awarded (5000 or 0)
+			_tally_reward[idx] = rw
+			var aw := maxi(fin - int(_tally_pre.get(idx, fin)), 0)   # total drained into score this tick
+			_tally_bonus[idx] = aw
+			_tally_award_max = maxi(_tally_award_max, maxi(aw - rw, 0))   # bonus-only (reward isn't x mult)
+		# rising-note count = bonus-award / remaining-bonus = the score multiplier (1..5),
+		# matching FUN_10015714's per-multiplier count-up loop. The No-Weapons Reward is added
+		# ONCE (not multiplied), so it is excluded from the multiplier estimate above.
+		_tally_mult = clampi(int(round(float(_tally_award_max) / float(maxi(_tally_prebonus, 1)))), 1, 5)
+		# Board-clear warp: the R/G/B tunnel converges on the exiting player's centre (the door
+		# they left). The original's exact vanishing-point drift is unverified -> this is a faithful
+		# approximation (gameplay-neutral, the score/tally values are unaffected).
+		var ex := 1
+		for idx2 in range(1, mini(_num_players, 3) + 1):
+			if _core.player_has_key(idx2) == 2:
+				ex = idx2
+				break
+		_warp_vp = Vector2(float(_core.player_x(ex)) + 16.0, float(_core.player_y(ex)) + 16.0)
+		_tally_captured = true
+		# Board-clear warp "whoosh": asm event 0x1f -> snd 16969 "Lore" (FUN_10028a0c /
+		# FUN_10029264 play FUN_1002b020(0x1f,100) at completion). A Challenge Round warps too.
+		if not _alt and not _mode_compete and not _mode_versus:
+			Audio.play_snd(16969)
+		# Beat the whole campaign -> switch to the ending tune (Angel Pie, FUN_1001768c).
+		# Co-op/single only; Alternate + Compete have their own end screens.
+		if not _alt and not _mode_compete and not _mode_versus and not _has_next_board():
+			Audio.play_ending_music()
 	if _core.level_complete():
-		# The board-clear WARP plays first (coop/single, Challenge Rounds included -- FUN_10028a0c
-		# runs FUN_10026bb8 before choosing the tally or the challenge reward); the count-up waits
-		# until the tunnel finishes. Compete/Alternate have no warp -> tally at once.
 		if not _alt and not _mode_compete and not _mode_versus and _warp_anim < 1.0:
 			_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
 		elif _tally_anim < 1.0:
 			var prev_anim := _tally_anim
-			_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)   # count-up progress (also gates HS-on-win)
-			# The count-up scale rings on the coop "Board Completed" tally (FUN_10015714) and the
-			# Challenge reward (FUN_10016f80 plays the same 0x2e / 0x30+i / 0x2f notes) -- not the
-			# Compete wins screens or Alternate's hand-off.
+			_tally_anim = minf(_tally_anim + 1.0 / TALLY_FRAMES, 1.0)
 			if not _alt and not _mode_compete and not _mode_versus:
 				_tally_dings(prev_anim, _tally_anim)
 	if not _alt and _core.challenge_failed() and not _challenge_forfeited:
-		_challenge_forfeited = true   # FUN_10016f80(failed): "Nothing!" + event 8
+		_challenge_forfeited = true
 		Audio.play_snd(32129)
 	if _core.game_over():
 		if not _game_over_active:
@@ -1614,8 +1701,8 @@ func _physics_process(_delta: float) -> void:
 		_hs_checked = true
 		var sc := _hs_final_score()
 		if Session.qualifies(sc):
-			_hs_score = sc; _hs_name = ""; _hs_state = "entry"   # NEW HIGH SCORE -> take initials
-			Audio.play_snd(1501)   # high-score entry jingle (asm event 0x36 -> snd 1501, FUN_10022dfc)
+			_hs_score = sc; _hs_name = ""; _hs_state = "entry"
+			Audio.play_snd(1501)
 	if _save_flash > 0:
 		_save_flash -= 1
 	if _pres_toast > 0:
@@ -1816,8 +1903,14 @@ func _input(e: InputEvent) -> void:
 	if _challenge_intro > 0:
 		_challenge_intro = 0   # any key dismisses the Challenge Round intro
 		return
-	if _hs_state == "entry":
-		_hs_input(e)
+	if _disconnect_banner != "" and e.keycode == KEY_SPACE:
+		for p in Session.player_device.size():
+			if Session.player_device[p] >= 0:
+				Session.player_device[p] = -1
+				break
+		_disconnect_banner = ""
+		_paused = false
+		queue_redraw()
 		return
 	match e.keycode:
 		KEY_ESCAPE:
@@ -1935,47 +2028,73 @@ func _press_enter() -> void:
 			_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
 	elif _core.game_over():
 		if Session.is_online:
-			if _net != null and _net.is_host:
-				var next_seed := randi() % 1000000 + 1
-				_net.send_board_load(_level_bytes, next_seed, true)
+			_online_meta_confirmed = true
 			return
 		_start()   # retry the board
-		_core.new_game(_core_mode())
 		_capture_board_start()
 	elif _core.challenge_failed():
 		if Session.is_online:
-			if _net != null and _net.is_host:
-				if Session.advance():
-					var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
-					var next_seed := randi() % 1000000 + 1
-					_net.send_board_load(next_bytes, next_seed, false)
-				else:
-					if _net != null: _net.close(); _net = null
-					Session.is_online = false; Session.net = null
-					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+			_online_meta_confirmed = true
 			return
 		_challenge_fail_advance()
 	elif _core.level_complete():
 		if Session.is_online:
-			if _net != null and _net.is_host:
-				if Session.advance():
-					var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
-					var next_seed := randi() % 1000000 + 1
-					_net.send_board_load(next_bytes, next_seed, false)
-				else:
-					if _mode_versus or _mode_compete:
-						var next_seed := randi() % 1000000 + 1
-						_net.send_board_load(_level_bytes, next_seed, true)
-					else:
-						if _net != null: _net.close(); _net = null
-						Session.is_online = false; Session.net = null
-						get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+			_online_meta_confirmed = true
 			return
 		if Session.advance():
 			_level_bytes = _load_level_bytes()   # next board (Session.board_path)
 			_next_board()   # keep score/lives/ammo across boards
 		else:
 			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+func _poll_online_meta_confirm() -> void:
+	if _net == null:
+		return
+	const IN_META_CONFIRM := 1 << 7
+	var local_inp := IN_META_CONFIRM if _online_meta_confirmed else 0
+	_net.send_local_input(local_inp)
+
+	var all_confirmed := true
+	for slot in range(_num_players):
+		if _net.dropped_peers.has(slot):
+			continue
+		if slot == _net.local_slot:
+			if not _online_meta_confirmed:
+				all_confirmed = false
+				break
+		else:
+			var peer_in: int = _net.get_or_predict_input(slot, _net.current_tick)
+			if (peer_in & IN_META_CONFIRM) == 0:
+				all_confirmed = false
+				break
+
+	if all_confirmed and _net.is_host:
+		_online_meta_confirmed = false
+		if _core.game_over():
+			var next_seed := randi() % 1000000 + 1
+			_net.send_board_load(_level_bytes, next_seed, true)
+		elif _core.challenge_failed():
+			if Session.advance():
+				var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+				var next_seed := randi() % 1000000 + 1
+				_net.send_board_load(next_bytes, next_seed, false)
+			else:
+				if _net != null: _net.close(); _net = null
+				Session.is_online = false; Session.net = null
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		elif _core.level_complete():
+			if Session.advance():
+				var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+				var next_seed := randi() % 1000000 + 1
+				_net.send_board_load(next_bytes, next_seed, false)
+			else:
+				if _mode_versus or _mode_compete:
+					var next_seed := randi() % 1000000 + 1
+					_net.send_board_load(_level_bytes, next_seed, true)
+				else:
+					if _net != null: _net.close(); _net = null
+					Session.is_online = false; Session.net = null
+					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool) -> void:
@@ -1987,7 +2106,6 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 		_net.reset()
 	if is_retry:
 		_start()
-		_core.new_game(_core_mode())
 		_capture_board_start()
 	else:
 		_next_board()
@@ -2003,9 +2121,19 @@ func _read_input(which: int) -> int:
 		# Accept Arrow keys, WASD, and connected joypads so client slots aren't locked to WASD/numpad.
 		var om := 0
 		for joy in Input.get_connected_joypads():
+			while _online_stick_engaged.size() <= joy:
+				_online_stick_engaged.append(0)
 			var ax: float = Input.get_joy_axis(joy, JOY_AXIS_LEFT_X)
-			if ax < -0.50 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_LEFT): om |= IN_LEFT
-			if ax > 0.50 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_RIGHT): om |= IN_RIGHT
+			if _online_stick_engaged[joy] == -1:
+				if ax > -0.35: _online_stick_engaged[joy] = 0
+			elif _online_stick_engaged[joy] == 1:
+				if ax < 0.35: _online_stick_engaged[joy] = 0
+			if _online_stick_engaged[joy] == 0:
+				if ax < -0.50: _online_stick_engaged[joy] = -1
+				elif ax > 0.50: _online_stick_engaged[joy] = 1
+
+			if _online_stick_engaged[joy] == -1 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_LEFT): om |= IN_LEFT
+			if _online_stick_engaged[joy] == 1 or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_RIGHT): om |= IN_RIGHT
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_A) or Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_UP): om |= IN_JUMP
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_X) or Input.is_joy_button_pressed(joy, JOY_BUTTON_Y): om |= IN_BLOCK_HIGH
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_B): om |= IN_BLOCK_LOW
@@ -2261,7 +2389,9 @@ func _draw() -> void:
 		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
 	if _pres_toast > 0:
 		_draw_presentation_toast()
-	if not _net_status_banner.is_empty():
+	if not _disconnect_banner.is_empty():
+		_draw_banner(_disconnect_banner, "Press SPACE for Keyboard")
+	elif not _net_status_banner.is_empty():
 		_draw_banner(_net_status_banner, "")
 	elif _online_leave_confirm:
 		_draw_banner("Leave online match? (Y / N)", "Press Y to confirm, N to keep playing")
@@ -2483,12 +2613,15 @@ func _draw_hud_3p(_iy: float) -> void:
 		var bval: int = int(_core.bonus_time()) if (not _mode_compete and not _mode_versus) else maxi(int(_core.player_bonus(p)), 0)
 		_ex_num(bval, 4, x + 3.0, 4.0)
 
-		# Line 2: Lives, Ammo (Arrows / Balls), Held Key
+		# Line 2: Lives, Versus Kills, Ammo (Arrows / Balls), Held Key
 		var x2 := _ex(16, x0 + 2.0, 20.0)
 		x2 = _ex_num(maxi(int(_core.player_lives(src_p)), 0), 2, x2 + 3.0, 22.0)
-		x2 = _ex(17, x2 + 6.0, 20.0)
+		if _mode_versus:
+			draw_string(_font, Vector2(x2 + 2.0, 31.0), "K%d" % int(_core.player_kills(src_p)), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.85, 0.2))
+			x2 += 20.0
+		x2 = _ex(17, x2 + 4.0, 20.0)
 		x2 = _ex_num(_core.player_balls(src_p), 2, x2 + 3.0, 22.0)
-		x2 = _ex(18, x2 + 6.0, 20.0)
+		x2 = _ex(18, x2 + 4.0, 20.0)
 		x2 = _ex_num(_core.player_arrows(src_p), 2, x2 + 3.0, 22.0)
 
 		if _core.player_has_key(p) == 1:
@@ -2509,6 +2642,9 @@ func _draw_hud_compete(iy: float) -> void:
 		x = _ex_num(maxi(int(_core.player_bonus(idx)), 0), 5, x + 4, y)
 		x = _ex(16, x + 26, iy) if idx == 1 else x + _ex_w(16) + 26
 		x = _ex_num(maxi(int(_core.player_lives(idx)), 0), 2, x + 3, y)
+		if _mode_versus:
+			draw_string(_font, Vector2(x + 4.0, y + 10.0), "K%d" % int(_core.player_kills(idx)), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.85, 0.2))
+			x += 22.0
 		x = _ex(17, x + 14, iy) if idx == 1 else x + _ex_w(17) + 14
 		x = _ex_num(_core.player_balls(idx), 2, x + 3, y)
 		x = _ex(18, x + 14, iy) if idx == 1 else x + _ex_w(18) + 14
@@ -2664,11 +2800,11 @@ func _draw_cell(cell: int, pos: Vector2, col: int = -1, row: int = -1) -> void:
 		return
 	if cell == 0x0934:
 		if not _blit("goody_sprites", 6, pos, true):
-			_draw_door(pos)
+			_draw_door(pos, Color(0.85, 0.15, 0.15))
 		return
 	if cell == 0x0935:
 		if not _blit("goody_sprites", 3, pos, true):
-			_draw_door(pos)
+			_draw_door(pos, Color(0.85, 0.15, 0.15))
 		return
 
 	var t := cell & 0xFF
@@ -2771,8 +2907,8 @@ func _draw_key(pos: Vector2) -> void:
 	draw_rect(Rect2(pos + Vector2(14.5, 26), Vector2(5, 3)), red)
 
 ## The exit door.
-func _draw_door(pos: Vector2) -> void:
-	draw_rect(Rect2(pos + Vector2(4, 2), Vector2(24, 28)), Color(0.35, 0.22, 0.1))
+func _draw_door(pos: Vector2, frame_color: Color = Color(0.35, 0.22, 0.1)) -> void:
+	draw_rect(Rect2(pos + Vector2(4, 2), Vector2(24, 28)), frame_color)
 	draw_rect(Rect2(pos + Vector2(6, 4), Vector2(20, 26)), Color(0.6, 0.4, 0.16))
 	draw_circle(pos + Vector2(23, 16), 2, Color(1, 0.85, 0.2))
 
@@ -2947,6 +3083,7 @@ func _spawn_death_pop(x0: int, y0: int, etype: int, dir: int) -> void:
 		"folder": folder, "frame": frame, "flip": flip, "id": _pop_seq,
 		"x0": float(x0), "y0": float(y0), "t": 0.0,
 		"px": float(x0), "py": float(y0),
+		"tick": _net.current_tick if _net != null else (_core.tick_count() if _core != null else 0),
 	})
 
 ## Advance every death pop one frame along the asm arc and cull those that leave the playfield
@@ -2989,6 +3126,7 @@ func _spawn_debris(fi: int) -> void:
 		"vx": int(_core.fx_get(fi, FX_VX)), "vy": int(_core.fx_get(fi, FX_VY)),
 		"grav": int(_core.fx_get(fi, FX_GRAV)) != 0, "t": 0, "id": _pop_seq,
 		"px": int(_core.fx_get(fi, FX_X)), "py": int(_core.fx_get(fi, FX_Y)),
+		"tick": _net.current_tick if _net != null else (_core.tick_count() if _core != null else 0),
 	})
 
 ## Advance the debris one frame exactly as the asm mover FUN_10028060 does, in C integer math

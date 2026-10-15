@@ -68,6 +68,9 @@ void SoiCore::tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input)
 
 void SoiCore::spawn_player3() { soi_spawn_player3(w()); }
 void SoiCore::limit_players(int64_t n) { soi_limit_players(w(), (int)n); }
+void SoiCore::drop_player(int64_t slot) { soi_drop_player(w(), (int)slot); }
+void SoiCore::set_p3_any_key(bool on)   { soi_set_p3_any_key(w(), on ? 1 : 0); }
+bool SoiCore::p3_any_key() const        { return soi_p3_any_key(w()) != 0; }
 
 int64_t SoiCore::player_score(int64_t p) const { return soi_player_score(w(), (int)p); }
 int64_t SoiCore::player_lives(int64_t p) const { return soi_player_lives(w(), (int)p); }
@@ -212,6 +215,9 @@ void SoiCore::_bind_methods()
     ClassDB::bind_method(D_METHOD("tick3", "p1_input", "p2_input", "p3_input"), &SoiCore::tick3);
     ClassDB::bind_method(D_METHOD("spawn_player3"), &SoiCore::spawn_player3);
     ClassDB::bind_method(D_METHOD("limit_players", "n"), &SoiCore::limit_players);
+    ClassDB::bind_method(D_METHOD("drop_player", "slot"), &SoiCore::drop_player);
+    ClassDB::bind_method(D_METHOD("set_p3_any_key", "on"), &SoiCore::set_p3_any_key);
+    ClassDB::bind_method(D_METHOD("p3_any_key"), &SoiCore::p3_any_key);
 
     ClassDB::bind_method(D_METHOD("player_score", "player"), &SoiCore::player_score);
     ClassDB::bind_method(D_METHOD("player_mult", "player"), &SoiCore::player_mult);

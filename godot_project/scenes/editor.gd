@@ -16,37 +16,76 @@ var grid_rows: int = 13
 var p1_spawn: Vector2i = Vector2i(2, 2)
 var p2_spawn: Vector2i = Vector2i(16, 2)
 var p3_spawn: Vector2i = Vector2i(9, 2)
+var vs_spawns: Array[Vector2i] = [Vector2i(0, 0), Vector2i(0, 0), Vector2i(0, 0), Vector2i(0, 0)]
 var has_p3: bool = false
+var default_mode: int = 0 # 0=Co-op, 1=Compete, 2=Versus
 var friendly_fire: bool = false
 var victory_rule: int = 0 # 0=Lives, 1=Score, 2=Door
 var starting_lives: int = 3
 var bonus_time: int = 6000
+var map_name: String = "custom_map"
+var cursor_cell: Vector2i = Vector2i(0, 0)
 
 # Grid 2D array: cells[row][col] -> tile int
 var cells: Array = []
 
-# Available brushes
+# Categorized Palette Brushes
 const BRUSHES = [
-	{"name": "Eraser", "tile": 0x0000, "char": "."},
-	{"name": "Wall", "tile": 0x0307, "char": "#"},
-	{"name": "Breakable", "tile": 0x0207, "char": "="},
-	{"name": "Ladder", "tile": 0x0197, "char": "H"},
-	{"name": "Ice", "tile": 0x0387, "char": "_"},
-	{"name": "P1 Spawn", "tile": -1, "char": "1"},
-	{"name": "P2 Spawn", "tile": -2, "char": "2"},
-	{"name": "P3 Spawn", "tile": -3, "char": "3"},
-	{"name": "Coin", "tile": 0x090A, "char": "c"},
-	{"name": "Gold Coin", "tile": 0x0917, "char": "g"},
-	{"name": "Arrow Ammo", "tile": 0x0911, "char": "a"},
-	{"name": "Ball Ammo", "tile": 0x0912, "char": "o"},
-	{"name": "Speed Shoes", "tile": 0x0932, "char": "s"},
-	{"name": "Shield", "tile": 0x0930, "char": "p"},
-	{"name": "Key (Univ)", "tile": 0x0907, "char": "k"},
-	{"name": "Lock (Univ)", "tile": 0x0904, "char": "l"},
-	{"name": "Door (Univ)", "tile": 0x0901, "char": "d"},
-	{"name": "Key (P3 Red)", "tile": 0x0933, "char": "K3"},
-	{"name": "Lock (P3 Red)", "tile": 0x0934, "char": "L3"},
-	{"name": "Door (P3 Red)", "tile": 0x0935, "char": "D3"},
+	# --- Terrain ---
+	{"cat": "Terrain", "name": "Eraser", "tile": 0x0000, "sprite": "", "frame": 0},
+	{"cat": "Terrain", "name": "Wall", "tile": 0x0307, "sprite": "block_sprites", "frame": 8},
+	{"cat": "Terrain", "name": "Breakable", "tile": 0x0207, "sprite": "block_sprites", "frame": 8},
+	{"cat": "Terrain", "name": "Ladder/Mesh", "tile": 0x0197, "sprite": "block_sprites", "frame": 152},
+	{"cat": "Terrain", "name": "Ice Floor", "tile": 0x0387, "sprite": "block_sprites", "frame": 136},
+	{"cat": "Terrain", "name": "Hazard 1", "tile": 0x0317, "sprite": "block_sprites", "frame": 24},
+	{"cat": "Terrain", "name": "Hazard 2", "tile": 0x0318, "sprite": "block_sprites", "frame": 25},
+
+	# --- Mechanics ---
+	{"cat": "Mechanics", "name": "Teleport IN", "tile": 0x081A, "sprite": "goody_sprites", "frame": 27},
+	{"cat": "Mechanics", "name": "Teleport OUT", "tile": 0x081B, "sprite": "goody_sprites", "frame": 28},
+	{"cat": "Mechanics", "name": "Stop/Go Switch", "tile": 0x081C, "sprite": "Stop_Go_sprite_family", "frame": 1},
+	{"cat": "Mechanics", "name": "Stop/Go Block", "tile": 0x081D, "sprite": "Stop_Go_sprite_family", "frame": 3},
+
+	# --- Goodies ---
+	{"cat": "Goodies", "name": "Silver Coin", "tile": 0x090A, "sprite": "goody_sprites", "frame": 11},
+	{"cat": "Goodies", "name": "Gold Coin", "tile": 0x0917, "sprite": "goody_sprites", "frame": 24},
+	{"cat": "Goodies", "name": "Large Gem", "tile": 0x0918, "sprite": "goody_sprites", "frame": 25},
+	{"cat": "Goodies", "name": "Arrow Ammo", "tile": 0x0911, "sprite": "goody_sprites", "frame": 18},
+	{"cat": "Goodies", "name": "Ball Ammo", "tile": 0x0912, "sprite": "goody_sprites", "frame": 19},
+	{"cat": "Goodies", "name": "Speed Shoes", "tile": 0x0932, "sprite": "goody_sprites", "frame": 51},
+	{"cat": "Goodies", "name": "Shield", "tile": 0x0930, "sprite": "goody_sprites", "frame": 49},
+
+	# --- Keys & Doors ---
+	{"cat": "Doors", "name": "Key (Univ)", "tile": 0x0907, "sprite": "goody_sprites", "frame": 8},
+	{"cat": "Doors", "name": "Lock (Univ)", "tile": 0x0904, "sprite": "goody_sprites", "frame": 5},
+	{"cat": "Doors", "name": "Door (Univ)", "tile": 0x0901, "sprite": "goody_sprites", "frame": 2},
+	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0913, "sprite": "goody_sprites", "frame": 20},
+	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0914, "sprite": "goody_sprites", "frame": 21},
+	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0915, "sprite": "goody_sprites", "frame": 22},
+	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0923, "sprite": "goody_sprites", "frame": 36},
+	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0924, "sprite": "goody_sprites", "frame": 37},
+	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0925, "sprite": "goody_sprites", "frame": 38},
+	{"cat": "Doors", "name": "Key (P3 Red)", "tile": 0x0933, "sprite": "goody_sprites", "frame": 9},
+	{"cat": "Doors", "name": "Lock (P3 Red)", "tile": 0x0934, "sprite": "goody_sprites", "frame": 6},
+	{"cat": "Doors", "name": "Door (P3 Red)", "tile": 0x0935, "sprite": "goody_sprites", "frame": 3},
+
+	# --- Enemies ---
+	{"cat": "Enemies", "name": "Ant/Teeth (L)", "tile": 0x0701, "sprite": "ant_teeth", "frame": 2},
+	{"cat": "Enemies", "name": "Hippo/Pig (L)", "tile": 0x0702, "sprite": "enemy_family_02", "frame": 2},
+	{"cat": "Enemies", "name": "Ostrich (L)", "tile": 0x0703, "sprite": "enemy_family_03", "frame": 2},
+	{"cat": "Enemies", "name": "Robo (L)", "tile": 0x0704, "sprite": "enemy_family_04", "frame": 2},
+	{"cat": "Enemies", "name": "Smiley (L)", "tile": 0x0706, "sprite": "enemy_family_06", "frame": 2},
+	{"cat": "Enemies", "name": "Hammer (L)", "tile": 0x0707, "sprite": "enemy_family_07", "frame": 2},
+	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x070C, "sprite": "cannon_sprites", "frame": 2},
+
+	# --- Spawns ---
+	{"cat": "Spawns", "name": "P1 Spawn", "tile": -1, "sprite": "BP_sprites", "frame": 2},
+	{"cat": "Spawns", "name": "P2 Spawn", "tile": -2, "sprite": "GP_sprites", "frame": 2},
+	{"cat": "Spawns", "name": "P3 Spawn", "tile": -3, "sprite": "BP_sprites", "frame": 2},
+	{"cat": "Spawns", "name": "VS Spawn 1", "tile": -4, "sprite": "", "frame": 0},
+	{"cat": "Spawns", "name": "VS Spawn 2", "tile": -5, "sprite": "", "frame": 0},
+	{"cat": "Spawns", "name": "VS Spawn 3", "tile": -6, "sprite": "", "frame": 0},
+	{"cat": "Spawns", "name": "VS Spawn 4", "tile": -7, "sprite": "", "frame": 0},
 ]
 
 var brush_idx: int = 1
@@ -54,10 +93,16 @@ var current_brush: int = 0x0307
 var is_mouse_down: bool = false
 var status_msg: String = ""
 var status_timer: float = 0.0
+var _tex_cache: Dictionary = {}
 
 
 func _ready() -> void:
-	_init_grid(grid_cols, grid_rows)
+	if Session and Session.has_meta("editor_state"):
+		var st: Dictionary = Session.get_meta("editor_state")
+		Session.remove_meta("editor_state")
+		_restore_editor_state(st)
+	else:
+		_init_grid(grid_cols, grid_rows)
 	_check_cli_args()
 
 
@@ -118,6 +163,107 @@ func cycle_canvas_size() -> void:
 	_set_status("Canvas size: %dx%d" % [s.x, s.y])
 
 
+func _get_sprite(folder: String, frame: int) -> Texture2D:
+	if folder == "":
+		return null
+	var key := "%s_%d" % [folder, frame]
+	if _tex_cache.has(key):
+		return _tex_cache[key]
+	var path := "res://../extracted/sprites/%s/frame_%03d.png" % [folder, frame]
+	if not FileAccess.file_exists(path):
+		path = "res://sprites/%s/frame_%03d.png" % [folder, frame]
+	if FileAccess.file_exists(path):
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img != null:
+			var tex := ImageTexture.create_from_image(img)
+			_tex_cache[key] = tex
+			return tex
+	_tex_cache[key] = null
+	return null
+
+
+func _validate_map() -> Array[String]:
+	var warnings: Array[String] = []
+	if p1_spawn == p2_spawn:
+		warnings.append("P1 & P2 spawns overlap at (%d, %d)" % [p1_spawn.x, p1_spawn.y])
+	if has_p3 and (p1_spawn == p3_spawn or p2_spawn == p3_spawn):
+		warnings.append("P3 spawn overlaps another player spawn")
+
+	var has_key_univ := false
+	var has_door_univ := false
+	var has_key_p3 := false
+	var has_door_p3 := false
+	for r in range(grid_rows):
+		for c in range(grid_cols):
+			var t: int = cells[r][c]
+			if t == 0x0907: has_key_univ = true
+			elif t == 0x0901 or t == 0x0904: has_door_univ = true
+			elif t == 0x0933: has_key_p3 = true
+			elif t == 0x0934 or t == 0x0935: has_door_p3 = true
+
+	if has_key_univ and not has_door_univ:
+		warnings.append("Universal key placed but no door found")
+	if has_door_univ and not has_key_univ:
+		warnings.append("Universal door placed but no key found")
+	if has_key_p3 and not has_door_p3:
+		warnings.append("P3 Red key placed but no Red door found")
+	if has_door_p3 and not has_key_p3:
+		warnings.append("P3 Red door placed but no Red key found")
+
+	return warnings
+
+
+func _save_editor_state() -> Dictionary:
+	return {
+		"cells": cells.duplicate(true),
+		"grid_cols": grid_cols,
+		"grid_rows": grid_rows,
+		"p1_spawn": p1_spawn,
+		"p2_spawn": p2_spawn,
+		"p3_spawn": p3_spawn,
+		"vs_spawns": vs_spawns.duplicate(),
+		"has_p3": has_p3,
+		"default_mode": default_mode,
+		"victory_rule": victory_rule,
+		"friendly_fire": friendly_fire,
+		"starting_lives": starting_lives,
+		"bonus_time": bonus_time,
+		"map_name": map_name,
+		"brush_idx": brush_idx,
+		"cursor_cell": cursor_cell,
+	}
+
+
+func _restore_editor_state(st: Dictionary) -> void:
+	if st.is_empty():
+		return
+	grid_cols = st.get("grid_cols", 19)
+	grid_rows = st.get("grid_rows", 13)
+	cells = st.get("cells", []).duplicate(true)
+	p1_spawn = st.get("p1_spawn", Vector2i(2, 2))
+	p2_spawn = st.get("p2_spawn", Vector2i(16, 2))
+	p3_spawn = st.get("p3_spawn", Vector2i(9, 2))
+	vs_spawns = st.get("vs_spawns", [Vector2i(0, 0), Vector2i(0, 0), Vector2i(0, 0), Vector2i(0, 0)]).duplicate()
+	has_p3 = st.get("has_p3", false)
+	default_mode = st.get("default_mode", 0)
+	victory_rule = st.get("victory_rule", 0)
+	friendly_fire = st.get("friendly_fire", false)
+	starting_lives = st.get("starting_lives", 3)
+	bonus_time = st.get("bonus_time", 6000)
+	map_name = st.get("map_name", "custom_map")
+	brush_idx = st.get("brush_idx", 1)
+	cursor_cell = st.get("cursor_cell", Vector2i(0, 0))
+	if brush_idx >= 0 and brush_idx < BRUSHES.size():
+		current_brush = BRUSHES[brush_idx]["tile"]
+	if grid_cols == 38 and grid_rows == 26:
+		size_idx = 2
+	elif grid_cols == 28 and grid_rows == 19:
+		size_idx = 1
+	else:
+		size_idx = 0
+	queue_redraw()
+
+
 func _check_cli_args() -> void:
 	var all_args: Array = OS.get_cmdline_user_args()
 	all_args.append_array(OS.get_cmdline_args())
@@ -133,6 +279,10 @@ func _run_self_test() -> void:
 	p1_spawn = Vector2i(2, 2)
 	p2_spawn = Vector2i(35, 2)
 	p3_spawn = Vector2i(19, 2)
+	vs_spawns[0] = Vector2i(10, 5)
+	vs_spawns[1] = Vector2i(20, 5)
+	vs_spawns[2] = Vector2i(10, 20)
+	vs_spawns[3] = Vector2i(20, 20)
 	has_p3 = true
 	friendly_fire = true
 	victory_rule = 1
@@ -172,6 +322,15 @@ func _run_self_test() -> void:
 	assert(cells[10][10] == 0x0207, "cell (10, 10) mismatch")
 	assert(cells[5][5] == 0x090A, "cell (5, 5) mismatch")
 	assert(p3_spawn == Vector2i(19, 2), "p3_spawn mismatch")
+	assert(vs_spawns[0] == Vector2i(10, 5), "vs_spawns[0] mismatch")
+	assert(vs_spawns[1] == Vector2i(20, 5), "vs_spawns[1] mismatch")
+
+	# Verify in-memory state persistence
+	var saved_dict := _save_editor_state()
+	_init_grid(19, 13)
+	_restore_editor_state(saved_dict)
+	assert(grid_cols == 38, "persistence grid_cols mismatch")
+	assert(cells[10][10] == 0x0207, "persistence cells mismatch")
 
 	print("MapEditor CLI self-test: PASS")
 
@@ -217,19 +376,13 @@ func _gui_input(event: InputEvent) -> void:
 			_set_brush(brush_idx - 1)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			_set_brush(brush_idx + 1)
-	elif event is InputEventMouseMotion and is_mouse_down:
-		if event.position.y >= 48.0:
+	elif event is InputEventMouseMotion:
+		cursor_cell = _pos_to_cell(event.position)
+		if is_mouse_down and event.position.y >= 48.0:
 			_paint_at(event.position)
 
 
 func _handle_hud_click(pos: Vector2) -> void:
-	# Buttons along HUD bar:
-	# 16..120: Brush selector (click cycles brush)
-	# 140..220: Size toggle
-	# 230..280: Save
-	# 290..340: Load
-	# 350..420: Playtest
-	# 430..470: Exit
 	if pos.x >= 140.0 and pos.x <= 220.0:
 		cycle_canvas_size()
 	elif pos.x >= 230.0 and pos.x <= 280.0:
@@ -247,7 +400,7 @@ func _handle_hud_click(pos: Vector2) -> void:
 func _set_brush(idx: int) -> void:
 	brush_idx = posmod(idx, BRUSHES.size())
 	current_brush = BRUSHES[brush_idx]["tile"]
-	_set_status("Brush: %s" % BRUSHES[brush_idx]["name"])
+	_set_status("[%s] %s" % [BRUSHES[brush_idx]["cat"], BRUSHES[brush_idx]["name"]])
 
 
 func _paint_at(pos: Vector2) -> void:
@@ -262,6 +415,9 @@ func _paint_at(pos: Vector2) -> void:
 	elif current_brush == -3:
 		p3_spawn = cell_coords
 		has_p3 = true
+	elif current_brush >= -7 and current_brush <= -4:
+		var vs_idx: int = -(current_brush + 4)
+		vs_spawns[vs_idx] = cell_coords
 	else:
 		cells[cell_coords.y][cell_coords.x] = current_brush
 
@@ -296,9 +452,10 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, vp_size.x, hud_h), Color(0.12, 0.12, 0.16))
 	var font := ThemeDB.fallback_font
 
-	# Brush Info
-	draw_string(font, Vector2(16, 20), "Brush: %s" % BRUSHES[brush_idx]["name"], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.YELLOW)
-	draw_string(font, Vector2(16, 38), "[1..9/Wheel]", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.7, 0.7, 0.7))
+	# Brush Info & Sprite Preview
+	var cur_item: Dictionary = BRUSHES[brush_idx]
+	draw_string(font, Vector2(16, 20), "[%s] %s" % [cur_item["cat"], cur_item["name"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.YELLOW)
+	draw_string(font, Vector2(16, 38), "[1..9/Wheel/[]: Brush]", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.7, 0.7, 0.7))
 
 	# Size Button
 	draw_rect(Rect2(140, 8, 80, 32), Color(0.22, 0.22, 0.28))
@@ -342,27 +499,53 @@ func _draw() -> void:
 		for c in range(grid_cols):
 			var rect := Rect2(c * cell_w, hud_h + r * cell_h, cell_w, cell_h)
 			var tile_id: int = cells[r][c]
-			if tile_id == 0x0307:
-				draw_rect(rect, Color(0.65, 0.65, 0.7)) # Solid wall
-			elif tile_id == 0x0207:
-				draw_rect(rect, Color(0.7, 0.5, 0.3)) # Breakable
-			elif tile_id == 0x0197:
-				draw_rect(rect, Color(0.4, 0.6, 0.8)) # Ladder
-			elif tile_id == 0x0387:
-				draw_rect(rect, Color(0.8, 0.9, 1.0)) # Ice
-			elif tile_id == 0x0907 or tile_id == 0x0933:
-				draw_rect(rect, Color(0.9, 0.2, 0.2)) # Key
-			elif tile_id == 0x0904 or tile_id == 0x0934 or tile_id == 0x0901 or tile_id == 0x0935:
-				draw_rect(rect, Color(0.5, 0.3, 0.15)) # Lock/Door
-			elif tile_id > 0:
-				draw_rect(rect, Color(1.0, 0.85, 0.2)) # Pickup/Coin
+			if tile_id != 0:
+				var spr: Texture2D = null
+				var spr_folder := ""
+				var spr_frame := 0
+				for b in BRUSHES:
+					if b["tile"] == tile_id:
+						spr_folder = b["sprite"]
+						spr_frame = b["frame"]
+						break
+				if spr_folder != "":
+					spr = _get_sprite(spr_folder, spr_frame)
+
+				if spr != null:
+					draw_texture_rect(spr, rect, false)
+				else:
+					if tile_id == 0x0307:
+						draw_rect(rect, Color(0.65, 0.65, 0.7)) # Solid wall
+					elif tile_id == 0x0207:
+						draw_rect(rect, Color(0.7, 0.5, 0.3)) # Breakable
+					elif tile_id == 0x0197:
+						draw_rect(rect, Color(0.4, 0.6, 0.8)) # Ladder
+					elif tile_id == 0x0387:
+						draw_rect(rect, Color(0.8, 0.9, 1.0)) # Ice
+					elif tile_id == 0x0907 or tile_id == 0x0933:
+						draw_rect(rect, Color(0.9, 0.2, 0.2)) # Key
+					elif tile_id == 0x0904 or tile_id == 0x0934 or tile_id == 0x0901 or tile_id == 0x0935:
+						draw_rect(rect, Color(0.5, 0.3, 0.15)) # Lock/Door
+					else:
+						draw_rect(rect, Color(1.0, 0.85, 0.2)) # Pickup/Coin
 			draw_rect(rect, Color(0.2, 0.2, 0.25, 0.25), false, 1.0) # Grid line
 
-	# 3. Draw Spawn Points
+	# 3. Draw Player & VS Spawns
 	draw_circle(Vector2(p1_spawn.x * cell_w + cell_w * 0.5, hud_h + p1_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.DODGER_BLUE)
 	draw_circle(Vector2(p2_spawn.x * cell_w + cell_w * 0.5, hud_h + p2_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.LIME_GREEN)
 	if has_p3:
 		draw_circle(Vector2(p3_spawn.x * cell_w + cell_w * 0.5, hud_h + p3_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.CRIMSON)
+
+	for i in range(4):
+		var vs: Vector2i = vs_spawns[i]
+		if vs.x > 0 or vs.y > 0:
+			draw_circle(Vector2(vs.x * cell_w + cell_w * 0.5, hud_h + vs.y * cell_h + cell_h * 0.5), cell_w * 0.25, Color.ORANGE)
+
+	# 4. Draw Validation Banner if warnings exist
+	var warnings := _validate_map()
+	if warnings.size() > 0:
+		draw_rect(Rect2(0, vp_size.y - 24, vp_size.x, 24), Color(0.4, 0.1, 0.1, 0.85))
+		draw_string(font, Vector2(16, vp_size.y - 8), "WARNING: %s" % warnings[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.9, 0.4))
 
 
 # --- Strict Big-Endian Byte Helpers ---
@@ -441,9 +624,12 @@ func serialize_to_bord() -> PackedByteArray:
 	out[ext_idx + 9] = p3_spawn.y if has_p3 else 0
 	_put_be16(out, ext_idx + 10, 0x020D) # p3_block
 
-	# 4 extra vs spawns (8 bytes) -> default to 0
-	for i in range(8):
-		out[ext_idx + 12 + i] = 0
+	# 4 extra vs spawns (8 bytes)
+	for i in range(4):
+		var sp: Vector2i = vs_spawns[i] if i < vs_spawns.size() else Vector2i(0, 0)
+		out[ext_idx + 12 + i * 2] = sp.x
+		out[ext_idx + 12 + i * 2 + 1] = sp.y
+
 	out[ext_idx + 20] = victory_rule
 	out[ext_idx + 21] = starting_lives
 
@@ -518,6 +704,8 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 				friendly_fire = bool(flags & 2)
 				sp3_x = raw[ext_idx + 8]
 				sp3_y = raw[ext_idx + 9]
+				for i in range(4):
+					vs_spawns[i] = Vector2i(raw[ext_idx + 12 + i * 2], raw[ext_idx + 12 + i * 2 + 1])
 				victory_rule = raw[ext_idx + 20]
 				starting_lives = raw[ext_idx + 21]
 
@@ -567,26 +755,28 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 func save_to_default_file() -> void:
 	var dir := "user://custom_maps"
 	DirAccess.make_dir_recursive_absolute(dir)
-	var path := "%s/custom_map.bord" % dir
+	var path := "%s/%s.bord" % [dir, map_name]
 	var raw := serialize_to_bord()
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f != null:
 		f.store_buffer(raw)
 		f.close()
-		_set_status("Saved to user://custom_maps/custom_map.bord")
+		_set_status("Saved to %s" % path)
 		print("Map editor saved: %s (%d bytes)" % [path, raw.size()])
 	else:
 		_set_status("Error saving map")
 
 
 func load_from_default_file() -> void:
-	var path := "user://custom_maps/custom_map.bord"
+	var path := "user://custom_maps/%s.bord" % map_name
+	if not FileAccess.file_exists(path):
+		path = "user://custom_maps/custom_map.bord"
 	if not FileAccess.file_exists(path):
 		_set_status("No saved map found")
 		return
 	var raw := FileAccess.get_file_as_bytes(path)
 	if load_from_bord(raw):
-		_set_status("Loaded user://custom_maps/custom_map.bord")
+		_set_status("Loaded %s" % path)
 		print("Map editor loaded: %s (%d bytes)" % [path, raw.size()])
 	else:
 		_set_status("Error parsing map file")
@@ -597,4 +787,5 @@ func playtest_in_memory() -> void:
 	if Session:
 		Session.set_meta("custom_board_bytes", raw)
 		Session.set_meta("editor_return", true)
+		Session.set_meta("editor_state", _save_editor_state())
 	get_tree().change_scene_to_file("res://scenes/game.tscn")

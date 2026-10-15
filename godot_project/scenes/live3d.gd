@@ -36,9 +36,14 @@ void fragment() {
 			}
 		}
 	}
-	vec3 rgb = a > 0.0 ? c.rgb / a : vec3(0.0);
-	if (red && rgb.b > rgb.r + 0.06) {
-		rgb = vec3(rgb.b, rgb.g * 0.45, rgb.r);   // game.gd _redden: the blue player's shirt -> P3 red
+	if (red) {
+		float max_bg = max(rgb.g, rgb.b);
+		if (max_bg > rgb.r * 1.25 && max_bg > 0.15) {
+			float luma = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+			vec3 shadow = vec3(0.557, 0.0, 0.0);
+			vec3 highlight = vec3(0.898, 0.224, 0.208);
+			rgb = mix(shadow, highlight, clamp(luma * 1.4, 0.0, 1.0));
+		}
 	}
 	COLOR = vec4(rgb, a);
 }

@@ -11,8 +11,26 @@ class_name RollbackNet
 # - Join code encoder/decoder (SOI-XXXX-XXXX)
 
 const RING_BUFFER_SIZE := 64
-const BASE_DELAY := 2
+var BASE_DELAY: int = 2
 const MAX_ROLLBACK_WINDOW := 16
+
+const CROCKFORD_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+static func encode_be16(arr: PackedByteArray, offset: int, val: int) -> void:
+	arr[offset] = (val >> 8) & 0xFF
+	arr[offset + 1] = val & 0xFF
+
+static func decode_be16(arr: PackedByteArray, offset: int) -> int:
+	return (int(arr[offset]) << 8) | int(arr[offset + 1])
+
+static func encode_be32(arr: PackedByteArray, offset: int, val: int) -> void:
+	arr[offset] = (val >> 24) & 0xFF
+	arr[offset + 1] = (val >> 16) & 0xFF
+	arr[offset + 2] = (val >> 8) & 0xFF
+	arr[offset + 3] = val & 0xFF
+
+static func decode_be32(arr: PackedByteArray, offset: int) -> int:
+	return (int(arr[offset]) << 24) | (int(arr[offset + 1]) << 16) | (int(arr[offset + 2]) << 8) | int(arr[offset + 3])
 
 const PKT_MATCH_INIT := 0x01
 const PKT_BOARD_LOAD := 0x02
@@ -35,6 +53,9 @@ var last_confirmed_tick: int = 0
 var last_confirmed_per_peer: Array = [0, 0, 0]
 var last_confirmed_input: Array = [0, 0, 0]
 var earliest_mispredicted_tick: int = -1
+var peer_ack_tick: Array = [0, 0, 0]
+var rolling_rtt_ms: float = 0.0
+var consecutive_rift_frames: int = 0
 
 # Ring buffer storing raw snapshots: snapshot_ring[tick % 64] = PackedByteArray
 var snapshot_ring: Array = []
@@ -69,32 +90,85 @@ func _init() -> void:
 		snapshot_ring[i] = PackedByteArray()
 
 
-static func ip_to_join_code(ip_str: String) -> String:
-	var parts := ip_str.strip_edges().split(".")
+static func ip_to_join_code(ip_str: String, port: int = 7777) -> String:
+	var clean_ip := ip_str.strip_edges()
+	if ":" in clean_ip:
+		var sp := clean_ip.rsplit(":", false, 1)
+		clean_ip = sp[0].strip_edges()
+		if sp[1].is_valid_int():
+			port = sp[1].to_int()
+	var parts := clean_ip.split(".")
 	if parts.size() != 4:
-		return "SOI-0000-0000"
+		return "SOI-00000-00000"
 	for p in parts:
 		if not p.is_valid_int():
-			return "SOI-0000-0000"
+			return "SOI-00000-00000"
 		var val := p.to_int()
 		if val < 0 or val > 255:
-			return "SOI-0000-0000"
+			return "SOI-00000-00000"
 	var b0 := parts[0].to_int() & 0xFF
 	var b1 := parts[1].to_int() & 0xFF
 	var b2 := parts[2].to_int() & 0xFF
 	var b3 := parts[3].to_int() & 0xFF
-	return "SOI-%02X%02X-%02X%02X" % [b0, b1, b2, b3]
+	var val48: int = (b0 << 40) | (b1 << 32) | (b2 << 24) | (b3 << 16) | (port & 0xFFFF)
+
+	var chars := ""
+	for i in range(10):
+		var shift := (9 - i) * 5
+		var idx := (val48 >> shift) & 0x1F
+		chars += CROCKFORD_ALPHABET[idx]
+	return "SOI-%s-%s" % [chars.substr(0, 5), chars.substr(5, 5)]
 
 
 static func join_code_to_ip(code_str: String) -> String:
 	var clean := code_str.strip_edges().to_upper().replace("SOI-", "").replace("SOI", "").replace("-", "").replace(" ", "")
-	if clean.length() != 8 or not clean.is_valid_hex_number(false):
+	clean = clean.replace("O", "0").replace("I", "1").replace("L", "1")
+
+	# Legacy 8-char hex compatibility
+	if clean.length() == 8 and clean.is_valid_hex_number(false):
+		var b0 := ("0x" + clean.substr(0, 2)).hex_to_int()
+		var b1 := ("0x" + clean.substr(2, 2)).hex_to_int()
+		var b2 := ("0x" + clean.substr(4, 2)).hex_to_int()
+		var b3 := ("0x" + clean.substr(6, 2)).hex_to_int()
+		return "%d.%d.%d.%d" % [b0, b1, b2, b3]
+
+	if clean.length() != 10:
 		return ""
-	var b0 := ("0x" + clean.substr(0, 2)).hex_to_int()
-	var b1 := ("0x" + clean.substr(2, 2)).hex_to_int()
-	var b2 := ("0x" + clean.substr(4, 2)).hex_to_int()
-	var b3 := ("0x" + clean.substr(6, 2)).hex_to_int()
+
+	var val48: int = 0
+	for i in range(10):
+		var ch := clean[i]
+		var idx := CROCKFORD_ALPHABET.find(ch)
+		if idx < 0:
+			return ""
+		val48 = (val48 << 5) | idx
+
+	var port := val48 & 0xFFFF
+	var b3 := (val48 >> 16) & 0xFF
+	var b2 := (val48 >> 24) & 0xFF
+	var b1 := (val48 >> 32) & 0xFF
+	var b0 := (val48 >> 40) & 0xFF
+	if port != 7777 and port != 0:
+		return "%d.%d.%d.%d:%d" % [b0, b1, b2, b3, port]
 	return "%d.%d.%d.%d" % [b0, b1, b2, b3]
+
+
+static func join_code_to_port(code_str: String) -> int:
+	var clean := code_str.strip_edges().to_upper().replace("SOI-", "").replace("SOI", "").replace("-", "").replace(" ", "")
+	clean = clean.replace("O", "0").replace("I", "1").replace("L", "1")
+	if clean.length() == 8 and clean.is_valid_hex_number(false):
+		return 7777
+	if clean.length() != 10:
+		return 7777
+	var val48: int = 0
+	for i in range(10):
+		var ch := clean[i]
+		var idx := CROCKFORD_ALPHABET.find(ch)
+		if idx < 0:
+			return 7777
+		val48 = (val48 << 5) | idx
+	var port := val48 & 0xFFFF
+	return port if port > 0 else 7777
 
 
 func reset() -> void:
@@ -103,6 +177,8 @@ func reset() -> void:
 	last_confirmed_per_peer = [0, 0, 0]
 	last_confirmed_input = [0, 0, 0]
 	earliest_mispredicted_tick = -1
+	peer_ack_tick = [0, 0, 0]
+	consecutive_rift_frames = 0
 	is_resimulating = false
 	is_stalled = false
 	stalled_frames = 0
@@ -161,12 +237,22 @@ func get_active_remote_peer_count() -> int:
 	return count
 
 
+static func _get_session() -> Node:
+	var ml = Engine.get_main_loop()
+	if ml and ml is SceneTree and ml.root:
+		return ml.root.get_node_or_null("Session")
+	return null
+
+
 func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mode: int, victory_rule: int = 0, friendly_fire: int = 0) -> void:
 	if not enet:
 		return
 	local_slot = 0
 	var peers := enet.get_peers()
 	print("send_match_init: peers=%d blen=%d mode=%d rule=%d ff=%d" % [peers.size(), bord_bytes.size(), mode, victory_rule, friendly_fire])
+	var s := _get_session()
+	var assist_val: int = 1 if (s != null and bool(s.get("input_assist"))) else 0
+	var p3_any_val: int = 1 if (s != null and bool(s.get("p3_any_key"))) else 0
 	for idx in range(peers.size()):
 		var peer: ENetPacketPeer = peers[idx]
 		var pid := peer.get_instance_id()
@@ -180,12 +266,12 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 		pkt[3] = mode
 		pkt[4] = victory_rule
 		pkt[5] = friendly_fire
-		pkt[6] = 0 # input_assist
+		pkt[6] = assist_val
 		pkt[7] = speed
 		pkt[8] = BASE_DELAY
-		pkt[9] = 2 # start_lives
-		pkt.encode_u16(0x0A, blen)
-		pkt.encode_u32(0x0C, rng_seed)
+		pkt[9] = p3_any_val
+		encode_be16(pkt, 0x0A, blen)
+		encode_be32(pkt, 0x0C, rng_seed)
 		for b in range(blen):
 			pkt[0x10 + b] = bord_bytes[b]
 		peer.send(0, pkt, ENetPacketPeer.FLAG_RELIABLE)
@@ -201,8 +287,8 @@ func send_board_load(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool 
 	pkt.resize(8 + blen)
 	pkt[0] = PKT_BOARD_LOAD
 	pkt[1] = 1 if is_retry else 0
-	pkt.encode_u16(2, blen)
-	pkt.encode_u32(4, rng_seed)
+	encode_be16(pkt, 2, blen)
+	encode_be32(pkt, 4, rng_seed)
 	for b in range(blen):
 		pkt[8 + b] = bord_bytes[b]
 	print("send_board_load: blen=%d seed=%d retry=%s pkt_len=%d" % [blen, rng_seed, str(is_retry), pkt.size()])
@@ -263,7 +349,7 @@ func poll_network(time_now_sec: float) -> void:
 					drop_pkt[0] = PKT_DROP_PEER
 					drop_pkt[1] = slot
 					var last_t: int = int(last_confirmed_per_peer[slot])
-					drop_pkt.encode_u32(2, last_t)
+					encode_be32(drop_pkt, 2, last_t)
 					for k in range(16):
 						var tk: int = last_t - k
 						drop_pkt[6 + k] = int(input_history[slot].get(tk, 0)) if tk >= 0 else 0
@@ -306,7 +392,7 @@ func _handle_drop_peer(pkt: PackedByteArray) -> void:
 	var slot := pkt[1]
 	if slot >= 0 and slot < 3 and slot != local_slot:
 		if pkt.size() >= 6:
-			var last_t := pkt.decode_u32(2)
+			var last_t := decode_be32(pkt, 2)
 			var win_len := mini(16, pkt.size() - 6)
 			for k in range(win_len):
 				var tk := last_t - k
@@ -328,6 +414,29 @@ func record_state_hash(tick: int, hash_val: int) -> void:
 				state_hash_history.erase(tk)
 
 
+func _send_input_packet(anchor_tick: int) -> void:
+	var pkt := PackedByteArray()
+	pkt.resize(20 + 16)
+	pkt[0] = PKT_INPUT_TICK
+	pkt[1] = local_slot
+	encode_be16(pkt, 2, 0) # tick_rift
+	encode_be32(pkt, 4, anchor_tick) # head_tick
+	encode_be32(pkt, 8, last_confirmed_tick) # ack_tick
+	var hash_tick: int = (last_confirmed_tick / 8) * 8
+	var hash_val: int = int(state_hash_history.get(hash_tick, 0))
+	encode_be32(pkt, 12, hash_tick)
+	encode_be32(pkt, 16, hash_val)
+
+	for k in range(16):
+		var t := anchor_tick - k
+		if t >= 0:
+			pkt[20 + k] = int(input_history[local_slot].get(t, 0))
+		else:
+			pkt[20 + k] = 0
+
+	_broadcast_packet(pkt, 1, ENetPacketPeer.FLAG_UNSEQUENCED)
+
+
 func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
 	var target_tick := current_tick + BASE_DELAY
 	input_history[local_slot][target_tick] = local_input
@@ -337,28 +446,20 @@ func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
 	if current_state_hash != 0 and current_tick > 0:
 		record_state_hash(current_tick - 1, current_state_hash)
 
-	# Construct 36-byte INPUT_TICK sliding window packet (20 header + 16 frames window)
-	var pkt := PackedByteArray()
-	pkt.resize(20 + 16)
-	pkt[0] = PKT_INPUT_TICK
-	pkt[1] = local_slot
-	pkt.encode_s16(2, 0) # tick_rift
-	pkt.encode_u32(4, target_tick) # head_tick
-	pkt.encode_u32(8, last_confirmed_tick) # ack_tick
-	var hash_tick: int = (last_confirmed_tick / 8) * 8
-	var hash_val: int = int(state_hash_history.get(hash_tick, 0))
-	pkt.encode_u32(12, hash_tick)
-	pkt.encode_u32(16, hash_val)
+	# Always send primary leading packet for target_tick
+	_send_input_packet(target_tick)
 
-	# Fill sliding window (target_tick down to target_tick - 15)
-	for k in range(16):
-		var t := target_tick - k
-		if t >= 0:
-			pkt[20 + k] = int(input_history[local_slot].get(t, 0))
-		else:
-			pkt[20 + k] = 0
-
-	_broadcast_packet(pkt, 1, ENetPacketPeer.FLAG_UNSEQUENCED)
+	# Ack-Anchored sliding window catch-up:
+	# If any peer is lagging behind by more than 16 ticks from target_tick,
+	# also transmit a secondary catch-up packet anchored at min_peer_ack + 16
+	var min_peer_ack := target_tick
+	var has_peer_ack := false
+	for s in range(num_players):
+		if s != local_slot and not dropped_peers.has(s):
+			min_peer_ack = mini(min_peer_ack, int(peer_ack_tick[s]))
+			has_peer_ack = true
+	if has_peer_ack and (target_tick - min_peer_ack) > 16:
+		_send_input_packet(min_peer_ack + 16)
 
 
 func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
@@ -367,7 +468,10 @@ func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
 	var slot := pkt[1]
 	if slot < 0 or slot >= 3 or slot == local_slot or dropped_peers.has(slot):
 		return
-	var head_tick := pkt.decode_u32(4)
+	var head_tick := decode_be32(pkt, 4)
+	var ack_tick := decode_be32(pkt, 8)
+	peer_ack_tick[slot] = maxi(int(peer_ack_tick[slot]), ack_tick)
+
 	var win_len := pkt.size() - 20
 	for k in range(win_len):
 		var t := head_tick - k
@@ -392,8 +496,8 @@ func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
 	_update_last_confirmed_tick()
 
 	# Check desync hash
-	var hash_tick := pkt.decode_u32(12)
-	var remote_hash := pkt.decode_u32(16)
+	var hash_tick := decode_be32(pkt, 12)
+	var remote_hash := decode_be32(pkt, 16)
 	if hash_tick > 0 and remote_hash != 0 and hash_tick <= last_confirmed_tick and earliest_mispredicted_tick < 0 and state_hash_history.has(hash_tick):
 		var local_hash: int = int(state_hash_history[hash_tick])
 		if local_hash != remote_hash:
@@ -440,6 +544,7 @@ func check_rift_stall() -> bool:
 		if is_stalled:
 			is_stalled = false
 			stalled_frames = 0
+			consecutive_rift_frames = 0
 			rift_stall_changed.emit(false)
 		return false
 	if current_tick > BASE_DELAY and (current_tick - last_confirmed_tick) >= MAX_ROLLBACK_WINDOW:
@@ -447,12 +552,27 @@ func check_rift_stall() -> bool:
 			is_stalled = true
 			rift_stall_changed.emit(true)
 		stalled_frames += 1
-		send_local_input(int(input_history[local_slot].get(current_tick, 0)))
+		consecutive_rift_frames += 1
+		var target_tick: int = int(last_confirmed_per_peer[local_slot])
+		if target_tick > 0:
+			_send_input_packet(target_tick)
+			var min_peer_ack := target_tick
+			var has_peer_ack := false
+			for s in range(num_players):
+				if s != local_slot and not dropped_peers.has(s):
+					min_peer_ack = mini(min_peer_ack, int(peer_ack_tick[s]))
+					has_peer_ack = true
+			if has_peer_ack and (target_tick - min_peer_ack) > 16:
+				_send_input_packet(min_peer_ack + 16)
 		return true
 	if is_stalled:
 		is_stalled = false
 		stalled_frames = 0
 		rift_stall_changed.emit(false)
+	if last_confirmed_tick > current_tick:
+		consecutive_rift_frames -= 1
+	else:
+		consecutive_rift_frames = 0
 	return false
 
 
@@ -464,12 +584,20 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 	var mode: int = pkt[3]
 	var victory_rule: int = pkt[4]
 	var friendly_fire: int = pkt[5]
+	var input_assist: int = pkt[6]
 	var speed: int = pkt[7]
-	var blen: int = pkt.decode_u16(0x0A)
-	var rng_seed: int = pkt.decode_u32(0x0C)
+	var base_delay_val: int = pkt[8]
+	var p3_any_key_val: int = pkt[9]
+	var blen: int = decode_be16(pkt, 0x0A)
+	var rng_seed: int = decode_be32(pkt, 0x0C)
 	var bord_bytes: PackedByteArray = pkt.slice(0x10, 0x10 + blen)
-	Session.victory_rule = victory_rule
-	Session.friendly_fire = friendly_fire
+	var s := _get_session()
+	if s != null:
+		s.set("victory_rule", victory_rule)
+		s.set("friendly_fire", friendly_fire)
+		s.set("input_assist", (input_assist != 0))
+		s.set("p3_any_key", (p3_any_key_val != 0))
+	BASE_DELAY = clampi(base_delay_val, 2, 4)
 	match_started.emit(bord_bytes, rng_seed, speed, num_players, mode, local_slot)
 
 
@@ -477,8 +605,8 @@ func _handle_board_load(pkt: PackedByteArray) -> void:
 	if pkt.size() < 8:
 		return
 	var is_retry: bool = (pkt[1] == 1)
-	var blen: int = pkt.decode_u16(2)
-	var rng_seed: int = pkt.decode_u32(4)
+	var blen: int = decode_be16(pkt, 2)
+	var rng_seed: int = decode_be32(pkt, 4)
 	var bord_bytes: PackedByteArray = pkt.slice(8, 8 + blen)
 	print("_handle_board_load: pkt_len=%d blen=%d seed=%d retry=%s slice_len=%d" %
 		[pkt.size(), blen, rng_seed, str(is_retry), bord_bytes.size()])

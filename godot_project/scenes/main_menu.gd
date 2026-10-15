@@ -47,7 +47,10 @@ func _pict(pict_name: String) -> Texture2D:
 func _ready() -> void:
 	_apply_window_mode()
 	Session.init_presentation()   # ORIGINAL, or REMASTERED when launched with --3d / --hd
-	for a in OS.get_cmdline_user_args():
+	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if a == "--relay" or a.begins_with("--relay="):
+			get_tree().change_scene_to_file.call_deferred("res://scenes/headless_relay.tscn")
+			return
 		if a == "--editor" or a == "--test-editor":
 			get_tree().change_scene_to_file.call_deferred("res://scenes/editor.tscn")
 			return
@@ -543,6 +546,59 @@ func _on_file(id: int) -> void:
 				get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		2: get_tree().quit()    # Quit
 
+var _device_status_lbl: Label = null
+
+func _claim_controller_slot(device: int) -> void:
+	for slot in range(Session.num_players):
+		if Session.player_device[slot] == device:
+			return
+	for slot in range(Session.num_players):
+		var cur: int = Session.player_device[slot]
+		if (cur < 0 and device >= 0) or (cur >= 0 and device < 0):
+			Session.player_device[slot] = device
+			_update_lobby_device_labels()
+			return
+	_update_lobby_device_labels()
+
+func _update_lobby_device_labels() -> void:
+	if not is_instance_valid(_device_status_lbl):
+		return
+	var parts: Array[String] = []
+	for p in range(Session.num_players):
+		var dev: int = Session.player_device[p] if p < Session.player_device.size() else -1
+		var dev_name := "KB1" if dev == -1 else ("KB2" if dev == -2 else "Joy %d" % dev)
+		parts.append("P%d: %s" % [p + 1, dev_name])
+	_device_status_lbl.text = "Slots: " + " | ".join(parts) + " (Press A / Space to claim)"
+
+func _open_custom_map_selector(btn: Button) -> void:
+	var pop := PopupMenu.new()
+	_style_mac_popup(pop)
+	pop.add_item("Default Campaign", 0)
+	var dir := "user://custom_maps"
+	if DirAccess.dir_exists_absolute(dir):
+		var d := DirAccess.open(dir)
+		if d != null:
+			d.list_dir_begin()
+			var fn := d.get_next()
+			var idx := 1
+			while fn != "":
+				if fn.ends_with(".bord"):
+					pop.add_item(fn, idx)
+					idx += 1
+				fn = d.get_next()
+	pop.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			Session.custom_map_path = ""
+			btn.text = "Map: Default"
+		else:
+			var item_text := pop.get_item_text(pop.get_item_index(id))
+			Session.custom_map_path = "%s/%s" % [dir, item_text]
+			Session.board_path = Session.custom_map_path
+			btn.text = "Map: %s" % item_text
+	)
+	add_child(pop)
+	pop.popup_centered(Vector2i(240, 200))
+
 func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String) -> void:
 	if is_instance_valid(code_lbl) and ext_ip != "":
 		code_lbl.text = "Join Code: %s" % RollbackNet.ip_to_join_code(ext_ip)
@@ -570,8 +626,8 @@ func _show_online_lobby_dialog() -> void:
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	dlg.add_child(backdrop)
 
-	var dw := 380.0
-	var dh := 300.0
+	var dw := 420.0
+	var dh := 380.0
 	var dx := (640.0 - dw) * 0.5
 	var dy := (480.0 - dh) * 0.5
 
@@ -612,7 +668,7 @@ func _show_online_lobby_dialog() -> void:
 
 	# Mode toggle: Host / Join
 	var tab_row := HBoxContainer.new()
-	tab_row.position = Vector2(dx + 20, dy + 40)
+	tab_row.position = Vector2(dx + 20, dy + 36)
 	tab_row.size = Vector2(dw - 40, 26)
 	tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	dlg.add_child(tab_row)
@@ -631,8 +687,8 @@ func _show_online_lobby_dialog() -> void:
 
 	# Host panel
 	var host_panel := VBoxContainer.new()
-	host_panel.position = Vector2(dx + 20, dy + 75)
-	host_panel.size = Vector2(dw - 40, 180)
+	host_panel.position = Vector2(dx + 20, dy + 66)
+	host_panel.size = Vector2(dw - 40, 265)
 	dlg.add_child(host_panel)
 
 	var h_row1 := HBoxContainer.new()
@@ -660,11 +716,50 @@ func _show_online_lobby_dialog() -> void:
 	h_row1.add_child(host_mode)
 	host_panel.add_child(h_row1)
 
+	# Row 2: Victory Rule & Friendly Fire
+	var h_row2 := HBoxContainer.new()
+	var host_vrule := OptionButton.new()
+	host_vrule.add_item("Rule: Map Default", -1)
+	host_vrule.add_item("Rule: Lives", 0)
+	host_vrule.add_item("Rule: Score", 1)
+	host_vrule.add_item("Rule: Door", 2)
+	h_row2.add_child(host_vrule)
+
+	var host_ff := OptionButton.new()
+	host_ff.add_item("FF: Default", -1)
+	host_ff.add_item("FF: Off", 0)
+	host_ff.add_item("FF: On", 1)
+	h_row2.add_child(host_ff)
+	host_panel.add_child(h_row2)
+
+	# Row 3: P3 Any-Key & Custom Map Selector
+	var h_row3 := HBoxContainer.new()
+	var host_p3_any := CheckBox.new()
+	host_p3_any.text = "3P Any-Key"
+	host_p3_any.button_pressed = Session.p3_any_key
+	h_row3.add_child(host_p3_any)
+
+	var host_map_btn := Button.new()
+	host_map_btn.text = "Map: Default"
+	host_map_btn.pressed.connect(func() -> void:
+		_open_custom_map_selector(host_map_btn)
+	)
+	h_row3.add_child(host_map_btn)
+	host_panel.add_child(h_row3)
+
+	# Device Slot Claims
+	_device_status_lbl = Label.new()
+	_device_status_lbl.add_theme_color_override("font_color", Color(0.1, 0.3, 0.6))
+	_device_status_lbl.add_theme_font_override("font", font)
+	_device_status_lbl.add_theme_font_size_override("font_size", 10)
+	host_panel.add_child(_device_status_lbl)
+	_update_lobby_device_labels()
+
 	var host_status := Label.new()
 	host_status.text = "Port: 7777 (UDP)"
 	host_status.add_theme_color_override("font_color", Color(0.2, 0.2, 0.2))
 	host_status.add_theme_font_override("font", font)
-	host_status.add_theme_font_size_override("font_size", 11)
+	host_status.add_theme_font_size_override("font_size", 10)
 	host_panel.add_child(host_status)
 
 	var host_code_lbl := Label.new()
@@ -800,8 +895,15 @@ func _show_online_lobby_dialog() -> void:
 		var g_mode: int = host_mode.get_selected_id()
 		Session.num_players = n_players
 		Session.mode = g_mode
+		Session.victory_rule = host_vrule.get_selected_id()
+		Session.friendly_fire = host_ff.get_selected_id()
+		Session.p3_any_key = host_p3_any.button_pressed
 		Session.start_campaign()
-		var bord_bytes := FileAccess.get_file_as_bytes(Session.board_path)
+		var bord_bytes: PackedByteArray
+		if Session.custom_map_path != "" and FileAccess.file_exists(Session.custom_map_path):
+			bord_bytes = FileAccess.get_file_as_bytes(Session.custom_map_path)
+		else:
+			bord_bytes = FileAccess.get_file_as_bytes(Session.board_path)
 		var seed_val := randi() % 1000000 + 1
 		Session.net = _lobby_net
 		Session.is_online = true
@@ -1162,6 +1264,16 @@ func _show_hs_entries(show_it: bool) -> void:
 	_hs_entries.visible = show_it
 
 func _input(e: InputEvent) -> void:
+	if _online_dialog != null and _online_dialog.visible:
+		if e is InputEventJoypadButton and e.pressed and not e.echo:
+			if e.button_index == JOY_BUTTON_A:
+				_claim_controller_slot(e.device)
+				return
+		elif e is InputEventKey and e.pressed and not e.echo:
+			if e.keycode == KEY_SPACE:
+				_claim_controller_slot(-1)
+				return
+
 	if _starting_board_dialog != null and _starting_board_dialog.visible:
 		if e is InputEventKey and e.pressed and not e.echo:
 			if e.keycode == KEY_ESCAPE:
