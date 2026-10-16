@@ -162,7 +162,8 @@ func _ready() -> void:
 	for c in [core1, core2, core3]:
 		c.init(12345)
 		c.load_level(bord_bytes)
-		c.set_play_mode(0)
+		c.set_play_mode(2)
+		c.spawn_player3()
 		c.limit_players(3)
 
 	var p2_notified_p3_drop := [false]
@@ -270,6 +271,9 @@ func _ready() -> void:
 					c_inst.snapshot_load(snap)
 					net_inst.is_resimulating = true
 					for st in range(rb, net_inst.current_tick):
+						for d_slot in net_inst.peer_drop_tick.keys():
+							if st == int(net_inst.peer_drop_tick[d_slot]):
+								c_inst.drop_player(int(d_slot) + 1)
 						var sp1: int = net_inst.get_or_predict_input(0, st)
 						var sp2: int = net_inst.get_or_predict_input(1, st)
 						var sp3: int = net_inst.get_or_predict_input(2, st)
@@ -298,6 +302,13 @@ func _ready() -> void:
 		var in2_1 := net2.get_or_predict_input(1, net2.current_tick)
 		var in2_2 := net2.get_or_predict_input(2, net2.current_tick)
 
+		for d_slot in net1.peer_drop_tick.keys():
+			if net1.current_tick == int(net1.peer_drop_tick[d_slot]):
+				core1.drop_player(int(d_slot) + 1)
+		for d_slot in net2.peer_drop_tick.keys():
+			if net2.current_tick == int(net2.peer_drop_tick[d_slot]):
+				core2.drop_player(int(d_slot) + 1)
+
 		core1.tick3(in1_0, in1_1, in1_2)
 		core2.tick3(in2_0, in2_1, in2_2)
 
@@ -322,6 +333,9 @@ func _ready() -> void:
 					var snap: PackedByteArray = net_inst.snapshot_ring[rb % RollbackNet.RING_BUFFER_SIZE]
 					c_inst.snapshot_load(snap)
 					for st in range(rb, net_inst.current_tick):
+						for d_slot in net_inst.peer_drop_tick.keys():
+							if st == int(net_inst.peer_drop_tick[d_slot]):
+								c_inst.drop_player(int(d_slot) + 1)
 						var sp1: int = net_inst.get_or_predict_input(0, st)
 						var sp2: int = net_inst.get_or_predict_input(1, st)
 						var sp3: int = net_inst.get_or_predict_input(2, st)
@@ -333,6 +347,12 @@ func _ready() -> void:
 		print("FAIL: Desync detected between P1 and P2! Net1 hash: %X, Net2 hash: %X, Desync events: %d" % [
 			core1.net_hash(), core2.net_hash(), desyncs_detected[0]
 		])
+		for tk in range(700):
+			var in1: Array = [net1.get_or_predict_input(0, tk), net1.get_or_predict_input(1, tk), net1.get_or_predict_input(2, tk)]
+			var in2: Array = [net2.get_or_predict_input(0, tk), net2.get_or_predict_input(1, tk), net2.get_or_predict_input(2, tk)]
+			if in1 != in2:
+				print("INPUT MISMATCH at tick %d: Net1=%s, Net2=%s" % [tk, str(in1), str(in2)])
+				break
 		failures += 1
 	else:
 		print("PASS: P1 and P2 simulated 400 ticks after P3 drop with 0 desyncs and 0 stalls! Final hash: %X" % core1.net_hash())

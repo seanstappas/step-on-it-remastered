@@ -4395,6 +4395,114 @@ int main(void)
         CHECK(w->players[1].invuln == 0, "67.3: weapon input cancels invuln early when friendly_fire active");
     }
 
+    /* ---- 68. 10_15 Post-Audit Regression Tests ---- */
+    {
+        /* 68.1: Teleporter in SOI_MODE_VERSUS does not freeze arena */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        w->cell[9][3] = 0x081Au; /* Teleporter IN */
+        w->cell[9][5] = 0x081Bu; /* Teleporter OUT */
+        soi_tick(w, 0, 0);
+        CHECK(w->tp_freeze == 0, "68.1: Teleporter in Versus mode does not set tp_freeze");
+
+        /* 68.2: Dual speed-shoe bounce separation when p1->x > p2->x */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        w->friendly_fire = 1;
+        reset_player(w, 1, 5, 9); ground_player(w, 5, 9);
+        reset_player(w, 2, 4, 9); ground_player(w, 4, 9);
+        w->players[1].fast = 100;
+        w->players[2].fast = 100;
+        w->players[1].x = 110;
+        w->players[2].x = 100;
+        w->players[1].facing = -1;
+        w->players[2].facing = 1;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].x > 110, "68.2: P1 pushed right when p1->x > p2->x");
+        CHECK(w->players[2].x < 100, "68.2: P2 pushed left when p1->x > p2->x");
+
+        /* 68.3: EXT1 starting_lives does not clobber decremented lives on death reload or next level */
+        uint8_t ext_bord[64];
+        memset(ext_bord, 0, sizeof(ext_bord));
+        ext_bord[0x07] = 2; ext_bord[0x09] = 2;
+        ext_bord[0x0B] = 4; ext_bord[0x0D] = 2;
+        ext_bord[0x0E] = 0x13; ext_bord[0x0F] = 0x88;
+        memcpy(ext_bord + 28, "EXT1", 4);
+        ext_bord[32] = 1; /* version */
+        ext_bord[33] = 1; /* flags: has_p3 */
+        ext_bord[34] = 19; ext_bord[35] = 13;
+        ext_bord[36] = 5; ext_bord[37] = 2; /* p3 spawn */
+        ext_bord[38] = 0x02; ext_bord[39] = 0x0D; /* p3_block */
+        ext_bord[48] = 0; /* victory_rule */
+        ext_bord[49] = 5; /* starting_lives = 5 */
+        uint16_t ecrc = 0xFFFF;
+        for (int i = 0; i < 22; i++) {
+            ecrc ^= ((uint16_t)ext_bord[28 + i] << 8);
+            for (int b = 0; b < 8; b++) ecrc = (ecrc & 0x8000) ? ((ecrc << 1) ^ 0x1021) : (ecrc << 1);
+        }
+        ext_bord[50] = (uint8_t)(ecrc >> 8);
+        ext_bord[51] = (uint8_t)(ecrc & 0xFF);
+
+        soi_world_init(w, 1);
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        soi_load_level(w, ext_bord, 52);
+        soi_spawn_player3(w);
+        CHECK(w->players[1].lives == 5, "68.3: P1 initialized with EXT1 starting_lives 5");
+        CHECK(w->players[3].lives == 5, "68.3: P3 initialized with EXT1 starting_lives 5");
+
+        w->players[1].lives = 2;
+        w->players[1].arrows = 9;
+        w->players[3].lives = 1;
+        w->players[3].arrows = 8;
+
+        soi_next_level(w, ext_bord, 52);
+        CHECK(w->players[1].lives == 2, "68.3: P1 lives 2 preserved across soi_next_level");
+        CHECK(w->players[1].arrows == 9, "68.3: P1 arrows 9 preserved across soi_next_level");
+        CHECK(w->players[3].lives == 1, "68.3: P3 lives 1 preserved across soi_next_level");
+        CHECK(w->players[3].arrows == 8, "68.3: P3 arrows 8 preserved across soi_next_level");
+
+        w->players[1].lives = 2;
+        w->players[1].alive = 0;
+        w->players[1].respawn_timer = 1;
+        w->players[2].active = 0;
+        w->players[3].active = 0;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].lives == 2, "68.3: P1 lives 2 preserved and not reset to 5 on death reload");
+
+        /* 68.4: Walk-over unlock of Red Lock 0x0934 produces walkable 0x0935 and victory */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_ONE);
+        soi_set_p3_any_key(w, 1);
+        reset_player(w, 1, 3, 9);
+        soi_set_cell(w, 3, 10, SOI_CELL_SUPPORTIVE);
+        w->players[1].y = soi_cell_y(9) + 4;
+        w->players[1].has_key = 1;
+        w->cell[9][3] = 0x0934u;
+        soi_tick(w, 0, 0);
+        CHECK(w->cell[9][3] == 0x0935u, "68.4: Red Lock unlocked to 0x0935 (without supportive bit)");
+        soi_tick(w, 0, 0);
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].has_key == 2, "68.4: Stepping on unlocked 0x0935 sets has_key = 2 (exit reached)");
+        CHECK(soi_level_complete(w) == 1, "68.4: Board complete after exiting 0x0935");
+
+        /* 68.5: soi_drop_player in 2P Versus match finishes the round */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        soi_set_victory_rule(w, SOI_WIN_LIVES);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
+        w->players[1].active = 1;
+        w->players[2].active = 1;
+        CHECK(soi_level_complete(w) == 0, "68.5: Versus match not complete while 2 players active");
+        soi_drop_player(w, 2);
+        CHECK(soi_level_complete(w) == 1, "68.5: Dropping P2 leaves 1 alive participant and completes match");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");

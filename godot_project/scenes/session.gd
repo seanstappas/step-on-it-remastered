@@ -14,12 +14,18 @@ var input_assist: bool = true
 var start_lives: int = 2
 var p3_any_key: bool = false
 var custom_map_path: String = ""
+var custom_board_bytes: PackedByteArray = PackedByteArray()
 var player_device: Array = [-1, -2, 0] # Device routing: -1 KB1, -2 KB2, 0..3 Joypad device_id
 var net: RollbackNet = null
 var is_online: bool = false
 var online_bord_bytes: PackedByteArray = PackedByteArray()
 var online_seed: int = 1
 var speed: int = 2 # 0 = Really Fast, 1 = Fast, 2 = Medium (71 Hz default), 3 = Slow
+
+func current_board_path() -> String:
+	if board_index >= 0 and board_index < board_list.size():
+		return board_list[board_index]
+	return board_path
 
 # --- ORIGINAL <-> REMASTERED presentation, flipped live with F2 (title menu + in game) ---
 # ORIGINAL = the 1996 SD sprites/PICTs + the 8-bit SFX + the original game's music (captures in
@@ -154,6 +160,8 @@ func load_game() -> bool:
 # BORD N+1000 when the compete flag DAT_1003ab6c = r2+0x69fc is set; those boards carry the
 # per-player keys 8/9 and doors). ---
 func start_campaign() -> void:
+	custom_board_bytes = PackedByteArray()
+	custom_map_path = ""
 	resume_stats = []
 	var lo := 401
 	var hi := 500

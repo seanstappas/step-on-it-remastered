@@ -121,7 +121,8 @@ func _ready() -> void:
 		core.init(777777)
 		core.set_input_assist(true)
 		core.load_level(bord_bytes)
-		core.set_play_mode(0)
+		core.set_play_mode(2)
+		core.spawn_player3()
 		core.limit_players(3)
 
 	var h1 := core1.net_hash()

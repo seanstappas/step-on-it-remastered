@@ -36,6 +36,7 @@ const PKT_MATCH_INIT := 0x01
 const PKT_BOARD_LOAD := 0x02
 const PKT_INPUT_TICK := 0x10
 const PKT_DROP_PEER  := 0x20
+const IN_META_CONFIRM := 1 << 7
 
 # Signals for state changes
 signal match_started(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_players: int, mode: int, local_slot: int)
@@ -54,6 +55,7 @@ var last_confirmed_per_peer: Array = [0, 0, 0]
 var last_confirmed_input: Array = [0, 0, 0]
 var earliest_mispredicted_tick: int = -1
 var peer_ack_tick: Array = [0, 0, 0]
+var peer_drop_tick: Dictionary = {}
 var rolling_rtt_ms: float = 0.0
 var consecutive_rift_frames: int = 0
 
@@ -178,16 +180,22 @@ func reset() -> void:
 	last_confirmed_input = [0, 0, 0]
 	earliest_mispredicted_tick = -1
 	peer_ack_tick = [0, 0, 0]
+	rolling_rtt_ms = 0.0
 	consecutive_rift_frames = 0
 	is_resimulating = false
 	is_stalled = false
 	stalled_frames = 0
 	dropped_peers.clear()
+	peer_drop_tick.clear()
 	input_history = [{}, {}, {}]
 	input_confirmed = [{}, {}, {}]
 	state_hash_history.clear()
 	for i in range(RING_BUFFER_SIZE):
 		snapshot_ring[i] = PackedByteArray()
+
+
+func reset_for_new_board() -> void:
+	reset()
 
 
 # Initialize network host (Player 1) or client (Player 2 or 3)
@@ -264,8 +272,8 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 		pkt[1] = num_players
 		pkt[2] = peer_slot
 		pkt[3] = mode
-		pkt[4] = victory_rule
-		pkt[5] = friendly_fire
+		pkt[4] = 255 if victory_rule < 0 else (victory_rule & 0xFF)
+		pkt[5] = 255 if friendly_fire < 0 else (friendly_fire & 0xFF)
 		pkt[6] = assist_val
 		pkt[7] = speed
 		pkt[8] = BASE_DELAY
@@ -342,13 +350,21 @@ func poll_network(time_now_sec: float) -> void:
 			peer_to_obj.erase(pid)
 			if slot >= 0:
 				dropped_peers[slot] = true
+				var last_t: int = int(last_confirmed_per_peer[slot])
+				var drop_t: int = last_t + 1
+				peer_drop_tick[slot] = drop_t
+				for tk in range(last_t + 1, current_tick + BASE_DELAY + 1):
+					if input_history[slot].get(tk, 0) != 0 and tk < current_tick:
+						if earliest_mispredicted_tick == -1 or tk < earliest_mispredicted_tick:
+							earliest_mispredicted_tick = tk
+					input_history[slot][tk] = 0
+					input_confirmed[slot][tk] = true
 				_update_last_confirmed_tick()
 				if is_host:
 					var drop_pkt := PackedByteArray()
 					drop_pkt.resize(2 + 4 + 16)
 					drop_pkt[0] = PKT_DROP_PEER
 					drop_pkt[1] = slot
-					var last_t: int = int(last_confirmed_per_peer[slot])
 					encode_be32(drop_pkt, 2, last_t)
 					for k in range(16):
 						var tk: int = last_t - k
@@ -393,6 +409,8 @@ func _handle_drop_peer(pkt: PackedByteArray) -> void:
 	if slot >= 0 and slot < 3 and slot != local_slot:
 		if pkt.size() >= 6:
 			var last_t := decode_be32(pkt, 2)
+			var drop_t := last_t + 1
+			peer_drop_tick[slot] = drop_t
 			var win_len := mini(16, pkt.size() - 6)
 			for k in range(win_len):
 				var tk := last_t - k
@@ -400,6 +418,12 @@ func _handle_drop_peer(pkt: PackedByteArray) -> void:
 					var val: int = pkt[6 + k]
 					input_history[slot][tk] = val
 					input_confirmed[slot][tk] = true
+			for tk in range(last_t + 1, current_tick + BASE_DELAY + 1):
+				if input_history[slot].get(tk, 0) != 0 and tk < current_tick:
+					if earliest_mispredicted_tick == -1 or tk < earliest_mispredicted_tick:
+						earliest_mispredicted_tick = tk
+				input_history[slot][tk] = 0
+				input_confirmed[slot][tk] = true
 		dropped_peers[slot] = true
 		_update_last_confirmed_tick()
 		peer_disconnected.emit(slot)
@@ -419,7 +443,8 @@ func _send_input_packet(anchor_tick: int) -> void:
 	pkt.resize(20 + 16)
 	pkt[0] = PKT_INPUT_TICK
 	pkt[1] = local_slot
-	encode_be16(pkt, 2, 0) # tick_rift
+	var rift: int = clampi(current_tick - last_confirmed_tick, -32768, 32767)
+	encode_be16(pkt, 2, rift & 0xFFFF)
 	encode_be32(pkt, 4, anchor_tick) # head_tick
 	encode_be32(pkt, 8, last_confirmed_tick) # ack_tick
 	var hash_tick: int = (last_confirmed_tick / 8) * 8
@@ -438,7 +463,10 @@ func _send_input_packet(anchor_tick: int) -> void:
 
 
 func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
+	var prev_scheduled: int = int(last_confirmed_per_peer[local_slot])
 	var target_tick := current_tick + BASE_DELAY
+	if current_tick > 0 and target_tick <= prev_scheduled:
+		target_tick = prev_scheduled + 1
 	input_history[local_slot][target_tick] = local_input
 	input_confirmed[local_slot][target_tick] = true
 	last_confirmed_per_peer[local_slot] = target_tick
@@ -472,6 +500,27 @@ func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
 	var ack_tick := decode_be32(pkt, 8)
 	peer_ack_tick[slot] = maxi(int(peer_ack_tick[slot]), ack_tick)
 
+	var remote_rift_raw := decode_be16(pkt, 2)
+	var remote_rift: int = (remote_rift_raw - 65536) if remote_rift_raw >= 32768 else remote_rift_raw
+	var local_rift: int = current_tick - last_confirmed_tick
+	if (local_rift - remote_rift) > 3:
+		consecutive_rift_frames += 1
+	elif (remote_rift - local_rift) > 3:
+		consecutive_rift_frames -= 1
+	else:
+		consecutive_rift_frames = 0
+
+	if ack_tick > 0 and input_confirmed[local_slot].get(ack_tick, false):
+		var est_rtt_ticks: int = maxi(0, (current_tick + BASE_DELAY) - ack_tick)
+		var est_rtt_ms: float = est_rtt_ticks * 14.0
+		rolling_rtt_ms = rolling_rtt_ms * 0.9 + est_rtt_ms * 0.1
+		if rolling_rtt_ms > 120.0:
+			BASE_DELAY = 4
+		elif rolling_rtt_ms > 60.0:
+			BASE_DELAY = 3
+		else:
+			BASE_DELAY = 2
+
 	var win_len := pkt.size() - 20
 	for k in range(win_len):
 		var t := head_tick - k
@@ -479,14 +528,15 @@ func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
 			continue
 		var val: int = pkt[20 + k]
 		if not input_confirmed[slot].get(t, false):
-			if t < current_tick:
-				# Tick was already executed using prediction!
-				var predicted_val: int = int(input_history[slot].get(t, last_confirmed_input[slot]))
-				if val != predicted_val:
-					if earliest_mispredicted_tick < 0 or t < earliest_mispredicted_tick:
-						earliest_mispredicted_tick = t
+			var predicted_val: int = get_or_predict_input(slot, t)
+			var had_pred: bool = input_history[slot].has(t)
 			input_history[slot][t] = val
 			input_confirmed[slot][t] = true
+			if t < current_tick and had_pred and predicted_val != val:
+				if earliest_mispredicted_tick == -1 or t < earliest_mispredicted_tick:
+					earliest_mispredicted_tick = t
+		elif (val & IN_META_CONFIRM) != 0:
+			input_history[slot][t] = int(input_history[slot].get(t, 0)) | IN_META_CONFIRM
 
 	# Advance last_confirmed_per_peer contiguously
 	while input_confirmed[slot].get(last_confirmed_per_peer[slot] + 1, false):
@@ -529,6 +579,8 @@ func _update_last_confirmed_tick() -> void:
 
 
 func get_or_predict_input(slot: int, tick: int) -> int:
+	if peer_drop_tick.has(slot) and tick >= int(peer_drop_tick[slot]):
+		return 0
 	if input_history[slot].has(tick):
 		return int(input_history[slot][tick])
 	if dropped_peers.has(slot):
@@ -582,8 +634,8 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 	num_players = pkt[1]
 	local_slot = pkt[2]
 	var mode: int = pkt[3]
-	var victory_rule: int = pkt[4]
-	var friendly_fire: int = pkt[5]
+	var victory_rule: int = -1 if int(pkt[4]) == 255 else int(pkt[4])
+	var friendly_fire: int = -1 if int(pkt[5]) == 255 else int(pkt[5])
 	var input_assist: int = pkt[6]
 	var speed: int = pkt[7]
 	var base_delay_val: int = pkt[8]

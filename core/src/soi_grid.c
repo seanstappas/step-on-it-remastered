@@ -298,9 +298,17 @@ void soi_pickup_check(SoiWorld *w, int player)
      * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
      * of the key collector can exit too. The asm DOES require the box not to straddle two
      * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
+    /* DOOR: bit 0x800 with a LOW type 1-3 (the exit). The original gates the exit on the
+     * PLAYER (asm FUN_1002bc64: uVar10 == sVar14+1 || uVar10 == 1): low 1 = UNIVERSAL,
+     * low (player+1) = that player's OWN door (P1->low2, P2->low3). Coins/goodies also
+     * carry 0x800 but with a higher low type, so the t<=3 bound also avoids swallowing them.
+     * There is NO held-key test: an opened door exists only after the colored-key sweep
+     * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
+     * of the key collector can exit too. The asm DOES require the box not to straddle two
+     * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
     if ((c & SOI_CELL_DOOR) &&
-        ((t <= 3u && (t == 1u || t == (unsigned)player + 1u || p3_any)) ||
-         ((player == 3 || !competitive || p3_any) && c == 0x0935u))) {
+        ((t <= 3u && (t == 1u || t == (unsigned)player + 1u || (p3_any && (!competitive || p->has_key == 1)))) ||
+         ((player == 3 || !competitive || (p3_any && (!competitive || p->has_key == 1))) && (c & 0x9FFu) == 0x0935u))) {
         int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         if (p->y < SOI_ORIGIN_Y) yrow = -1;
         if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
@@ -374,8 +382,9 @@ void soi_pickup_check(SoiWorld *w, int player)
         w->cell[prow][pcol] = SOI_CELL_EMPTY;        /* consume the key */
         return;
     }
-    if (c == 0x0934u && (player == 3 || !competitive || p3_any) && (p->keys & (1u << 10))) {
-        w->cell[prow][pcol] = 0x0935u | SOI_CELL_SUPPORTIVE | SOI_CELL_DOOR;
+    if ((c & 0x9FFu) == 0x0934u && (player == 3 || !competitive || p3_any) && (w->players[player].has_key == 1 || (p->keys & (1u << 10)))) {
+        w->cell[prow][pcol] = 0x0935u;
+        soi_sfx_emit(w, SOI_SFX_KEY);
         return;
     }
     if (t == 0) return;
@@ -418,7 +427,7 @@ void soi_pickup_check(SoiWorld *w, int player)
                         p->x += (col - pcol) * SOI_CELL_PX;
                         p->y += (r - prow) * SOI_CELL_PX;
                         soi_sfx_emit(w, SOI_SFX_TELEPORT);
-                        if (w->play_mode != SOI_MODE_COMPETE) {
+                        if (w->play_mode != SOI_MODE_COMPETE && w->play_mode != SOI_MODE_VERSUS) {
                             w->tp_freeze = 211;
                         }
                         return;

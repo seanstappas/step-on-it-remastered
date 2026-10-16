@@ -549,15 +549,19 @@ func _on_file(id: int) -> void:
 var _device_status_lbl: Label = null
 
 func _claim_controller_slot(device: int) -> void:
+	var current_slot: int = -1
 	for slot in range(Session.num_players):
 		if Session.player_device[slot] == device:
-			return
-	for slot in range(Session.num_players):
-		var cur: int = Session.player_device[slot]
-		if (cur < 0 and device >= 0) or (cur >= 0 and device < 0):
-			Session.player_device[slot] = device
-			_update_lobby_device_labels()
-			return
+			current_slot = slot
+			break
+
+	if current_slot >= 0:
+		var target_slot: int = (current_slot + 1) % Session.num_players
+		var old_dev: int = Session.player_device[target_slot]
+		Session.player_device[target_slot] = device
+		Session.player_device[current_slot] = old_dev
+	else:
+		Session.player_device[0] = device
 	_update_lobby_device_labels()
 
 func _update_lobby_device_labels() -> void:
@@ -919,18 +923,17 @@ func _show_online_lobby_dialog() -> void:
 		var raw_txt := join_input.text.strip_edges()
 		if raw_txt.is_empty():
 			return
-		var target_port := 7777
-		var host_part := raw_txt
-		if ":" in raw_txt:
-			var sp := raw_txt.rsplit(":", false, 1)
-			host_part = sp[0].strip_edges()
-			if sp[1].is_valid_int():
-				var p_num := sp[1].to_int()
-				if p_num > 0 and p_num <= 65535:
-					target_port = p_num
-		var target_ip := RollbackNet.join_code_to_ip(host_part)
-		if target_ip == "":
-			target_ip = host_part
+		var target_ip: String = raw_txt
+		var target_port: int = 7777
+		if raw_txt.to_upper().begins_with("SOI-") or (not raw_txt.contains(".") and not raw_txt.contains(":")):
+			target_ip = RollbackNet.join_code_to_ip(raw_txt)
+			target_port = RollbackNet.join_code_to_port(raw_txt)
+			if target_ip.contains(":"):
+				target_ip = target_ip.split(":")[0]
+		elif raw_txt.contains(":"):
+			var parts: PackedStringArray = raw_txt.split(":")
+			target_ip = parts[0]
+			target_port = int(parts[1]) if parts[1].is_valid_int() else 7777
 		if _lobby_net != null:
 			_lobby_net.close()
 		_lobby_net = RollbackNet.new()
@@ -1264,13 +1267,13 @@ func _show_hs_entries(show_it: bool) -> void:
 	_hs_entries.visible = show_it
 
 func _input(e: InputEvent) -> void:
-	if _online_dialog != null and _online_dialog.visible:
+	if (_online_dialog != null and _online_dialog.visible) or Session.num_players >= 2:
 		if e is InputEventJoypadButton and e.pressed and not e.echo:
 			if e.button_index == JOY_BUTTON_A:
 				_claim_controller_slot(e.device)
 				return
 		elif e is InputEventKey and e.pressed and not e.echo:
-			if e.keycode == KEY_SPACE:
+			if e.keycode == KEY_SPACE and (_online_dialog != null and _online_dialog.visible):
 				_claim_controller_slot(-1)
 				return
 

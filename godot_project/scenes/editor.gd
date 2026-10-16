@@ -25,6 +25,7 @@ var starting_lives: int = 3
 var bonus_time: int = 6000
 var map_name: String = "custom_map"
 var cursor_cell: Vector2i = Vector2i(0, 0)
+var enemy_facing_left: bool = false
 
 # Grid 2D array: cells[row][col] -> tile int
 var cells: Array = []
@@ -43,8 +44,9 @@ const BRUSHES = [
 	# --- Mechanics ---
 	{"cat": "Mechanics", "name": "Teleport IN", "tile": 0x081A, "sprite": "goody_sprites", "frame": 27},
 	{"cat": "Mechanics", "name": "Teleport OUT", "tile": 0x081B, "sprite": "goody_sprites", "frame": 28},
-	{"cat": "Mechanics", "name": "Stop/Go Switch", "tile": 0x081C, "sprite": "Stop_Go_sprite_family", "frame": 1},
-	{"cat": "Mechanics", "name": "Stop/Go Block", "tile": 0x081D, "sprite": "Stop_Go_sprite_family", "frame": 3},
+	{"cat": "Mechanics", "name": "Stop/Go Switch", "tile": 0x0824, "sprite": "Stop_Go_sprite_family", "frame": 2},
+	{"cat": "Mechanics", "name": "Stop/Go Block (Solid)", "tile": 0x039D, "sprite": "Stop_Go_sprite_family", "frame": 3},
+	{"cat": "Mechanics", "name": "Stop/Go Block (Pass)", "tile": 0x01A3, "sprite": "Stop_Go_sprite_family", "frame": 2},
 
 	# --- Goodies ---
 	{"cat": "Goodies", "name": "Silver Coin", "tile": 0x090A, "sprite": "goody_sprites", "frame": 11},
@@ -59,24 +61,28 @@ const BRUSHES = [
 	{"cat": "Doors", "name": "Key (Univ)", "tile": 0x0907, "sprite": "goody_sprites", "frame": 8},
 	{"cat": "Doors", "name": "Lock (Univ)", "tile": 0x0904, "sprite": "goody_sprites", "frame": 5},
 	{"cat": "Doors", "name": "Door (Univ)", "tile": 0x0901, "sprite": "goody_sprites", "frame": 2},
-	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0913, "sprite": "goody_sprites", "frame": 20},
-	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0914, "sprite": "goody_sprites", "frame": 21},
-	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0915, "sprite": "goody_sprites", "frame": 22},
-	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0923, "sprite": "goody_sprites", "frame": 36},
-	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0924, "sprite": "goody_sprites", "frame": 37},
-	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0925, "sprite": "goody_sprites", "frame": 38},
+	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0908, "sprite": "goody_sprites", "frame": 20},
+	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0905, "sprite": "goody_sprites", "frame": 21},
+	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0902, "sprite": "goody_sprites", "frame": 22},
+	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0909, "sprite": "goody_sprites", "frame": 36},
+	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0906, "sprite": "goody_sprites", "frame": 37},
+	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0903, "sprite": "goody_sprites", "frame": 38},
 	{"cat": "Doors", "name": "Key (P3 Red)", "tile": 0x0933, "sprite": "goody_sprites", "frame": 9},
 	{"cat": "Doors", "name": "Lock (P3 Red)", "tile": 0x0934, "sprite": "goody_sprites", "frame": 6},
 	{"cat": "Doors", "name": "Door (P3 Red)", "tile": 0x0935, "sprite": "goody_sprites", "frame": 3},
 
 	# --- Enemies ---
-	{"cat": "Enemies", "name": "Ant/Teeth (L)", "tile": 0x0701, "sprite": "ant_teeth", "frame": 2},
-	{"cat": "Enemies", "name": "Hippo/Pig (L)", "tile": 0x0702, "sprite": "enemy_family_02", "frame": 2},
-	{"cat": "Enemies", "name": "Ostrich (L)", "tile": 0x0703, "sprite": "enemy_family_03", "frame": 2},
-	{"cat": "Enemies", "name": "Robo (L)", "tile": 0x0704, "sprite": "enemy_family_04", "frame": 2},
-	{"cat": "Enemies", "name": "Smiley (L)", "tile": 0x0706, "sprite": "enemy_family_06", "frame": 2},
-	{"cat": "Enemies", "name": "Hammer (L)", "tile": 0x0707, "sprite": "enemy_family_07", "frame": 2},
-	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x070C, "sprite": "cannon_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Ant", "tile": 0x0700, "sprite": "ant_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0702, "sprite": "disk_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x0704, "sprite": "walker_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x0705, "sprite": "hippo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0706, "sprite": "ostrich_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0708, "sprite": "piggy_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x070A, "sprite": "teeth_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Smiley", "tile": 0x070B, "sprite": "smiley_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Hammer", "tile": 0x070C, "sprite": "hammer_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x070F, "sprite": "robo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x0701, "sprite": "cannon_sprites", "frame": 2},
 
 	# --- Spawns ---
 	{"cat": "Spawns", "name": "P1 Spawn", "tile": -1, "sprite": "BP_sprites", "frame": 2},
@@ -163,17 +169,40 @@ func cycle_canvas_size() -> void:
 	_set_status("Canvas size: %dx%d" % [s.x, s.y])
 
 
+var _FRAME_RE := RegEx.create_from_string("^f0*(\\d+)_\\d+x\\d+\\.png$")
+var _folder_indices: Dictionary = {}
+
 func _get_sprite(folder: String, frame: int) -> Texture2D:
 	if folder == "":
 		return null
 	var key := "%s_%d" % [folder, frame]
 	if _tex_cache.has(key):
 		return _tex_cache[key]
-	var path := "res://../extracted/sprites/%s/frame_%03d.png" % [folder, frame]
-	if not FileAccess.file_exists(path):
-		path = "res://sprites/%s/frame_%03d.png" % [folder, frame]
-	if FileAccess.file_exists(path):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+	if not _folder_indices.has(folder):
+		var idx: Dictionary = {}
+		var dir_path := ProjectSettings.globalize_path("res://../extracted/sprites/%s" % folder)
+		var da := DirAccess.open(dir_path)
+		if da != null:
+			for f in da.get_files():
+				var m := _FRAME_RE.search(f)
+				if m != null:
+					idx[int(m.get_string(1))] = dir_path.path_join(f)
+		_folder_indices[folder] = idx
+	var fidx: Dictionary = _folder_indices[folder]
+	var target_frame: int = frame
+	if not fidx.has(target_frame):
+		for f in range(target_frame - 1, 0, -1):
+			if fidx.has(f):
+				target_frame = f
+				break
+		if not fidx.has(target_frame):
+			for f in range(target_frame + 1, target_frame + 20):
+				if fidx.has(f):
+					target_frame = f
+					break
+	var path: String = fidx.get(target_frame, "")
+	if path != "" and FileAccess.file_exists(path):
+		var img := Image.load_from_file(path)
 		if img != null:
 			var tex := ImageTexture.create_from_image(img)
 			_tex_cache[key] = tex
@@ -191,13 +220,21 @@ func _validate_map() -> Array[String]:
 
 	var has_key_univ := false
 	var has_door_univ := false
+	var has_key_p1 := false
+	var has_door_p1 := false
+	var has_key_p2 := false
+	var has_door_p2 := false
 	var has_key_p3 := false
 	var has_door_p3 := false
 	for r in range(grid_rows):
 		for c in range(grid_cols):
-			var t: int = cells[r][c]
+			var t: int = cells[r][c] & 0xFFFF
 			if t == 0x0907: has_key_univ = true
 			elif t == 0x0901 or t == 0x0904: has_door_univ = true
+			elif t == 0x0908: has_key_p1 = true
+			elif t == 0x0902 or t == 0x0905: has_door_p1 = true
+			elif t == 0x0909: has_key_p2 = true
+			elif t == 0x0903 or t == 0x0906: has_door_p2 = true
 			elif t == 0x0933: has_key_p3 = true
 			elif t == 0x0934 or t == 0x0935: has_door_p3 = true
 
@@ -205,6 +242,14 @@ func _validate_map() -> Array[String]:
 		warnings.append("Universal key placed but no door found")
 	if has_door_univ and not has_key_univ:
 		warnings.append("Universal door placed but no key found")
+	if has_key_p1 and not has_door_p1:
+		warnings.append("P1 Blue key placed but no Blue door found")
+	if has_door_p1 and not has_key_p1:
+		warnings.append("P1 Blue door placed but no Blue key found")
+	if has_key_p2 and not has_door_p2:
+		warnings.append("P2 Green key placed but no Green door found")
+	if has_door_p2 and not has_key_p2:
+		warnings.append("P2 Green door placed but no Green key found")
 	if has_key_p3 and not has_door_p3:
 		warnings.append("P3 Red key placed but no Red door found")
 	if has_door_p3 and not has_key_p3:
@@ -287,6 +332,7 @@ func _run_self_test() -> void:
 	friendly_fire = true
 	victory_rule = 1
 	starting_lives = 5
+	default_mode = 2
 
 	cells[25][37] = 0x0307 # Solid wall
 	cells[10][10] = 0x0207 # Breakable
@@ -318,6 +364,7 @@ func _run_self_test() -> void:
 	assert(friendly_fire == true, "friendly_fire mismatch")
 	assert(victory_rule == 1, "victory_rule mismatch")
 	assert(starting_lives == 5, "starting_lives mismatch")
+	assert(default_mode == 2, "default_mode mismatch")
 	assert(cells[25][37] == 0x0307, "cell (37, 25) mismatch")
 	assert(cells[10][10] == 0x0207, "cell (10, 10) mismatch")
 	assert(cells[5][5] == 0x090A, "cell (5, 5) mismatch")
@@ -351,6 +398,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_G or event.keycode == KEY_C:
 			cycle_canvas_size()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_F:
+			enemy_facing_left = not enemy_facing_left
+			_set_status("Enemy Facing: %s [F]" % ("Left" if enemy_facing_left else "Right"))
+			queue_redraw()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_BRACKETLEFT:
 			_set_brush(brush_idx - 1)
@@ -393,6 +445,28 @@ func _handle_hud_click(pos: Vector2) -> void:
 		playtest_in_memory()
 	elif pos.x >= 430.0 and pos.x <= 480.0:
 		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	elif pos.x >= 490.0 and pos.x <= 560.0:
+		default_mode = (default_mode + 1) % 3
+		var mnames := ["Co-op", "Compete", "Versus"]
+		_set_status("Mode: %s" % mnames[default_mode])
+		queue_redraw()
+	elif pos.x >= 570.0 and pos.x <= 640.0:
+		victory_rule = (victory_rule + 1) % 3
+		var rnames := ["Lives", "Score", "Door"]
+		_set_status("Rule: %s" % rnames[victory_rule])
+		queue_redraw()
+	elif pos.x >= 650.0 and pos.x <= 710.0:
+		friendly_fire = not friendly_fire
+		_set_status("Friendly Fire: %s" % ("On" if friendly_fire else "Off"))
+		queue_redraw()
+	elif pos.x >= 720.0 and pos.x <= 770.0:
+		starting_lives = (starting_lives % 9) + 1
+		_set_status("Starting Lives: %d" % starting_lives)
+		queue_redraw()
+	elif pos.x >= 780.0 and pos.x <= 840.0:
+		enemy_facing_left = not enemy_facing_left
+		_set_status("Facing: %s [F]" % ("Left" if enemy_facing_left else "Right"))
+		queue_redraw()
 	else:
 		_set_brush(brush_idx + 1)
 
@@ -419,7 +493,12 @@ func _paint_at(pos: Vector2) -> void:
 		var vs_idx: int = -(current_brush + 4)
 		vs_spawns[vs_idx] = cell_coords
 	else:
-		cells[cell_coords.y][cell_coords.x] = current_brush
+		var tile_to_set: int = current_brush
+		var cur_item: Dictionary = BRUSHES[brush_idx]
+		if cur_item["cat"] == "Enemies" or ((current_brush & 0xFF00) == 0x0700):
+			var facing_byte: int = 4 if enemy_facing_left else 2
+			tile_to_set = (current_brush & 0xFF00FFFF) | (facing_byte << 16)
+		cells[cell_coords.y][cell_coords.x] = tile_to_set
 
 	queue_redraw()
 
@@ -482,9 +561,36 @@ func _draw() -> void:
 	draw_rect(Rect2(430, 8, 50, 32), Color(0.6, 0.3, 0.3), false, 1.0)
 	draw_string(font, Vector2(438, 28), "Exit", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.8, 0.8))
 
+	# Mode Button (490..560)
+	draw_rect(Rect2(490, 8, 70, 32), Color(0.2, 0.2, 0.3))
+	draw_rect(Rect2(490, 8, 70, 32), Color(0.4, 0.4, 0.6), false, 1.0)
+	var mnames := ["Co-op", "Compete", "Versus"]
+	draw_string(font, Vector2(494, 28), mnames[default_mode], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.9, 0.9, 1.0))
+
+	# Rule Button (570..640)
+	draw_rect(Rect2(570, 8, 70, 32), Color(0.25, 0.2, 0.25))
+	draw_rect(Rect2(570, 8, 70, 32), Color(0.5, 0.4, 0.5), false, 1.0)
+	var rnames := ["Lives", "Score", "Door"]
+	draw_string(font, Vector2(574, 28), "Win:" + rnames[victory_rule], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.8, 1.0))
+
+	# FF Button (650..710)
+	draw_rect(Rect2(650, 8, 60, 32), Color(0.3, 0.2, 0.2) if friendly_fire else Color(0.18, 0.22, 0.2))
+	draw_rect(Rect2(650, 8, 60, 32), Color(0.6, 0.3, 0.3) if friendly_fire else Color(0.35, 0.45, 0.35), false, 1.0)
+	draw_string(font, Vector2(654, 28), "FF:" + ("On" if friendly_fire else "Off"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.7, 0.7) if friendly_fire else Color(0.8, 0.9, 0.8))
+
+	# Lives Button (720..770)
+	draw_rect(Rect2(720, 8, 50, 32), Color(0.2, 0.25, 0.2))
+	draw_rect(Rect2(720, 8, 50, 32), Color(0.4, 0.5, 0.4), false, 1.0)
+	draw_string(font, Vector2(726, 28), "L:%d" % starting_lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 1.0, 0.8))
+
+	# Facing Button (780..840)
+	draw_rect(Rect2(780, 8, 60, 32), Color(0.22, 0.22, 0.26))
+	draw_rect(Rect2(780, 8, 60, 32), Color(0.45, 0.45, 0.5), false, 1.0)
+	draw_string(font, Vector2(784, 28), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+
 	# Status toast message
 	if status_msg != "":
-		draw_string(font, Vector2(490, 28), status_msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.4, 1.0, 0.6))
+		draw_string(font, Vector2(850, 28), status_msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.4, 1.0, 0.6))
 
 	# 2. Draw Playfield Grid
 	var playfield_w := vp_size.x
@@ -498,7 +604,7 @@ func _draw() -> void:
 	for r in range(grid_rows):
 		for c in range(grid_cols):
 			var rect := Rect2(c * cell_w, hud_h + r * cell_h, cell_w, cell_h)
-			var tile_id: int = cells[r][c]
+			var tile_id: int = cells[r][c] & 0xFFFF
 			if tile_id != 0:
 				var spr: Texture2D = null
 				var spr_folder := ""
@@ -617,6 +723,7 @@ func serialize_to_bord() -> PackedByteArray:
 	if has_p3: flags |= 1
 	if friendly_fire: flags |= 2
 	if grid_cols > 19 or grid_rows > 13: flags |= 4
+	flags |= (default_mode & 3) << 3
 	out[ext_idx + 5] = flags
 	out[ext_idx + 6] = grid_cols
 	out[ext_idx + 7] = grid_rows
@@ -702,6 +809,7 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 				rows = clampi(raw[ext_idx + 7], 13, 26)
 				ext_has_p3 = bool(flags & 1)
 				friendly_fire = bool(flags & 2)
+				default_mode = (flags >> 3) & 3
 				sp3_x = raw[ext_idx + 8]
 				sp3_y = raw[ext_idx + 9]
 				for i in range(4):
@@ -788,4 +896,10 @@ func playtest_in_memory() -> void:
 		Session.set_meta("custom_board_bytes", raw)
 		Session.set_meta("editor_return", true)
 		Session.set_meta("editor_state", _save_editor_state())
+		Session.custom_board_bytes = raw
+		Session.is_online = false
+		Session.num_players = 3 if has_p3 else 2
+		Session.mode = 3 if default_mode == 2 else (1 if default_mode == 1 else 0)
+		Session.victory_rule = victory_rule
+		Session.friendly_fire = 1 if friendly_fire else 0
 	get_tree().change_scene_to_file("res://scenes/game.tscn")

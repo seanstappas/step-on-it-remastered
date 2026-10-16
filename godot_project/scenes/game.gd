@@ -1198,8 +1198,6 @@ func _ready() -> void:
 		_net.desync_detected.connect(func(tick: int, lhash: int, rhash: int) -> void:
 			print("DESYNC DETECTED at tick %d: local=%X remote=%X" % [tick, lhash, rhash]))
 		_net.peer_disconnected.connect(func(slot: int) -> void:
-			if _core != null and slot >= 0 and slot < 3:
-				_core.drop_player(slot + 1)
 			if slot == 0:
 				_net_status_banner = "Host disconnected — match ended. Esc: menu"
 			else:
@@ -1387,7 +1385,7 @@ func _start() -> void:
 	var seed_val: int = Session.online_seed if (Session.is_online and Session.online_seed != 0) else 1
 	_core.init(seed_val)
 	_core.new_game(_core_mode())
-	_core.set_input_assist(true)
+	_core.set_input_assist(Session.input_assist)
 	_core.set_p3_any_key(Session.p3_any_key)
 	if Session.is_online and not Session.online_bord_bytes.is_empty():
 		_level_bytes = Session.online_bord_bytes
@@ -1523,17 +1521,10 @@ func _physics_process(_delta: float) -> void:
 					_core.snapshot_load(snap)
 					_net.is_resimulating = true
 
-					if _tally_captured and not _core.level_complete():
-						_tally_captured = false
-						_tally_anim = 0.0
-						_warp_anim = 0.0
-						_update_board_music()
-					if _game_over_active and not _core.game_over():
-						_game_over_active = false
-						_game_over_ticks = 0
-						_game_over_letters.clear()
-
 					for sim_t in range(rb_tick, _net.current_tick):
+						for d_slot in _net.peer_drop_tick.keys():
+							if sim_t == int(_net.peer_drop_tick[d_slot]):
+								_core.drop_player(int(d_slot) + 1)
 						var s_p1: int = _net.get_or_predict_input(0, sim_t)
 						var s_p2: int = _net.get_or_predict_input(1, sim_t) if _num_players >= 2 else 0
 						var s_p3: int = _net.get_or_predict_input(2, sim_t) if _num_players >= 3 else 0
@@ -1542,6 +1533,24 @@ func _physics_process(_delta: float) -> void:
 						_net.record_state_hash(sim_t, int(_core.net_hash() & 0xFFFFFFFF))
 						for _i in range(_core.sfx_count()):
 							_core.sfx_get(_i)
+
+					if _tally_captured and not _core.level_complete():
+						_tally_captured = false
+						_tally_anim = 0.0
+						_warp_anim = 0.0
+						_online_meta_confirmed = false
+						_update_board_music()
+					if _game_over_active and not _core.game_over():
+						_game_over_active = false
+						_game_over_ticks = 0
+						_game_over_letters.clear()
+						_online_meta_confirmed = false
+						_hs_checked = false
+						_hs_state = ""
+						_update_board_music()
+					if _challenge_forfeited and not _core.challenge_failed():
+						_challenge_forfeited = false
+						_online_meta_confirmed = false
 
 					_prune_render_history(rb_tick)
 					_net.is_resimulating = false
@@ -1613,11 +1622,15 @@ func _physics_process(_delta: float) -> void:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
 		p3 = _read_input(2) if _num_players >= 3 else 0
 
+	if _net != null:
+		for d_slot in _net.peer_drop_tick.keys():
+			if _net.current_tick == int(_net.peer_drop_tick[d_slot]):
+				_core.drop_player(int(d_slot) + 1)
+
 	_core.tick3(p1, p2, p3)
 	_core_ticked = true
 	if _net != null:
 		_net.record_state_hash(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
-		_net.current_tick += 1
 
 	if _core != null and _core.tp_freeze() > 0:
 		_tp_frames = int(_core.tp_freeze())
@@ -1642,6 +1655,8 @@ func _physics_process(_delta: float) -> void:
 		for fi in _core.fx_count():   # every block shatter / goody pop this tick -> its debris particles
 			_spawn_debris(fi)
 	_step_debris()
+	if _net != null:
+		_net.current_tick += 1
 	if _alt:
 		if _alt_prev_alive and not _core.player_alive(1):
 			_alt_end_turn(false)         # the active player died -> lose a life, pass the seat
@@ -1903,6 +1918,9 @@ func _input(e: InputEvent) -> void:
 	if _challenge_intro > 0:
 		_challenge_intro = 0   # any key dismisses the Challenge Round intro
 		return
+	if _hs_state == "entry":
+		_hs_input(e)
+		return
 	if _disconnect_banner != "" and e.keycode == KEY_SPACE:
 		for p in Session.player_device.size():
 			if Session.player_device[p] >= 0:
@@ -2050,51 +2068,61 @@ func _press_enter() -> void:
 func _poll_online_meta_confirm() -> void:
 	if _net == null:
 		return
-	const IN_META_CONFIRM := 1 << 7
-	var local_inp := IN_META_CONFIRM if _online_meta_confirmed else 0
+	var local_inp: int = RollbackNet.IN_META_CONFIRM if _online_meta_confirmed else 0
 	_net.send_local_input(local_inp)
 
-	var all_confirmed := true
+	var confirm_tick: int = _net.current_tick + RollbackNet.BASE_DELAY
+	var all_confirmed: bool = true
 	for slot in range(_num_players):
 		if _net.dropped_peers.has(slot):
 			continue
-		if slot == _net.local_slot:
-			if not _online_meta_confirmed:
-				all_confirmed = false
-				break
-		else:
-			var peer_in: int = _net.get_or_predict_input(slot, _net.current_tick)
-			if (peer_in & IN_META_CONFIRM) == 0:
-				all_confirmed = false
-				break
+		var peer_in: int = int(_net.input_history[slot].get(confirm_tick, 0))
+		if (peer_in & RollbackNet.IN_META_CONFIRM) == 0:
+			all_confirmed = false
+			break
 
-	if all_confirmed and _net.is_host:
-		_online_meta_confirmed = false
-		if _core.game_over():
-			var next_seed := randi() % 1000000 + 1
-			_net.send_board_load(_level_bytes, next_seed, true)
-		elif _core.challenge_failed():
-			if Session.advance():
-				var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
-				var next_seed := randi() % 1000000 + 1
+	if not all_confirmed:
+		return
+
+	_online_meta_confirmed = false
+	if _net.is_host:
+		var next_seed: int = (int(Time.get_ticks_usec()) & 0x7FFFFFFF) | 1
+		if _core.level_complete() or _core.challenge_failed():
+			var was_challenge_fail: bool = _core.challenge_failed() and not _core.level_complete()
+			if not Session.custom_map_path.is_empty() or not Session.custom_board_bytes.is_empty():
+				_net.send_board_load(_level_bytes, next_seed, true)
+				Session.online_seed = next_seed
+				_net.reset_for_new_board()
+				_start()
+			elif Session.board_index + 1 < Session.board_list.size():
+				Session.board_index += 1
+				var next_bytes: PackedByteArray = FileAccess.get_file_as_bytes(Session.current_board_path())
+				_level_bytes = next_bytes
+				Session.online_bord_bytes = next_bytes
+				Session.online_seed = next_seed
 				_net.send_board_load(next_bytes, next_seed, false)
-			else:
-				if _net != null: _net.close(); _net = null
-				Session.is_online = false; Session.net = null
-				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
-		elif _core.level_complete():
-			if Session.advance():
-				var next_bytes := FileAccess.get_file_as_bytes(Session.board_path)
-				var next_seed := randi() % 1000000 + 1
-				_net.send_board_load(next_bytes, next_seed, false)
+				_net.reset_for_new_board()
+				if was_challenge_fail:
+					for p in [1, 2, 3]:
+						var st: Dictionary = _board_start_stats.get(p, {})
+						if not st.is_empty():
+							_core.set_player_stats(p, st["score"], st["lives"], st["arrows"], st["balls"], st["shield"])
+				_next_board()
 			else:
 				if _mode_versus or _mode_compete:
-					var next_seed := randi() % 1000000 + 1
 					_net.send_board_load(_level_bytes, next_seed, true)
+					Session.online_seed = next_seed
+					_net.reset_for_new_board()
+					_start()
 				else:
 					if _net != null: _net.close(); _net = null
 					Session.is_online = false; Session.net = null
 					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		elif _core.game_over():
+			_net.send_board_load(_level_bytes, next_seed, true)
+			Session.online_seed = next_seed
+			_net.reset_for_new_board()
+			_start()
 
 
 func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool) -> void:
@@ -2103,11 +2131,18 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 	Session.online_bord_bytes = bord_bytes
 	Session.online_seed = rng_seed
 	if _net != null:
-		_net.reset()
+		_net.reset_for_new_board()
 	if is_retry:
 		_start()
 		_capture_board_start()
 	else:
+		if not _net.is_host and Session.board_index + 1 < Session.board_list.size():
+			Session.board_index += 1
+		if _core.challenge_failed() and not _core.level_complete():
+			for p in [1, 2, 3]:
+				var st: Dictionary = _board_start_stats.get(p, {})
+				if not st.is_empty():
+					_core.set_player_stats(p, st["score"], st["lives"], st["arrows"], st["balls"], st["shield"])
 		_next_board()
 
 # --- input -------------------------------------------------------------------

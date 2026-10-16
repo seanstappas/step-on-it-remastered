@@ -118,6 +118,7 @@ def pack_ext1(
     starting_lives: int = 3,
     friendly_fire: bool = False,
     big_map: bool = False,
+    default_mode: int = 0,
 ) -> bytes:
     flags = 0
     if p3_col > 0 or p3_row > 0:
@@ -126,6 +127,7 @@ def pack_ext1(
         flags |= 2  # bit 1: friendly_fire
     if big_map or grid_cols > 19 or grid_rows > 13:
         flags |= 4  # bit 2: big_map
+    flags |= (default_mode & 3) << 3
 
     vs = [(0, 0)] * 4
     if vs_spawns:
@@ -180,6 +182,7 @@ def unpack_ext1(buf: bytes) -> dict:
         "has_p3": bool(flags & 1),
         "friendly_fire": bool(flags & 2),
         "big_map": bool(flags & 4),
+        "default_mode": (flags >> 3) & 3,
         "grid_cols": cols,
         "grid_rows": rows,
         "p3_spawn": (p3_c, p3_r),
@@ -243,6 +246,7 @@ def decompile_bord(data: bytes) -> str:
         lines.append(f"  grid_cols: {ext['grid_cols']}")
         lines.append(f"  grid_rows: {ext['grid_rows']}")
         lines.append(f"  has_p3: {ext['has_p3']}")
+        lines.append(f"  default_mode: {ext.get('default_mode', 0)}")
         lines.append(f"  p3_spawn: [{ext['p3_spawn'][0]}, {ext['p3_spawn'][1]}]")
         lines.append(f"  p3_block: 0x{ext['p3_block']:04X}")
         lines.append(f"  friendly_fire: {ext['friendly_fire']}")
@@ -297,6 +301,7 @@ def compile_bord_from_records(header: dict, records: list, ext1: dict = None) ->
             starting_lives=ext1.get("starting_lives", 3),
             friendly_fire=ext1.get("friendly_fire", False),
             big_map=ext1.get("big_map", False),
+            default_mode=ext1.get("default_mode", 0),
         )
 
     return bytes(out)
@@ -399,7 +404,7 @@ def compile_bord_from_ascii(text: str) -> bytes:
                     header[k] = val
             elif k in ("bonus", "no_weapons_reward", "pct_ultrabuster", "thrown_badguy", "pct_badguy", "flags"):
                 header[k] = int(v, 0)
-            elif k in ("grid_cols", "grid_rows", "victory_rule", "starting_lives"):
+            elif k in ("grid_cols", "grid_rows", "victory_rule", "starting_lives", "default_mode"):
                 ext1[k] = int(v, 0)
             elif k in ("friendly_fire", "has_p3", "big_map"):
                 ext1[k] = v.lower() in ("true", "1", "yes")
@@ -560,8 +565,8 @@ def main():
             orig_clean = orig
             if len(orig) == len(recompiled) + 2 and orig[-6:-2] == b"\x00\x00\x00\x00":
                 orig_clean = orig[:-2]
-            # Compare tile payload equivalence
-            if orig_clean == recompiled or len(orig_clean) == len(recompiled):
+            # Compare tile payload equivalence strictly (byte-for-byte)
+            if orig_clean == recompiled:
                 passed += 1
             else:
                 print(f"Diff in {f.name}: orig={len(orig)} recomp={len(recompiled)}")
