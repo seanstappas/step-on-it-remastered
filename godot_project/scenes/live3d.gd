@@ -35,6 +35,7 @@ void fragment() {
 				a = max(a, cov(texture(src, uv + vec2(float(x), float(y)) * px)));
 			}
 		}
+	}
 	vec3 rgb = a > 0.001 ? c.rgb / a : vec3(0.0);
 	if (red) {
 		float max_bg = max(rgb.g, rgb.b);

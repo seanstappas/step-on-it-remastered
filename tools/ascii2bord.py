@@ -119,9 +119,10 @@ def pack_ext1(
     friendly_fire: bool = False,
     big_map: bool = False,
     default_mode: int = 0,
+    has_p3: bool = False,
 ) -> bytes:
     flags = 0
-    if p3_col > 0 or p3_row > 0:
+    if has_p3 or p3_col > 0 or p3_row > 0:
         flags |= 1  # bit 0: has_p3
     if friendly_fire:
         flags |= 2  # bit 1: friendly_fire
@@ -302,6 +303,7 @@ def compile_bord_from_records(header: dict, records: list, ext1: dict = None) ->
             friendly_fire=ext1.get("friendly_fire", False),
             big_map=ext1.get("big_map", False),
             default_mode=ext1.get("default_mode", 0),
+            has_p3=bool(ext1.get("has_p3", False)),
         )
 
     return bytes(out)
@@ -572,6 +574,8 @@ def main():
                 print(f"Diff in {f.name}: orig={len(orig)} recomp={len(recompiled)}")
                 failed += 1
         print(f"Roundtrip check: {passed} passed, {failed} failed out of {len(files)} files.")
+        if failed > 0:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -255,7 +255,7 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
     uint8_t mode, assist, ffire, vrule, p3any;
     int i, r;
 
-    if (!w) return -1;
+    if (!w) return 0;
     seed = w->rng_seed;
     mode = w->play_mode;
     assist = w->input_assist;
@@ -274,7 +274,7 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
     }
     soi_world_init(w, seed);                 /* full per-board reset (mult=1, transient cleared) */
     r = soi_load_level(w, bord, len);
-    if (r <= 0) return -1;
+    if (r <= 0) return 0;
     if (keep[3].active) soi_spawn_player3(w);
     w->play_mode     = mode;
     w->input_assist  = assist;
@@ -290,12 +290,12 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
         w->players[i].kills      = keep[i].kills;
         w->players[i].active     = keep[i].active;
         w->players[i].eliminated = keep[i].elim;
-        if (keep[i].elim) {
+        if (!keep[i].active || keep[i].elim) {
             w->players[i].alive = 0;
-            w->players[i].ground_state = SOI_ST_DEAD;
+            w->players[i].ground_state = SOI_ST_IDLE;
         }
     }
-    return 0;
+    return 1;
 }
 
 /* Overwrite a player's PERSISTENT stats -- used by Resume to restore a saved game onto a
@@ -733,9 +733,9 @@ static void reload_board_on_death(SoiWorld *w)
         w->players[i].kills      = keep[i].kills;
         w->players[i].active     = keep[i].active;
         w->players[i].eliminated = keep[i].elim;
-        if (keep[i].elim) {
+        if (!keep[i].active || keep[i].elim) {
             w->players[i].alive = 0;
-            w->players[i].ground_state = SOI_ST_DEAD;
+            w->players[i].ground_state = SOI_ST_IDLE;
         }
     }
 }
@@ -887,6 +887,18 @@ static void respawn_player_in_place(SoiWorld *w, SoiPlayer *rp)
     }
 }
 
+static inline int soi_px_col(int px)
+{
+    if (px < SOI_ORIGIN_X) return -1;
+    return (px - SOI_ORIGIN_X) / SOI_CELL_PX;
+}
+
+static inline int soi_px_row(int py)
+{
+    if (py < SOI_ORIGIN_Y) return -1;
+    return (py - SOI_ORIGIN_Y) / SOI_CELL_PX;
+}
+
 static void check_pvp_body_collisions(SoiWorld *w)
 {
     if (!w->friendly_fire) return;
@@ -903,25 +915,30 @@ static void check_pvp_body_collisions(SoiWorld *w)
 
             if (dx < 20 && dy < 24) {
                 if (p1->fast > 0 && p2->fast > 0) {
-                    int push = (20 - dx + 1) / 2;
-                    if (push < 2) push = 2;
-                    if (p1->x <= p2->x) {
-                        p1->x -= push;
-                        p2->x += push;
-                        p1->facing = -1;
-                        p2->facing = 1;
-                    } else {
-                        p1->x += push;
-                        p2->x -= push;
-                        p1->facing = 1;
-                        p2->facing = -1;
+                    int push = (((20 - dx + 1) / 2) + 1) & ~1;
+                    int dir1 = (p1->x < p2->x) ? -1 : (p1->x > p2->x ? 1 : ((i < j) ? -1 : 1));
+                    int dir2 = -dir1;
+                    int step;
+                    for (step = 0; step < push; step += 2) {
+                        int nx1 = p1->x + dir1 * 2;
+                        int c1 = soi_px_col(dir1 < 0 ? nx1 : nx1 + 31);
+                        int r1_top = soi_px_row(p1->y + 4), r1_bot = soi_px_row(p1->y + 30);
+                        if (c1 > 0 && c1 < w->grid_cols - 1 &&
+                            !(w->cell[r1_top][c1] & SOI_CELL_SUPPORTIVE) &&
+                            !(w->cell[r1_bot][c1] & SOI_CELL_SUPPORTIVE)) {
+                            p1->x = nx1;
+                        }
+                        int nx2 = p2->x + dir2 * 2;
+                        int c2 = soi_px_col(dir2 < 0 ? nx2 : nx2 + 31);
+                        int r2_top = soi_px_row(p2->y + 4), r2_bot = soi_px_row(p2->y + 30);
+                        if (c2 > 0 && c2 < w->grid_cols - 1 &&
+                            !(w->cell[r2_top][c2] & SOI_CELL_SUPPORTIVE) &&
+                            !(w->cell[r2_bot][c2] & SOI_CELL_SUPPORTIVE)) {
+                            p2->x = nx2;
+                        }
                     }
-                    int min_x = SOI_ORIGIN_X;
-                    int max_x = soi_cell_x(w->grid_cols - 1);
-                    if (p1->x < min_x) p1->x = min_x;
-                    if (p1->x > max_x) p1->x = max_x;
-                    if (p2->x < min_x) p2->x = min_x;
-                    if (p2->x > max_x) p2->x = max_x;
+                    p1->facing = (dir1 < 0) ? -1 : 1;
+                    p2->facing = (dir2 < 0) ? -1 : 1;
                     p1->run_x0 = p1->x;
                     p2->run_x0 = p2->x;
                     p1->move_ctr = 0;
@@ -1185,49 +1202,46 @@ void     soi_abort_game(SoiWorld *w)
 
 int      soi_game_over(const SoiWorld *w)
 {
-    int i, any = 0;
-    for (i = 0; i < SOI_MAX_PLAYERS; i++) {
+    int i, any_active = 0;
+    if (!w) return 0;
+    if (w->play_mode == SOI_MODE_VERSUS) return 0;
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
         if (!w->players[i].active) continue;
-        any = 1;
+        any_active = 1;
         if (!w->players[i].eliminated) return 0;   /* someone is still in */
     }
-    return any;   /* over only if there were active players and all are out */
+    return any_active;   /* over only if there were active players and all are out */
 }
 int      soi_level_complete(const SoiWorld *w)
 {
     int i;
-    if (!w->level_loaded) return 0;
+    if (!w || !w->level_loaded) return 0;
     if (w->play_mode == SOI_MODE_VERSUS) {
+        int participants = 0, active_count = 0, alive_count = 0;
+        for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+            if (!w->players[i].active && !w->players[i].eliminated) continue;
+            participants++;
+            if (w->players[i].active) active_count++;
+            if (w->players[i].active && !w->players[i].eliminated &&
+                (w->players[i].alive || w->players[i].lives > 0))
+                alive_count++;
+        }
         if (w->victory_rule == SOI_WIN_LIVES) {
-            int participants = 0, alive_count = 0;
-            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
-                if (!w->players[i].active && !w->players[i].eliminated) continue;
-                participants++;
-                if (!w->players[i].eliminated && (w->players[i].alive || w->players[i].lives > 0))
-                    alive_count++;
-            }
-            if (participants >= 2 && alive_count <= 1) return 1;
-            return 0;
+            return (participants >= 2 && alive_count <= 1) ? 1 : 0;
         } else if (w->victory_rule == SOI_WIN_SCORE) {
             if (w->goodies_total > 0 && w->goodies_left == 0) return 1;
-            int participants = 0, alive_count = 0;
-            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
-                if (!w->players[i].active && !w->players[i].eliminated) continue;
-                participants++;
-                if (!w->players[i].eliminated && (w->players[i].alive || w->players[i].lives > 0))
-                    alive_count++;
-            }
-            if (participants >= 2 && alive_count == 0) return 1;
-            return 0;
+            return (participants >= 2 && (alive_count == 0 || active_count <= 1)) ? 1 : 0;
         } else {
             /* SOI_WIN_DOOR */
-            for (i = 1; i < SOI_MAX_PLAYERS; i++)
+            for (i = 1; i < SOI_MAX_PLAYERS; i++) {
                 if (w->players[i].active && w->players[i].has_key == 2) return 1;
-            return 0;
+            }
+            return (participants >= 2 && alive_count <= 1) ? 1 : 0;
         }
     }
-    for (i = 0; i < SOI_MAX_PLAYERS; i++)
+    for (i = 1; i < SOI_MAX_PLAYERS; i++) {
         if (w->players[i].active && w->players[i].has_key == 2) return 1;
+    }
     return 0;
 }
 
@@ -1262,6 +1276,15 @@ int      soi_versus_winner(const SoiWorld *w)
         for (i = 1; i < SOI_MAX_PLAYERS; i++) {
             if (w->players[i].active && w->players[i].has_key == 2) return i;
         }
+        /* Fallback: last survivor if all other opponents dropped/eliminated */
+        int winner = 0;
+        for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+            if (w->players[i].active && !w->players[i].eliminated) {
+                if (winner != 0) return 0;
+                winner = i;
+            }
+        }
+        return winner;
     }
     return 0;
 }

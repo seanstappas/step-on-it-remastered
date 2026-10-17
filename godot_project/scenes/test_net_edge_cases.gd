@@ -202,7 +202,8 @@ func _ready() -> void:
 		# Step inputs
 		net1.send_local_input(2 if (t & 1) else 1)
 		net2.send_local_input(4 if (t & 2) else 0)
-		net3.send_local_input(1 if (t & 4) else 0)
+		if t < 292:
+			net3.send_local_input(1 if (t & 4) else 0)
 
 		net1.snapshot_ring[net1.current_tick % RollbackNet.RING_BUFFER_SIZE] = core1.snapshot_save()
 		net2.snapshot_ring[net2.current_tick % RollbackNet.RING_BUFFER_SIZE] = core2.snapshot_save()
@@ -291,6 +292,13 @@ func _ready() -> void:
 		net1.send_local_input(2 if (t & 1) else 1)
 		net2.send_local_input(4 if (t & 2) else 0)
 
+		for d_slot in net1.peer_drop_tick.keys():
+			if net1.current_tick == int(net1.peer_drop_tick[d_slot]):
+				core1.drop_player(int(d_slot) + 1)
+		for d_slot in net2.peer_drop_tick.keys():
+			if net2.current_tick == int(net2.peer_drop_tick[d_slot]):
+				core2.drop_player(int(d_slot) + 1)
+
 		net1.snapshot_ring[net1.current_tick % RollbackNet.RING_BUFFER_SIZE] = core1.snapshot_save()
 		net2.snapshot_ring[net2.current_tick % RollbackNet.RING_BUFFER_SIZE] = core2.snapshot_save()
 
@@ -301,13 +309,6 @@ func _ready() -> void:
 		var in2_0 := net2.get_or_predict_input(0, net2.current_tick)
 		var in2_1 := net2.get_or_predict_input(1, net2.current_tick)
 		var in2_2 := net2.get_or_predict_input(2, net2.current_tick)
-
-		for d_slot in net1.peer_drop_tick.keys():
-			if net1.current_tick == int(net1.peer_drop_tick[d_slot]):
-				core1.drop_player(int(d_slot) + 1)
-		for d_slot in net2.peer_drop_tick.keys():
-			if net2.current_tick == int(net2.peer_drop_tick[d_slot]):
-				core2.drop_player(int(d_slot) + 1)
 
 		core1.tick3(in1_0, in1_1, in1_2)
 		core2.tick3(in2_0, in2_1, in2_2)
@@ -356,6 +357,31 @@ func _ready() -> void:
 		failures += 1
 	else:
 		print("PASS: P1 and P2 simulated 400 ticks after P3 drop with 0 desyncs and 0 stalls! Final hash: %X" % core1.net_hash())
+
+		# Verify cross-board drop persistence on Board 2
+		net1.reset_for_new_board()
+		net2.reset_for_new_board()
+		if not net1.dropped_peers.has(2) or not net2.dropped_peers.has(2):
+			print("FAIL: dropped_peers was wiped by reset_for_new_board()!")
+			failures += 1
+		else:
+			var b2_stalled := false
+			for b2_t in range(20):
+				sim_time += 0.014
+				net1.poll_network(sim_time)
+				net2.poll_network(sim_time)
+				net1.send_local_input(1)
+				net2.send_local_input(2)
+				if net1.check_rift_stall() or net2.check_rift_stall():
+					b2_stalled = true
+					break
+				net1.current_tick += 1
+				net2.current_tick += 1
+			if b2_stalled:
+				print("FAIL: Board 2 entered Rift Stall on dropped peer!")
+				failures += 1
+			else:
+				print("PASS: Board 2 preserved dropped_peers with 0 stalls across 20 ticks!")
 
 	net1.close()
 	net2.close()

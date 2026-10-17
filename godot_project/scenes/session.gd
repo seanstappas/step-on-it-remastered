@@ -162,6 +162,10 @@ func load_game() -> bool:
 func start_campaign() -> void:
 	custom_board_bytes = PackedByteArray()
 	custom_map_path = ""
+	if has_meta("custom_board_bytes"):
+		remove_meta("custom_board_bytes")
+	if has_meta("editor_return"):
+		remove_meta("editor_return")
 	resume_stats = []
 	var lo := 401
 	var hi := 500

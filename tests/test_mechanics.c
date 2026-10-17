@@ -4503,6 +4503,93 @@ int main(void)
         CHECK(soi_level_complete(w) == 1, "68.5: Dropping P2 leaves 1 alive participant and completes match");
     }
 
+    /* ---- 69. Post-a7c2bdd Regression Tests ---- */
+    {
+        /* 69.1: soi_next_level returns 1 on success, 0 on error, and keeps inactive P3 alive=0 */
+        uint8_t ext_bord[52];
+        memset(ext_bord, 0, sizeof(ext_bord));
+        ext_bord[0x07] = 2; ext_bord[0x09] = 2;
+        ext_bord[0x0B] = 4; ext_bord[0x0D] = 2;
+        ext_bord[0x0E] = 0x13; ext_bord[0x0F] = 0x88;
+        memcpy(ext_bord + 28, "EXT1", 4);
+        ext_bord[32] = 1; ext_bord[33] = 1; /* has_p3 = 1 */
+        ext_bord[34] = 19; ext_bord[35] = 13;
+        ext_bord[36] = 5; ext_bord[37] = 2;
+        ext_bord[38] = 0x02; ext_bord[39] = 0x0D;
+        ext_bord[49] = 3;
+        uint16_t ecrc = 0xFFFF;
+        for (int i = 0; i < 22; i++) {
+            ecrc ^= ((uint16_t)ext_bord[28 + i] << 8);
+            for (int b = 0; b < 8; b++) ecrc = (ecrc & 0x8000) ? ((ecrc << 1) ^ 0x1021) : (ecrc << 1);
+        }
+        ext_bord[50] = (uint8_t)(ecrc >> 8);
+        ext_bord[51] = (uint8_t)(ecrc & 0xFF);
+
+        soi_world_init(w, 1);
+        soi_set_play_mode(w, SOI_MODE_COMPETE);
+        CHECK(soi_load_level(w, ext_bord, 52) == 1, "69.1: soi_load_level returns 1");
+        soi_limit_players(w, 2); /* 2P match on a board with EXT1 has_p3 */
+        CHECK(soi_next_level(w, NULL, 0) == 0, "69.1: soi_next_level returns 0 on invalid board");
+        CHECK(soi_next_level(w, ext_bord, 52) == 1, "69.1: soi_next_level returns 1 on valid board");
+        CHECK(w->players[3].active == 0 && w->players[3].alive == 0,
+              "69.1: inactive P3 has alive == 0 after soi_next_level on EXT1 has_p3 board");
+
+        /* 69.2: Competitive door exit under p3_any_key requires holding a key */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_COMPETE);
+        soi_set_p3_any_key(w, 1);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 3, 5, 9); ground_player(w, 5, 9);
+        w->players[1].active = 1; w->players[3].active = 1;
+        w->players[1].has_key = 0; /* P1 is keyless */
+        w->players[3].has_key = 1; /* P3 holds a key and unlocked P1's Blue Door */
+        w->cell[9][3] = 0x0902u;   /* Unlocked P1 Blue Door at P1's cell */
+        soi_tick3(w, 0, 0, 0);
+        CHECK(w->players[1].has_key == 0 && soi_level_complete(w) == 0,
+              "69.2: Keyless P1 cannot exit unlocked Blue Door in Compete when p3_any_key=1");
+        w->cell[9][5] = 0x0902u;   /* Unlocked P1 Blue Door at P3's cell */
+        soi_tick3(w, 0, 0, 0);
+        soi_tick3(w, 0, 0, 0);
+        CHECK(w->players[3].has_key == 2 && soi_level_complete(w) == 1,
+              "69.2: Key-holding P3 exits unlocked Blue Door in Compete when p3_any_key=1");
+
+        /* 69.3: Versus soi_game_over returns 0 and SOI_WIN_DOOR / SOI_WIN_SCORE complete on drop */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        soi_set_victory_rule(w, SOI_WIN_DOOR);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
+        w->players[1].active = 1; w->players[2].active = 1;
+        soi_drop_player(w, 2);
+        CHECK(soi_level_complete(w) == 1, "69.3: Versus SOI_WIN_DOOR completes when opponent drops");
+        w->players[1].alive = 0; w->players[1].lives = 0; w->players[1].eliminated = 1;
+        CHECK(soi_game_over(w) == 0, "69.3: soi_game_over is always 0 in SOI_MODE_VERSUS");
+
+        /* 69.4: Dual speed-shoe bounce keeps even 2-px alignment and respects border walls */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        w->friendly_fire = 1;
+        for (int r = 0; r < 13; r++) {
+            w->cell[r][0] = 0x0307u;
+            w->cell[r][18] = 0x0307u;
+        }
+        reset_player(w, 1, 1, 9); ground_player(w, 1, 9);
+        reset_player(w, 2, 1, 9); ground_player(w, 1, 9);
+        w->players[1].fast = 100;
+        w->players[2].fast = 100;
+        w->players[1].x = soi_cell_x(1);      /* Right against left border wall (col 0) */
+        w->players[2].x = soi_cell_x(1) + 6;  /* dx = 6 (dx % 4 == 2) */
+        soi_tick(w, 0, 0);
+        CHECK(((w->players[1].x - SOI_ORIGIN_X) & 1) == 0 &&
+              ((w->players[2].x - SOI_ORIGIN_X) & 1) == 0,
+              "69.4: Dual speed-shoe bounce preserves 2-px even coordinate alignment");
+        CHECK(w->players[1].x >= soi_cell_x(1),
+              "69.4: Dual speed-shoe bounce does not push P1 into col 0 border wall");
+    }
+
     free(w);
     if (failures) { printf("\n%d CHECK(S) FAILED\n", failures); return 1; }
     printf("\nALL MECHANIC TESTS PASSED\n");

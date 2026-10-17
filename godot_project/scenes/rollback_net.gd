@@ -150,8 +150,6 @@ static func join_code_to_ip(code_str: String) -> String:
 	var b2 := (val48 >> 24) & 0xFF
 	var b1 := (val48 >> 32) & 0xFF
 	var b0 := (val48 >> 40) & 0xFF
-	if port != 7777 and port != 0:
-		return "%d.%d.%d.%d:%d" % [b0, b1, b2, b3, port]
 	return "%d.%d.%d.%d" % [b0, b1, b2, b3]
 
 
@@ -195,7 +193,11 @@ func reset() -> void:
 
 
 func reset_for_new_board() -> void:
+	var saved_drops: Dictionary = dropped_peers.duplicate()
 	reset()
+	dropped_peers = saved_drops
+	for d_slot in dropped_peers.keys():
+		peer_drop_tick[int(d_slot)] = 0
 
 
 # Initialize network host (Player 1) or client (Player 2 or 3)
@@ -301,7 +303,6 @@ func send_board_load(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool 
 		pkt[8 + b] = bord_bytes[b]
 	print("send_board_load: blen=%d seed=%d retry=%s pkt_len=%d" % [blen, rng_seed, str(is_retry), pkt.size()])
 	_broadcast_packet(pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
-	board_loaded.emit(bord_bytes, rng_seed, is_retry)
 
 
 func poll_network(time_now_sec: float) -> void:
@@ -353,10 +354,10 @@ func poll_network(time_now_sec: float) -> void:
 				var last_t: int = int(last_confirmed_per_peer[slot])
 				var drop_t: int = last_t + 1
 				peer_drop_tick[slot] = drop_t
-				for tk in range(last_t + 1, current_tick + BASE_DELAY + 1):
-					if input_history[slot].get(tk, 0) != 0 and tk < current_tick:
-						if earliest_mispredicted_tick == -1 or tk < earliest_mispredicted_tick:
-							earliest_mispredicted_tick = tk
+				if drop_t < current_tick:
+					if earliest_mispredicted_tick == -1 or drop_t < earliest_mispredicted_tick:
+						earliest_mispredicted_tick = drop_t
+				for tk in range(drop_t, current_tick + BASE_DELAY + 1):
 					input_history[slot][tk] = 0
 					input_confirmed[slot][tk] = true
 				_update_last_confirmed_tick()
@@ -416,12 +417,16 @@ func _handle_drop_peer(pkt: PackedByteArray) -> void:
 				var tk := last_t - k
 				if tk >= 0:
 					var val: int = pkt[6 + k]
+					var prev_pred: int = get_or_predict_input(slot, tk)
+					if tk < current_tick and prev_pred != val:
+						if earliest_mispredicted_tick == -1 or tk < earliest_mispredicted_tick:
+							earliest_mispredicted_tick = tk
 					input_history[slot][tk] = val
 					input_confirmed[slot][tk] = true
-			for tk in range(last_t + 1, current_tick + BASE_DELAY + 1):
-				if input_history[slot].get(tk, 0) != 0 and tk < current_tick:
-					if earliest_mispredicted_tick == -1 or tk < earliest_mispredicted_tick:
-						earliest_mispredicted_tick = tk
+			if drop_t < current_tick:
+				if earliest_mispredicted_tick == -1 or drop_t < earliest_mispredicted_tick:
+					earliest_mispredicted_tick = drop_t
+			for tk in range(drop_t, current_tick + BASE_DELAY + 1):
 				input_history[slot][tk] = 0
 				input_confirmed[slot][tk] = true
 		dropped_peers[slot] = true
@@ -464,11 +469,18 @@ func _send_input_packet(anchor_tick: int) -> void:
 
 func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
 	var prev_scheduled: int = int(last_confirmed_per_peer[local_slot])
-	var target_tick := current_tick + BASE_DELAY
-	if current_tick > 0 and target_tick <= prev_scheduled:
-		target_tick = prev_scheduled + 1
-	input_history[local_slot][target_tick] = local_input
-	input_confirmed[local_slot][target_tick] = true
+	var target_tick: int = current_tick + BASE_DELAY
+	if current_tick > 0:
+		target_tick = maxi(target_tick, prev_scheduled + 1)
+
+	var prev_val: int = int(input_history[local_slot].get(target_tick, 0))
+	if (prev_val & IN_META_CONFIRM) != 0:
+		local_input |= IN_META_CONFIRM
+
+	var start_fill: int = 0 if current_tick == 0 else maxi(current_tick, prev_scheduled + 1)
+	for tk in range(start_fill, target_tick + 1):
+		input_history[local_slot][tk] = local_input
+		input_confirmed[local_slot][tk] = true
 	last_confirmed_per_peer[local_slot] = target_tick
 
 	if current_state_hash != 0 and current_tick > 0:
@@ -621,10 +633,6 @@ func check_rift_stall() -> bool:
 		is_stalled = false
 		stalled_frames = 0
 		rift_stall_changed.emit(false)
-	if last_confirmed_tick > current_tick:
-		consecutive_rift_frames -= 1
-	else:
-		consecutive_rift_frames = 0
 	return false
 
 

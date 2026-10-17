@@ -25,6 +25,7 @@ var starting_lives: int = 3
 var bonus_time: int = 6000
 var map_name: String = "custom_map"
 var cursor_cell: Vector2i = Vector2i(0, 0)
+var hover_cell: Vector2i = Vector2i(0, 0)
 var enemy_facing_left: bool = false
 
 # Grid 2D array: cells[row][col] -> tile int
@@ -61,10 +62,10 @@ const BRUSHES = [
 	{"cat": "Doors", "name": "Key (Univ)", "tile": 0x0907, "sprite": "goody_sprites", "frame": 8},
 	{"cat": "Doors", "name": "Lock (Univ)", "tile": 0x0904, "sprite": "goody_sprites", "frame": 5},
 	{"cat": "Doors", "name": "Door (Univ)", "tile": 0x0901, "sprite": "goody_sprites", "frame": 2},
-	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0908, "sprite": "goody_sprites", "frame": 20},
+	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0908, "sprite": "goody_sprites", "frame": 9},
 	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0905, "sprite": "goody_sprites", "frame": 21},
 	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0902, "sprite": "goody_sprites", "frame": 22},
-	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0909, "sprite": "goody_sprites", "frame": 36},
+	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0909, "sprite": "goody_sprites", "frame": 10},
 	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0906, "sprite": "goody_sprites", "frame": 37},
 	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0903, "sprite": "goody_sprites", "frame": 38},
 	{"cat": "Doors", "name": "Key (P3 Red)", "tile": 0x0933, "sprite": "goody_sprites", "frame": 9},
@@ -72,17 +73,17 @@ const BRUSHES = [
 	{"cat": "Doors", "name": "Door (P3 Red)", "tile": 0x0935, "sprite": "goody_sprites", "frame": 3},
 
 	# --- Enemies ---
-	{"cat": "Enemies", "name": "Enemy: Ant", "tile": 0x0700, "sprite": "ant_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0702, "sprite": "disk_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x0704, "sprite": "walker_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x0705, "sprite": "hippo_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0706, "sprite": "ostrich_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0708, "sprite": "piggy_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x070A, "sprite": "teeth_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Smiley", "tile": 0x070B, "sprite": "smiley_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Hammer", "tile": 0x070C, "sprite": "hammer_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x070F, "sprite": "robo_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x0701, "sprite": "cannon_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x1E140701, "sprite": "cannon_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x1E140705, "sprite": "hippo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Hammer", "tile": 0x1E140706, "sprite": "hammer_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0609, "sprite": "disk_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x060A, "sprite": "teeth_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Smiley", "tile": 0x1E14070B, "sprite": "smiley_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Ant", "tile": 0x1E14070C, "sprite": "ant_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x060F, "sprite": "robo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x0610, "sprite": "walker_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0612, "sprite": "ostrich_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0613, "sprite": "piggy_sprites", "frame": 2},
 
 	# --- Spawns ---
 	{"cat": "Spawns", "name": "P1 Spawn", "tile": -1, "sprite": "BP_sprites", "frame": 2},
@@ -379,7 +380,42 @@ func _run_self_test() -> void:
 	assert(grid_cols == 38, "persistence grid_cols mismatch")
 	assert(cells[10][10] == 0x0207, "persistence cells mismatch")
 
+	# Verify Live3D.POST_SHADER compiles cleanly
+	var sh := Shader.new()
+	sh.code = Live3D.POST_SHADER
+	assert(sh.code.count("{") == sh.code.count("}"), "Live3D.POST_SHADER unbalanced braces")
+
+	# Verify all Enemy brushes map to valid BORD badguy IDs (1..19)
+	for b in BRUSHES:
+		if b["cat"] == "Enemies":
+			var btype: int = int(b["tile"]) & 0xFF
+			assert(btype >= 1 and btype <= 19, "Invalid BORD enemy ID %d for %s" % [btype, b["name"]])
+
+	# Verify [F] enemy facing toggle updates bits 8..15 (0x0500 / 0x0600 / 0x0700)
+	cells[5][5] = 0x0609
+	hover_cell = Vector2i(5, 5)
+	_cycle_hovered_enemy_facing()
+	assert(((cells[5][5] >> 8) & 0xFF) in [0x05, 0x06, 0x07], "Enemy facing bits not in 0x05..0x07")
+
+	# Verify Session.start_campaign() clears custom_board_bytes meta
+	if Session:
+		Session.set_meta("custom_board_bytes", raw)
+		Session.start_campaign()
+		assert(not Session.has_meta("custom_board_bytes"), "start_campaign() leaked custom_board_bytes meta")
+
+	# Verify join_code_to_ip returns bare IP even when port != 7777
+	var jc := RollbackNet.ip_to_join_code("127.0.0.1", 8888)
+	assert(RollbackNet.join_code_to_ip(jc) == "127.0.0.1", "join_code_to_ip included port")
+	assert(RollbackNet.join_code_to_port(jc) == 8888, "join_code_to_port mismatch")
+
 	print("MapEditor CLI self-test: PASS")
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_TAB:
+			playtest_in_memory()
+			get_viewport().set_input_as_handled()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -396,13 +432,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_O and event.ctrl_pressed:
 			load_from_default_file()
 			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_G or event.keycode == KEY_C:
+		elif (event.keycode == KEY_G or event.keycode == KEY_C) and not event.ctrl_pressed:
 			cycle_canvas_size()
 			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_F:
-			enemy_facing_left = not enemy_facing_left
-			_set_status("Enemy Facing: %s [F]" % ("Left" if enemy_facing_left else "Right"))
-			queue_redraw()
+		elif event.keycode == KEY_F and not event.ctrl_pressed:
+			_cycle_hovered_enemy_facing()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_BRACKETLEFT:
 			_set_brush(brush_idx - 1)
@@ -430,6 +464,7 @@ func _gui_input(event: InputEvent) -> void:
 			_set_brush(brush_idx + 1)
 	elif event is InputEventMouseMotion:
 		cursor_cell = _pos_to_cell(event.position)
+		hover_cell = cursor_cell
 		if is_mouse_down and event.position.y >= 48.0:
 			_paint_at(event.position)
 
@@ -464,11 +499,32 @@ func _handle_hud_click(pos: Vector2) -> void:
 		_set_status("Starting Lives: %d" % starting_lives)
 		queue_redraw()
 	elif pos.x >= 780.0 and pos.x <= 840.0:
-		enemy_facing_left = not enemy_facing_left
-		_set_status("Facing: %s [F]" % ("Left" if enemy_facing_left else "Right"))
-		queue_redraw()
+		_cycle_hovered_enemy_facing()
 	else:
 		_set_brush(brush_idx + 1)
+
+
+func _cycle_hovered_enemy_facing() -> void:
+	var c := hover_cell
+	if c.x >= 0 and c.x < grid_cols and c.y >= 0 and c.y < grid_rows:
+		var v: int = cells[c.y][c.x]
+		if (v & 0x0400) != 0:
+			var current_dir := (v >> 8) & 0xFF
+			var next_dir := 0x05
+			if current_dir == 0x05:
+				next_dir = 0x06
+			elif current_dir == 0x06:
+				next_dir = 0x07
+			elif current_dir == 0x07:
+				next_dir = 0x05
+			cells[c.y][c.x] = (v & ~0xFF00) | (next_dir << 8)
+			var dname := "Left" if next_dir == 0x05 else ("Right" if next_dir == 0x06 else "Alt")
+			_set_status("Enemy Facing: %s" % dname)
+			queue_redraw()
+			return
+	enemy_facing_left = not enemy_facing_left
+	_set_status("Enemy Facing: %s [F]" % ("Left" if enemy_facing_left else "Right"))
+	queue_redraw()
 
 
 func _set_brush(idx: int) -> void:
@@ -495,9 +551,9 @@ func _paint_at(pos: Vector2) -> void:
 	else:
 		var tile_to_set: int = current_brush
 		var cur_item: Dictionary = BRUSHES[brush_idx]
-		if cur_item["cat"] == "Enemies" or ((current_brush & 0xFF00) == 0x0700):
-			var facing_byte: int = 4 if enemy_facing_left else 2
-			tile_to_set = (current_brush & 0xFF00FFFF) | (facing_byte << 16)
+		if cur_item["cat"] == "Enemies" or ((current_brush & 0x0400) != 0):
+			var facing_bits: int = 0x0500 if enemy_facing_left else 0x0600
+			tile_to_set = (current_brush & ~0xFF00) | facing_bits
 		cells[cell_coords.y][cell_coords.x] = tile_to_set
 
 	queue_redraw()
@@ -604,13 +660,14 @@ func _draw() -> void:
 	for r in range(grid_rows):
 		for c in range(grid_cols):
 			var rect := Rect2(c * cell_w, hud_h + r * cell_h, cell_w, cell_h)
-			var tile_id: int = cells[r][c] & 0xFFFF
-			if tile_id != 0:
+			var cell_val: int = cells[r][c]
+			var tile_id: int = cell_val & 0xFFFF
+			if cell_val != 0:
 				var spr: Texture2D = null
 				var spr_folder := ""
 				var spr_frame := 0
 				for b in BRUSHES:
-					if b["tile"] == tile_id:
+					if b["tile"] == cell_val or b["tile"] == tile_id or ((cell_val & 0x0400) != 0 and (int(b["tile"]) & 0xFF) == (cell_val & 0xFF)):
 						spr_folder = b["sprite"]
 						spr_frame = b["frame"]
 						break

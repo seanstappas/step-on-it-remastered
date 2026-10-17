@@ -20,7 +20,7 @@ Usage (from repo root):  powershell -File tools/verify.ps1
 #>
 param(
     [string]$Zig   = 'D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe',
-    [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe',
+    [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe',
     [switch]$SkipGodot
 )
 
@@ -28,6 +28,10 @@ $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 $script:fail = 0
+
+if ($Godot -notmatch '_console\.exe$' -and (Test-Path ($Godot -replace '\.exe$', '_console.exe'))) {
+    $Godot = $Godot -replace '\.exe$', '_console.exe'
+}
 
 function Stage([string]$name, [scriptblock]$body) {
     Write-Host "==> $name" -ForegroundColor Cyan
@@ -88,6 +92,11 @@ Stage 'core: creeper chain simulation' {
     [bool]($code -eq 0 -and ($out -match ' 0 FAILED'))
 }
 
+Stage 'tools: ascii2bord 152-board byte-exact roundtrip' {
+    $out = & py tools/ascii2bord.py verify-roundtrip extracted/levels
+    [bool]($LASTEXITCODE -eq 0 -and ($out -match '152 passed, 0 failed'))
+}
+
 Stage 'art: 3D sprite frames' {
     $out = & py tools/soi3d/framematch.py --check
     $code = $LASTEXITCODE
@@ -134,6 +143,10 @@ if (-not $SkipGodot -and (Test-Path $Godot)) {
     Stage 'net: online progression & retry sync' {
         $progOut = & powershell -File (Join-Path $root 'tools/test_net_progression.ps1') -Godot $Godot
         [bool]($LASTEXITCODE -eq 0)
+    }
+    Stage 'editor: headless map editor self-test (--test-editor)' {
+        $edOut = & $Godot --headless --path godot_project res://scenes/editor.tscn -- --test-editor 2>&1
+        [bool]($LASTEXITCODE -eq 0 -and ($edOut -match 'MapEditor CLI self-test: PASS'))
     }
 } else {
     Write-Host '==> godot stages skipped (editor not found or -SkipGodot)' -ForegroundColor Yellow

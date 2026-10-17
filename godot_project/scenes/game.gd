@@ -75,6 +75,7 @@ var _core: SoiCore
 var _net: RollbackNet = null
 var _net_status_banner: String = ""
 var _online_leave_confirm: bool = false
+var _online_meta_confirmed: bool = false
 var _font: Font
 var _font_hud: Font   # bold serif (original HUD font = Mac "New York" bold)
 var _shot_countdown := -1
@@ -1406,9 +1407,10 @@ func _start() -> void:
 ## carry across boards (new-game-only per FUN_1002b060); only mult + per-board state reset.
 func _next_board() -> void:
 	_core.next_level(_level_bytes)
-	if _num_players >= 3:
-		_core.spawn_player3()
-	_core.limit_players(_num_players)   # keep the extra BORD-spawned P2 off in a 1-player game
+	_core.limit_players(_num_players)
+	if Session.is_online and _net != null:
+		for d_slot in _net.dropped_peers.keys():
+			_core.drop_player(int(d_slot) + 1)
 	_reset_round_ui()
 	_update_board_music()
 
@@ -1603,6 +1605,9 @@ func _physics_process(_delta: float) -> void:
 		# Local input scheduled for current_tick + 2 (D = 2)
 		var local_in := _read_input(_net.local_slot)
 		_net.send_local_input(local_in)
+		for d_slot in _net.peer_drop_tick.keys():
+			if _net.current_tick == int(_net.peer_drop_tick[d_slot]):
+				_core.drop_player(int(d_slot) + 1)
 		_net.snapshot_ring[_net.current_tick % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
 		p1 = _net.get_or_predict_input(0, _net.current_tick)
 		p2 = _net.get_or_predict_input(1, _net.current_tick) if _num_players >= 2 else 0
@@ -1621,11 +1626,6 @@ func _physics_process(_delta: float) -> void:
 		elif _shot_countdown > 0:
 			p1 = IN_RIGHT              # scripted input for a plain --shot screenshot
 		p3 = _read_input(2) if _num_players >= 3 else 0
-
-	if _net != null:
-		for d_slot in _net.peer_drop_tick.keys():
-			if _net.current_tick == int(_net.peer_drop_tick[d_slot]):
-				_core.drop_player(int(d_slot) + 1)
 
 	_core.tick3(p1, p2, p3)
 	_core_ticked = true
@@ -1883,7 +1883,7 @@ func _input(e: InputEvent) -> void:
 				Session.is_online = false; Session.net = null
 				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 				return
-			if _challenge_intro > 0 or _core.level_complete() or _core.game_over() or _core.challenge_failed():
+			if (_challenge_intro > 0 or _core.level_complete() or _core.game_over() or _core.challenge_failed()) and _hs_state != "entry":
 				_press_enter()
 				return
 		elif e.button_index == JOY_BUTTON_B:
@@ -1894,6 +1894,9 @@ func _input(e: InputEvent) -> void:
 		elif e.button_index == JOY_BUTTON_BACK:
 			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
 				Session.remove_meta("editor_return")
+				if Session.has_meta("custom_board_bytes"):
+					Session.remove_meta("custom_board_bytes")
+				Session.custom_board_bytes = PackedByteArray()
 				get_tree().change_scene_to_file("res://scenes/editor.tscn")
 				return
 			if Session.is_online:
@@ -1922,8 +1925,10 @@ func _input(e: InputEvent) -> void:
 		_hs_input(e)
 		return
 	if _disconnect_banner != "" and e.keycode == KEY_SPACE:
+		var connected_pads: Array = Input.get_connected_joypads()
 		for p in Session.player_device.size():
-			if Session.player_device[p] >= 0:
+			var dev: int = Session.player_device[p]
+			if dev >= 0 and not connected_pads.has(dev):
 				Session.player_device[p] = -1
 				break
 		_disconnect_banner = ""
@@ -1934,6 +1939,9 @@ func _input(e: InputEvent) -> void:
 		KEY_ESCAPE:
 			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
 				Session.remove_meta("editor_return")
+				if Session.has_meta("custom_board_bytes"):
+					Session.remove_meta("custom_board_bytes")
+				Session.custom_board_bytes = PackedByteArray()
 				get_tree().change_scene_to_file("res://scenes/editor.tscn")
 				return
 			if Session.is_online:
@@ -1969,6 +1977,9 @@ func _input(e: InputEvent) -> void:
 		KEY_TAB:
 			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
 				Session.remove_meta("editor_return")
+				if Session.has_meta("custom_board_bytes"):
+					Session.remove_meta("custom_board_bytes")
+				Session.custom_board_bytes = PackedByteArray()
 				get_tree().change_scene_to_file("res://scenes/editor.tscn")
 				return
 			if not _core.game_over() and not Session.is_online:
@@ -2032,6 +2043,9 @@ func _press_enter() -> void:
 	if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
 		if _core.game_over() or _core.level_complete():
 			Session.remove_meta("editor_return")
+			if Session.has_meta("custom_board_bytes"):
+				Session.remove_meta("custom_board_bytes")
+			Session.custom_board_bytes = PackedByteArray()
 			get_tree().change_scene_to_file("res://scenes/editor.tscn")
 			return
 	if _challenge_intro > 0:
@@ -2071,13 +2085,17 @@ func _poll_online_meta_confirm() -> void:
 	var local_inp: int = RollbackNet.IN_META_CONFIRM if _online_meta_confirmed else 0
 	_net.send_local_input(local_inp)
 
-	var confirm_tick: int = _net.current_tick + RollbackNet.BASE_DELAY
 	var all_confirmed: bool = true
 	for slot in range(_num_players):
 		if _net.dropped_peers.has(slot):
 			continue
-		var peer_in: int = int(_net.input_history[slot].get(confirm_tick, 0))
-		if (peer_in & RollbackNet.IN_META_CONFIRM) == 0:
+		var slot_ok: bool = false
+		var max_tk: int = maxi(_net.current_tick + _net.BASE_DELAY, int(_net.last_confirmed_per_peer[slot]))
+		for tk in range(_net.current_tick, max_tk + 1):
+			if (int(_net.input_history[slot].get(tk, 0)) & RollbackNet.IN_META_CONFIRM) != 0:
+				slot_ok = true
+				break
+		if not slot_ok:
 			all_confirmed = false
 			break
 
@@ -2087,11 +2105,11 @@ func _poll_online_meta_confirm() -> void:
 	_online_meta_confirmed = false
 	if _net.is_host:
 		var next_seed: int = (int(Time.get_ticks_usec()) & 0x7FFFFFFF) | 1
+		Session.online_seed = next_seed
 		if _core.level_complete() or _core.challenge_failed():
 			var was_challenge_fail: bool = _core.challenge_failed() and not _core.level_complete()
 			if not Session.custom_map_path.is_empty() or not Session.custom_board_bytes.is_empty():
 				_net.send_board_load(_level_bytes, next_seed, true)
-				Session.online_seed = next_seed
 				_net.reset_for_new_board()
 				_start()
 			elif Session.board_index + 1 < Session.board_list.size():
@@ -2099,19 +2117,18 @@ func _poll_online_meta_confirm() -> void:
 				var next_bytes: PackedByteArray = FileAccess.get_file_as_bytes(Session.current_board_path())
 				_level_bytes = next_bytes
 				Session.online_bord_bytes = next_bytes
-				Session.online_seed = next_seed
 				_net.send_board_load(next_bytes, next_seed, false)
 				_net.reset_for_new_board()
-				if was_challenge_fail:
-					for p in [1, 2, 3]:
-						var st: Dictionary = _board_start_stats.get(p, {})
-						if not st.is_empty():
-							_core.set_player_stats(p, st["score"], st["lives"], st["arrows"], st["balls"], st["shield"])
+				var saved_stats: Array = _board_start_stats.duplicate(true)
 				_next_board()
+				if was_challenge_fail:
+					for p in range(1, _num_players + 1):
+						if p - 1 < saved_stats.size():
+							var st: Dictionary = saved_stats[p - 1]
+							_core.set_player_stats(p, int(st["score"]), int(st["lives"]), int(st["arrows"]), int(st["balls"]), int(st["shield"]))
 			else:
 				if _mode_versus or _mode_compete:
 					_net.send_board_load(_level_bytes, next_seed, true)
-					Session.online_seed = next_seed
 					_net.reset_for_new_board()
 					_start()
 				else:
@@ -2120,7 +2137,6 @@ func _poll_online_meta_confirm() -> void:
 					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 		elif _core.game_over():
 			_net.send_board_load(_level_bytes, next_seed, true)
-			Session.online_seed = next_seed
 			_net.reset_for_new_board()
 			_start()
 
@@ -2138,12 +2154,14 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 	else:
 		if not _net.is_host and Session.board_index + 1 < Session.board_list.size():
 			Session.board_index += 1
-		if _core.challenge_failed() and not _core.level_complete():
-			for p in [1, 2, 3]:
-				var st: Dictionary = _board_start_stats.get(p, {})
-				if not st.is_empty():
-					_core.set_player_stats(p, st["score"], st["lives"], st["arrows"], st["balls"], st["shield"])
+		var was_challenge_fail: bool = _core.challenge_failed() and not _core.level_complete()
+		var saved_stats: Array = _board_start_stats.duplicate(true)
 		_next_board()
+		if was_challenge_fail:
+			for p in range(1, _num_players + 1):
+				if p - 1 < saved_stats.size():
+					var st: Dictionary = saved_stats[p - 1]
+					_core.set_player_stats(p, int(st["score"]), int(st["lives"]), int(st["arrows"]), int(st["balls"]), int(st["shield"]))
 
 # --- input -------------------------------------------------------------------
 
@@ -3215,6 +3233,12 @@ func _load_level_bytes() -> PackedByteArray:
 		var cb: PackedByteArray = Session.get_meta("custom_board_bytes")
 		if not cb.is_empty():
 			return cb
+	if not Session.custom_board_bytes.is_empty():
+		return Session.custom_board_bytes
+	if not Session.custom_map_path.is_empty() and FileAccess.file_exists(Session.custom_map_path):
+		var cm := FileAccess.get_file_as_bytes(Session.custom_map_path)
+		if not cm.is_empty():
+			return cm
 	if Session.is_online and not Session.online_bord_bytes.is_empty():
 		return Session.online_bord_bytes
 	# 1) a board explicitly chosen in the menu (absolute path via Session autoload)

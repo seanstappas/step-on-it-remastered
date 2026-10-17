@@ -561,7 +561,15 @@ func _claim_controller_slot(device: int) -> void:
 		Session.player_device[target_slot] = device
 		Session.player_device[current_slot] = old_dev
 	else:
-		Session.player_device[0] = device
+		var unassigned_slot: int = -1
+		for s in range(Session.num_players):
+			if Session.player_device[s] < 0:
+				unassigned_slot = s
+				break
+		if unassigned_slot >= 0:
+			Session.player_device[unassigned_slot] = device
+		else:
+			Session.player_device[0] = device
 	_update_lobby_device_labels()
 
 func _update_lobby_device_labels() -> void:
@@ -902,7 +910,9 @@ func _show_online_lobby_dialog() -> void:
 		Session.victory_rule = host_vrule.get_selected_id()
 		Session.friendly_fire = host_ff.get_selected_id()
 		Session.p3_any_key = host_p3_any.button_pressed
+		var chosen_map: String = Session.custom_map_path
 		Session.start_campaign()
+		Session.custom_map_path = chosen_map
 		var bord_bytes: PackedByteArray
 		if Session.custom_map_path != "" and FileAccess.file_exists(Session.custom_map_path):
 			bord_bytes = FileAccess.get_file_as_bytes(Session.custom_map_path)
@@ -952,13 +962,14 @@ func _show_online_lobby_dialog() -> void:
 			connect_btn.disabled = false
 		)
 		_lobby_net.match_started.connect(func(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_p: int, mode: int, slot: int) -> void:
+			Session.num_players = num_p
+			Session.mode = mode
+			Session.speed = speed
+			Session.start_campaign()
 			Session.net = _lobby_net
 			Session.is_online = true
 			Session.online_bord_bytes = bord_bytes
 			Session.online_seed = rng_seed
-			Session.num_players = num_p
-			Session.mode = mode
-			Session.speed = speed
 			dlg.queue_free()
 			_online_dialog = null
 			get_tree().change_scene_to_file("res://scenes/game.tscn")
