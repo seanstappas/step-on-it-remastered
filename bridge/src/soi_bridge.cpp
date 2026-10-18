@@ -17,6 +17,36 @@ int64_t SoiCore::build_id() {
     return static_cast<int64_t>(SOI_BUILD_ID);
 }
 
+Dictionary SoiCore::parse_ext1(const PackedByteArray &bytes) {
+    Dictionary d;
+    SoiExt1Info info;
+    const uint8_t *ptr = bytes.ptr();
+    size_t len = static_cast<size_t>(bytes.size());
+    if (soi_parse_ext1(ptr, len, &info)) {
+        d["valid"] = true;
+        d["version"] = static_cast<int64_t>(info.version);
+        d["flags"] = static_cast<int64_t>(info.flags);
+        d["has_p3"] = static_cast<bool>(info.has_p3 != 0);
+        d["friendly_fire"] = static_cast<bool>(info.friendly_fire != 0);
+        d["default_mode"] = static_cast<int64_t>(info.default_mode);
+        d["cols"] = static_cast<int64_t>(info.cols);
+        d["rows"] = static_cast<int64_t>(info.rows);
+        d["p3_col"] = static_cast<int64_t>(info.p3_col);
+        d["p3_row"] = static_cast<int64_t>(info.p3_row);
+        d["p3_block"] = static_cast<int64_t>(info.p3_block);
+        Array vs;
+        for (int i = 0; i < 4; i++) {
+            vs.push_back(Vector2i(info.vs_spawns[i][0], info.vs_spawns[i][1]));
+        }
+        d["vs_spawns"] = vs;
+        d["victory_rule"] = static_cast<int64_t>(info.victory_rule);
+        d["starting_lives"] = static_cast<int64_t>(info.starting_lives);
+    } else {
+        d["valid"] = false;
+    }
+    return d;
+}
+
 SoiCore::SoiCore()
 {
     world_.assign(soi_world_size(), 0);
@@ -202,6 +232,7 @@ int64_t SoiCore::switch_block_frame(int64_t col, int64_t row) const
 void SoiCore::_bind_methods()
 {
     ClassDB::bind_static_method("SoiCore", D_METHOD("build_id"), &SoiCore::build_id);
+    ClassDB::bind_static_method("SoiCore", D_METHOD("parse_ext1", "bytes"), &SoiCore::parse_ext1);
 
     ClassDB::bind_method(D_METHOD("init", "seed"), &SoiCore::init);
     ClassDB::bind_method(D_METHOD("set_seed", "seed"), &SoiCore::set_seed);

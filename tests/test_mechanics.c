@@ -4447,7 +4447,7 @@ int main(void)
         ext_bord[51] = (uint8_t)(ecrc & 0xFF);
 
         soi_world_init(w, 1);
-        soi_set_play_mode(w, SOI_MODE_VERSUS);
+        soi_set_play_mode(w, SOI_MODE_COMPETE);
         soi_load_level(w, ext_bord, 52);
         soi_spawn_player3(w);
         CHECK(w->players[1].lives == 5, "68.3: P1 initialized with EXT1 starting_lives 5");
@@ -4647,54 +4647,258 @@ int main(void)
               "69.4d: Above-field y=0 PvP collision is blocked safely by soi_get_cell without OOB");
 
         /* 69.5: Automatic P3 placement in soi_load_level runs AFTER tiles are decoded */
+        /* 69.5: Automatic P3 placement in soi_load_level runs AFTER tiles are decoded */
         {
-            /* Build a BORD where (9, 1) has a solid wall tile 0x0307 and EXT1 has_p3=1 with p3=(0,0) */
-            uint8_t p3_bord[64];
+            /* Build a BORD where (9,1),(9,2),(8,2),(3,3) are solid wall tiles 0x0307,
+             * and EXT1 has_p3=1 with p3=(0,0) auto placement */
+            uint8_t p3_bord[72];
             memset(p3_bord, 0, sizeof(p3_bord));
-            p3_bord[0x07] = 2; p3_bord[0x09] = 2;
-            p3_bord[0x0B] = 16; p3_bord[0x0D] = 2;
+            p3_bord[0x07] = 2; p3_bord[0x09] = 2;   /* P1 spawn (2, 2) */
+            p3_bord[0x0B] = 16; p3_bord[0x0D] = 2; /* P2 spawn (16, 2) */
             p3_bord[0x0E] = 0x13; p3_bord[0x0F] = 0x88;
-            /* Tile record at 0x18: tile 0x00000307 at (9, 1) + (9, 2), terminated by (100, 100) */
+            /* Tile record at 0x18: tile 0x00000307 at (9, 1), (9, 2), (8, 2), (3, 3) */
             p3_bord[24] = 0x00; p3_bord[25] = 0x00; p3_bord[26] = 0x03; p3_bord[27] = 0x07;
             p3_bord[28] = 9; p3_bord[29] = 1;
-            p3_bord[30] = 100; p3_bord[31] = 100;
-            /* Terminator 0x00000000 at 32..35 */
-            /* EXT1 at 36..59 */
-            memcpy(p3_bord + 36, "EXT1", 4);
-            p3_bord[40] = 1; p3_bord[41] = 1; /* has_p3 = 1 */
-            p3_bord[42] = 19; p3_bord[43] = 13;
-            p3_bord[44] = 0; p3_bord[45] = 0; /* p3 = (0,0) auto placement */
-            p3_bord[46] = 0x02; p3_bord[47] = 0x0D;
+            p3_bord[30] = 9; p3_bord[31] = 2;
+            p3_bord[32] = 8; p3_bord[33] = 2;
+            p3_bord[34] = 3; p3_bord[35] = 3;
+            p3_bord[36] = 100; p3_bord[37] = 100;
+            /* Terminator 0x00000000 at 38..41 */
+            /* EXT1 at 42..65 */
+            memcpy(p3_bord + 42, "EXT1", 4);
+            p3_bord[46] = 1; p3_bord[47] = 1; /* version=1, flags=1 (has_p3=1) */
+            p3_bord[48] = 19; p3_bord[49] = 13; /* cols=19, rows=13 */
+            p3_bord[50] = 0; p3_bord[51] = 0; /* p3=(0,0) auto placement */
+            p3_bord[52] = 0x02; p3_bord[53] = 0x0D; /* p3_block */
             /* vs_spawns[0] = (5, 5), vs_spawns[1] = (12, 5) */
-            p3_bord[48] = 5; p3_bord[49] = 5;
-            p3_bord[50] = 12; p3_bord[51] = 5;
-            p3_bord[56] = 0; p3_bord[57] = 3;
+            p3_bord[54] = 5; p3_bord[55] = 5;
+            p3_bord[56] = 12; p3_bord[57] = 5;
+            p3_bord[62] = 0; /* victory_rule */
+            p3_bord[63] = 3; /* starting_lives */
             uint16_t crc5 = 0xFFFF;
             for (int i = 0; i < 22; i++) {
-                crc5 ^= ((uint16_t)p3_bord[36 + i] << 8);
+                crc5 ^= ((uint16_t)p3_bord[42 + i] << 8);
                 for (int b = 0; b < 8; b++) crc5 = (crc5 & 0x8000) ? ((crc5 << 1) ^ 0x1021) : (crc5 << 1);
             }
-            p3_bord[58] = (uint8_t)(crc5 >> 8);
-            p3_bord[59] = (uint8_t)(crc5 & 0xFF);
+            p3_bord[64] = (uint8_t)(crc5 >> 8);
+            p3_bord[65] = (uint8_t)(crc5 & 0xFF);
 
             soi_world_init(w, 1);
             soi_set_play_mode(w, SOI_MODE_COOPERATE);
-            soi_load_level(w, p3_bord, 60);
+            soi_load_level(w, p3_bord, 66);
             int p3_c = (w->players[3].x - SOI_ORIGIN_X) / SOI_CELL_PX;
             int p3_r = (w->players[3].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
-            CHECK(!(p3_c == 9 && p3_r == 1),
-                  "69.5: Automatic P3 spawn avoids wall tile at (9, 1) decoded from BORD");
+            CHECK(p3_c == 8 && p3_r == 1,
+                  "69.5a: Automatic P3 spawn sits at pinned valid cell (8, 1)");
+            CHECK(!(p3_c == 3 && p3_r == 2),
+                  "69.5b: Automatic P3 spawn avoids empty-grid fallback (3, 2)");
 
             /* 69.6: Initial Versus placement uses EXT1 vs_spawns when present */
             soi_world_init(w, 1);
             soi_set_play_mode(w, SOI_MODE_VERSUS);
-            soi_load_level(w, p3_bord, 60);
+            soi_load_level(w, p3_bord, 66);
             int vp1_c = (w->players[1].x - SOI_ORIGIN_X) / SOI_CELL_PX;
             int vp1_r = (w->players[1].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
             int vp2_c = (w->players[2].x - SOI_ORIGIN_X) / SOI_CELL_PX;
             int vp2_r = (w->players[2].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
             CHECK(vp1_c == 5 && vp1_r == 5 && vp2_c == 12 && vp2_r == 5,
                   "69.6: SOI_MODE_VERSUS initial load places players at EXT1 vs_spawns");
+
+            /* 2.3: load_level then set_play_mode(VERSUS) matches reverse order */
+            soi_world_init(w, 1);
+            soi_load_level(w, p3_bord, 66);
+            soi_set_play_mode(w, SOI_MODE_VERSUS);
+            int op1_c = (w->players[1].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+            int op1_r = (w->players[1].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            int op2_c = (w->players[2].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+            int op2_r = (w->players[2].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            CHECK(op1_c == vp1_c && op1_r == vp1_r && op2_c == vp2_c && op2_r == vp2_r,
+                  "2.3: load_level then set_play_mode(VERSUS) matches reverse order positions");
+        }
+
+        /* 2.4: SOI_WIN_SCORE completion & winner logic */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            soi_set_play_mode(w, SOI_MODE_VERSUS);
+            soi_set_victory_rule(w, SOI_WIN_SCORE);
+            w->goodies_total = 5;
+            w->goodies_left = 3;
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].score = 100;
+            w->players[2].score = 500;
+            w->players[2].eliminated = 1;
+            w->players[2].alive = 0;
+            CHECK(soi_level_complete(w) == 1,
+                  "2.4a: Versus SCORE completes when P2 eliminated even with goodies left");
+            CHECK(soi_versus_winner(w) == 1,
+                  "2.4b: Versus SCORE awards win to uneliminated P1 over eliminated higher-scoring P2");
+
+            /* When all players eliminated, high score wins */
+            w->players[1].eliminated = 1;
+            w->players[1].alive = 0;
+            CHECK(soi_versus_winner(w) == 2,
+                  "2.4c: Versus SCORE awards win to higher score P2 when all active players are eliminated");
+        }
+
+        /* 69.7: Co-op shared lives pool (1996 fidelity) */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9); ground_player(w, 1, 9);
+            reset_player(w, 2, 6, 9); ground_player(w, 2, 9);
+            w->players[1].lives = 0; /* shared pool at 0 */
+            w->players[2].lives = -1; /* P2 lives parked at -1 in Co-op */
+            w->players[2].invuln = 0;
+            w->players[2].pose_t = 0;
+            /* P2 dies while pool is 0 and P1 is alive */
+            soi_player_hit(w, 2);
+            for (int t = 0; t < 200 && w->players[2].alive; t++) soi_tick(w, 0, 0);
+            CHECK(w->players[2].eliminated == 1 && w->players[1].lives == 0,
+                  "69.7a: P2 death at pool lives 0 eliminates P2 and keeps pool at 0");
+
+            /* P1 finishes board without 1-UP -> next level leaves P2 eliminated, pool at 0 */
+            uint8_t bord[64];
+            memset(bord, 0, sizeof(bord));
+            bord[0x07] = 2; bord[0x09] = 2;
+            bord[0x0B] = 6; bord[0x0D] = 2;
+            bord[0x0E] = 0x13; bord[0x0F] = 0x88;
+            soi_next_level(w, bord, 28);
+            CHECK(w->players[1].lives == 0 && w->players[1].eliminated == 0 && w->players[1].alive == 1,
+                  "69.7b: P1 continues with 0 lives on next board");
+            CHECK(w->players[2].eliminated == 1 && w->players[2].alive == 0,
+                  "69.7c: P2 remains eliminated on next board without 1-UP");
+
+            /* P1 collects 1-UP on the board (pool becomes 1), then completes to next board */
+            w->players[1].lives = 1;
+            soi_next_level(w, bord, 28);
+            CHECK(w->players[2].eliminated == 0 && w->players[2].alive == 1,
+                  "69.7d: P2 is revived on next board after 1-UP");
+            CHECK(w->players[1].lives == 0,
+                  "69.7e: Revival of partner decrements pool from 1 to 0");
+        }
+
+        /* 69.8: CORE-NEW-9 serialization hash tests & soi_parse_ext1 */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            uint64_t base_sh = soi_state_hash(w);
+            uint64_t base_nh = soi_net_hash(w);
+
+            /* Helper macro to test field mutation */
+            #define TEST_FIELD_HASH(mutation, desc) do { \
+                soi_world_init(w, 1); w->level_loaded = 1; \
+                mutation; \
+                CHECK(soi_state_hash(w) != base_sh, "69.8 state_hash sensitive to " desc); \
+                CHECK(soi_net_hash(w) != base_nh, "69.8 net_hash sensitive to " desc); \
+            } while (0)
+
+            TEST_FIELD_HASH(w->input_assist = 1, "input_assist");
+            TEST_FIELD_HASH(w->p3_col = 5, "p3_col");
+            TEST_FIELD_HASH(w->p3_row = 5, "p3_row");
+            TEST_FIELD_HASH(w->p3_block = 0x0307, "p3_block");
+            TEST_FIELD_HASH(w->p3_any_key = 1, "p3_any_key");
+            TEST_FIELD_HASH(w->ext_starting_lives = 5, "ext_starting_lives");
+            TEST_FIELD_HASH(w->vs_spawns[0][0] = 5, "vs_spawns");
+            TEST_FIELD_HASH(w->players[1].in_pend = 1, "in_pend");
+            TEST_FIELD_HASH(w->players[1].buf = 1, "buf");
+            TEST_FIELD_HASH(w->players[1].buf_t = 1, "buf_t");
+            TEST_FIELD_HASH(w->players[1].last_attacker = 2, "last_attacker");
+            TEST_FIELD_HASH(w->players[1].attacker_ttl = 50, "attacker_ttl");
+            TEST_FIELD_HASH(w->players[1].kills = 3, "kills");
+            TEST_FIELD_HASH(w->players[1].ammo_regen_cd = 20, "ammo_regen_cd");
+            TEST_FIELD_HASH(w->sw_count = 1, "sw_count");
+            #undef TEST_FIELD_HASH
+
+            /* Test soi_parse_ext1 */
+            uint8_t p3_bord[72];
+            memset(p3_bord, 0, sizeof(p3_bord));
+            p3_bord[24] = 0; p3_bord[25] = 0; p3_bord[26] = 0; p3_bord[27] = 0; /* tile terminator at 24 */
+            memcpy(p3_bord + 28, "EXT1", 4);
+            p3_bord[32] = 1; p3_bord[33] = 3; /* ver 1, flags 3 (has_p3 + friendly_fire) */
+            p3_bord[34] = 28; p3_bord[35] = 19;
+            p3_bord[36] = 9; p3_bord[37] = 4;
+            p3_bord[38] = 0x02; p3_bord[39] = 0x0D;
+            p3_bord[48] = 2; /* victory_rule */
+            p3_bord[49] = 5; /* starting_lives */
+            uint16_t crc = 0xFFFF;
+            for (int i = 0; i < 22; i++) {
+                crc ^= ((uint16_t)p3_bord[28 + i] << 8);
+                for (int b = 0; b < 8; b++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+            }
+            p3_bord[50] = (uint8_t)(crc >> 8);
+            p3_bord[51] = (uint8_t)(crc & 0xFF);
+
+            SoiExt1Info info;
+            CHECK(soi_parse_ext1(p3_bord, 52, &info) == 1 && info.valid == 1,
+                  "69.8a: soi_parse_ext1 parses valid trailer");
+            CHECK(info.cols == 28 && info.rows == 19 && info.has_p3 == 1 && info.friendly_fire == 1,
+                  "69.8b: soi_parse_ext1 extracts dimensions and flags");
+            CHECK(info.victory_rule == 2 && info.starting_lives == 5,
+                  "69.8c: soi_parse_ext1 extracts rule and starting_lives");
+
+            /* Corrupt CRC */
+            p3_bord[50] ^= 0xFF;
+            CHECK(soi_parse_ext1(p3_bord, 52, &info) == 0,
+                  "69.8d: soi_parse_ext1 rejects corrupt CRC");
+
+            /* Absent trailer */
+            CHECK(soi_parse_ext1(p3_bord, 28, &info) == 0,
+                  "69.8e: soi_parse_ext1 returns 0 when EXT1 absent");
+        }
+
+        /* 2.8: Co-op door restriction (faithful to 1996 FUN_1002bc64) */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9); ground_player(w, 1, 9);
+            reset_player(w, 2, 6, 9); ground_player(w, 2, 9);
+            /* Place unlocked Green Door (0x0903, low byte 3) under P1 */
+            soi_set_cell(w, 2, 9, 0x0903u);
+            soi_pickup_check(w, 1);
+            CHECK(w->players[1].has_key != 2 && soi_level_complete(w) == 0,
+                  "2.8a: In Co-op, P1 cannot exit through P2's Green Door");
+            /* Place unlocked Blue Door (0x0902, low byte 2) under P1 */
+            soi_set_cell(w, 2, 9, 0x0902u);
+            soi_pickup_check(w, 1);
+            CHECK(w->players[1].has_key == 2 && soi_level_complete(w) == 1,
+                  "2.8b: In Co-op, P1 exits through Universal/Blue Door");
+        }
+
+        /* 69.9: Versus multi-board rounds */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1;
+            soi_set_play_mode(w, SOI_MODE_VERSUS);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].score = 500;
+            w->players[2].lives = -1;
+            w->players[2].eliminated = 1;
+            w->players[2].alive = 0;
+
+            uint8_t bord[64];
+            memset(bord, 0, sizeof(bord));
+            bord[0x07] = 2; bord[0x09] = 2;
+            bord[0x0B] = 6; bord[0x0D] = 2;
+            bord[0x0E] = 0x13; bord[0x0F] = 0x88;
+            soi_next_level(w, bord, 28);
+
+            CHECK(w->players[2].eliminated == 0 && w->players[2].alive == 1 && w->players[2].lives == 2,
+                  "69.9a: Versus round 2 resets P2 eliminated=0, alive=1, lives=2");
+            CHECK(w->players[1].score == 500,
+                  "69.9b: Versus round 2 preserves P1 score");
+            CHECK(soi_level_complete(w) == 0,
+                  "69.9c: Versus round 2 is not immediately complete");
+
+            /* Dropped player remains dropped / eliminated on next level */
+            soi_drop_player(w, 2);
+            soi_next_level(w, bord, 28);
+            CHECK(w->players[2].active == 0 && w->players[2].alive == 0,
+                  "69.9d: Dropped peer stays inactive on next level in Versus");
         }
     }
 

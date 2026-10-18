@@ -150,6 +150,28 @@ void   soi_set_seed(SoiWorld *w, uint32_t seed);
  * success, 0 on malformed input. Populates the grid + level parameters. */
 int    soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len);
 
+/* Parsed EXT1 metadata trailer */
+typedef struct SoiExt1Info {
+    uint8_t  valid;
+    uint8_t  version;
+    uint8_t  flags;
+    uint8_t  has_p3;
+    uint8_t  friendly_fire;
+    uint8_t  default_mode;
+    uint8_t  cols;
+    uint8_t  rows;
+    uint8_t  p3_col;
+    uint8_t  p3_row;
+    uint16_t p3_block;
+    uint8_t  vs_spawns[4][2];
+    uint8_t  victory_rule;
+    uint8_t  starting_lives;
+} SoiExt1Info;
+
+/* Parse an EXT1 trailer from raw BORD bytes without creating a SoiWorld.
+ * Returns 1 on success (valid trailer with matching CRC), 0 if absent or corrupt. */
+int    soi_parse_ext1(const uint8_t *bord, size_t len, SoiExt1Info *out);
+
 /* Load the NEXT board while PRESERVING the persistent per-player stats (score, lives,
  * arrows, balls, shield -- reset only at new-game, FUN_1002b060) and continuing the RNG
  * stream. Everything else resets per board exactly as a fresh load (mult=1, positions,

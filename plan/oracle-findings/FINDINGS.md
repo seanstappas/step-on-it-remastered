@@ -49,5 +49,17 @@
 - At 0:
 - Clock adds:
 
+## Co-op shared lives pool at 0 (Decomp audit FUN_1002a308 & FUN_1002b174)
+- Death at 0 while partner lives: Dying player eliminated (`cRam1003aad8 = 0`), pool lives stays at 0 (`sRam1003aa66` not decremented below 0).
+- Board clear without 1-UP: Partner remains eliminated on next board (`eliminated = 1`, `alive = 0`), pool stays at 0.
+- Board clear with 1-UP: Partner revived on next board (`*(char*)(...) = 1`), pool decrements from 1 to 0 (`sRam1003aa66--`).
+- Death at 0 with no teammate alive: Game over (`pool->lives = -1`).
+
+## Co-op doors (Decomp audit FUN_1002bc64)
+- Door check in `FUN_1002bc64` L54: `((int)(short)uVar10 == sVar14 + 1 || (uVar10 == 1))`
+- Player 1 (`sVar14 = 1`) can exit: Blue Door (low byte 2) or Universal Door (low byte 1). Cannot exit Green Door (low byte 3).
+- Player 2 (`sVar14 = 2`) can exit: Green Door (low byte 3) or Universal Door (low byte 1). Cannot exit Blue Door (low byte 2).
+- Neither mode check nor held-key check on door exit. Universal door allows either player.
+
 ## Anything surprising
 -

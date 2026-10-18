@@ -229,6 +229,23 @@ now, the behavioral observations above are enough.
 
 ---
 
+## P2 — Co-op shared lives pool at 0
+1. Start a 2-player Co-op game and play until the shared lives counter shows 0. Screenshot the counter.
+2. Let P2 die. Note whether P2 is gone for the rest of the board, and what the counter shows (expected: P2 eliminated, counter stays 0).
+3. Have P1 finish the board without a 1-UP. On the next board, note whether P2 is back and what the counter shows (expected: P2 stays gone, counter stays 0).
+4. Repeat, but have P1 collect a 1-UP before finishing. Note whether P2 is back and whether the counter went down by one (expected: P2 revived, counter decrements by 1 from 1 to 0).
+5. Let P1 die at 0 while P2 is alive. Note whether the game ends or P2 keeps playing (expected: P1 eliminated, P2 continues; game over only when last survivor dies).
+
+---
+
+## P2 — Co-op doors
+On a 2-player Co-op board with separate blue (P1) and green (P2) doors, unlock the doors.
+1. Walk P1 into the green door and note whether the board ends (expected: does not end; 1996 FUN_1002bc64 allows only player's own door or universal door).
+2. Repeat with P2 into the blue door (expected: does not end).
+3. Walk each player into the universal door (expected: board completes).
+
+---
+
 ## FINDINGS.md template — copy this into plan\oracle-findings\FINDINGS.md
 
 ```markdown

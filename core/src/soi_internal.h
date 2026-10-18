@@ -117,7 +117,7 @@ typedef struct {
                                      * Stop/Go switch entry edge (asm FUN_1002bc64 bVar12 = cell
                                      * changed this frame). Seeded to the spawn cell so spawning ON
                                      * a switch tile does not toggle it. */
-    /* REMASTER input assist (w->input_assist; NOT in the original, NOT serialized). */
+    /* REMASTER input assist (w->input_assist; NOT in the original, serialized/hashed). */
     uint8_t  in_pend;               /* keys seen down on any tick since the last input sample, so a
                                      * tap shorter than the 2-frame sampling interval is not lost */
     uint8_t  buf;                   /* buffered verb presses (jump/block/arrow/ball) not yet usable */
@@ -213,7 +213,7 @@ struct SoiWorld {
 
     /* REMASTER input assist (soi_set_input_assist): 0 = faithful input (default); 1 = keep taps
      * shorter than the sampling interval and buffer verb presses for a few player frames.
-     * Survives soi_load_level; zeroed by soi_world_init. NOT serialized/hashed. */
+     * Survives soi_load_level; zeroed by soi_world_init. Serialized/hashed. */
     uint8_t  input_assist;
 
     /* transient per-tick sound-event queue (NOT serialized/hashed) */
@@ -259,12 +259,8 @@ struct SoiWorld {
     /* Stop/Go switch-block registry (asm array @_DAT_10038ec6, stride 0xe). Populated at
      * load by a grid scan for switch BLOCKS (low 0x9d-0xd3); a switch TILE (low 0x24-0x2d)
      * toggles every block in its GROUP. The blocks' live solid/passable state is stamped
-     * into w->cell[][] (which IS serialized), so the gameplay-visible state is in the hash
-     * via the grid; this registry is the animation bookkeeping and is NOT serialized (a
-     * switch-free board -- e.g. the determinism harness -- leaves sw_count=0, so it is
-     * hash-neutral there). No soi_deserialize exists -- soi_serialize feeds ONLY the
-     * forward-only determinism hash -- so this omission cannot desync a save/resume, and
-     * the sw_* / prev_pcol,prev_prow state is deterministic-from-input regardless.
+     * into w->cell[][] (which IS serialized); this registry tracks animation state and is
+     * also serialized and hashed for netcode determinism.
      * State: 1=passable(settled), 2=solid(settled), 3=opening, 4=closing. */
     int16_t  sw_col[SOI_SWITCH_MAX];
     int16_t  sw_row[SOI_SWITCH_MAX];

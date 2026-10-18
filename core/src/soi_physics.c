@@ -360,8 +360,27 @@ static void commit_death(SoiWorld *w, int player)
         p->attacker_ttl = 0;
     }
     if (w->challenge && w->play_mode != SOI_MODE_VERSUS) return;
-    if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
-    else p->respawn_timer = 90;
+    if (w->play_mode == SOI_MODE_COOPERATE) {
+        SoiPlayer *pool = soi_pool(w, player);
+        if (pool->lives <= 0) {
+            int any_teammate = 0;
+            int tp;
+            for (tp = 1; tp < SOI_MAX_PLAYERS; tp++) {
+                if (tp != player && w->players[tp].active && !w->players[tp].eliminated) {
+                    any_teammate = 1;
+                    break;
+                }
+            }
+            p->eliminated = 1;
+            if (!any_teammate) pool->lives = -1;
+        } else {
+            pool->lives--;
+            p->respawn_timer = 90;
+        }
+    } else {
+        if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
+        else p->respawn_timer = 90;
+    }
 }
 
 /* One JUMP frame (asm FUN_10013404, ground-state 2): the table-driven arc. */

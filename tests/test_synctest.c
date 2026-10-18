@@ -71,9 +71,10 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
     soi_spawn_player3(w_sim);
 
     /* Verify initial hash match */
-    if (soi_net_hash(w_ref) != soi_net_hash(w_sim)) {
-        fprintf(stderr, "Initial net hash mismatch on %s: ref=0x%016llx sim=0x%016llx\n",
-                path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim));
+    if (soi_net_hash(w_ref) != soi_net_hash(w_sim) || soi_state_hash(w_ref) != soi_state_hash(w_sim)) {
+        fprintf(stderr, "Initial hash mismatch on %s: ref_net=0x%016llx sim_net=0x%016llx ref_state=0x%016llx sim_state=0x%016llx\n",
+                path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim),
+                (unsigned long long)soi_state_hash(w_ref), (unsigned long long)soi_state_hash(w_sim));
         ok = 0;
         goto cleanup;
     }
@@ -94,9 +95,10 @@ static int test_board(const char *path, const uint8_t *bord, size_t len, size_t 
                 soi_snapshot_save(w_sim, ring[k % RING_CAP]);
                 soi_tick3(w_sim, in1[k], in2[k], in3[k]);
             }
-            if (soi_net_hash(w_ref) != soi_net_hash(w_sim)) {
-                fprintf(stderr, "Rollback hash mismatch at tick %d on %s: ref=0x%016llx sim=0x%016llx\n",
-                        t, path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim));
+            if (soi_net_hash(w_ref) != soi_net_hash(w_sim) || soi_state_hash(w_ref) != soi_state_hash(w_sim)) {
+                fprintf(stderr, "Rollback hash mismatch at tick %d on %s: ref_net=0x%016llx sim_net=0x%016llx ref_state=0x%016llx sim_state=0x%016llx\n",
+                        t, path, (unsigned long long)soi_net_hash(w_ref), (unsigned long long)soi_net_hash(w_sim),
+                        (unsigned long long)soi_state_hash(w_ref), (unsigned long long)soi_state_hash(w_sim));
                 ok = 0;
                 goto cleanup;
             }

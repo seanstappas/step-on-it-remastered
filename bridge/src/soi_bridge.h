@@ -9,6 +9,9 @@
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/vector2i.hpp>
 
 #include <vector>
 
@@ -33,6 +36,7 @@ public:
     ~SoiCore() override = default;
 
     static int64_t build_id();
+    static Dictionary parse_ext1(const PackedByteArray &bytes);
 
     /* lifecycle */
     void init(int64_t seed);

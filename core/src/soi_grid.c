@@ -298,21 +298,14 @@ void soi_pickup_check(SoiWorld *w, int player)
      * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
      * of the key collector can exit too. The asm DOES require the box not to straddle two
      * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
-    /* DOOR: bit 0x800 with a LOW type 1-3 (the exit). The original gates the exit on the
-     * PLAYER (asm FUN_1002bc64: uVar10 == sVar14+1 || uVar10 == 1): low 1 = UNIVERSAL,
-     * low (player+1) = that player's OWN door (P1->low2, P2->low3). Coins/goodies also
-     * carry 0x800 but with a higher low type, so the t<=3 bound also avoids swallowing them.
-     * There is NO held-key test: an opened door exists only after the colored-key sweep
-     * (no board ships one pre-opened), so the door itself is the gate -- in co-op the partner
-     * of the key collector can exit too. The asm DOES require the box not to straddle two
-     * rows: row(y) must equal the pickup row(y+0x10) (FUN_1002e6f8(y) == sVar11). */
     int own_door = (t == 1u) ||
                    ((player == 1 || player == 2) && t == (unsigned)player + 1u) ||
-                   (player == 3 && (c & 0x9FFu) == 0x0935u);
+                   (player == 3 && (c & 0x9FFu) == 0x0935u) ||
+                   (!competitive && (c & 0x9FFu) == 0x0935u);
     int any_door = (t == 1u || t == 2u || t == 3u || (c & 0x9FFu) == 0x0935u);
     if ((c & SOI_CELL_DOOR) &&
-        ((!competitive && any_door) ||
-         (competitive && p->has_key == 1 && (own_door || (p3_any && any_door))))) {
+        (own_door || (p3_any && any_door)) &&
+        (!competitive || p->has_key == 1)) {
         int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         if (p->y < SOI_ORIGIN_Y) yrow = -1;
         if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
