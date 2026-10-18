@@ -1806,7 +1806,7 @@ func _physics_process(_delta: float) -> void:
 		if _shot_countdown == 0:
 			await RenderingServer.frame_post_draw
 			var img := get_viewport().get_texture().get_image()
-			var dir := ProjectSettings.globalize_path("res://../media/screenshots")
+			var dir := _get_screenshot_dir()
 			DirAccess.make_dir_recursive_absolute(dir)
 			var stamp := Time.get_datetime_string_from_system().replace(":", "").replace("T", "_").replace("-", "")
 			var path := "%s/shot_%s.png" % [dir, stamp]
@@ -1823,7 +1823,10 @@ func _physics_process(_delta: float) -> void:
 ## Frames count physics frames (they keep running through intros / result screens).
 func _load_script(path: String) -> void:
 	if not path.is_absolute_path():
-		path = ProjectSettings.globalize_path("res://../" + path)
+		if OS.has_feature("editor"):
+			path = ProjectSettings.globalize_path("res://../" + path)
+		else:
+			path = OS.get_executable_path().get_base_dir().path_join(path)
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		push_warning("--script: cannot open %s" % path)
@@ -1892,10 +1895,15 @@ func _script_step() -> void:
 		await RenderingServer.frame_post_draw
 		get_tree().quit()
 
+func _get_screenshot_dir() -> String:
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://../media/screenshots")
+	return ProjectSettings.globalize_path("user://screenshots")
+
 func _snap(name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	var dir := ProjectSettings.globalize_path("res://../media/screenshots")
+	var dir := _get_screenshot_dir()
 	DirAccess.make_dir_recursive_absolute(dir)
 	img.save_png("%s/%s.png" % [dir, name])
 	print("saved screenshot -> %s/%s.png" % [dir, name])

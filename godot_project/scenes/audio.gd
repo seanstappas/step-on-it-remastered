@@ -418,6 +418,12 @@ const CUSTOM_SFX_NAMES := {
 var _custom_on := false
 var _custom_by_event := {}   # SoiSfx id -> AudioStream from custom_sfx/
 
+func _get_custom_sfx_dir() -> String:
+	var exe_p := OS.get_executable_path().get_base_dir().path_join("custom_sfx")
+	if DirAccess.dir_exists_absolute(exe_p) or not OS.has_feature("editor"):
+		return exe_p
+	return ProjectSettings.globalize_path(CUSTOM_SFX_DIR)
+
 ## Switch the custom-recording override mode. Returns how many custom sounds are loaded.
 func set_custom_sfx(on: bool) -> int:
 	_custom_on = on
@@ -425,14 +431,14 @@ func set_custom_sfx(on: bool) -> int:
 	if on:
 		_load_custom()
 	print("audio: custom sfx %s (%d overrides from %s)" % ["ON" if on else "OFF", _custom_by_event.size(),
-		ProjectSettings.globalize_path(CUSTOM_SFX_DIR)])
+		_get_custom_sfx_dir()])
 	return _custom_by_event.size()
 
 func is_custom_sfx() -> bool:
 	return _custom_on
 
 func _load_custom() -> void:
-	var dir := ProjectSettings.globalize_path(CUSTOM_SFX_DIR)
+	var dir := _get_custom_sfx_dir()
 	for ev in CUSTOM_SFX_NAMES:
 		for ext in ["wav", "ogg", "mp3"]:
 			var path := dir.path_join("%s.%s" % [CUSTOM_SFX_NAMES[ev], ext])

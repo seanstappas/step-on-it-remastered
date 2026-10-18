@@ -28,3 +28,5 @@ func _ready() -> void:
 	print("after 60 ticks: P1 x=%d score=%d enemies=%d tick=%d" %
 		[core.player_x(1), core.player_score(1), core.enemy_count(), core.tick_count()])
 	print("state hash = %d" % core.state_hash())
+	print("SMOKE TEST: PASS")
+	get_tree().quit(0)

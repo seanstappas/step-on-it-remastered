@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include "Velopack.h"
 
 typedef void (*fn_vpkc_app_run)(void *);
@@ -18,6 +19,37 @@ typedef bool (*fn_vpkc_wait_exit_then_apply_updates)(vpkc_update_manager_t *, st
 typedef void (*fn_vpkc_free_update_info)(struct vpkc_update_info_t *);
 typedef void (*fn_vpkc_free_update_manager)(vpkc_update_manager_t *);
 typedef size_t (*fn_vpkc_get_last_error)(char *, size_t);
+
+static FILE *g_log_file = NULL;
+
+static void log_init(void) {
+    char local_app_data[MAX_PATH];
+    if (GetEnvironmentVariableA("LOCALAPPDATA", local_app_data, sizeof(local_app_data)) > 0) {
+        char log_dir[MAX_PATH];
+        snprintf(log_dir, sizeof(log_dir), "%s\\StepOnIt", local_app_data);
+        CreateDirectoryA(log_dir, NULL);
+        char log_path[MAX_PATH];
+        snprintf(log_path, sizeof(log_path), "%s\\launcher.log", log_dir);
+        g_log_file = fopen(log_path, "a");
+    }
+}
+
+static void log_write(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    if (g_log_file) {
+        vfprintf(g_log_file, fmt, args);
+        fflush(g_log_file);
+    }
+    va_end(args);
+}
+
+static void log_close(void) {
+    if (g_log_file) {
+        fclose(g_log_file);
+        g_log_file = NULL;
+    }
+}
 
 static void get_exe_dir(char *out_dir, size_t max_len) {
     char path[MAX_PATH];
@@ -66,8 +98,39 @@ static bool read_repo_url_from_json(const char *json_path, char *out_url, size_t
 
 static void on_download_progress(void *user_data, size_t progress) {
     (void)user_data;
-    printf("\r[Launcher] Downloading update... %zu%%", progress);
-    fflush(stdout);
+    log_write("[Launcher] Downloading update... %zu%%\n", progress);
+}
+
+static void append_arg(char *buf, size_t cap, size_t *offset, const char *arg) {
+    if (*offset >= cap) return;
+    int written = snprintf(buf + *offset, cap - *offset, " \"%s\"", arg);
+    if (written > 0 && *offset + (size_t)written < cap) {
+        *offset += (size_t)written;
+    } else {
+        *offset = cap - 1;
+    }
+}
+
+static bool is_godot_engine_arg(const char *arg) {
+    if (strncmp(arg, "--headless", 10) == 0) return true;
+    if (strncmp(arg, "--quit", 6) == 0) return true;
+    if (strncmp(arg, "--quit-after", 12) == 0) return true;
+    if (strncmp(arg, "--verbose", 9) == 0) return true;
+    if (strncmp(arg, "--resolution", 12) == 0) return true;
+    if (strncmp(arg, "--position", 10) == 0) return true;
+    if (strncmp(arg, "--fullscreen", 12) == 0) return true;
+    if (strncmp(arg, "--windowed", 10) == 0) return true;
+    if (strncmp(arg, "--rendering-driver", 18) == 0) return true;
+    if (strncmp(arg, "--display-driver", 16) == 0) return true;
+    if (strncmp(arg, "--audio-driver", 14) == 0) return true;
+    if (strncmp(arg, "res://", 6) == 0) return true;
+    return false;
+}
+
+static bool is_velo_or_squirrel_arg(const char *arg) {
+    if (strncmp(arg, "--veloapp-", 10) == 0) return true;
+    if (strncmp(arg, "--squirrel", 10) == 0) return true;
+    return false;
 }
 
 static void run_velopack_and_check_updates(const char *base_dir, int argc, char **argv) {
@@ -78,6 +141,7 @@ static void run_velopack_and_check_updates(const char *base_dir, int argc, char 
         h_vpk = LoadLibraryA("velopack_libc_win_x64_msvc.dll");
     }
     if (!h_vpk) {
+        log_write("[Launcher] velopack_libc DLL not found, skipping update check.\n");
         return;
     }
 
@@ -111,11 +175,15 @@ static void run_velopack_and_check_updates(const char *base_dir, int argc, char 
     }
 
     if (repo_url[0] == '\0' || strstr(repo_url, "YOUR_GITHUB_USER") != NULL) {
+        log_write("[Launcher] No valid repo_url configured.\n");
+        FreeLibrary(h_vpk);
         return;
     }
 
     if (!p_new_update_manager || !p_check_for_updates || !p_download_updates ||
         !p_wait_exit_then_apply_updates || !p_free_update_info || !p_free_update_manager) {
+        log_write("[Launcher] Velopack C exports missing.\n");
+        FreeLibrary(h_vpk);
         return;
     }
 
@@ -136,21 +204,21 @@ static void run_velopack_and_check_updates(const char *base_dir, int argc, char 
 
     if (!ok || !mgr) {
         if (src && p_free_source) p_free_source(src);
+        FreeLibrary(h_vpk);
         return;
     }
 
     struct vpkc_update_info_t *update_info = NULL;
+    log_write("[Launcher] Checking for updates at %s...\n", repo_url);
     vpkc_update_check_t check = p_check_for_updates(mgr, &update_info);
     if (check == UPDATE_AVAILABLE && update_info != NULL) {
         const char *ver = (update_info->TargetFullRelease && update_info->TargetFullRelease->Version)
                           ? update_info->TargetFullRelease->Version
                           : "latest";
-        printf("[Launcher] Update found (%s). Downloading delta...\n", ver);
-        fflush(stdout);
+        log_write("[Launcher] Update found (%s). Downloading...\n", ver);
 
         if (p_download_updates(mgr, update_info, on_download_progress, NULL)) {
-            printf("\n[Launcher] Applying update and restarting...\n");
-            fflush(stdout);
+            log_write("[Launcher] Applying update and restarting...\n");
             char **restart_args = (argc > 1) ? (argv + 1) : NULL;
             size_t restart_argc = (argc > 1) ? (size_t)(argc - 1) : 0;
             if (p_wait_exit_then_apply_updates(
@@ -163,55 +231,150 @@ static void run_velopack_and_check_updates(const char *base_dir, int argc, char 
                 p_free_update_info(update_info);
                 p_free_update_manager(mgr);
                 if (src && p_free_source) p_free_source(src);
+                FreeLibrary(h_vpk);
+                log_close();
                 exit(0);
             }
         } else if (p_get_last_error) {
             char err_buf[512] = {0};
             p_get_last_error(err_buf, sizeof(err_buf));
-            printf("\n[Launcher] Update download skipped (%s) - launching current version.\n", err_buf);
+            log_write("[Launcher] Update download failed (%s).\n", err_buf);
         }
+    } else {
+        log_write("[Launcher] No updates found (check code %d).\n", check);
     }
 
     if (update_info) p_free_update_info(update_info);
     p_free_update_manager(mgr);
     if (src && p_free_source) p_free_source(src);
+    FreeLibrary(h_vpk);
+}
+
+struct UpdateWorkerParams {
+    char base_dir[MAX_PATH];
+    int argc;
+    char **argv;
+    bool completed;
+};
+
+static DWORD WINAPI update_worker_thread(LPVOID param) {
+    struct UpdateWorkerParams *p = (struct UpdateWorkerParams *)param;
+    run_velopack_and_check_updates(p->base_dir, p->argc, p->argv);
+    p->completed = true;
+    return 0;
 }
 
 int main(int argc, char **argv) {
+    log_init();
+    log_write("[Launcher] Starting Step On It Launcher...\n");
+
     char base_dir[MAX_PATH];
     get_exe_dir(base_dir, sizeof(base_dir));
 
-    /* 1. Handle Velopack hooks and check/apply updates before StepOnIt.exe loads */
-    run_velopack_and_check_updates(base_dir, argc, argv);
+    /* Hold named mutex to prevent concurrent updater conflicts */
+    HANDLE h_mutex = CreateMutexA(NULL, FALSE, "StepOnIt_Launcher_Update_Mutex");
 
-    /* 2. Launch StepOnIt.exe */
+    /* 1. Run update check on worker thread with ~5s timeout */
+    struct UpdateWorkerParams update_params;
+    strncpy(update_params.base_dir, base_dir, sizeof(update_params.base_dir) - 1);
+    update_params.base_dir[sizeof(update_params.base_dir) - 1] = '\0';
+    update_params.argc = argc;
+    update_params.argv = argv;
+    update_params.completed = false;
+
+    HANDLE h_thread = CreateThread(NULL, 0, update_worker_thread, &update_params, 0, NULL);
+    if (h_thread) {
+        DWORD wait_res = WaitForSingleObject(h_thread, 5000);
+        if (wait_res == WAIT_TIMEOUT) {
+            log_write("[Launcher] Update check timed out after 5s - proceeding to launch game.\n");
+        }
+        CloseHandle(h_thread);
+    } else {
+        run_velopack_and_check_updates(base_dir, argc, argv);
+    }
+
+    if (h_mutex) {
+        CloseHandle(h_mutex);
+    }
+
+    /* 2. Route command line flags */
     char godot_exe[MAX_PATH];
     snprintf(godot_exe, sizeof(godot_exe), "%s\\StepOnIt.exe", base_dir);
     if (!file_exists(godot_exe)) {
-        fprintf(stderr, "[Launcher] ERROR: Could not find %s\n", godot_exe);
+        log_write("[Launcher] ERROR: Could not find %s\n", godot_exe);
+        log_close();
         return 1;
     }
 
     char pck_path[MAX_PATH];
     snprintf(pck_path, sizeof(pck_path), "%s\\StepOnIt.pck", base_dir);
 
-    char cmd_line[4096];
-    int offset = snprintf(cmd_line, sizeof(cmd_line), "\"%s\"", godot_exe);
+    char cmd_line[8192];
+    size_t offset = 0;
+    int written = snprintf(cmd_line, sizeof(cmd_line), "\"%s\"", godot_exe);
+    if (written > 0 && (size_t)written < sizeof(cmd_line)) {
+        offset = (size_t)written;
+    }
+
     if (file_exists(pck_path)) {
-        offset += snprintf(cmd_line + offset, sizeof(cmd_line) - (size_t)offset, " --main-pack \"%s\"", pck_path);
+        append_arg(cmd_line, sizeof(cmd_line), &offset, "--main-pack");
+        append_arg(cmd_line, sizeof(cmd_line), &offset, pck_path);
     }
 
     bool wait_for_exit = false;
-    if (argc > 1) {
-        for (int i = 1; i < argc; i++) {
-            if (strcmp(argv[i], "--headless") == 0 || strcmp(argv[i], "--quit") == 0) {
-                wait_for_exit = true;
-            }
-            offset += snprintf(cmd_line + offset, sizeof(cmd_line) - (size_t)offset, " \"%s\"", argv[i]);
+    bool has_visual_flag = false;
+    bool has_music_flag = false;
+
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (strcmp(a, "--headless") == 0 || strcmp(a, "--quit") == 0 || strcmp(a, "--quit-after") == 0) {
+            wait_for_exit = true;
         }
-    } else {
-        offset += snprintf(cmd_line + offset, sizeof(cmd_line) - (size_t)offset, " -- --3d --music");
+        if (strcmp(a, "--3d") == 0 || strcmp(a, "--hd") == 0 || strcmp(a, "--original") == 0) {
+            has_visual_flag = true;
+        }
+        if (strcmp(a, "--music") == 0 || strcmp(a, "--no-music") == 0) {
+            has_music_flag = true;
+        }
     }
+
+    /* Engine flags go before '--' */
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (is_velo_or_squirrel_arg(a)) continue;
+        if (is_godot_engine_arg(a)) {
+            append_arg(cmd_line, sizeof(cmd_line), &offset, a);
+            /* If this flag takes an argument value (e.g. --resolution 640x480, --position 0,0, --quit-after 600) */
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                i++;
+                append_arg(cmd_line, sizeof(cmd_line), &offset, argv[i]);
+            }
+        }
+    }
+
+    /* Game arguments go after '--' */
+    append_arg(cmd_line, sizeof(cmd_line), &offset, "--");
+
+    if (!has_visual_flag) {
+        append_arg(cmd_line, sizeof(cmd_line), &offset, "--3d");
+    }
+    if (!has_music_flag) {
+        append_arg(cmd_line, sizeof(cmd_line), &offset, "--music");
+    }
+
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (is_velo_or_squirrel_arg(a)) continue;
+        if (strcmp(a, "--") == 0) continue;
+        if (!is_godot_engine_arg(a)) {
+            append_arg(cmd_line, sizeof(cmd_line), &offset, a);
+        } else if (i + 1 < argc && argv[i + 1][0] != '-') {
+            /* Skip value consumed above by engine flag */
+            i++;
+        }
+    }
+
+    log_write("[Launcher] Executing: %s\n", cmd_line);
 
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -230,7 +393,8 @@ int main(int argc, char **argv) {
             base_dir,
             &si,
             &pi)) {
-        fprintf(stderr, "[Launcher] ERROR: CreateProcessA failed (%lu)\n", GetLastError());
+        log_write("[Launcher] ERROR: CreateProcessA failed (%lu)\n", GetLastError());
+        log_close();
         return 1;
     }
 
@@ -242,5 +406,6 @@ int main(int argc, char **argv) {
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+    log_close();
     return (int)exit_code;
 }

@@ -9,7 +9,6 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $GodotConsole = "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe"
-$GodotGui = "D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe"
 $Zig = "D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe"
 $VpkRoot = "D:\SOI-tools\velopack"
 $VpkLibcDir = "$VpkRoot\libc"
@@ -17,16 +16,42 @@ $VpkDll = "$VpkRoot\vpk\tools\net8.0\any\vpk.dll"
 $BuildDir = "$Root\build\win"
 if (-not $ReleaseDir) { $ReleaseDir = "$Root\releases" }
 
+$Py = if (Test-Path "$Root\.venv\Scripts\python.exe") { "$Root\.venv\Scripts\python.exe" } else { "py" }
+
+if ($UploadToGitHub) {
+    if (-not $env:GITHUB_TOKEN) {
+        throw "GITHUB_TOKEN environment variable is required when -UploadToGitHub is specified."
+    }
+    if (-not $RepoUrl) {
+        throw "-RepoUrl is required when -UploadToGitHub is specified."
+    }
+}
+
 function Ensure-VelopackTools {
+    $expectedLibcHash = "613D57DE5BCF043C9BBDBF175B3261E93D3D3A7DA00E19AF6AD633F712613222"
+    $expectedVpkHash  = "D4257FF37A597C8DCD8EB4458029F68609166A8B48990CFADC785D6252AD04C5"
+
     if (-not (Test-Path "$VpkLibcDir\include\Velopack.h")) {
         Write-Host "=== Downloading Velopack C SDK (velopack_libc) ===" -ForegroundColor Cyan
         New-Item -ItemType Directory -Force -Path $VpkLibcDir | Out-Null
-        & "$Root\.venv\Scripts\python.exe" -c "import urllib.request, zipfile; urllib.request.urlretrieve('https://github.com/velopack/velopack/releases/download/0.0.1053/velopack_libc-0.0.1053-win-x64.zip', r'$VpkRoot\libc.zip'); zipfile.ZipFile(r'$VpkRoot\libc.zip').extractall(r'$VpkLibcDir')"
+        $libcZip = "$VpkRoot\libc.zip"
+        & $Py -c "import urllib.request; urllib.request.urlretrieve('https://github.com/velopack/velopack/releases/download/0.0.1053/velopack_libc_0.0.1053.zip', r'$libcZip')"
+        $actualHash = (Get-FileHash $libcZip -Algorithm SHA256).Hash
+        if ($actualHash -ne $expectedLibcHash) {
+            throw "velopack_libc SHA256 hash mismatch! Got $actualHash, expected $expectedLibcHash"
+        }
+        & $Py -c "import zipfile; zipfile.ZipFile(r'$libcZip').extractall(r'$VpkLibcDir')"
     }
     if (-not (Test-Path $VpkDll)) {
         Write-Host "=== Downloading Velopack CLI (vpk) ===" -ForegroundColor Cyan
         New-Item -ItemType Directory -Force -Path "$VpkRoot\vpk" | Out-Null
-        & "$Root\.venv\Scripts\python.exe" -c "import urllib.request, zipfile, json; urllib.request.urlretrieve('https://www.nuget.org/api/v2/package/vpk/0.0.1053', r'$VpkRoot\vpk.zip'); zipfile.ZipFile(r'$VpkRoot\vpk.zip').extractall(r'$VpkRoot\vpk'); p = r'$VpkRoot\vpk\tools\net8.0\any\vpk.runtimeconfig.json'; cfg = json.load(open(p)); cfg['runtimeOptions']['frameworks'] = [f for f in cfg['runtimeOptions']['frameworks'] if f['name'] == 'Microsoft.NETCore.App']; json.dump(cfg, open(p, 'w'), indent=2)"
+        $vpkZip = "$VpkRoot\vpk.zip"
+        & $Py -c "import urllib.request; urllib.request.urlretrieve('https://www.nuget.org/api/v2/package/vpk/0.0.1053', r'$vpkZip')"
+        $actualHash = (Get-FileHash $vpkZip -Algorithm SHA256).Hash
+        if ($actualHash -ne $expectedVpkHash) {
+            throw "vpk CLI SHA256 hash mismatch! Got $actualHash, expected $expectedVpkHash"
+        }
+        & $Py -c "import zipfile, json; zipfile.ZipFile(r'$vpkZip').extractall(r'$VpkRoot\vpk'); p = r'$VpkRoot\vpk\tools\net8.0\any\vpk.runtimeconfig.json'; cfg = json.load(open(p)); cfg['runtimeOptions']['frameworks'] = [f for f in cfg['runtimeOptions']['frameworks'] if f['name'] == 'Microsoft.NETCore.App']; json.dump(cfg, open(p, 'w'), indent=2)"
     }
 }
 
@@ -40,13 +65,14 @@ Write-Host "=== 2. Preparing Windows Build Staging ($BuildDir) ===" -ForegroundC
 New-Item -ItemType Directory -Force -Path "$BuildDir\bin" | Out-Null
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 
-# Bundle Godot 4.3 GUI binary as StepOnIt.exe and export project pack as StepOnIt.pck
-Copy-Item $GodotGui "$BuildDir\StepOnIt.exe" -Force
-$prevEAP = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& $GodotConsole --headless --path "$Root\godot_project" --export-pack "Windows Desktop" "$BuildDir\StepOnIt.pck"
-$ErrorActionPreference = $prevEAP
-if (-not (Test-Path "$BuildDir\StepOnIt.pck")) { throw "Failed to export StepOnIt.pck" }
+# Delete build/win/StepOnIt.pck and StepOnIt.exe before exporting
+Remove-Item "$BuildDir\StepOnIt.pck", "$BuildDir\StepOnIt.exe" -Force -ErrorAction SilentlyContinue
+
+# Export release using official template
+& $GodotConsole --headless --path "$Root\godot_project" --export-release "Windows Desktop" "$BuildDir\StepOnIt.exe"
+if ($LASTEXITCODE -ne 0) { throw "Godot export-release failed with exit code $LASTEXITCODE" }
+if (-not (Test-Path "$BuildDir\StepOnIt.pck")) { throw "Missing $BuildDir\StepOnIt.pck after export" }
+if (-not (Test-Path "$BuildDir\StepOnIt.exe")) { throw "Missing $BuildDir\StepOnIt.exe after export" }
 
 Copy-Item "$Root\godot_project\bin\*.dll" "$BuildDir\bin\" -Force
 Copy-Item "$Root\godot_project\bin\*.dll" "$BuildDir\" -Force
@@ -62,26 +88,29 @@ if (-not $SkipAssetMirror -or -not (Test-Path "$BuildDir\extracted\levels")) {
 }
 
 Write-Host "=== 4. Building Native StepOnItLauncher.exe ===" -ForegroundColor Cyan
-& $Zig cc -O2 -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
-if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed" }
+& $Zig cc -O2 '-Wl,--subsystem,windows' -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
+if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
 Copy-Item "$VpkLibcDir\lib\velopack_libc_win_x64_msvc.dll" "$BuildDir\velopack_libc_win_x64_msvc.dll" -Force
 
 if ($RepoUrl) {
     @{ repo_url = $RepoUrl } | ConvertTo-Json | Set-Content "$BuildDir\update_config.json" -Encoding UTF8
 } elseif (-not (Test-Path "$BuildDir\update_config.json")) {
-    @{ repo_url = "https://github.com/YOUR_GITHUB_USER/step-on-it-remastered" } | ConvertTo-Json | Set-Content "$BuildDir\update_config.json" -Encoding UTF8
+    if ($UploadToGitHub) {
+        throw "-RepoUrl required for distributable builds"
+    }
 }
 
 Write-Host "=== 5. Packaging Velopack Release v$Version (Full + Delta) ===" -ForegroundColor Cyan
 if ($UploadToGitHub -and $RepoUrl) {
-    dotnet $VpkDll download github --repoUrl $RepoUrl -o $ReleaseDir
+    dotnet $VpkDll download github --repoUrl $RepoUrl --token $env:GITHUB_TOKEN -o $ReleaseDir
+    if ($LASTEXITCODE -ne 0) { throw "vpk download github failed" }
 }
 dotnet $VpkDll pack -u StepOnIt -v $Version -p $BuildDir -e StepOnItLauncher.exe -o $ReleaseDir
 if ($LASTEXITCODE -ne 0) { throw "vpk pack failed" }
 
 if ($UploadToGitHub -and $RepoUrl) {
     Write-Host "=== 6. Uploading Release v$Version to GitHub Releases ===" -ForegroundColor Cyan
-    dotnet $VpkDll upload github --repoUrl $RepoUrl --publish --releaseName "Step On It! v$Version" -o $ReleaseDir
+    dotnet $VpkDll upload github --repoUrl $RepoUrl --token $env:GITHUB_TOKEN --publish --releaseName "Step On It! v$Version" -o $ReleaseDir
     if ($LASTEXITCODE -ne 0) { throw "vpk upload failed" }
 }
 

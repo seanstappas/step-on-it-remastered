@@ -133,7 +133,7 @@ func _process(_dt: float) -> void:
 	if _menushot <= 0:
 		await RenderingServer.frame_post_draw
 		var img := get_viewport().get_texture().get_image()
-		var dir := ProjectSettings.globalize_path("res://../media/screenshots")
+		var dir := ProjectSettings.globalize_path("res://../media/screenshots") if OS.has_feature("editor") else ProjectSettings.globalize_path("user://screenshots")
 		DirAccess.make_dir_recursive_absolute(dir)
 		img.save_png("%s/menu_%d.png" % [dir, Time.get_ticks_msec()])
 		get_tree().quit()
@@ -170,13 +170,14 @@ func _dismiss_splash() -> void:
 var _apple_icon: Texture2D = null
 
 func _build_menu_bar() -> void:
-	var icon_path := ProjectSettings.globalize_path("res://scenes/apple_logo.png")
-	if FileAccess.file_exists(icon_path):
-		var img := Image.load_from_file(icon_path)
-		if img != null and not img.is_empty():
-			_apple_icon = ImageTexture.create_from_image(img)
-	elif ResourceLoader.exists("res://scenes/apple_logo.png"):
+	if ResourceLoader.exists("res://scenes/apple_logo.png"):
 		_apple_icon = load("res://scenes/apple_logo.png") as Texture2D
+	if _apple_icon == null:
+		var icon_path := ProjectSettings.globalize_path("res://scenes/apple_logo.png")
+		if FileAccess.file_exists(icon_path):
+			var img := Image.load_from_file(icon_path)
+			if img != null and not img.is_empty():
+				_apple_icon = ImageTexture.create_from_image(img)
 
 	# Full-width classic Mac white bar
 	var bar_bg := ColorRect.new()
@@ -324,14 +325,15 @@ var _chicago_font: Font = null
 
 func _get_chicago_font() -> Font:
 	if _chicago_font == null:
-		var p := ProjectSettings.globalize_path("res://fonts/Chicago.ttf")
-		if FileAccess.file_exists(p):
-			var ff := FontFile.new()
-			ff.load_dynamic_font(p)
-			ff.multichannel_signed_distance_field = true
-			_chicago_font = ff
-		elif ResourceLoader.exists("res://fonts/Chicago.ttf"):
+		if ResourceLoader.exists("res://fonts/Chicago.ttf"):
 			_chicago_font = load("res://fonts/Chicago.ttf") as Font
+		if _chicago_font == null:
+			var p := ProjectSettings.globalize_path("res://fonts/Chicago.ttf")
+			if FileAccess.file_exists(p):
+				var ff := FontFile.new()
+				ff.load_dynamic_font(p)
+				ff.multichannel_signed_distance_field = true
+				_chicago_font = ff
 	return _chicago_font if _chicago_font != null else ThemeDB.fallback_font
 
 func _create_mac_menu(parent: Control, title: String, icon: Texture2D = null) -> MenuButton:
@@ -660,11 +662,58 @@ func _open_custom_map_selector(btn: Button) -> void:
 	pop.popup_centered(Vector2i(240, 200))
 
 
-func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String) -> void:
+var _upnp_thread: Thread = null
+
+func _exit_tree() -> void:
+	if _upnp_thread != null and _upnp_thread.is_started():
+		_upnp_thread.wait_to_finish()
+		_upnp_thread = null
+
+func _get_preferred_local_ip() -> String:
+	var addrs := IP.get_local_addresses()
+	var tailscale_ip := ""
+	var rfc1918_ip := ""
+	var other_ip := ""
+
+	for a in addrs:
+		if a.find(":") != -1:
+			continue
+		if a == "127.0.0.1" or a.begins_with("169.254."):
+			continue
+		var parts := a.split(".")
+		if parts.size() != 4:
+			continue
+		var o1 := parts[0].to_int()
+		var o2 := parts[1].to_int()
+		if o1 == 100 and o2 >= 64 and o2 <= 127:
+			if tailscale_ip == "":
+				tailscale_ip = a
+		elif o1 == 10 or (o1 == 172 and o2 >= 16 and o2 <= 31) or (o1 == 192 and o2 == 168):
+			if rfc1918_ip == "":
+				rfc1918_ip = a
+		elif other_ip == "":
+			other_ip = a
+
+	if tailscale_ip != "":
+		return tailscale_ip
+	if rfc1918_ip != "":
+		return rfc1918_ip
+	if other_ip != "":
+		return other_ip
+	return "127.0.0.1"
+
+func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String, local_tag: String = "LAN", local_code: String = "", local_ip: String = "") -> void:
 	if is_instance_valid(code_lbl) and ext_ip != "":
-		code_lbl.text = "Join Code: %s" % RollbackNet.ip_to_join_code(ext_ip)
+		var wan_code := RollbackNet.ip_to_join_code(ext_ip)
+		if local_code != "":
+			code_lbl.text = "%s Code: %s\nWAN Code: %s" % [local_tag, local_code, wan_code]
+		else:
+			code_lbl.text = "Join Code: %s" % wan_code
 	if is_instance_valid(ip_lbl) and ext_ip != "":
-		ip_lbl.text = "External IP: %s:7777" % ext_ip
+		if local_ip != "":
+			ip_lbl.text = "%s: %s:7777 | WAN: %s:7777" % [local_tag, local_ip, ext_ip]
+		else:
+			ip_lbl.text = "External IP: %s:7777" % ext_ip
 
 func _show_online_lobby_dialog() -> void:
 	if _online_dialog != null:
@@ -920,19 +969,24 @@ func _show_online_lobby_dialog() -> void:
 		host_action_btn.disabled = true
 		start_match_btn.disabled = true
 		host_status.text = "Hosting! Connected: 1 / %d" % n_players
-		var code := RollbackNet.ip_to_join_code("127.0.0.1")
-		host_code_lbl.text = "Join Code: %s" % code
-		host_direct_lbl.text = "Direct IP: 127.0.0.1:7777"
+		var local_ip := _get_preferred_local_ip()
+		var is_ts := local_ip.begins_with("100.")
+		var local_tag := "Tailscale" if is_ts else "LAN"
+		var code := RollbackNet.ip_to_join_code(local_ip)
+		host_code_lbl.text = "%s Code: %s" % [local_tag, code]
+		host_direct_lbl.text = "%s IP: %s:7777" % [local_tag, local_ip]
 
-		var upnp_thread := Thread.new()
-		upnp_thread.start(func() -> void:
+		if _upnp_thread != null and _upnp_thread.is_started():
+			_upnp_thread.wait_to_finish()
+		_upnp_thread = Thread.new()
+		_upnp_thread.start(func() -> void:
 			var upnp := UPNP.new()
 			var d_err := upnp.discover(1500, 2, "InternetGatewayDevice")
 			if d_err == OK and upnp.get_gateway() and upnp.get_gateway().is_valid_gateway():
 				upnp.add_port_mapping(7777, 7777, "StepOnIt", "UDP")
 				var ext_ip := upnp.query_external_address()
 				if ext_ip != "":
-					call_deferred("_update_host_labels", host_code_lbl, host_direct_lbl, ext_ip)
+					call_deferred("_update_host_labels", host_code_lbl, host_direct_lbl, ext_ip, local_tag, code, local_ip)
 		)
 
 		_lobby_net.peer_connected.connect(func(slot: int) -> void:

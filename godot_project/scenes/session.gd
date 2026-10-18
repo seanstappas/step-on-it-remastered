@@ -75,16 +75,24 @@ func ext_path(rel: String = "") -> String:
 		sub = sub.substr("res://../extracted/".length())
 	elif sub == "res://../extracted":
 		sub = ""
-	var exe_p := OS.get_executable_path().get_base_dir().path_join("extracted").path_join(sub)
-	if FileAccess.file_exists(exe_p) or DirAccess.dir_exists_absolute(exe_p):
-		return exe_p
-	var dev_p := ProjectSettings.globalize_path("res://../extracted").path_join(sub)
-	if FileAccess.file_exists(dev_p) or DirAccess.dir_exists_absolute(dev_p):
-		return dev_p
-	var cwd_p := ProjectSettings.globalize_path("res://extracted").path_join(sub)
-	if FileAccess.file_exists(cwd_p) or DirAccess.dir_exists_absolute(cwd_p):
-		return cwd_p
-	return dev_p
+
+	var exe_dir := OS.get_executable_path().get_base_dir()
+	var pkg_base := exe_dir.path_join("extracted")
+	var base := pkg_base
+	if DirAccess.dir_exists_absolute(pkg_base):
+		base = pkg_base
+	elif OS.has_feature("editor"):
+		var dev_base := ProjectSettings.globalize_path("res://../extracted")
+		if DirAccess.dir_exists_absolute(dev_base):
+			base = dev_base
+		else:
+			base = pkg_base
+	else:
+		base = pkg_base
+
+	if sub == "":
+		return base
+	return base.path_join(sub)
 
 func current_board_path() -> String:
 	if board_index >= 0 and board_index < board_list.size():
