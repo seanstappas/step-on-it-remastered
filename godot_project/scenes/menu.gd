@@ -44,11 +44,20 @@ func _ready() -> void:
 			target = "board_450.bord" if "--demo" in ua else "board_401.bord"
 		if target.is_absolute_path() and FileAccess.file_exists(target):
 			# a crafted test board outside extracted/levels (tools/verify_scripts/*.bord)
+			Session.custom_map_path = ""
+			Session.custom_board_bytes = PackedByteArray()
+			if Session.has_meta("custom_board_bytes"):
+				Session.remove_meta("custom_board_bytes")
+			if Session.has_meta("editor_return"):
+				Session.remove_meta("editor_return")
+			if Session.has_meta("editor_state"):
+				Session.remove_meta("editor_state")
 			Session.board_list = PackedStringArray([target])
 			Session.board_index = 0
 			Session.board_path = target
 			get_tree().change_scene_to_file.call_deferred("res://scenes/game.tscn")
 			return
+
 		# match by basename so "--board=board_450" and "--board=board_450.bord" both
 		# resolve (a strict ends_with silently fell back to board_401 without the ext).
 		var want := (target as String).get_file().get_basename()

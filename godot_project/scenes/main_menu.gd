@@ -219,11 +219,13 @@ func _build_menu_bar() -> void:
 	pop_file.add_item("Save Game", 5)
 	pop_file.add_item("Save Game As...", 6)
 	pop_file.add_separator()
+	pop_file.add_item("Play Custom Map...", 9)
 	pop_file.add_item("Load Board Set...", 7)
 	pop_file.add_item("Set Starting Board...", 1)
 	pop_file.add_item("Map Editor...", 8)
 	pop_file.add_separator()
 	pop_file.add_item("Quit", 2)
+
 
 	if not Session.has_save():
 		pop_file.set_item_disabled(pop_file.get_item_index(3), true)
@@ -544,6 +546,7 @@ func _on_file(id: int) -> void:
 		0: _on_start()          # New Game
 		3, 4: _on_resume()      # Resume Game (from a QuickSave)
 		1: _on_choose_board()   # Set Starting Board...
+		9: _open_offline_custom_map_dialog() # Play Custom Map...
 		8:                      # Map Editor...
 			get_tree().change_scene_to_file("res://scenes/editor.tscn")
 		7:                      # Load Board Set...
@@ -554,29 +557,7 @@ func _on_file(id: int) -> void:
 var _device_status_lbl: Label = null
 
 func _claim_controller_slot(device: int) -> void:
-	var current_slot: int = -1
-	for slot in range(Session.player_device.size()):
-		if Session.player_device[slot] == device:
-			if slot < Session.num_players and current_slot == -1:
-				current_slot = slot
-			else:
-				Session.player_device[slot] = -(slot + 1)
-
-	if current_slot >= 0:
-		var target_slot: int = (current_slot + 1) % Session.num_players
-		var old_dev: int = Session.player_device[target_slot]
-		Session.player_device[target_slot] = device
-		Session.player_device[current_slot] = old_dev if old_dev != device else -(current_slot + 1)
-	else:
-		var unassigned_slot: int = -1
-		for s in range(Session.num_players):
-			if Session.player_device[s] < 0:
-				unassigned_slot = s
-				break
-		if unassigned_slot >= 0:
-			Session.player_device[unassigned_slot] = device
-		else:
-			Session.player_device[0] = device
+	Session.claim_controller_slot(device)
 	_update_lobby_device_labels()
 
 func _update_lobby_device_labels() -> void:
@@ -588,6 +569,61 @@ func _update_lobby_device_labels() -> void:
 		var dev_name := "KB1" if dev == -1 else ("KB2" if dev == -2 else ("KB3" if dev == -3 else "Joy %d" % dev))
 		parts.append("P%d: %s" % [p + 1, dev_name])
 	_device_status_lbl.text = "Slots: " + " | ".join(parts) + " (Press A / Space to claim)"
+
+
+func _open_offline_custom_map_dialog() -> void:
+	var pop := PopupMenu.new()
+	_style_mac_popup(pop)
+	var dir := "user://custom_maps"
+	var maps: Array[String] = []
+	if DirAccess.dir_exists_absolute(dir):
+		var d := DirAccess.open(dir)
+		if d != null:
+			d.list_dir_begin()
+			var fn := d.get_next()
+			while fn != "":
+				if fn.ends_with(".bord"):
+					maps.append(fn)
+				fn = d.get_next()
+			d.list_dir_end()
+	if maps.is_empty():
+		pop.add_item("No custom maps found in " + dir, 0)
+		pop.set_item_disabled(0, true)
+	else:
+		for i in range(maps.size()):
+			pop.add_item(maps[i], i + 1)
+	pop.id_pressed.connect(func(id: int) -> void:
+		if id > 0 and id <= maps.size():
+			var map_file: String = maps[id - 1]
+			var map_path: String = dir.path_join(map_file)
+			var raw: PackedByteArray = FileAccess.get_file_as_bytes(map_path)
+			Session.custom_map_path = map_path
+			Session.custom_board_bytes = raw
+			Session.board_path = map_path
+			Session.board_list = PackedStringArray([map_path])
+			Session.board_index = 0
+			Session.is_online = false
+
+			var info: Dictionary = SoiCore.parse_ext1(raw)
+			if info.get("valid", false):
+				var flags: int = info.get("flags", 0)
+				var dmode: int = info.get("default_mode", 0)
+				Session.mode = 3 if dmode == 2 else (1 if dmode == 1 else 0)
+				Session.num_players = 3 if info.get("has_p3", false) else 2
+				Session.friendly_fire = 1 if info.get("friendly_fire", false) else 0
+				Session.victory_rule = info.get("victory_rule", 0)
+				Session.start_lives = info.get("starting_lives", 3)
+			else:
+				Session.victory_rule = -1
+				Session.friendly_fire = -1
+
+			get_tree().change_scene_to_file("res://scenes/game.tscn")
+	)
+	pop.popup_hide.connect(func() -> void:
+		pop.queue_free()
+	)
+	add_child(pop)
+	pop.popup_centered(Vector2i(240, 200))
 
 
 func _open_custom_map_selector(btn: Button) -> void:
@@ -606,6 +642,7 @@ func _open_custom_map_selector(btn: Button) -> void:
 					pop.add_item(fn, idx)
 					idx += 1
 				fn = d.get_next()
+			d.list_dir_end()
 	pop.id_pressed.connect(func(id: int) -> void:
 		if id == 0:
 			Session.custom_map_path = ""
@@ -616,8 +653,12 @@ func _open_custom_map_selector(btn: Button) -> void:
 			Session.board_path = Session.custom_map_path
 			btn.text = "Map: %s" % item_text
 	)
+	pop.popup_hide.connect(func() -> void:
+		pop.queue_free()
+	)
 	add_child(pop)
 	pop.popup_centered(Vector2i(240, 200))
+
 
 func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String) -> void:
 	if is_instance_valid(code_lbl) and ext_ip != "":

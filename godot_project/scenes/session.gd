@@ -22,6 +22,53 @@ var online_bord_bytes: PackedByteArray = PackedByteArray()
 var online_seed: int = 1
 var speed: int = 2 # 0 = Really Fast, 1 = Fast, 2 = Medium (71 Hz default), 3 = Slow
 
+## Claim a controller device into player slots, avoiding duplicate assignments and reusing free KB IDs
+func claim_controller_slot(device: int) -> int:
+	var current_slot: int = -1
+	for slot in range(player_device.size()):
+		if player_device[slot] == device:
+			if slot < num_players and current_slot == -1:
+				current_slot = slot
+			else:
+				player_device[slot] = get_unused_keyboard_id(slot)
+
+	if current_slot >= 0:
+		var target_slot: int = (current_slot + 1) % num_players
+		var old_dev: int = player_device[target_slot]
+		player_device[target_slot] = device
+		player_device[current_slot] = old_dev if old_dev != device else get_unused_keyboard_id(current_slot)
+		return target_slot
+	else:
+		var unassigned_slot: int = -1
+		for s in range(num_players):
+			if player_device[s] < 0:
+				unassigned_slot = s
+				break
+		if unassigned_slot >= 0:
+			player_device[unassigned_slot] = device
+			return unassigned_slot
+		else:
+			player_device[0] = device
+			return 0
+
+## Fallback disconnected pads to distinct, unused keyboard slots
+func fallback_disconnected_pads(connected_pads: Array) -> void:
+	for p in range(player_device.size()):
+		var dev: int = player_device[p]
+		if dev >= 0 and not connected_pads.has(dev):
+			player_device[p] = get_unused_keyboard_id(p)
+
+## Returns a keyboard ID (< 0) not currently assigned to any slot, preferring -(preferred_slot + 1)
+func get_unused_keyboard_id(preferred_slot: int = 0) -> int:
+	var pref := -(preferred_slot + 1)
+	if not player_device.has(pref):
+		return pref
+	for kb in [-1, -2, -3, -4]:
+		if not player_device.has(kb):
+			return kb
+	return pref
+
+
 func ext_path(rel: String = "") -> String:
 	var sub := rel
 	if sub.begins_with("res://../extracted/"):

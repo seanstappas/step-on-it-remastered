@@ -1,5 +1,7 @@
 extends Control
 
+const EnemyDefs = preload("res://scenes/enemy_defs.gd")
+
 # editor.gd — In-Game Map Maker for Step On It! Remastered
 # Supports 19x13, 28x19, and 38x26 maps with EXT1 trailer, save/load, and Tab instant playtest.
 
@@ -22,6 +24,7 @@ var default_mode: int = 0 # 0=Co-op, 1=Compete, 2=Versus
 var friendly_fire: bool = false
 var victory_rule: int = 0 # 0=Lives, 1=Score, 2=Door
 var starting_lives: int = 3
+var playtest_players: int = 2
 var bonus_time: int = 6000
 var map_name: String = "custom_map"
 var cursor_cell: Vector2i = Vector2i(0, 0)
@@ -73,21 +76,26 @@ const BRUSHES = [
 	{"cat": "Doors", "name": "Door (P3 Red)", "tile": 0x0935, "sprite": "goody_sprites", "frame": 3},
 
 	# --- Enemies ---
-	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x1E140701, "sprite": "cannon_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x0602, "sprite": "hippo_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0603, "sprite": "ostrich_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0604, "sprite": "piggy_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Hammer", "tile": 0x1E140706, "sprite": "hammer_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0608, "sprite": "disk_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x0609, "sprite": "teeth_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Smiley", "tile": 0x1E14070B, "sprite": "smiley_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Ant", "tile": 0x1E14070C, "sprite": "ant_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x060E, "sprite": "robo_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x060F, "sprite": "walker_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Blob", "tile": 0x0610, "sprite": "blob_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Fire", "tile": 0x0611, "sprite": "fire_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Dino", "tile": 0x0612, "sprite": "dino_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Guard", "tile": 0x0613, "sprite": "guard_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x1E140601, "frame": 2, "etype": 12},
+	{"cat": "Enemies", "name": "Wheelie", "tile": 0x0602, "frame": 2, "etype": 5},
+	{"cat": "Enemies", "name": "Wheelie (slow)", "tile": 0x0603, "frame": 2, "etype": 5},
+	{"cat": "Enemies", "name": "Walker", "tile": 0x14000604, "frame": 2, "etype": 10},
+	{"cat": "Enemies", "name": "Hippo", "tile": 0x1E140705, "frame": 2, "etype": 3},
+	{"cat": "Enemies", "name": "Hammer", "tile": 0x1E140706, "frame": 2, "etype": 7},
+	{"cat": "Enemies", "name": "Beanie H", "tile": 0x0607, "frame": 66, "etype": 8},
+	{"cat": "Enemies", "name": "Beanie V", "tile": 0x0608, "frame": 66, "etype": 8},
+	{"cat": "Enemies", "name": "Spinner", "tile": 0x0609, "frame": 2, "etype": 13},
+	{"cat": "Enemies", "name": "Teeth", "tile": 0x1E14070A, "frame": 2, "etype": 11},
+	{"cat": "Enemies", "name": "Smiley", "tile": 0x1E14070B, "frame": 2, "etype": 6},
+	{"cat": "Enemies", "name": "Ant", "tile": 0x1E14070C, "frame": 2, "etype": 1},
+	{"cat": "Enemies", "name": "Knight", "tile": 0x1E14060D, "frame": 2, "etype": 15},
+	{"cat": "Enemies", "name": "Gargoyle", "tile": 0x1E14060E, "frame": 2, "etype": 14},
+	{"cat": "Enemies", "name": "Robo", "tile": 0x060F, "frame": 2, "etype": 9},
+	{"cat": "Enemies", "name": "Creeper H", "tile": 0x14000610, "frame": 2, "etype": 16},
+	{"cat": "Enemies", "name": "Creeper V", "tile": 0x14000611, "frame": 2, "etype": 16},
+	{"cat": "Enemies", "name": "Ostrich", "tile": 0x1E140712, "frame": 2, "etype": 2},
+	{"cat": "Enemies", "name": "Piggy", "tile": 0x1E140713, "frame": 2, "etype": 4},
+
 
 	# --- Spawns ---
 	{"cat": "Spawns", "name": "P1 Spawn", "tile": -1, "sprite": "BP_sprites", "frame": 2},
@@ -116,6 +124,12 @@ func _ready() -> void:
 	else:
 		_init_grid(grid_cols, grid_rows)
 	_check_cli_args()
+
+
+func _get_brush_folder(b: Dictionary) -> String:
+	if b.has("etype"):
+		return EnemyDefs.get_folder(b["etype"])
+	return b.get("sprite", "")
 
 
 func _process(delta: float) -> void:
@@ -278,6 +292,7 @@ func _save_editor_state() -> Dictionary:
 		"victory_rule": victory_rule,
 		"friendly_fire": friendly_fire,
 		"starting_lives": starting_lives,
+		"playtest_players": playtest_players,
 		"bonus_time": bonus_time,
 		"map_name": map_name,
 		"brush_idx": brush_idx,
@@ -300,6 +315,7 @@ func _restore_editor_state(st: Dictionary) -> void:
 	victory_rule = st.get("victory_rule", 0)
 	friendly_fire = st.get("friendly_fire", false)
 	starting_lives = st.get("starting_lives", 3)
+	playtest_players = st.get("playtest_players", 2)
 	bonus_time = st.get("bonus_time", 6000)
 	map_name = st.get("map_name", "custom_map")
 	brush_idx = st.get("brush_idx", 1)
@@ -332,6 +348,10 @@ func _check(cond: bool, msg: String) -> void:
 
 func _run_self_test() -> void:
 	print("--- Running MapEditor Self-Test ---")
+	var orig_state := _save_editor_state()
+	var orig_status := status_msg
+	var orig_players := playtest_players
+
 	_init_grid(38, 26)
 	p1_spawn = Vector2i(2, 2)
 	p2_spawn = Vector2i(35, 2)
@@ -345,6 +365,7 @@ func _run_self_test() -> void:
 	victory_rule = 1
 	starting_lives = 5
 	default_mode = 2
+	playtest_players = 3
 
 	cells[25][37] = 0x0307 # Solid wall
 	cells[10][10] = 0x0207 # Breakable
@@ -384,31 +405,65 @@ func _run_self_test() -> void:
 	_check(vs_spawns[0] == Vector2i(10, 5), "vs_spawns[0] mismatch")
 	_check(vs_spawns[1] == Vector2i(20, 5), "vs_spawns[1] mismatch")
 
+	# Clean up test file so self-test leaves no files behind
+	if FileAccess.file_exists(test_path):
+		DirAccess.remove_absolute(test_path)
+
 	# Verify in-memory state persistence
 	var saved_dict := _save_editor_state()
+	_check(saved_dict.get("playtest_players") == 3, "persistence playtest_players mismatch")
 	_init_grid(19, 13)
+	playtest_players = 1
 	_restore_editor_state(saved_dict)
 	_check(grid_cols == 38, "persistence grid_cols mismatch")
 	_check(cells[10][10] == 0x0207, "persistence cells mismatch")
+	_check(playtest_players == 3, "restore playtest_players mismatch")
 
 	# Verify Live3D.POST_SHADER compiles cleanly
 	var sh := Shader.new()
 	sh.code = Live3D.POST_SHADER
 	_check(sh.code.count("{") == sh.code.count("}"), "Live3D.POST_SHADER unbalanced braces")
 
-	# Verify all Enemy brushes map to valid BORD badguy IDs and spawn in SoiCore
+	# Verify all Enemy brushes map to valid BORD badguy IDs, have valid textures, match SoiCore enemy_type, and resolve in _draw
 	var test_core := SoiCore.new()
 	for b in BRUSHES:
 		if b["cat"] == "Enemies":
-			var btype: int = int(b["tile"]) & 0xFF
-			_check(btype >= 1 and btype <= 19, "Invalid BORD enemy ID %d for %s" % [btype, b["name"]])
+			var etype: int = b.get("etype", 0)
+			var folder: String = _get_brush_folder(b)
+			var frame: int = b.get("frame", 0)
+
+			# 1. Sprite exists and loads
+			var spr := _get_sprite(folder, frame)
+			_check(spr != null, "Sprite missing for enemy brush %s in folder %s frame %d" % [b["name"], folder, frame])
+
+			# 2. test_core.enemy_type(0) == etype for default facing
 			_init_grid(19, 13)
 			has_p3 = false
 			cells[6][9] = int(b["tile"])
 			var ebord := serialize_to_bord()
 			test_core.init(1)
 			test_core.load_level(ebord)
-			_check(test_core.enemy_count() >= 1, "Enemy brush %s (0x%X) did not spawn an enemy in SoiCore" % [b["name"], int(b["tile"])])
+			_check(test_core.enemy_count() >= 1, "Enemy brush %s (0x%X) did not spawn in SoiCore" % [b["name"], int(b["tile"])])
+			_check(test_core.enemy_type(0) == etype, "Enemy brush %s default facing enemy_type(0) was %d, expected %d" % [b["name"], test_core.enemy_type(0), etype])
+
+			# 2b. test_core.enemy_type(0) == etype for 0x0500 facing (left)
+			_init_grid(19, 13)
+			cells[6][9] = (int(b["tile"]) & ~0xFF00) | 0x0500
+			ebord = serialize_to_bord()
+			test_core.init(1)
+			test_core.load_level(ebord)
+			_check(test_core.enemy_count() >= 1, "Enemy brush %s left facing did not spawn in SoiCore" % b["name"])
+			_check(test_core.enemy_type(0) == etype, "Enemy brush %s left facing enemy_type(0) was %d, expected %d" % [b["name"], test_core.enemy_type(0), etype])
+
+			# 3. the _draw lookup resolves the same folder
+			var cell_val: int = int(b["tile"])
+			var tile_id: int = cell_val & 0xFFFF
+			var resolved_folder := ""
+			for ob in BRUSHES:
+				if ob["tile"] == cell_val or ob["tile"] == tile_id or ((cell_val & 0x0400) != 0 and (int(ob["tile"]) & 0x0400) != 0 and (int(ob["tile"]) & 0xFF) == (cell_val & 0xFF)):
+					resolved_folder = _get_brush_folder(ob)
+					break
+			_check(resolved_folder == folder, "Draw lookup folder %s != %s for %s" % [resolved_folder, folder, b["name"]])
 
 	# Verify [F] enemy facing toggle updates bits 8..15 (0x0500 / 0x0600 / 0x0700)
 	_init_grid(19, 13)
@@ -416,6 +471,21 @@ func _run_self_test() -> void:
 	hover_cell = Vector2i(5, 5)
 	_cycle_hovered_enemy_facing()
 	_check(((cells[5][5] >> 8) & 0xFF) in [0x05, 0x06, 0x07], "Enemy facing bits not in 0x05..0x07")
+
+	# Test Session controller claiming helpers directly (UI-7, UI-8)
+	if Session:
+		var orig_devs: Array = Session.player_device.duplicate()
+		var orig_np: int = Session.num_players
+		Session.player_device = [-1, -2]
+		Session.num_players = 2
+		var claimed_slot := Session.claim_controller_slot(0)
+		_check(claimed_slot == 0 and Session.player_device[0] == 0, "Session.claim_controller_slot(0) failed")
+		var unused_kb := Session.get_unused_keyboard_id()
+		_check(unused_kb in [-1, -3], "Session.get_unused_keyboard_id returned invalid %d" % unused_kb)
+		Session.fallback_disconnected_pads([])
+		_check(Session.player_device[0] < 0, "Session.fallback_disconnected_pads failed to revert pad to keyboard")
+		Session.player_device = orig_devs
+		Session.num_players = orig_np
 
 	# Verify Session.start_campaign() clears custom_board_bytes meta
 	if Session:
@@ -427,6 +497,11 @@ func _run_self_test() -> void:
 	var jc := RollbackNet.ip_to_join_code("127.0.0.1", 8888)
 	_check(RollbackNet.join_code_to_ip(jc) == "127.0.0.1", "join_code_to_ip included port")
 	_check(RollbackNet.join_code_to_port(jc) == 8888, "join_code_to_port mismatch")
+
+	# Restore editor state afterwards
+	_restore_editor_state(orig_state)
+	status_msg = orig_status
+	playtest_players = orig_players
 
 	print("MapEditor CLI self-test: PASS")
 
@@ -457,6 +532,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F and not event.ctrl_pressed:
 			_cycle_hovered_enemy_facing()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_P and not event.ctrl_pressed:
+			var max_p := 3 if has_p3 else 2
+			playtest_players = 1 if playtest_players >= max_p else playtest_players + 1
+			_set_status("Playtest players: %dP" % playtest_players)
+			queue_redraw()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_BRACKETLEFT:
 			_set_brush(brush_idx - 1)
@@ -578,10 +659,13 @@ func _paint_at(pos: Vector2) -> void:
 		var cur_item: Dictionary = BRUSHES[brush_idx]
 		if cur_item["cat"] == "Enemies" or ((current_brush & 0x0400) != 0):
 			var brush_dir: int = (current_brush >> 8) & 0xFF
-			if brush_dir != 0x07:
-				var facing_bits: int = 0x0500 if enemy_facing_left else 0x0600
-				tile_to_set = (current_brush & ~0xFF00) | facing_bits
+			if enemy_facing_left:
+				tile_to_set = (current_brush & ~0xFF00) | 0x0500
+			else:
+				var dir_byte := 0x07 if brush_dir == 0x07 else 0x06
+				tile_to_set = (current_brush & ~0xFF00) | (dir_byte << 8)
 		cells[cell_coords.y][cell_coords.x] = tile_to_set
+
 
 	queue_redraw()
 
@@ -639,7 +723,7 @@ func _draw() -> void:
 
 	draw_rect(Rect2(428, 3, 68, 19), Color(0.28, 0.22, 0.18))
 	draw_rect(Rect2(428, 3, 68, 19), Color(0.6, 0.45, 0.3), false, 1.0)
-	draw_string(font, Vector2(432, 16), "Play [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.9, 0.7))
+	draw_string(font, Vector2(432, 16), "Play:%dP [Tab]" % playtest_players, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.9, 0.7))
 
 	draw_rect(Rect2(500, 3, 48, 19), Color(0.28, 0.18, 0.18))
 	draw_rect(Rect2(500, 3, 48, 19), Color(0.6, 0.3, 0.3), false, 1.0)
@@ -668,10 +752,6 @@ func _draw() -> void:
 	draw_rect(Rect2(500, 25, 58, 19), Color(0.45, 0.45, 0.5), false, 1.0)
 	draw_string(font, Vector2(504, 38), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
-	# Status toast message (fits on right of HUD within 640px)
-	if status_msg != "":
-		draw_string(font, Vector2(562, 28), status_msg, HORIZONTAL_ALIGNMENT_LEFT, 76, 9, Color(0.4, 1.0, 0.6))
-
 	# 2. Draw Playfield Grid
 	var playfield_w := vp_size.x
 	var playfield_h := vp_size.y - hud_h
@@ -692,7 +772,7 @@ func _draw() -> void:
 				var spr_frame := 0
 				for b in BRUSHES:
 					if b["tile"] == cell_val or b["tile"] == tile_id or ((cell_val & 0x0400) != 0 and (int(b["tile"]) & 0x0400) != 0 and (int(b["tile"]) & 0xFF) == (cell_val & 0xFF)):
-						spr_folder = b["sprite"]
+						spr_folder = _get_brush_folder(b)
 						spr_frame = b["frame"]
 						break
 				if spr_folder != "":
@@ -733,6 +813,16 @@ func _draw() -> void:
 	if warnings.size() > 0:
 		draw_rect(Rect2(0, vp_size.y - 24, vp_size.x, 24), Color(0.4, 0.1, 0.1, 0.85))
 		draw_string(font, Vector2(16, vp_size.y - 8), "WARNING: %s" % warnings[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.9, 0.4))
+
+	# 5. Status toast message as playfield overlay
+	if status_msg != "":
+		var toast_w := 340.0
+		var toast_h := 24.0
+		var toast_x := (vp_size.x - toast_w) * 0.5
+		var toast_y := hud_h + 10.0
+		draw_rect(Rect2(toast_x, toast_y, toast_w, toast_h), Color(0.08, 0.08, 0.12, 0.85))
+		draw_rect(Rect2(toast_x, toast_y, toast_w, toast_h), Color(0.3, 0.6, 0.9, 0.8), false, 1.0)
+		draw_string(font, Vector2(toast_x, toast_y + 16.0), status_msg, HORIZONTAL_ALIGNMENT_CENTER, int(toast_w), 11, Color(0.4, 1.0, 0.6))
 
 
 # --- Strict Big-Endian Byte Helpers ---
@@ -941,10 +1031,59 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 	return true
 
 
+func _confirm_or_proceed(action_name: String, callback: Callable) -> void:
+	var warnings := _validate_map()
+	if warnings.is_empty():
+		callback.call()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Warning: Map Has Issues"
+	dlg.dialog_text = "%s anyway?\n- %s" % [action_name, "\n- ".join(warnings)]
+	dlg.confirmed.connect(callback)
+	dlg.dialog_hide.connect(func() -> void: dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered()
+
+
 func save_to_default_file() -> void:
-	var dir := "user://custom_maps"
+	var warnings := _validate_map()
+	if warnings.size() > 0:
+		_confirm_or_proceed("Save map with warnings", func() -> void: _prompt_save_as())
+		return
+	_prompt_save_as()
+
+
+func _prompt_save_as() -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Save Map"
+	var vbox := VBoxContainer.new()
+	var lbl := Label.new()
+	lbl.text = "Map name:"
+	vbox.add_child(lbl)
+	var le := LineEdit.new()
+	le.text = map_name
+	vbox.add_child(le)
+	dlg.add_child(vbox)
+	dlg.confirmed.connect(func() -> void:
+		var fname := le.text.strip_edges()
+		if fname.ends_with(".bord"):
+			fname = fname.left(fname.length() - 5)
+		var valid := fname.validate_filename()
+		if valid == "":
+			valid = "custom_map"
+		map_name = valid
+		save_to_file("user://custom_maps/%s.bord" % map_name)
+	)
+	dlg.dialog_hide.connect(func() -> void: dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered(Vector2i(280, 100))
+	le.select_all()
+	le.grab_focus()
+
+
+func save_to_file(path: String) -> bool:
+	var dir := path.get_base_dir()
 	DirAccess.make_dir_recursive_absolute(dir)
-	var path := "%s/%s.bord" % [dir, map_name]
 	var raw := serialize_to_bord()
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f != null:
@@ -952,26 +1091,65 @@ func save_to_default_file() -> void:
 		f.close()
 		_set_status("Saved to %s" % path)
 		print("Map editor saved: %s (%d bytes)" % [path, raw.size()])
+		return true
 	else:
 		_set_status("Error saving map")
+		return false
 
 
 func load_from_default_file() -> void:
-	var path := "user://custom_maps/%s.bord" % map_name
-	if not FileAccess.file_exists(path):
-		path = "user://custom_maps/custom_map.bord"
-	if not FileAccess.file_exists(path):
-		_set_status("No saved map found")
-		return
-	var raw := FileAccess.get_file_as_bytes(path)
-	if load_from_bord(raw):
-		_set_status("Loaded %s" % path)
-		print("Map editor loaded: %s (%d bytes)" % [path, raw.size()])
+	_show_open_dialog()
+
+
+func _show_open_dialog() -> void:
+	var pop := PopupMenu.new()
+	var dir := "user://custom_maps"
+	var maps: Array[String] = []
+	if DirAccess.dir_exists_absolute(dir):
+		var d := DirAccess.open(dir)
+		if d != null:
+			d.list_dir_begin()
+			var fn := d.get_next()
+			while fn != "":
+				if fn.ends_with(".bord") and not d.current_is_dir():
+					maps.append(fn)
+				fn = d.get_next()
+			d.list_dir_end()
+	maps.sort()
+	if maps.is_empty():
+		pop.add_item("No custom maps found in " + dir, 0)
+		pop.set_item_disabled(0, true)
 	else:
-		_set_status("Error parsing map file")
+		for i in range(maps.size()):
+			pop.add_item(maps[i], i + 1)
+	pop.id_pressed.connect(func(id: int) -> void:
+		if id > 0 and id <= maps.size():
+			var map_file: String = maps[id - 1]
+			var map_path: String = dir.path_join(map_file)
+			var raw: PackedByteArray = FileAccess.get_file_as_bytes(map_path)
+			if load_from_bord(raw):
+				map_name = map_file.get_basename()
+				_set_status("Loaded %s" % map_file)
+				print("Map editor loaded: %s (%d bytes)" % [map_path, raw.size()])
+			else:
+				_set_status("Error parsing map file")
+	)
+	pop.popup_hide.connect(func() -> void:
+		pop.queue_free()
+	)
+	add_child(pop)
+	pop.popup_centered(Vector2i(240, 200))
 
 
 func playtest_in_memory() -> void:
+	var warnings := _validate_map()
+	if warnings.size() > 0:
+		_confirm_or_proceed("Playtest with warnings", func() -> void: _do_playtest())
+		return
+	_do_playtest()
+
+
+func _do_playtest() -> void:
 	var raw := serialize_to_bord()
 	if Session:
 		Session.set_meta("custom_board_bytes", raw)
@@ -979,7 +1157,8 @@ func playtest_in_memory() -> void:
 		Session.set_meta("editor_state", _save_editor_state())
 		Session.custom_board_bytes = raw
 		Session.is_online = false
-		Session.num_players = 3 if has_p3 else 2
+		var max_p := 3 if has_p3 else 2
+		Session.num_players = clampi(playtest_players, 1, max_p)
 		Session.mode = 3 if default_mode == 2 else (1 if default_mode == 1 else 0)
 		Session.victory_rule = victory_rule
 		Session.friendly_fire = 1 if friendly_fire else 0

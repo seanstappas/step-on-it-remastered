@@ -1462,6 +1462,7 @@ func _reset_round_ui() -> void:
 		Audio.play_snd(1500)     # Challenge Round jingle (asm event 0x35 -> snd 1500, FUN_10016c90)
 
 var _disconnect_banner: String = ""
+var _paused_by_disconnect: bool = false
 var _online_stick_engaged: Array[int] = []
 var _board_just_loaded: bool = false
 
@@ -1470,13 +1471,26 @@ func _on_joy_connection_changed(device: int, connected: bool) -> void:
 		for p in Session.player_device.size():
 			if Session.player_device[p] == device:
 				_disconnect_banner = "Controller Disconnected (Player %d) — Reconnect or press SPACE for Keyboard" % (p + 1)
-				if not Session.is_online:
+				if not Session.is_online and not _paused:
 					_paused = true
+					_paused_by_disconnect = true
 				queue_redraw()
 				break
 	else:
-		_disconnect_banner = ""
-		queue_redraw()
+		var connected_pads: Array = Input.get_connected_joypads()
+		var still_missing: bool = false
+		for p in range(mini(Session.num_players, Session.player_device.size())):
+			var dev: int = Session.player_device[p]
+			if dev >= 0 and not connected_pads.has(dev):
+				still_missing = true
+				break
+		if not still_missing:
+			_disconnect_banner = ""
+			if _paused_by_disconnect and not Session.is_online:
+				_paused = false
+				_paused_by_disconnect = false
+			queue_redraw()
+
 
 func _prune_render_history(from_tick: int) -> void:
 	for k in _hist.keys():
@@ -1961,14 +1975,13 @@ func _input(e: InputEvent) -> void:
 		return
 	if _disconnect_banner != "" and e.keycode == KEY_SPACE:
 		var connected_pads: Array = Input.get_connected_joypads()
-		for p in Session.player_device.size():
-			var dev: int = Session.player_device[p]
-			if dev >= 0 and not connected_pads.has(dev):
-				Session.player_device[p] = -(p + 1)
+		Session.fallback_disconnected_pads(connected_pads)
 		_disconnect_banner = ""
+		_paused_by_disconnect = false
 		_paused = false
 		queue_redraw()
 		return
+
 	match e.keycode:
 		KEY_ESCAPE:
 			if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
