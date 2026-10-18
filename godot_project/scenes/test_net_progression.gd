@@ -12,8 +12,8 @@ func _ready() -> void:
 	print("Step On It! Remastered — Netcode Board Progression & Retry Test")
 	print("==================================================================")
 
-	var p401 := ProjectSettings.globalize_path("res://../extracted/levels/board_401.bord")
-	var p402 := ProjectSettings.globalize_path("res://../extracted/levels/board_402.bord")
+	var p401 := Session.ext_path("levels/board_401.bord")
+	var p402 := Session.ext_path("levels/board_402.bord")
 	if not FileAccess.file_exists(p401): p401 = ProjectSettings.globalize_path("res://levels/board_401.bord")
 	if not FileAccess.file_exists(p402): p402 = ProjectSettings.globalize_path("res://levels/board_402.bord")
 
@@ -69,41 +69,83 @@ func _ready() -> void:
 		return
 	print("PASS: Match handshake completed")
 
-	# Test 1.5: Frozen-Tick Tally IN_META_CONFIRM Deadlock Prevention
-	net1.current_tick = 100
-	net2.current_tick = 100
+	# Test 1.5: Frozen-Tick Tally PKT_META_CONFIRM & Schedule Stability (NET-01, NET-05, NET-08)
+	net1.reset_for_new_board()
+	net2.reset_for_new_board()
 	for f in range(10):
 		net1.send_local_input(0)
 		net2.send_local_input(0)
+		net1.current_tick += 1
+		net2.current_tick += 1
+		sim_t += 0.016
+		net1.poll_network(sim_t)
+		net2.poll_network(sim_t)
+		OS.delay_msec(2)
+
+	var frozen_sched_1: int = int(net1.last_confirmed_per_peer[net1.local_slot])
+	var frozen_sched_2: int = int(net2.last_confirmed_per_peer[net2.local_slot])
+	# Simulate 120 frozen frames at tally screen (do NOT call send_local_input)
+	for f in range(120):
+		if not net1.are_all_peers_confirmed_through(net1.current_tick - 1) and int(net1.last_confirmed_per_peer[net1.local_slot]) >= 0:
+			net1._send_input_packet(int(net1.last_confirmed_per_peer[net1.local_slot]))
+		if not net2.are_all_peers_confirmed_through(net2.current_tick - 1) and int(net2.last_confirmed_per_peer[net2.local_slot]) >= 0:
+			net2._send_input_packet(int(net2.last_confirmed_per_peer[net2.local_slot]))
 		sim_t += 0.016
 		net1.poll_network(sim_t)
 		net2.poll_network(sim_t)
 
-	net1.send_local_input(RollbackNet.IN_META_CONFIRM)
-	net2.send_local_input(RollbackNet.IN_META_CONFIRM)
-	for f in range(20):
-		sim_t += 0.016
-		net1.poll_network(sim_t)
-		net2.poll_network(sim_t)
-
-	var p1_sees_confirm := false
-	var p2_sees_confirm := false
-	var max_tk1: int = maxi(net1.current_tick + net1.BASE_DELAY, int(net1.last_confirmed_per_peer[1]))
-	for tk in range(net1.current_tick, max_tk1 + 1):
-		if (int(net1.input_history[1].get(tk, 0)) & RollbackNet.IN_META_CONFIRM) != 0:
-			p1_sees_confirm = true
-			break
-	var max_tk2: int = maxi(net2.current_tick + net2.BASE_DELAY, int(net2.last_confirmed_per_peer[0]))
-	for tk in range(net2.current_tick, max_tk2 + 1):
-		if (int(net2.input_history[0].get(tk, 0)) & RollbackNet.IN_META_CONFIRM) != 0:
-			p2_sees_confirm = true
-			break
-
-	if not p1_sees_confirm or not p2_sees_confirm:
-		print("FAIL: IN_META_CONFIRM was not confirmed on frozen tally ticks!")
+	if int(net1.last_confirmed_per_peer[net1.local_slot]) != frozen_sched_1 or int(net2.last_confirmed_per_peer[net2.local_slot]) != frozen_sched_2:
+		print("FAIL: last_confirmed_per_peer[local_slot] drifted during frozen tally frames!")
 		get_tree().quit(1)
 		return
-	print("PASS: Frozen tally IN_META_CONFIRM resolved without deadlock")
+
+	net1.send_meta_confirm(10, 0x11223344)
+	net2.send_meta_confirm(10, 0x11223344)
+	for f in range(30):
+		sim_t += 0.016
+		net1.poll_network(sim_t)
+		net2.poll_network(sim_t)
+		OS.delay_msec(2)
+		if net1.all_meta_confirmed() and net2.all_meta_confirmed():
+			break
+
+	if not net1.all_meta_confirmed() or not net2.all_meta_confirmed():
+		print("FAIL: PKT_META_CONFIRM was not confirmed on frozen tally ticks!")
+		get_tree().quit(1)
+		return
+
+	# Stale board_epoch rejection test
+	net1.meta_confirmed_peers.clear()
+	var stale_pkt := PackedByteArray()
+	stale_pkt.resize(10)
+	stale_pkt[0] = RollbackNet.PKT_META_CONFIRM
+	stale_pkt[1] = (((net1.board_epoch + 5) & 0x3F) << 2) | 1
+	RollbackNet.encode_be32(stale_pkt, 2, 10)
+	RollbackNet.encode_be32(stale_pkt, 6, 0x11223344)
+	net1._handle_meta_confirm(stale_pkt, 1)
+	if net1.meta_confirmed_peers.has(1):
+		print("FAIL: Stale board_epoch PKT_META_CONFIRM was accepted!")
+		get_tree().quit(1)
+		return
+
+	# Mismatched terminal hash desync detection test
+	var meta_desync_fired := [false]
+	var cb := func(_t: int, _lh: int, _rh: int): meta_desync_fired[0] = true
+	net1.desync_detected.connect(cb)
+	net1.meta_confirmed_peers[0] = {"epoch": net1.board_epoch, "tick": 10, "hash": 0x11223344}
+	var bad_pkt := PackedByteArray()
+	bad_pkt.resize(10)
+	bad_pkt[0] = RollbackNet.PKT_META_CONFIRM
+	bad_pkt[1] = ((net1.board_epoch & 0x3F) << 2) | 1
+	RollbackNet.encode_be32(bad_pkt, 2, 10)
+	RollbackNet.encode_be32(bad_pkt, 6, 0x99999999)
+	net1._handle_meta_confirm(bad_pkt, 1)
+	net1.desync_detected.disconnect(cb)
+	if not meta_desync_fired[0]:
+		print("FAIL: Mismatched PKT_META_CONFIRM did not fire desync_detected!")
+		get_tree().quit(1)
+		return
+	print("PASS: Frozen tally PKT_META_CONFIRM, epoch filtering, and hash verification passed")
 
 	# Test 2: Next Board Progression (PKT_BOARD_LOAD with is_retry = false)
 	var p2_board_loaded := [false]
@@ -123,7 +165,7 @@ func _ready() -> void:
 		p2_is_retry[0] = retry
 	)
 
-	net1.send_board_load(b402, 998877, false)
+	net1.send_board_load(b402, 998877, false, true)
 	for i in range(100):
 		sim_t += 0.016
 		net1.poll_network(sim_t)
@@ -136,12 +178,12 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 
-	if p2_loaded_bytes[0].size() != b402.size() or p2_loaded_seed[0] != 998877 or p2_is_retry[0] != false:
-		print("FAIL: board_loaded packet contents corrupted: size=%d seed=%d retry=%s" %
-			[p2_loaded_bytes[0].size(), p2_loaded_seed[0], str(p2_is_retry[0])])
+	if p2_loaded_bytes[0].size() != b402.size() or p2_loaded_seed[0] != 998877 or p2_is_retry[0] != false or not net2.last_board_was_challenge_fail:
+		print("FAIL: board_loaded packet contents corrupted: size=%d seed=%d retry=%s cfail=%s" %
+			[p2_loaded_bytes[0].size(), p2_loaded_seed[0], str(p2_is_retry[0]), str(net2.last_board_was_challenge_fail)])
 		get_tree().quit(1)
 		return
-	print("PASS: Next board packet correctly delivered and decoded (size=%d seed=%d is_retry=false)" %
+	print("PASS: Next board packet correctly delivered and decoded (size=%d seed=%d is_retry=false cfail=true)" %
 		[p2_loaded_bytes[0].size(), p2_loaded_seed[0]])
 
 	if host_board_loaded_count[0] != 0:
@@ -150,20 +192,22 @@ func _ready() -> void:
 		return
 	print("PASS: Host did not double-fire board_loaded")
 
-	# Test 3: Synced Cores on new board
+	# Test 3: Synced Cores on new board from divergent prior seeds (NET-02) & rollback stop at level_complete (NET-03)
 	var c1 := SoiCore.new()
 	var c2 := SoiCore.new()
-	c1.init(12345); c1.load_level(b401); c1.set_play_mode(0); c1.limit_players(2)
-	c2.init(12345); c2.load_level(b401); c2.set_play_mode(0); c2.limit_players(2)
+	c1.init(11111); c1.load_level(b401); c1.set_play_mode(0); c1.limit_players(2)
+	c2.init(22222); c2.load_level(b401); c2.set_play_mode(0); c2.limit_players(2)
 
-	# Next level
+	# Next level with synchronized seed
+	c1.set_seed(p2_loaded_seed[0])
+	c2.set_seed(p2_loaded_seed[0])
 	c1.next_level(b402)
 	c2.next_level(p2_loaded_bytes[0])
 	if c1.net_hash() != c2.net_hash():
-		print("FAIL: Core net_hash divergence after next_level: %X vs %X" % [c1.net_hash(), c2.net_hash()])
+		print("FAIL: Core net_hash divergence after set_seed + next_level: %X vs %X" % [c1.net_hash(), c2.net_hash()])
 		get_tree().quit(1)
 		return
-	print("PASS: Both cores advanced to next board with identical net_hash: %X" % c1.net_hash())
+	print("PASS: Both cores converged from divergent seeds to identical net_hash after set_seed + next_level: %X" % c1.net_hash())
 
 	# Test 4: Game Over Retry (PKT_BOARD_LOAD with is_retry = true)
 	p2_board_loaded[0] = false

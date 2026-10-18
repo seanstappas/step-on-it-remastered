@@ -37,7 +37,7 @@ var _lobby_net: RollbackNet = null
 # --- load an extracted PICT (they live in the repo, outside res://) ---
 func _pict(pict_name: String) -> Texture2D:
 	for sub in (["pict_hd_v2", "pict_hd", "pict"] if _hd else ["pict"]):
-		var path := ProjectSettings.globalize_path("res://../extracted/%s/%s" % [sub, pict_name])
+		var path := Session.ext_path("%s/%s" % [sub, pict_name])
 		if FileAccess.file_exists(path):
 			var img := Image.load_from_file(path)
 			if img != null and not img.is_empty():
@@ -175,6 +175,8 @@ func _build_menu_bar() -> void:
 		var img := Image.load_from_file(icon_path)
 		if img != null and not img.is_empty():
 			_apple_icon = ImageTexture.create_from_image(img)
+	elif ResourceLoader.exists("res://scenes/apple_logo.png"):
+		_apple_icon = load("res://scenes/apple_logo.png") as Texture2D
 
 	# Full-width classic Mac white bar
 	var bar_bg := ColorRect.new()
@@ -316,15 +318,18 @@ func _build_menu_bar() -> void:
 	pop_help.add_item("About Step On It!...", 0)
 	pop_help.id_pressed.connect(_on_help)
 
-var _chicago_font: FontFile = null
+var _chicago_font: Font = null
 
 func _get_chicago_font() -> Font:
 	if _chicago_font == null:
 		var p := ProjectSettings.globalize_path("res://fonts/Chicago.ttf")
 		if FileAccess.file_exists(p):
-			_chicago_font = FontFile.new()
-			_chicago_font.load_dynamic_font(p)
-			_chicago_font.multichannel_signed_distance_field = true
+			var ff := FontFile.new()
+			ff.load_dynamic_font(p)
+			ff.multichannel_signed_distance_field = true
+			_chicago_font = ff
+		elif ResourceLoader.exists("res://fonts/Chicago.ttf"):
+			_chicago_font = load("res://fonts/Chicago.ttf") as Font
 	return _chicago_font if _chicago_font != null else ThemeDB.fallback_font
 
 func _create_mac_menu(parent: Control, title: String, icon: Texture2D = null) -> MenuButton:
@@ -488,7 +493,7 @@ func _label(parent: Control, text: String) -> void:
 
 func _hd_available() -> bool:
 	for sub in ["pict_hd_v2", "pict_hd"]:
-		if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + sub)):
+		if DirAccess.dir_exists_absolute(Session.ext_path(sub)):
 			return true
 	return false
 
@@ -550,16 +555,18 @@ var _device_status_lbl: Label = null
 
 func _claim_controller_slot(device: int) -> void:
 	var current_slot: int = -1
-	for slot in range(Session.num_players):
+	for slot in range(Session.player_device.size()):
 		if Session.player_device[slot] == device:
-			current_slot = slot
-			break
+			if slot < Session.num_players and current_slot == -1:
+				current_slot = slot
+			else:
+				Session.player_device[slot] = -(slot + 1)
 
 	if current_slot >= 0:
 		var target_slot: int = (current_slot + 1) % Session.num_players
 		var old_dev: int = Session.player_device[target_slot]
 		Session.player_device[target_slot] = device
-		Session.player_device[current_slot] = old_dev
+		Session.player_device[current_slot] = old_dev if old_dev != device else -(current_slot + 1)
 	else:
 		var unassigned_slot: int = -1
 		for s in range(Session.num_players):
@@ -577,10 +584,11 @@ func _update_lobby_device_labels() -> void:
 		return
 	var parts: Array[String] = []
 	for p in range(Session.num_players):
-		var dev: int = Session.player_device[p] if p < Session.player_device.size() else -1
-		var dev_name := "KB1" if dev == -1 else ("KB2" if dev == -2 else "Joy %d" % dev)
+		var dev: int = Session.player_device[p] if p < Session.player_device.size() else -(p + 1)
+		var dev_name := "KB1" if dev == -1 else ("KB2" if dev == -2 else ("KB3" if dev == -3 else "Joy %d" % dev))
 		parts.append("P%d: %s" % [p + 1, dev_name])
 	_device_status_lbl.text = "Slots: " + " | ".join(parts) + " (Press A / Space to claim)"
+
 
 func _open_custom_map_selector(btn: Button) -> void:
 	var pop := PopupMenu.new()
@@ -864,7 +872,7 @@ func _show_online_lobby_dialog() -> void:
 			_lobby_net.close()
 		_lobby_net = RollbackNet.new()
 		_lobby_net.num_players = n_players
-		var err := _lobby_net.start_host(7777, n_players)
+		var err := _lobby_net.start_host(7777, n_players - 1)
 		if err != OK:
 			host_status.text = "Failed to bind port 7777 (err %d)" % err
 			return

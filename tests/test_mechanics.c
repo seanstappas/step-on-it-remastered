@@ -4534,7 +4534,7 @@ int main(void)
         CHECK(w->players[3].active == 0 && w->players[3].alive == 0,
               "69.1: inactive P3 has alive == 0 after soi_next_level on EXT1 has_p3 board");
 
-        /* 69.2: Competitive door exit under p3_any_key requires holding a key */
+        /* 69.2: Competitive door exit: odd-tick sampling, locked 0x0904 blocked, unlocked 0x0901 allowed */
         soi_world_init(w, 1);
         w->level_loaded = 1;
         soi_set_play_mode(w, SOI_MODE_COMPETE);
@@ -4543,41 +4543,87 @@ int main(void)
         reset_player(w, 3, 5, 9); ground_player(w, 5, 9);
         w->players[1].active = 1; w->players[3].active = 1;
         w->players[1].has_key = 0; /* P1 is keyless */
-        w->players[3].has_key = 1; /* P3 holds a key and unlocked P1's Blue Door */
+        w->players[3].has_key = 1; /* P3 holds a key */
         w->cell[9][3] = 0x0902u;   /* Unlocked P1 Blue Door at P1's cell */
         soi_tick3(w, 0, 0, 0);
+        soi_tick3(w, 0, 0, 0);     /* Ensure odd tick (tick 1) has sampled player pickup */
         CHECK(w->players[1].has_key == 0 && soi_level_complete(w) == 0,
-              "69.2: Keyless P1 cannot exit unlocked Blue Door in Compete when p3_any_key=1");
-        w->cell[9][5] = 0x0902u;   /* Unlocked P1 Blue Door at P3's cell */
+              "69.2a: Keyless P1 cannot exit unlocked Blue Door in Compete across odd+even ticks");
+
+        /* P3 on LOCKED universal door 0x0904 must NOT exit even while holding a key */
+        w->cell[9][5] = 0x0904u;
+        soi_tick3(w, 0, 0, 0);
+        soi_tick3(w, 0, 0, 0);
+        CHECK(w->players[3].has_key == 1 && soi_level_complete(w) == 0,
+              "69.2b: Key-holding P3 cannot exit LOCKED door 0x0904");
+
+        /* P3 on UNLOCKED Blue Door 0x0902 with p3_any_key=1 DOES exit */
+        w->cell[9][5] = 0x0902u;
         soi_tick3(w, 0, 0, 0);
         soi_tick3(w, 0, 0, 0);
         CHECK(w->players[3].has_key == 2 && soi_level_complete(w) == 1,
-              "69.2: Key-holding P3 exits unlocked Blue Door in Compete when p3_any_key=1");
+              "69.2c: Key-holding P3 exits unlocked Blue Door in Compete when p3_any_key=1");
 
-        /* 69.3: Versus soi_game_over returns 0 and SOI_WIN_DOOR / SOI_WIN_SCORE complete on drop */
+        /* Original 2P Compete: P1 holding a key on UNLOCKED Universal Door 0x0901 MUST exit */
         soi_world_init(w, 1);
         w->level_loaded = 1;
-        soi_set_play_mode(w, SOI_MODE_VERSUS);
-        soi_set_victory_rule(w, SOI_WIN_DOOR);
+        soi_set_play_mode(w, SOI_MODE_COMPETE);
+        soi_set_p3_any_key(w, 0);
         reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
         reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
         w->players[1].active = 1; w->players[2].active = 1;
-        soi_drop_player(w, 2);
-        CHECK(soi_level_complete(w) == 1, "69.3: Versus SOI_WIN_DOOR completes when opponent drops");
-        w->players[1].alive = 0; w->players[1].lives = 0; w->players[1].eliminated = 1;
-        CHECK(soi_game_over(w) == 0, "69.3: soi_game_over is always 0 in SOI_MODE_VERSUS");
+        w->players[1].has_key = 1;
+        w->cell[9][3] = 0x0901u; /* Unlocked Universal Door */
+        soi_tick(w, 0, 0);
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].has_key == 2 && soi_level_complete(w) == 1,
+              "69.2d: Key-holding P1 exits unlocked Universal Door 0x0901 in 2P Compete");
 
-        /* 69.4: Dual speed-shoe bounce keeps even 2-px alignment and respects border walls */
+        /* 69.3: Versus last-life respawn does not end match early, and SOI_WIN_SCORE skips eliminated */
         soi_world_init(w, 1);
         w->level_loaded = 1;
         soi_set_play_mode(w, SOI_MODE_VERSUS);
+        soi_set_victory_rule(w, SOI_WIN_LIVES);
+        reset_player(w, 1, 3, 9); ground_player(w, 3, 9);
+        reset_player(w, 2, 6, 9); ground_player(w, 6, 9);
+        w->players[1].active = 1; w->players[2].active = 1;
+        w->players[2].lives = 0;
+        w->players[2].alive = 0;
+        w->players[2].eliminated = 0;
+        w->players[2].respawn_timer = 90;
+        CHECK(soi_level_complete(w) == 0,
+              "69.3a: Versus match NOT complete when P2 has lives=0, alive=0, eliminated=0 (awaiting last respawn)");
+        w->players[2].eliminated = 1;
+        CHECK(soi_level_complete(w) == 1 && soi_versus_winner(w) == 1,
+              "69.3b: Versus match complete and P1 wins once P2 is eliminated");
+
+        /* SOI_WIN_SCORE skips eliminated players even if they had a higher score */
+        soi_set_victory_rule(w, SOI_WIN_SCORE);
+        w->players[1].score = 1000;
+        w->players[2].score = 9999; /* P2 is eliminated */
+        CHECK(soi_versus_winner(w) == 1,
+              "69.3c: Versus SOI_WIN_SCORE skips eliminated P2 and awards win to surviving P1");
+
+        soi_set_victory_rule(w, SOI_WIN_DOOR);
+        w->players[2].eliminated = 0;
+        soi_drop_player(w, 2);
+        CHECK(soi_level_complete(w) == 1, "69.3d: Versus SOI_WIN_DOOR completes when opponent drops");
+        w->players[1].alive = 0; w->players[1].lives = 0; w->players[1].eliminated = 1;
+        CHECK(soi_game_over(w) == 0, "69.3e: soi_game_over is always 0 in SOI_MODE_VERSUS");
+
+        /* 69.4: Dual speed-shoe bounce achieves full >=20px separation when wall-pinned & safe at bounds */
+        soi_world_init(w, 1);
+        w->level_loaded = 1;
+        w->grid_cols = 38;
+        w->grid_rows = 26;
+        soi_set_play_mode(w, SOI_MODE_VERSUS);
         w->friendly_fire = 1;
-        for (int r = 0; r < 13; r++) {
+        for (int r = 0; r < 26; r++) {
             w->cell[r][0] = 0x0307u;
-            w->cell[r][18] = 0x0307u;
+            w->cell[r][37] = 0x0307u;
         }
-        reset_player(w, 1, 1, 9); ground_player(w, 1, 9);
-        reset_player(w, 2, 1, 9); ground_player(w, 1, 9);
+        reset_player(w, 1, 1, 25); ground_player(w, 1, 25);
+        reset_player(w, 2, 1, 25); ground_player(w, 1, 25);
         w->players[1].fast = 100;
         w->players[2].fast = 100;
         w->players[1].x = soi_cell_x(1);      /* Right against left border wall (col 0) */
@@ -4585,9 +4631,71 @@ int main(void)
         soi_tick(w, 0, 0);
         CHECK(((w->players[1].x - SOI_ORIGIN_X) & 1) == 0 &&
               ((w->players[2].x - SOI_ORIGIN_X) & 1) == 0,
-              "69.4: Dual speed-shoe bounce preserves 2-px even coordinate alignment");
+              "69.4a: Dual speed-shoe bounce preserves 2-px even coordinate alignment");
         CHECK(w->players[1].x >= soi_cell_x(1),
-              "69.4: Dual speed-shoe bounce does not push P1 into col 0 border wall");
+              "69.4b: Dual speed-shoe bounce does not push P1 into col 0 border wall");
+        CHECK(abs(w->players[1].x - w->players[2].x) >= 20,
+              "69.4c: Free player absorbs full separation (>= 20px) when partner is pinned against wall");
+
+        /* Above-field y=0 bounds check (r = -1 -> soi_get_cell returns SOI_WALL, blocking move safely without OOB) */
+        w->players[1].x = soi_cell_x(5);
+        w->players[2].x = soi_cell_x(5) + 4;
+        w->players[1].y = 0;
+        w->players[2].y = 0;
+        soi_tick(w, 0, 0);
+        CHECK(w->players[1].x == soi_cell_x(5) && w->players[2].x == soi_cell_x(5) + 4,
+              "69.4d: Above-field y=0 PvP collision is blocked safely by soi_get_cell without OOB");
+
+        /* 69.5: Automatic P3 placement in soi_load_level runs AFTER tiles are decoded */
+        {
+            /* Build a BORD where (9, 1) has a solid wall tile 0x0307 and EXT1 has_p3=1 with p3=(0,0) */
+            uint8_t p3_bord[64];
+            memset(p3_bord, 0, sizeof(p3_bord));
+            p3_bord[0x07] = 2; p3_bord[0x09] = 2;
+            p3_bord[0x0B] = 16; p3_bord[0x0D] = 2;
+            p3_bord[0x0E] = 0x13; p3_bord[0x0F] = 0x88;
+            /* Tile record at 0x18: tile 0x00000307 at (9, 1) + (9, 2), terminated by (100, 100) */
+            p3_bord[24] = 0x00; p3_bord[25] = 0x00; p3_bord[26] = 0x03; p3_bord[27] = 0x07;
+            p3_bord[28] = 9; p3_bord[29] = 1;
+            p3_bord[30] = 100; p3_bord[31] = 100;
+            /* Terminator 0x00000000 at 32..35 */
+            /* EXT1 at 36..59 */
+            memcpy(p3_bord + 36, "EXT1", 4);
+            p3_bord[40] = 1; p3_bord[41] = 1; /* has_p3 = 1 */
+            p3_bord[42] = 19; p3_bord[43] = 13;
+            p3_bord[44] = 0; p3_bord[45] = 0; /* p3 = (0,0) auto placement */
+            p3_bord[46] = 0x02; p3_bord[47] = 0x0D;
+            /* vs_spawns[0] = (5, 5), vs_spawns[1] = (12, 5) */
+            p3_bord[48] = 5; p3_bord[49] = 5;
+            p3_bord[50] = 12; p3_bord[51] = 5;
+            p3_bord[56] = 0; p3_bord[57] = 3;
+            uint16_t crc5 = 0xFFFF;
+            for (int i = 0; i < 22; i++) {
+                crc5 ^= ((uint16_t)p3_bord[36 + i] << 8);
+                for (int b = 0; b < 8; b++) crc5 = (crc5 & 0x8000) ? ((crc5 << 1) ^ 0x1021) : (crc5 << 1);
+            }
+            p3_bord[58] = (uint8_t)(crc5 >> 8);
+            p3_bord[59] = (uint8_t)(crc5 & 0xFF);
+
+            soi_world_init(w, 1);
+            soi_set_play_mode(w, SOI_MODE_COOPERATE);
+            soi_load_level(w, p3_bord, 60);
+            int p3_c = (w->players[3].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+            int p3_r = (w->players[3].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            CHECK(!(p3_c == 9 && p3_r == 1),
+                  "69.5: Automatic P3 spawn avoids wall tile at (9, 1) decoded from BORD");
+
+            /* 69.6: Initial Versus placement uses EXT1 vs_spawns when present */
+            soi_world_init(w, 1);
+            soi_set_play_mode(w, SOI_MODE_VERSUS);
+            soi_load_level(w, p3_bord, 60);
+            int vp1_c = (w->players[1].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+            int vp1_r = (w->players[1].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            int vp2_c = (w->players[2].x - SOI_ORIGIN_X) / SOI_CELL_PX;
+            int vp2_r = (w->players[2].y - SOI_ORIGIN_Y) / SOI_CELL_PX;
+            CHECK(vp1_c == 5 && vp1_r == 5 && vp2_c == 12 && vp2_r == 5,
+                  "69.6: SOI_MODE_VERSUS initial load places players at EXT1 vs_spawns");
+        }
     }
 
     free(w);

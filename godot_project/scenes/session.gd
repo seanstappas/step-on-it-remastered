@@ -15,12 +15,29 @@ var start_lives: int = 2
 var p3_any_key: bool = false
 var custom_map_path: String = ""
 var custom_board_bytes: PackedByteArray = PackedByteArray()
-var player_device: Array = [-1, -2, 0] # Device routing: -1 KB1, -2 KB2, 0..3 Joypad device_id
+var player_device: Array = [-1, -2, -3] # Device routing: -1 KB1, -2 KB2, -3 KB3, 0..3 Joypad device_id
 var net: RollbackNet = null
 var is_online: bool = false
 var online_bord_bytes: PackedByteArray = PackedByteArray()
 var online_seed: int = 1
 var speed: int = 2 # 0 = Really Fast, 1 = Fast, 2 = Medium (71 Hz default), 3 = Slow
+
+func ext_path(rel: String = "") -> String:
+	var sub := rel
+	if sub.begins_with("res://../extracted/"):
+		sub = sub.substr("res://../extracted/".length())
+	elif sub == "res://../extracted":
+		sub = ""
+	var exe_p := OS.get_executable_path().get_base_dir().path_join("extracted").path_join(sub)
+	if FileAccess.file_exists(exe_p) or DirAccess.dir_exists_absolute(exe_p):
+		return exe_p
+	var dev_p := ProjectSettings.globalize_path("res://../extracted").path_join(sub)
+	if FileAccess.file_exists(dev_p) or DirAccess.dir_exists_absolute(dev_p):
+		return dev_p
+	var cwd_p := ProjectSettings.globalize_path("res://extracted").path_join(sub)
+	if FileAccess.file_exists(cwd_p) or DirAccess.dir_exists_absolute(cwd_p):
+		return cwd_p
+	return dev_p
 
 func current_board_path() -> String:
 	if board_index >= 0 and board_index < board_list.size():
@@ -44,12 +61,15 @@ func init_presentation() -> void:
 		return
 	_presentation_ready = true
 	var ua := OS.get_cmdline_user_args()
-	remastered = "--3d" in ua or "--hd" in ua
+	var is_standalone := OS.has_feature("template") and not ("--original" in ua)
+	remastered = ("--3d" in ua) or ("--hd" in ua) or is_standalone
 	var ov: String = Audio._sfx_variant_override()
 	if ov != "":
 		remaster_sfx = ov
 	Audio.set_sfx_variant(remaster_sfx if remastered else "original")
 	Audio.set_music_variant("remaster" if remastered else "original")
+	if is_standalone and not ("--no-music" in ua):
+		Audio.set_music_enabled(true)
 
 ## Switch the whole audio side of the presentation (the scenes swap their own art).
 func set_remastered(on: bool) -> void:
@@ -153,6 +173,12 @@ func load_game() -> bool:
 	board_path = str(data.get("board_path", ""))
 	board_list = PackedStringArray(data.get("board_list", []))
 	resume_stats = data.get("players", [])
+	custom_board_bytes = PackedByteArray()
+	custom_map_path = ""
+	if has_meta("custom_board_bytes"):
+		remove_meta("custom_board_bytes")
+	if has_meta("editor_return"):
+		remove_meta("editor_return")
 	return true
 
 # --- New Game: build the board list and start at board 1. One Player / Alternate / Cooperate play
@@ -172,7 +198,7 @@ func start_campaign() -> void:
 	if num_players >= 2 and mode == 1:
 		lo = 1001
 		hi = 1050
-	var dir := ProjectSettings.globalize_path("res://../extracted/levels")
+	var dir := ext_path("levels")
 	var files: Array[String] = []
 	var da := DirAccess.open(dir)
 	if da != null:

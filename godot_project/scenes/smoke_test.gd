@@ -13,7 +13,7 @@ func _ready() -> void:
 
 	# Load a level: the real front-end reads a converted BORD; here, load one
 	# straight from the extracted resources if present.
-	var path := "res://../extracted/levels/board_401.bord"
+	var path := Session.ext_path("levels/board_401.bord")
 	var bytes := FileAccess.get_file_as_bytes(path)
 	if bytes.is_empty():
 		push_warning("no BORD at %s — ticking an empty world" % path)

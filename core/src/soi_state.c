@@ -132,11 +132,19 @@ void soi_spawn_player3(SoiWorld *w)
 {
     if (!w) return;
 
-    if (w->p3_col > 0 && w->p3_row > 0 &&
-        w->p3_col < w->grid_cols && w->p3_row < w->grid_rows) {
-        place_player(w, 3, w->p3_col, w->p3_row);
+    int explicit_c = (int)w->p3_col;
+    int explicit_r = (int)w->p3_row;
+    if (w->play_mode == SOI_MODE_VERSUS && (w->vs_spawns[2][0] > 0 || w->vs_spawns[2][1] > 0)) {
+        explicit_c = (int)w->vs_spawns[2][0];
+        explicit_r = (int)w->vs_spawns[2][1];
+    }
+
+    if (explicit_c > 0 && explicit_r > 0 &&
+        explicit_c < w->grid_cols && explicit_r < w->grid_rows) {
+        place_player(w, 3, explicit_c, explicit_r);
         w->players[3].block_type = (uint8_t)(w->p3_block & 0xFFu);
         w->players[3].bonus_time = w->players[1].bonus_time;
+        w->players[3].no_weapons_reward = w->players[1].no_weapons_reward;
         if (w->play_mode == SOI_MODE_COOPERATE) {
             w->players[3].lives = -1;
             w->players[3].balls = 0;
@@ -196,6 +204,7 @@ void soi_spawn_player3(SoiWorld *w)
     place_player(w, 3, spawn_c, spawn_r);
     w->players[3].block_type = (uint8_t)(w->p3_block & 0xFFu);
     w->players[3].bonus_time = w->players[1].bonus_time;
+    w->players[3].no_weapons_reward = w->players[1].no_weapons_reward;
     if (w->play_mode == SOI_MODE_COOPERATE) {
         w->players[3].lives = -1;
         w->players[3].balls = 0;
@@ -273,6 +282,7 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
         keep[i].elim   = w->players[i].eliminated;
     }
     soi_world_init(w, seed);                 /* full per-board reset (mult=1, transient cleared) */
+    w->play_mode = mode;                     /* preserve mode across soi_load_level so vs_spawns apply */
     r = soi_load_level(w, bord, len);
     if (r <= 0) return 0;
     if (keep[3].active) soi_spawn_player3(w);
@@ -289,8 +299,13 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
         w->players[i].shield     = keep[i].shield;
         w->players[i].kills      = keep[i].kills;
         w->players[i].active     = keep[i].active;
-        w->players[i].eliminated = keep[i].elim;
-        if (!keep[i].active || keep[i].elim) {
+        /* In Cooperate, active non-dropped players share P1's pool on the next board */
+        if (mode == SOI_MODE_COOPERATE && keep[i].active && keep[1].lives >= 0) {
+            w->players[i].eliminated = 0;
+        } else {
+            w->players[i].eliminated = keep[i].elim;
+        }
+        if (!keep[i].active || w->players[i].eliminated) {
             w->players[i].alive = 0;
             w->players[i].ground_state = SOI_ST_IDLE;
         }
@@ -485,10 +500,17 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
     }
 
     /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
-    place_player(w, 1, be16(bord + 0x06), be16(bord + 0x08));
-    place_player(w, 2, be16(bord + 0x0A), be16(bord + 0x0C));
-    if (ext_has_p3) {
-        soi_spawn_player3(w);
+    {
+        int p1_sc = (w->play_mode == SOI_MODE_VERSUS && (w->vs_spawns[0][0] > 0 || w->vs_spawns[0][1] > 0))
+            ? (int)w->vs_spawns[0][0] : (int)be16(bord + 0x06);
+        int p1_sr = (w->play_mode == SOI_MODE_VERSUS && (w->vs_spawns[0][0] > 0 || w->vs_spawns[0][1] > 0))
+            ? (int)w->vs_spawns[0][1] : (int)be16(bord + 0x08);
+        int p2_sc = (w->play_mode == SOI_MODE_VERSUS && (w->vs_spawns[1][0] > 0 || w->vs_spawns[1][1] > 0))
+            ? (int)w->vs_spawns[1][0] : (int)be16(bord + 0x0A);
+        int p2_sr = (w->play_mode == SOI_MODE_VERSUS && (w->vs_spawns[1][0] > 0 || w->vs_spawns[1][1] > 0))
+            ? (int)w->vs_spawns[1][1] : (int)be16(bord + 0x0C);
+        place_player(w, 1, p1_sc, p1_sr);
+        place_player(w, 2, p2_sc, p2_sr);
     }
     /* Built-block templates (asm FUN_1002b448: P1 +0x36 = header 0x02, P2 +0x36 = header 0x04;
      * FUN_1002d04c/cf08/d190 build `template & 0xff`). Every shipped board holds 0x026D /
@@ -643,6 +665,9 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
              * 0x9xx goodie, 0x197 background); store it verbatim. */
             soi_set_cell(w, a, b, tile);
         }
+    }
+    if (ext_has_p3) {
+        soi_spawn_player3(w);
     }
     w->level_loaded = 1;
     soi_switch_load_scan(w);   /* register Stop/Go switch blocks + normalise their cells (b41) */
@@ -915,27 +940,34 @@ static void check_pvp_body_collisions(SoiWorld *w)
 
             if (dx < 20 && dy < 24) {
                 if (p1->fast > 0 && p2->fast > 0) {
-                    int push = (((20 - dx + 1) / 2) + 1) & ~1;
                     int dir1 = (p1->x < p2->x) ? -1 : (p1->x > p2->x ? 1 : ((i < j) ? -1 : 1));
                     int dir2 = -dir1;
-                    int step;
-                    for (step = 0; step < push; step += 2) {
+                    int r1t = soi_px_row(p1->y + 4), r1b = soi_px_row(p1->y + 30);
+                    int r2t = soi_px_row(p2->y + 4), r2b = soi_px_row(p2->y + 30);
+                    int it;
+                    for (it = 0; it < 10; it++) {
+                        int cur_dx = p1->x - p2->x; if (cur_dx < 0) cur_dx = -cur_dx;
+                        if (cur_dx >= 20) break;
+                        int moved = 0;
                         int nx1 = p1->x + dir1 * 2;
                         int c1 = soi_px_col(dir1 < 0 ? nx1 : nx1 + 31);
-                        int r1_top = soi_px_row(p1->y + 4), r1_bot = soi_px_row(p1->y + 30);
                         if (c1 > 0 && c1 < w->grid_cols - 1 &&
-                            !(w->cell[r1_top][c1] & SOI_CELL_SUPPORTIVE) &&
-                            !(w->cell[r1_bot][c1] & SOI_CELL_SUPPORTIVE)) {
+                            !(soi_get_cell(w, c1, r1t) & SOI_CELL_SUPPORTIVE) &&
+                            !(soi_get_cell(w, c1, r1b) & SOI_CELL_SUPPORTIVE)) {
                             p1->x = nx1;
+                            moved = 1;
                         }
+                        cur_dx = p1->x - p2->x; if (cur_dx < 0) cur_dx = -cur_dx;
+                        if (cur_dx >= 20) break;
                         int nx2 = p2->x + dir2 * 2;
                         int c2 = soi_px_col(dir2 < 0 ? nx2 : nx2 + 31);
-                        int r2_top = soi_px_row(p2->y + 4), r2_bot = soi_px_row(p2->y + 30);
                         if (c2 > 0 && c2 < w->grid_cols - 1 &&
-                            !(w->cell[r2_top][c2] & SOI_CELL_SUPPORTIVE) &&
-                            !(w->cell[r2_bot][c2] & SOI_CELL_SUPPORTIVE)) {
+                            !(soi_get_cell(w, c2, r2t) & SOI_CELL_SUPPORTIVE) &&
+                            !(soi_get_cell(w, c2, r2b) & SOI_CELL_SUPPORTIVE)) {
                             p2->x = nx2;
+                            moved = 1;
                         }
+                        if (!moved) break;
                     }
                     p1->facing = (dir1 < 0) ? -1 : 1;
                     p2->facing = (dir2 < 0) ? -1 : 1;
@@ -1222,8 +1254,7 @@ int      soi_level_complete(const SoiWorld *w)
             if (!w->players[i].active && !w->players[i].eliminated) continue;
             participants++;
             if (w->players[i].active) active_count++;
-            if (w->players[i].active && !w->players[i].eliminated &&
-                (w->players[i].alive || w->players[i].lives > 0))
+            if (w->players[i].active && !w->players[i].eliminated)
                 alive_count++;
         }
         if (w->victory_rule == SOI_WIN_LIVES) {
@@ -1262,7 +1293,7 @@ int      soi_versus_winner(const SoiWorld *w)
         int32_t high_score = -1;
         int winner = 0, tie = 0;
         for (i = 1; i < SOI_MAX_PLAYERS; i++) {
-            if (!w->players[i].active) continue;
+            if (!w->players[i].active || w->players[i].eliminated) continue;
             if (w->players[i].score > high_score) {
                 high_score = w->players[i].score;
                 winner = i;
@@ -1475,20 +1506,36 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
     bput_u8(&b, w->frame_parity);
     bput_u8(&b, w->enemies_frozen);
     bput_u16(&b, (uint16_t)w->enemy_slow);
+    bput_u16(&b, (uint16_t)w->bonus_div);
     bput_u16(&b, (uint16_t)w->reveal_timer);
+    bput_u16(&b, (uint16_t)w->tp_freeze);
     bput_u16(&b, (uint16_t)w->pct_ultrabuster);
     bput_u16(&b, (uint16_t)w->thrown_badguy);
     bput_u16(&b, (uint16_t)w->pct_badguy);
     bput_u16(&b, (uint16_t)w->goodies_total);
     bput_u16(&b, (uint16_t)w->goodies_left);
+    bput_u8(&b, w->level_loaded);
     bput_u8(&b, w->play_mode);
+    bput_u8(&b, w->friendly_fire);
+    bput_u8(&b, w->victory_rule);
     bput_u8(&b, w->challenge);
+    bput_u8(&b, w->input_assist);
+    bput_u8(&b, w->p3_col);
+    bput_u8(&b, w->p3_row);
+    bput_u16(&b, w->p3_block);
+    bput_u8(&b, w->p3_any_key);
+    bput_u8(&b, w->ext_starting_lives);
+    for (i = 0; i < 4; i++) {
+        bput_u8(&b, w->vs_spawns[i][0]);
+        bput_u8(&b, w->vs_spawns[i][1]);
+    }
 
     for (i = 0; i < SOI_MAX_PLAYERS; i++) {
         const SoiPlayer *p = &w->players[i];
         bput_u8(&b, p->active); bput_u8(&b, p->alive); bput_u8(&b, p->eliminated);
         bput_u8(&b, p->ground_state); bput_u8(&b, p->in_air); bput_u8(&b, p->block_type);
-        bput_u8(&b, p->has_key); bput_u8(&b, p->input); bput_u8(&b, p->input_prev);
+        bput_u8(&b, p->has_key); bput_u16(&b, p->keys);
+        bput_u8(&b, p->input); bput_u8(&b, p->input_prev);
         bput_i32(&b, p->x); bput_i32(&b, p->y);
         bput_u16(&b, (uint16_t)p->facing); bput_u16(&b, (uint16_t)p->move_ctr);
         bput_u16(&b, (uint16_t)p->run_dir); bput_i32(&b, p->run_x0);
@@ -1508,6 +1555,10 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u8(&b, p->act_verb);
         bput_u16(&b, (uint16_t)p->frame); bput_u16(&b, (uint16_t)p->frame_save);
         bput_u8(&b, p->act_dirty); bput_u16(&b, (uint16_t)p->aux); bput_u8(&b, (uint8_t)p->dstep);
+        bput_u16(&b, (uint16_t)p->prev_pcol); bput_u16(&b, (uint16_t)p->prev_prow);
+        bput_u8(&b, p->in_pend); bput_u8(&b, p->buf); bput_u8(&b, p->buf_t);
+        bput_u8(&b, p->last_attacker); bput_u16(&b, p->attacker_ttl);
+        bput_u16(&b, p->kills); bput_u16(&b, p->ammo_regen_cd);
     }
     for (i = 0; i < SOI_MAX_ENEMIES; i++) {
         const SoiEnemy *e = &w->enemies[i];
@@ -1536,6 +1587,8 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
     }
     int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
     int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    bput_u8(&b, (uint8_t)max_c);
+    bput_u8(&b, (uint8_t)max_r);
     for (r = 0; r < max_r; r++)
         for (c = 0; c < max_c; c++)
             bput_u32(&b, w->cell[r][c]);
@@ -1545,6 +1598,16 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u8(&b, a->type);
         bput_u16(&b, (uint16_t)a->col); bput_u16(&b, (uint16_t)a->row);
         bput_u32(&b, a->fin);
+    }
+    bput_u8(&b, w->sw_count);
+    for (i = 0; i < w->sw_count; i++) {
+        bput_u16(&b, (uint16_t)w->sw_col[i]);
+        bput_u16(&b, (uint16_t)w->sw_row[i]);
+        bput_u8(&b, w->sw_group[i]);
+        bput_u8(&b, w->sw_state[i]);
+        bput_u8(&b, w->sw_ctr[i]);
+        bput_u8(&b, w->sw_solid[i]);
+        bput_u8(&b, w->sw_pass[i]);
     }
 
     return b.len;

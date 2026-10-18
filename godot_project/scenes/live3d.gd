@@ -82,7 +82,8 @@ const SNAP_TURN := 1.745329   # 100 deg: a turn this big between two frames is a
 
 ## Load a family's live rig, or null when it has none (the sprite frames are drawn instead).
 static func load_family(fam: String, holder: Node) -> Live3D:
-	var dir := ProjectSettings.globalize_path("res://../extracted/sprites_live/" + fam)
+	var s_node := holder.get_node_or_null("/root/Session") if holder != null else null
+	var dir: String = s_node.ext_path("sprites_live/" + fam) if (s_node != null and s_node.has_method("ext_path")) else ProjectSettings.globalize_path("res://../extracted/sprites_live/" + fam)
 	if not FileAccess.file_exists(dir + "/live.json") or not FileAccess.file_exists(dir + "/model.glb"):
 		return null
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(dir + "/live.json"))

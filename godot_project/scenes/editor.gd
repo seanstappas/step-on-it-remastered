@@ -63,27 +63,31 @@ const BRUSHES = [
 	{"cat": "Doors", "name": "Lock (Univ)", "tile": 0x0904, "sprite": "goody_sprites", "frame": 5},
 	{"cat": "Doors", "name": "Door (Univ)", "tile": 0x0901, "sprite": "goody_sprites", "frame": 2},
 	{"cat": "Doors", "name": "Key (P1 Blue)", "tile": 0x0908, "sprite": "goody_sprites", "frame": 9},
-	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0905, "sprite": "goody_sprites", "frame": 21},
-	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0902, "sprite": "goody_sprites", "frame": 22},
+	{"cat": "Doors", "name": "Lock (P1 Blue)", "tile": 0x0905, "sprite": "goody_sprites", "frame": 6},
+	{"cat": "Doors", "name": "Door (P1 Blue)", "tile": 0x0902, "sprite": "goody_sprites", "frame": 3},
 	{"cat": "Doors", "name": "Key (P2 Green)", "tile": 0x0909, "sprite": "goody_sprites", "frame": 10},
-	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0906, "sprite": "goody_sprites", "frame": 37},
-	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0903, "sprite": "goody_sprites", "frame": 38},
+	{"cat": "Doors", "name": "Lock (P2 Green)", "tile": 0x0906, "sprite": "goody_sprites", "frame": 7},
+	{"cat": "Doors", "name": "Door (P2 Green)", "tile": 0x0903, "sprite": "goody_sprites", "frame": 4},
 	{"cat": "Doors", "name": "Key (P3 Red)", "tile": 0x0933, "sprite": "goody_sprites", "frame": 9},
 	{"cat": "Doors", "name": "Lock (P3 Red)", "tile": 0x0934, "sprite": "goody_sprites", "frame": 6},
 	{"cat": "Doors", "name": "Door (P3 Red)", "tile": 0x0935, "sprite": "goody_sprites", "frame": 3},
 
 	# --- Enemies ---
 	{"cat": "Enemies", "name": "Turret/Cannon", "tile": 0x1E140701, "sprite": "cannon_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x1E140705, "sprite": "hippo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Hippo", "tile": 0x0602, "sprite": "hippo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0603, "sprite": "ostrich_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0604, "sprite": "piggy_sprites", "frame": 2},
 	{"cat": "Enemies", "name": "Enemy: Hammer", "tile": 0x1E140706, "sprite": "hammer_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0609, "sprite": "disk_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x060A, "sprite": "teeth_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Wheelie", "tile": 0x0608, "sprite": "disk_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Teeth", "tile": 0x0609, "sprite": "teeth_sprites", "frame": 2},
 	{"cat": "Enemies", "name": "Enemy: Smiley", "tile": 0x1E14070B, "sprite": "smiley_sprites", "frame": 2},
 	{"cat": "Enemies", "name": "Enemy: Ant", "tile": 0x1E14070C, "sprite": "ant_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x060F, "sprite": "robo_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x0610, "sprite": "walker_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Ostrich", "tile": 0x0612, "sprite": "ostrich_sprites", "frame": 2},
-	{"cat": "Enemies", "name": "Enemy: Piggy", "tile": 0x0613, "sprite": "piggy_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Robo", "tile": 0x060E, "sprite": "robo_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Walker", "tile": 0x060F, "sprite": "walker_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Blob", "tile": 0x0610, "sprite": "blob_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Fire", "tile": 0x0611, "sprite": "fire_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Dino", "tile": 0x0612, "sprite": "dino_sprites", "frame": 2},
+	{"cat": "Enemies", "name": "Enemy: Guard", "tile": 0x0613, "sprite": "guard_sprites", "frame": 2},
 
 	# --- Spawns ---
 	{"cat": "Spawns", "name": "P1 Spawn", "tile": -1, "sprite": "BP_sprites", "frame": 2},
@@ -98,6 +102,7 @@ const BRUSHES = [
 var brush_idx: int = 1
 var current_brush: int = 0x0307
 var is_mouse_down: bool = false
+var is_right_mouse_down: bool = false
 var status_msg: String = ""
 var status_timer: float = 0.0
 var _tex_cache: Dictionary = {}
@@ -181,7 +186,7 @@ func _get_sprite(folder: String, frame: int) -> Texture2D:
 		return _tex_cache[key]
 	if not _folder_indices.has(folder):
 		var idx: Dictionary = {}
-		var dir_path := ProjectSettings.globalize_path("res://../extracted/sprites/%s" % folder)
+		var dir_path := Session.ext_path("sprites/%s" % folder)
 		var da := DirAccess.open(dir_path)
 		if da != null:
 			for f in da.get_files():
@@ -319,6 +324,12 @@ func _check_cli_args() -> void:
 			get_tree().quit(0)
 
 
+func _check(cond: bool, msg: String) -> void:
+	if not cond:
+		push_error("SELF-TEST FAIL: " + msg)
+		get_tree().quit(1)
+
+
 func _run_self_test() -> void:
 	print("--- Running MapEditor Self-Test ---")
 	_init_grid(38, 26)
@@ -340,14 +351,14 @@ func _run_self_test() -> void:
 	cells[5][5] = 0x090A   # Coin
 
 	var raw := serialize_to_bord()
-	assert(raw.size() > 24, "Serialized size too small")
-	assert(raw.size() >= 48 and raw[raw.size() - 24] == 0x45 and raw[raw.size() - 23] == 0x58 and raw[raw.size() - 22] == 0x54 and raw[raw.size() - 21] == 0x31, "EXT1 trailer missing")
+	_check(raw.size() > 24, "Serialized size too small")
+	_check(raw.size() >= 48 and raw[raw.size() - 24] == 0x45 and raw[raw.size() - 23] == 0x58 and raw[raw.size() - 22] == 0x54 and raw[raw.size() - 21] == 0x31, "EXT1 trailer missing")
 
 	# Save to test file
 	var test_path := "user://custom_maps/test_roundtrip.bord"
 	DirAccess.make_dir_recursive_absolute("user://custom_maps")
 	var f := FileAccess.open(test_path, FileAccess.WRITE)
-	assert(f != null, "Cannot write test_roundtrip.bord")
+	_check(f != null, "Cannot write test_roundtrip.bord")
 	f.store_buffer(raw)
 	f.close()
 
@@ -358,55 +369,64 @@ func _run_self_test() -> void:
 	# Reload
 	var reloaded := FileAccess.get_file_as_bytes(test_path)
 	var ok := load_from_bord(reloaded)
-	assert(ok, "load_from_bord failed")
-	assert(grid_cols == 38, "grid_cols mismatch: %d" % grid_cols)
-	assert(grid_rows == 26, "grid_rows mismatch: %d" % grid_rows)
-	assert(has_p3 == true, "has_p3 mismatch")
-	assert(friendly_fire == true, "friendly_fire mismatch")
-	assert(victory_rule == 1, "victory_rule mismatch")
-	assert(starting_lives == 5, "starting_lives mismatch")
-	assert(default_mode == 2, "default_mode mismatch")
-	assert(cells[25][37] == 0x0307, "cell (37, 25) mismatch")
-	assert(cells[10][10] == 0x0207, "cell (10, 10) mismatch")
-	assert(cells[5][5] == 0x090A, "cell (5, 5) mismatch")
-	assert(p3_spawn == Vector2i(19, 2), "p3_spawn mismatch")
-	assert(vs_spawns[0] == Vector2i(10, 5), "vs_spawns[0] mismatch")
-	assert(vs_spawns[1] == Vector2i(20, 5), "vs_spawns[1] mismatch")
+	_check(ok, "load_from_bord failed")
+	_check(grid_cols == 38, "grid_cols mismatch: %d" % grid_cols)
+	_check(grid_rows == 26, "grid_rows mismatch: %d" % grid_rows)
+	_check(has_p3 == true, "has_p3 mismatch")
+	_check(friendly_fire == true, "friendly_fire mismatch")
+	_check(victory_rule == 1, "victory_rule mismatch")
+	_check(starting_lives == 5, "starting_lives mismatch")
+	_check(default_mode == 2, "default_mode mismatch")
+	_check(cells[25][37] == 0x0307, "cell (37, 25) mismatch")
+	_check(cells[10][10] == 0x0207, "cell (10, 10) mismatch")
+	_check(cells[5][5] == 0x090A, "cell (5, 5) mismatch")
+	_check(p3_spawn == Vector2i(19, 2), "p3_spawn mismatch")
+	_check(vs_spawns[0] == Vector2i(10, 5), "vs_spawns[0] mismatch")
+	_check(vs_spawns[1] == Vector2i(20, 5), "vs_spawns[1] mismatch")
 
 	# Verify in-memory state persistence
 	var saved_dict := _save_editor_state()
 	_init_grid(19, 13)
 	_restore_editor_state(saved_dict)
-	assert(grid_cols == 38, "persistence grid_cols mismatch")
-	assert(cells[10][10] == 0x0207, "persistence cells mismatch")
+	_check(grid_cols == 38, "persistence grid_cols mismatch")
+	_check(cells[10][10] == 0x0207, "persistence cells mismatch")
 
 	# Verify Live3D.POST_SHADER compiles cleanly
 	var sh := Shader.new()
 	sh.code = Live3D.POST_SHADER
-	assert(sh.code.count("{") == sh.code.count("}"), "Live3D.POST_SHADER unbalanced braces")
+	_check(sh.code.count("{") == sh.code.count("}"), "Live3D.POST_SHADER unbalanced braces")
 
-	# Verify all Enemy brushes map to valid BORD badguy IDs (1..19)
+	# Verify all Enemy brushes map to valid BORD badguy IDs and spawn in SoiCore
+	var test_core := SoiCore.new()
 	for b in BRUSHES:
 		if b["cat"] == "Enemies":
 			var btype: int = int(b["tile"]) & 0xFF
-			assert(btype >= 1 and btype <= 19, "Invalid BORD enemy ID %d for %s" % [btype, b["name"]])
+			_check(btype >= 1 and btype <= 19, "Invalid BORD enemy ID %d for %s" % [btype, b["name"]])
+			_init_grid(19, 13)
+			has_p3 = false
+			cells[6][9] = int(b["tile"])
+			var ebord := serialize_to_bord()
+			test_core.init(1)
+			test_core.load_level(ebord)
+			_check(test_core.enemy_count() >= 1, "Enemy brush %s (0x%X) did not spawn an enemy in SoiCore" % [b["name"], int(b["tile"])])
 
 	# Verify [F] enemy facing toggle updates bits 8..15 (0x0500 / 0x0600 / 0x0700)
+	_init_grid(19, 13)
 	cells[5][5] = 0x0609
 	hover_cell = Vector2i(5, 5)
 	_cycle_hovered_enemy_facing()
-	assert(((cells[5][5] >> 8) & 0xFF) in [0x05, 0x06, 0x07], "Enemy facing bits not in 0x05..0x07")
+	_check(((cells[5][5] >> 8) & 0xFF) in [0x05, 0x06, 0x07], "Enemy facing bits not in 0x05..0x07")
 
 	# Verify Session.start_campaign() clears custom_board_bytes meta
 	if Session:
 		Session.set_meta("custom_board_bytes", raw)
 		Session.start_campaign()
-		assert(not Session.has_meta("custom_board_bytes"), "start_campaign() leaked custom_board_bytes meta")
+		_check(not Session.has_meta("custom_board_bytes"), "start_campaign() leaked custom_board_bytes meta")
 
 	# Verify join_code_to_ip returns bare IP even when port != 7777
 	var jc := RollbackNet.ip_to_join_code("127.0.0.1", 8888)
-	assert(RollbackNet.join_code_to_ip(jc) == "127.0.0.1", "join_code_to_ip included port")
-	assert(RollbackNet.join_code_to_port(jc) == 8888, "join_code_to_port mismatch")
+	_check(RollbackNet.join_code_to_ip(jc) == "127.0.0.1", "join_code_to_ip included port")
+	_check(RollbackNet.join_code_to_port(jc) == 8888, "join_code_to_port mismatch")
 
 	print("MapEditor CLI self-test: PASS")
 
@@ -456,7 +476,8 @@ func _gui_input(event: InputEvent) -> void:
 				else:
 					_paint_at(event.position)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			if event.pressed and event.position.y >= 48.0:
+			is_right_mouse_down = event.pressed
+			if is_right_mouse_down and event.position.y >= 48.0:
 				_erase_at(event.position)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			_set_brush(brush_idx - 1)
@@ -467,41 +488,45 @@ func _gui_input(event: InputEvent) -> void:
 		hover_cell = cursor_cell
 		if is_mouse_down and event.position.y >= 48.0:
 			_paint_at(event.position)
+		elif is_right_mouse_down and event.position.y >= 48.0:
+			_erase_at(event.position)
 
 
 func _handle_hud_click(pos: Vector2) -> void:
-	if pos.x >= 140.0 and pos.x <= 220.0:
-		cycle_canvas_size()
-	elif pos.x >= 230.0 and pos.x <= 280.0:
-		save_to_default_file()
-	elif pos.x >= 290.0 and pos.x <= 340.0:
-		load_from_default_file()
-	elif pos.x >= 350.0 and pos.x <= 420.0:
-		playtest_in_memory()
-	elif pos.x >= 430.0 and pos.x <= 480.0:
-		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
-	elif pos.x >= 490.0 and pos.x <= 560.0:
-		default_mode = (default_mode + 1) % 3
-		var mnames := ["Co-op", "Compete", "Versus"]
-		_set_status("Mode: %s" % mnames[default_mode])
-		queue_redraw()
-	elif pos.x >= 570.0 and pos.x <= 640.0:
-		victory_rule = (victory_rule + 1) % 3
-		var rnames := ["Lives", "Score", "Door"]
-		_set_status("Rule: %s" % rnames[victory_rule])
-		queue_redraw()
-	elif pos.x >= 650.0 and pos.x <= 710.0:
-		friendly_fire = not friendly_fire
-		_set_status("Friendly Fire: %s" % ("On" if friendly_fire else "Off"))
-		queue_redraw()
-	elif pos.x >= 720.0 and pos.x <= 770.0:
-		starting_lives = (starting_lives % 9) + 1
-		_set_status("Starting Lives: %d" % starting_lives)
-		queue_redraw()
-	elif pos.x >= 780.0 and pos.x <= 840.0:
-		_cycle_hovered_enemy_facing()
-	else:
+	if pos.x < 245.0:
 		_set_brush(brush_idx + 1)
+	elif pos.y < 24.0:
+		if pos.x >= 248.0 and pos.x <= 320.0:
+			cycle_canvas_size()
+		elif pos.x >= 324.0 and pos.x <= 372.0:
+			save_to_default_file()
+		elif pos.x >= 376.0 and pos.x <= 424.0:
+			load_from_default_file()
+		elif pos.x >= 428.0 and pos.x <= 496.0:
+			playtest_in_memory()
+		elif pos.x >= 500.0 and pos.x <= 548.0:
+			get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	else:
+		if pos.x >= 248.0 and pos.x <= 316.0:
+			default_mode = (default_mode + 1) % 3
+			var mnames := ["Co-op", "Compete", "Versus"]
+			_set_status("Mode: %s" % mnames[default_mode])
+			queue_redraw()
+		elif pos.x >= 320.0 and pos.x <= 388.0:
+			victory_rule = (victory_rule + 1) % 3
+			var rnames := ["Lives", "Score", "Door"]
+			_set_status("Rule: %s" % rnames[victory_rule])
+			queue_redraw()
+		elif pos.x >= 392.0 and pos.x <= 446.0:
+			friendly_fire = not friendly_fire
+			_set_status("Friendly Fire: %s" % ("On" if friendly_fire else "Off"))
+			queue_redraw()
+		elif pos.x >= 450.0 and pos.x <= 496.0:
+			starting_lives = (starting_lives % 9) + 1
+			_set_status("Starting Lives: %d" % starting_lives)
+			queue_redraw()
+		elif pos.x >= 500.0 and pos.x <= 558.0:
+			_cycle_hovered_enemy_facing()
 
 
 func _cycle_hovered_enemy_facing() -> void:
@@ -552,8 +577,10 @@ func _paint_at(pos: Vector2) -> void:
 		var tile_to_set: int = current_brush
 		var cur_item: Dictionary = BRUSHES[brush_idx]
 		if cur_item["cat"] == "Enemies" or ((current_brush & 0x0400) != 0):
-			var facing_bits: int = 0x0500 if enemy_facing_left else 0x0600
-			tile_to_set = (current_brush & ~0xFF00) | facing_bits
+			var brush_dir: int = (current_brush >> 8) & 0xFF
+			if brush_dir != 0x07:
+				var facing_bits: int = 0x0500 if enemy_facing_left else 0x0600
+				tile_to_set = (current_brush & ~0xFF00) | facing_bits
 		cells[cell_coords.y][cell_coords.x] = tile_to_set
 
 	queue_redraw()
@@ -563,6 +590,11 @@ func _erase_at(pos: Vector2) -> void:
 	var cell_coords := _pos_to_cell(pos)
 	if cell_coords.x >= 0 and cell_coords.x < grid_cols and cell_coords.y >= 0 and cell_coords.y < grid_rows:
 		cells[cell_coords.y][cell_coords.x] = 0
+		if has_p3 and p3_spawn == cell_coords:
+			has_p3 = false
+		for i in range(vs_spawns.size()):
+			if vs_spawns[i] == cell_coords:
+				vs_spawns[i] = Vector2i(0, 0)
 		queue_redraw()
 
 
@@ -583,70 +615,62 @@ func _draw() -> void:
 	var hud_h := 48.0
 	var vp_size := get_viewport_rect().size
 
-	# 1. Draw HUD bar
+	# 1. Draw HUD bar (2-row layout fitting within 640px width)
 	draw_rect(Rect2(0, 0, vp_size.x, hud_h), Color(0.12, 0.12, 0.16))
 	var font := ThemeDB.fallback_font
 
-	# Brush Info & Sprite Preview
+	# Brush Info & Sprite Preview (x=8..244)
 	var cur_item: Dictionary = BRUSHES[brush_idx]
-	draw_string(font, Vector2(16, 20), "[%s] %s" % [cur_item["cat"], cur_item["name"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.YELLOW)
-	draw_string(font, Vector2(16, 38), "[1..9/Wheel/[]: Brush]", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.7, 0.7, 0.7))
+	draw_string(font, Vector2(8, 19), "[%s] %s" % [cur_item["cat"], cur_item["name"]], HORIZONTAL_ALIGNMENT_LEFT, 236, 12, Color.YELLOW)
+	draw_string(font, Vector2(8, 38), "[1..9/Wheel/[]: Brush]", HORIZONTAL_ALIGNMENT_LEFT, 236, 10, Color(0.7, 0.7, 0.7))
 
-	# Size Button
-	draw_rect(Rect2(140, 8, 80, 32), Color(0.22, 0.22, 0.28))
-	draw_rect(Rect2(140, 8, 80, 32), Color(0.4, 0.4, 0.5), false, 1.0)
-	draw_string(font, Vector2(148, 28), "%dx%d [G]" % [grid_cols, grid_rows], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
+	# Row 1 (y=3..22): Size, Save, Load, Play, Exit
+	draw_rect(Rect2(248, 3, 72, 19), Color(0.22, 0.22, 0.28))
+	draw_rect(Rect2(248, 3, 72, 19), Color(0.4, 0.4, 0.5), false, 1.0)
+	draw_string(font, Vector2(252, 16), "%dx%d [G]" % [grid_cols, grid_rows], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
-	# Save Button
-	draw_rect(Rect2(230, 8, 50, 32), Color(0.18, 0.28, 0.22))
-	draw_rect(Rect2(230, 8, 50, 32), Color(0.3, 0.5, 0.35), false, 1.0)
-	draw_string(font, Vector2(238, 28), "Save", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 1.0, 0.8))
+	draw_rect(Rect2(324, 3, 48, 19), Color(0.18, 0.28, 0.22))
+	draw_rect(Rect2(324, 3, 48, 19), Color(0.3, 0.5, 0.35), false, 1.0)
+	draw_string(font, Vector2(332, 16), "Save", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
 
-	# Load Button
-	draw_rect(Rect2(290, 8, 50, 32), Color(0.22, 0.22, 0.32))
-	draw_rect(Rect2(290, 8, 50, 32), Color(0.4, 0.4, 0.6), false, 1.0)
-	draw_string(font, Vector2(298, 28), "Load", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 0.8, 1.0))
+	draw_rect(Rect2(376, 3, 48, 19), Color(0.22, 0.22, 0.32))
+	draw_rect(Rect2(376, 3, 48, 19), Color(0.4, 0.4, 0.6), false, 1.0)
+	draw_string(font, Vector2(384, 16), "Load", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 0.8, 1.0))
 
-	# Playtest Button
-	draw_rect(Rect2(350, 8, 70, 32), Color(0.28, 0.22, 0.18))
-	draw_rect(Rect2(350, 8, 70, 32), Color(0.6, 0.45, 0.3), false, 1.0)
-	draw_string(font, Vector2(356, 28), "Play [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.9, 0.7))
+	draw_rect(Rect2(428, 3, 68, 19), Color(0.28, 0.22, 0.18))
+	draw_rect(Rect2(428, 3, 68, 19), Color(0.6, 0.45, 0.3), false, 1.0)
+	draw_string(font, Vector2(432, 16), "Play [Tab]", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.9, 0.7))
 
-	# Exit Button
-	draw_rect(Rect2(430, 8, 50, 32), Color(0.28, 0.18, 0.18))
-	draw_rect(Rect2(430, 8, 50, 32), Color(0.6, 0.3, 0.3), false, 1.0)
-	draw_string(font, Vector2(438, 28), "Exit", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 0.8, 0.8))
+	draw_rect(Rect2(500, 3, 48, 19), Color(0.28, 0.18, 0.18))
+	draw_rect(Rect2(500, 3, 48, 19), Color(0.6, 0.3, 0.3), false, 1.0)
+	draw_string(font, Vector2(510, 16), "Exit", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 0.8))
 
-	# Mode Button (490..560)
-	draw_rect(Rect2(490, 8, 70, 32), Color(0.2, 0.2, 0.3))
-	draw_rect(Rect2(490, 8, 70, 32), Color(0.4, 0.4, 0.6), false, 1.0)
+	# Row 2 (y=25..44): Mode, Rule, FF, Lives, Face
+	draw_rect(Rect2(248, 25, 68, 19), Color(0.2, 0.2, 0.3))
+	draw_rect(Rect2(248, 25, 68, 19), Color(0.4, 0.4, 0.6), false, 1.0)
 	var mnames := ["Co-op", "Compete", "Versus"]
-	draw_string(font, Vector2(494, 28), mnames[default_mode], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.9, 0.9, 1.0))
+	draw_string(font, Vector2(252, 38), mnames[default_mode], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.9, 0.9, 1.0))
 
-	# Rule Button (570..640)
-	draw_rect(Rect2(570, 8, 70, 32), Color(0.25, 0.2, 0.25))
-	draw_rect(Rect2(570, 8, 70, 32), Color(0.5, 0.4, 0.5), false, 1.0)
+	draw_rect(Rect2(320, 25, 68, 19), Color(0.25, 0.2, 0.25))
+	draw_rect(Rect2(320, 25, 68, 19), Color(0.5, 0.4, 0.5), false, 1.0)
 	var rnames := ["Lives", "Score", "Door"]
-	draw_string(font, Vector2(574, 28), "Win:" + rnames[victory_rule], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.8, 1.0))
+	draw_string(font, Vector2(324, 38), "Win:" + rnames[victory_rule], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 1.0))
 
-	# FF Button (650..710)
-	draw_rect(Rect2(650, 8, 60, 32), Color(0.3, 0.2, 0.2) if friendly_fire else Color(0.18, 0.22, 0.2))
-	draw_rect(Rect2(650, 8, 60, 32), Color(0.6, 0.3, 0.3) if friendly_fire else Color(0.35, 0.45, 0.35), false, 1.0)
-	draw_string(font, Vector2(654, 28), "FF:" + ("On" if friendly_fire else "Off"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.7, 0.7) if friendly_fire else Color(0.8, 0.9, 0.8))
+	draw_rect(Rect2(392, 25, 54, 19), Color(0.3, 0.2, 0.2) if friendly_fire else Color(0.18, 0.22, 0.2))
+	draw_rect(Rect2(392, 25, 54, 19), Color(0.6, 0.3, 0.3) if friendly_fire else Color(0.35, 0.45, 0.35), false, 1.0)
+	draw_string(font, Vector2(396, 38), "FF:" + ("On" if friendly_fire else "Off"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.7, 0.7) if friendly_fire else Color(0.8, 0.9, 0.8))
 
-	# Lives Button (720..770)
-	draw_rect(Rect2(720, 8, 50, 32), Color(0.2, 0.25, 0.2))
-	draw_rect(Rect2(720, 8, 50, 32), Color(0.4, 0.5, 0.4), false, 1.0)
-	draw_string(font, Vector2(726, 28), "L:%d" % starting_lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.8, 1.0, 0.8))
+	draw_rect(Rect2(450, 25, 46, 19), Color(0.2, 0.25, 0.2))
+	draw_rect(Rect2(450, 25, 46, 19), Color(0.4, 0.5, 0.4), false, 1.0)
+	draw_string(font, Vector2(456, 38), "L:%d" % starting_lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
 
-	# Facing Button (780..840)
-	draw_rect(Rect2(780, 8, 60, 32), Color(0.22, 0.22, 0.26))
-	draw_rect(Rect2(780, 8, 60, 32), Color(0.45, 0.45, 0.5), false, 1.0)
-	draw_string(font, Vector2(784, 28), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+	draw_rect(Rect2(500, 25, 58, 19), Color(0.22, 0.22, 0.26))
+	draw_rect(Rect2(500, 25, 58, 19), Color(0.45, 0.45, 0.5), false, 1.0)
+	draw_string(font, Vector2(504, 38), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
-	# Status toast message
+	# Status toast message (fits on right of HUD within 640px)
 	if status_msg != "":
-		draw_string(font, Vector2(850, 28), status_msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.4, 1.0, 0.6))
+		draw_string(font, Vector2(562, 28), status_msg, HORIZONTAL_ALIGNMENT_LEFT, 76, 9, Color(0.4, 1.0, 0.6))
 
 	# 2. Draw Playfield Grid
 	var playfield_w := vp_size.x
@@ -667,7 +691,7 @@ func _draw() -> void:
 				var spr_folder := ""
 				var spr_frame := 0
 				for b in BRUSHES:
-					if b["tile"] == cell_val or b["tile"] == tile_id or ((cell_val & 0x0400) != 0 and (int(b["tile"]) & 0xFF) == (cell_val & 0xFF)):
+					if b["tile"] == cell_val or b["tile"] == tile_id or ((cell_val & 0x0400) != 0 and (int(b["tile"]) & 0x0400) != 0 and (int(b["tile"]) & 0xFF) == (cell_val & 0xFF)):
 						spr_folder = b["sprite"]
 						spr_frame = b["frame"]
 						break

@@ -30,4 +30,6 @@ set_target_properties(soi_bridge PROPERTIES
 add_custom_command(TARGET soi_bridge POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/../godot_project/bin
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/soi_bridge.windows.template_release.x86_64.dll
 )
+

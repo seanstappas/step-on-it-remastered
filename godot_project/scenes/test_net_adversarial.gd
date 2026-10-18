@@ -18,7 +18,7 @@ func _ready() -> void:
 	print("Step On It! Remastered — Adversarial 3-Player Rollback Soak Test")
 	print("==================================================================")
 
-	var bord_path := ProjectSettings.globalize_path("res://../extracted/levels/board_401.bord")
+	var bord_path := Session.ext_path("levels/board_401.bord")
 	if not FileAccess.file_exists(bord_path):
 		bord_path = ProjectSettings.globalize_path("res://levels/board_401.bord")
 	var bord_bytes := FileAccess.get_file_as_bytes(bord_path)

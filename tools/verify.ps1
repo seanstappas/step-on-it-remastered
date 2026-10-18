@@ -1,5 +1,5 @@
 <#
-verify.ps1 — one-command build + test + validate for the whole project.
+verify.ps1 -- one-command build + test + validate for the whole project.
 
 Runs every stage of the pipeline and reports a single PASS/FAIL with an exit
 code, so regressions are caught in one shot. Safe to run repeatedly.
@@ -71,7 +71,7 @@ Stage 'core: fixture-replay selftest' {
     & $Zig cc -shared -std=c17 -Icore/include @srcs -o soi_core.dll '-Wl,--export-all-symbols' 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
     if (-not (Test-Path 'extracted/levels/board_401.bord')) {
-        Write-Host '   (no extracted board_401.bord — run tools/extract_assets.py first)' -ForegroundColor Yellow
+        Write-Host '   (no extracted board_401.bord -- run tools/extract_assets.py first)' -ForegroundColor Yellow
         return $false
     }
     $out = & py tools/fixture_replay.py --lib soi_core.dll --bord extracted/levels/board_401.bord --selftest
@@ -106,7 +106,7 @@ Stage 'art: 3D sprite frames' {
 
 Stage 'bridge: GDExtension build' {
     if (-not (Test-Path 'bridge/godot-cpp')) {
-        Write-Host '   (bridge/godot-cpp missing — clone it per bridge/build_zig.ps1 header)' -ForegroundColor Yellow
+        Write-Host '   (bridge/godot-cpp missing -- clone it per bridge/build_zig.ps1 header)' -ForegroundColor Yellow
         return $false
     }
     $dll = 'godot_project/bin/soi_bridge.windows.template_debug.x86_64.dll'

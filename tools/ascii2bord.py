@@ -82,24 +82,27 @@ CHAR_TO_TILE = {
 }
 
 ENEMY_NAMES = {
-    1: "ANT",
-    2: "OSTRICH",
-    3: "HIPPO",
+    1: "CANNON",
+    2: "HIPPO",
+    3: "OSTRICH",
     4: "PIGGY",
-    5: "WHEELIE",
-    6: "SMILEY",
-    7: "HAMMER",
-    8: "BEANIE",
-    9: "ROBO",
-    10: "WALKER",
-    11: "TEETH",
-    12: "CANNON",
-    13: "SPINNER",
-    14: "GARGOYLE",
-    15: "KNIGHT",
-    16: "CREEPER_H",
-    17: "CREEPER_V",
+    5: "SPINNER",
+    6: "HAMMER",
+    7: "CREEPER_H",
+    8: "WHEELIE",
+    9: "TEETH",
+    10: "CREEPER_V",
+    11: "SMILEY",
+    12: "ANT",
+    13: "GARGOYLE",
+    14: "ROBO",
+    15: "WALKER",
+    16: "BLOB",
+    17: "FIRE",
+    18: "DINO",
+    19: "GUARD",
 }
+
 
 
 def make_enemy_tile(start_delay: int, spawn_delay: int, dir_mode: int, bord_type: int) -> int:
@@ -320,6 +323,7 @@ def compile_bord_from_ascii(text: str) -> bytes:
         "no_weapons_reward": 5000,
     }
     ext1 = {}
+    records_list = []
     tile_to_cells = {}
     in_grid = False
     in_records = False
@@ -380,9 +384,7 @@ def compile_bord_from_ascii(text: str) -> bytes:
                         if pair:
                             pts = [int(p.strip()) for p in pair.split(",")]
                             cells.append((pts[0], pts[1]))
-                if tile_val not in tile_to_cells:
-                    tile_to_cells[tile_val] = []
-                tile_to_cells[tile_val].extend(cells)
+                records_list.append((tile_val, cells))
             i += 1
             continue
 
@@ -443,7 +445,7 @@ def compile_bord_from_ascii(text: str) -> bytes:
                             tile_to_cells[t] = []
                         tile_to_cells[t].append((c_idx, r_idx))
 
-    records = [(t, cells) for t, cells in tile_to_cells.items()]
+    records = list(records_list) + [(t, cells) for t, cells in tile_to_cells.items()]
     return compile_bord_from_records(header, records, ext1 if ext1 else None)
 
 
@@ -458,6 +460,7 @@ def generate_sample_duel_map(cols: int = 19, rows: int = 13) -> str:
     out.append(f"  grid_cols: {cols}")
     out.append(f"  grid_rows: {rows}")
     out.append("  has_p3: true")
+    out.append("  default_mode: 2")
     out.append("  friendly_fire: true")
     out.append("  victory_rule: 0")  # Lives elimination
     out.append("  starting_lives: 3")

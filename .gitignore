@@ -1,5 +1,6 @@
-# GitHub Actions & Agents
-/.github/
+# Agents
+/.github/*
+!/.github/workflows/
 /.agents
 
 # Generated / regenerable (reproducible via tools/ from raw_game/)
@@ -8,6 +9,7 @@
 
 # Build outputs & C/C++ compiled binaries
 /build/
+/releases/
 *.dll
 *.o
 *.obj

@@ -302,9 +302,9 @@ func _folder_index(folder: String) -> Dictionary:
 	if _sprite_index.has(folder):
 		return _sprite_index[folder]
 	var idx := {}
-	var dirs: Array = [ProjectSettings.globalize_path("%s/%s" % [_sprites_dir, folder])]
+	var dirs: Array = [Session.ext_path("%s/%s" % [_sprites_dir, folder])]
 	if _use_3d and _remastered:              # the 3D overlay wins frame by frame
-		dirs.append(ProjectSettings.globalize_path("%s/%s" % [SPRITES_3D_DIR, folder]))
+		dirs.append(Session.ext_path("%s/%s" % [SPRITES_3D_DIR, folder]))
 	for dir in dirs:
 		var da := DirAccess.open(dir)
 		if da == null:
@@ -564,7 +564,7 @@ func _draw_live(key: String, folder: String, a: int, b: int, f: float, flip: boo
 ## Index the live rigs that passed `framematch.py <family> livegate` (their gate.json) by sheet.
 func _scan_live() -> void:
 	_live_scanned = true
-	var root := ProjectSettings.globalize_path(LIVE_DIR)
+	var root := Session.ext_path(LIVE_DIR)
 	if not DirAccess.dir_exists_absolute(root):
 		return
 	for fam in DirAccess.get_directories_at(root):
@@ -587,7 +587,7 @@ func _tween_index(folder: String) -> Dictionary:
 	if _tween_idx.has(folder):
 		return _tween_idx[folder]
 	var idx := {}
-	var dir := ProjectSettings.globalize_path("%s/%s/tw" % [SPRITES_3D_DIR, folder])
+	var dir := Session.ext_path("%s/%s/tw" % [SPRITES_3D_DIR, folder])
 	var da := DirAccess.open(dir)
 	if da != null:
 		for f in da.get_files():
@@ -662,7 +662,7 @@ func _pict(name_substr: String) -> Texture2D:
 	if _pict_cache.has(name_substr):
 		return _pict_cache[name_substr]
 	var tex: Texture2D = null
-	var dir := ProjectSettings.globalize_path(_pict_dir)
+	var dir := Session.ext_path(_pict_dir)
 	var da := DirAccess.open(dir)
 	if da:
 		for f in da.get_files():
@@ -929,7 +929,7 @@ func _win_clip_path(w: int) -> String:
 	# Prefer the AI-upscaled HD clip (extracted/movies_hd, tools/upscale_win_movies.py) when
 	# REMASTERED; ORIGINAL (and a missing HD clip) plays the faithful SD extraction (extracted/movies).
 	for sub in (["movies_hd", "movies"] if _remastered else ["movies"]):
-		var p := ProjectSettings.globalize_path("res://../extracted/%s/%s.ogv" % [sub, clip])
+		var p := Session.ext_path("%s/%s.ogv" % [sub, clip])
 		if FileAccess.file_exists(p):
 			return p
 	return ""
@@ -1307,7 +1307,7 @@ func _apply_presentation(on: bool) -> void:
 		# Prefer the newest HD PICT set (pict_hd_v2), else pict_hd. Deleting the
 		# pict_hd_v2 folder reverts to the previous set (tools/upscale_picts.py --out).
 		for hd in ["pict_hd_v2", "pict_hd"]:
-			if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path("res://../extracted/" + hd)):
+			if DirAccess.dir_exists_absolute(Session.ext_path(hd)):
 				_pict_dir = "res://../extracted/" + hd
 				_pict_scale = 4
 				break
@@ -1400,12 +1400,17 @@ func _start() -> void:
 	if _num_players >= 3:
 		_core.spawn_player3()   # remaster's 3rd co-op player (BORD has no 3rd spawn)
 	_core.limit_players(_num_players)   # BORD always spawns P1+P2 -> turn P2/P3 off for a 1-player game
+	if Session.is_online and _net != null:
+		for d_slot in _net.dropped_peers.keys():
+			_core.drop_player(int(d_slot) + 1)
 	_reset_round_ui()
 	_update_board_music()
 
 ## Advance to the next board WITHOUT wiping the persistent stats -- score/lives/ammo/shield
 ## carry across boards (new-game-only per FUN_1002b060); only mult + per-board state reset.
 func _next_board() -> void:
+	if Session.is_online and Session.online_seed != 0:
+		_core.set_seed(Session.online_seed)
 	_core.next_level(_level_bytes)
 	_core.limit_players(_num_players)
 	if Session.is_online and _net != null:
@@ -1441,6 +1446,7 @@ func _reset_round_ui() -> void:
 
 var _disconnect_banner: String = ""
 var _online_stick_engaged: Array[int] = []
+var _board_just_loaded: bool = false
 
 func _on_joy_connection_changed(device: int, connected: bool) -> void:
 	if not connected:
@@ -1498,6 +1504,9 @@ func _physics_process(_delta: float) -> void:
 
 	if _net != null:
 		_net.poll_network(Time.get_ticks_msec() / 1000.0)
+		if _board_just_loaded:
+			_board_just_loaded = false
+			return
 		if _net.consecutive_rift_frames > 30:
 			Engine.physics_ticks_per_second = int(SPEED_HZ[clampi(Session.speed, 0, 3)] * 0.98)
 		elif _net.consecutive_rift_frames < -30:
@@ -1531,28 +1540,37 @@ func _physics_process(_delta: float) -> void:
 						var s_p2: int = _net.get_or_predict_input(1, sim_t) if _num_players >= 2 else 0
 						var s_p3: int = _net.get_or_predict_input(2, sim_t) if _num_players >= 3 else 0
 						_net.snapshot_ring[sim_t % RollbackNet.RING_BUFFER_SIZE] = _core.snapshot_save()
+						_tally_prebonus = int(_core.bonus_time())
+						for idx in range(1, mini(_num_players, 3) + 1):
+							_tally_pre[idx] = int(_core.player_score(idx))
 						_core.tick3(s_p1, s_p2, s_p3)
 						_net.record_state_hash(sim_t, int(_core.net_hash() & 0xFFFFFFFF))
 						for _i in range(_core.sfx_count()):
 							_core.sfx_get(_i)
+						if _core.game_over() or _core.level_complete() or (not _alt and _core.challenge_failed()):
+							_net.current_tick = sim_t + 1
+							break
 
 					if _tally_captured and not _core.level_complete():
 						_tally_captured = false
 						_tally_anim = 0.0
 						_warp_anim = 0.0
 						_online_meta_confirmed = false
+						_net.meta_confirmed_peers.clear()
 						_update_board_music()
 					if _game_over_active and not _core.game_over():
 						_game_over_active = false
 						_game_over_ticks = 0
 						_game_over_letters.clear()
 						_online_meta_confirmed = false
+						_net.meta_confirmed_peers.clear()
 						_hs_checked = false
 						_hs_state = ""
 						_update_board_music()
 					if _challenge_forfeited and not _core.challenge_failed():
 						_challenge_forfeited = false
 						_online_meta_confirmed = false
+						_net.meta_confirmed_peers.clear()
 
 					_prune_render_history(rb_tick)
 					_net.is_resimulating = false
@@ -1929,8 +1947,7 @@ func _input(e: InputEvent) -> void:
 		for p in Session.player_device.size():
 			var dev: int = Session.player_device[p]
 			if dev >= 0 and not connected_pads.has(dev):
-				Session.player_device[p] = -1
-				break
+				Session.player_device[p] = -(p + 1)
 		_disconnect_banner = ""
 		_paused = false
 		queue_redraw()
@@ -2041,7 +2058,7 @@ func _press_f4() -> void:
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
 func _press_enter() -> void:
 	if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
-		if _core.game_over() or _core.level_complete():
+		if _core.game_over() or _core.level_complete() or _core.challenge_failed():
 			Session.remove_meta("editor_return")
 			if Session.has_meta("custom_board_bytes"):
 				Session.remove_meta("custom_board_bytes")
@@ -2082,27 +2099,15 @@ func _press_enter() -> void:
 func _poll_online_meta_confirm() -> void:
 	if _net == null:
 		return
-	var local_inp: int = RollbackNet.IN_META_CONFIRM if _online_meta_confirmed else 0
-	_net.send_local_input(local_inp)
-
-	var all_confirmed: bool = true
-	for slot in range(_num_players):
-		if _net.dropped_peers.has(slot):
-			continue
-		var slot_ok: bool = false
-		var max_tk: int = maxi(_net.current_tick + _net.BASE_DELAY, int(_net.last_confirmed_per_peer[slot]))
-		for tk in range(_net.current_tick, max_tk + 1):
-			if (int(_net.input_history[slot].get(tk, 0)) & RollbackNet.IN_META_CONFIRM) != 0:
-				slot_ok = true
-				break
-		if not slot_ok:
-			all_confirmed = false
-			break
-
-	if not all_confirmed:
+	if not _net.are_all_peers_confirmed_through(_net.current_tick - 1) and int(_net.last_confirmed_per_peer[_net.local_slot]) >= 0:
+		_net._send_input_packet(int(_net.last_confirmed_per_peer[_net.local_slot]))
+	if _online_meta_confirmed and _net.are_all_peers_confirmed_through(_net.current_tick - 1):
+		_net.send_meta_confirm(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
+	if not _net.all_meta_confirmed():
 		return
 
 	_online_meta_confirmed = false
+	_net.meta_confirmed_peers.clear()
 	if _net.is_host:
 		var next_seed: int = (int(Time.get_ticks_usec()) & 0x7FFFFFFF) | 1
 		Session.online_seed = next_seed
@@ -2117,7 +2122,7 @@ func _poll_online_meta_confirm() -> void:
 				var next_bytes: PackedByteArray = FileAccess.get_file_as_bytes(Session.current_board_path())
 				_level_bytes = next_bytes
 				Session.online_bord_bytes = next_bytes
-				_net.send_board_load(next_bytes, next_seed, false)
+				_net.send_board_load(next_bytes, next_seed, false, was_challenge_fail)
 				_net.reset_for_new_board()
 				var saved_stats: Array = _board_start_stats.duplicate(true)
 				_next_board()
@@ -2126,6 +2131,7 @@ func _poll_online_meta_confirm() -> void:
 						if p - 1 < saved_stats.size():
 							var st: Dictionary = saved_stats[p - 1]
 							_core.set_player_stats(p, int(st["score"]), int(st["lives"]), int(st["arrows"]), int(st["balls"]), int(st["shield"]))
+					_capture_board_start()
 			else:
 				if _mode_versus or _mode_compete:
 					_net.send_board_load(_level_bytes, next_seed, true)
@@ -2146,6 +2152,7 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 	_level_bytes = bord_bytes
 	Session.online_bord_bytes = bord_bytes
 	Session.online_seed = rng_seed
+	var was_challenge_fail: bool = _net.last_board_was_challenge_fail if (_net != null and not _net.is_host) else (_core.challenge_failed() and not _core.level_complete())
 	if _net != null:
 		_net.reset_for_new_board()
 	if is_retry:
@@ -2154,7 +2161,6 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 	else:
 		if not _net.is_host and Session.board_index + 1 < Session.board_list.size():
 			Session.board_index += 1
-		var was_challenge_fail: bool = _core.challenge_failed() and not _core.level_complete()
 		var saved_stats: Array = _board_start_stats.duplicate(true)
 		_next_board()
 		if was_challenge_fail:
@@ -2162,6 +2168,9 @@ func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: 
 				if p - 1 < saved_stats.size():
 					var st: Dictionary = saved_stats[p - 1]
 					_core.set_player_stats(p, int(st["score"]), int(st["lives"]), int(st["arrows"]), int(st["balls"]), int(st["shield"]))
+			_capture_board_start()
+	if _net != null and not _net.is_host:
+		_board_just_loaded = true
 
 # --- input -------------------------------------------------------------------
 
@@ -3248,7 +3257,7 @@ func _load_level_bytes() -> PackedByteArray:
 			return chosen
 	# 2) otherwise fall back to a bundled/extracted default
 	var candidates := [
-		"res://../extracted/levels/board_401.bord",
+		Session.ext_path("levels/board_401.bord"),
 		"res://levels/board_401.bord",
 	]
 	for path in candidates:

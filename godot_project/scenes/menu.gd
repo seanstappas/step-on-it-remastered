@@ -61,7 +61,7 @@ func _ready() -> void:
 
 func _find_levels_dir() -> String:
 	for d in [
-		ProjectSettings.globalize_path("res://../extracted/levels"),
+		Session.ext_path("levels"),
 		ProjectSettings.globalize_path("res://levels"),
 	]:
 		if DirAccess.dir_exists_absolute(d):
@@ -136,6 +136,12 @@ func _board_label(num: int, is_dev: bool = true) -> String:
 	return "board_%d" % num
 
 func _on_activated(idx: int) -> void:
+	Session.custom_board_bytes = PackedByteArray()
+	Session.custom_map_path = ""
+	if Session.has_meta("custom_board_bytes"):
+		Session.remove_meta("custom_board_bytes")
+	if Session.has_meta("editor_return"):
+		Session.remove_meta("editor_return")
 	if idx >= 0 and idx < _files.size():
 		# Advance within the picked board's own set (campaign 401-500 or compete 1001-1050),
 		# never running off the end of one set into the next.

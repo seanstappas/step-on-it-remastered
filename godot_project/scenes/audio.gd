@@ -149,7 +149,7 @@ func get_effects_volume() -> float:
 
 # --- Music playback -----------------------------------------------------------
 func _init_music() -> void:
-	_music_dir = ProjectSettings.globalize_path("res://../extracted/music")
+	_music_dir = Session.ext_path("music")
 	_music_player = AudioStreamPlayer.new()
 	_music_player.volume_db = -6.0            # sit under the SFX
 	add_child(_music_player)
@@ -460,8 +460,8 @@ func _reload_sfx() -> void:
 	_map_events()
 
 func _load_all() -> void:
-	var orig := ProjectSettings.globalize_path(SFX_VARIANTS["original"])
-	var vdir := ProjectSettings.globalize_path(SFX_VARIANTS.get(_sfx_variant, SFX_VARIANTS["original"]))
+	var orig := Session.ext_path(SFX_VARIANTS["original"])
+	var vdir := Session.ext_path(SFX_VARIANTS.get(_sfx_variant, SFX_VARIANTS["original"]))
 	var da := DirAccess.open(orig)
 	if da == null:
 		return
