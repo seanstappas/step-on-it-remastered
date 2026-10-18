@@ -494,6 +494,107 @@ func _ready() -> void:
 
 	client_c.close()
 
+	# -------------------------------------------------------------------------
+	# 5. Integration Test: Tick-0 Drop (NET-07)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 5: Tick-0 Drop (NET-07) ---")
+	var t0_net1 := RollbackNet.new()
+	var t0_net2 := RollbackNet.new()
+	var t0_net3 := RollbackNet.new()
+	var t0_core1 := SoiCore.new()
+	var t0_core2 := SoiCore.new()
+	t0_net1.num_players = 3
+	t0_net2.num_players = 3
+	t0_net3.num_players = 3
+
+	var port_t0 := 7784
+	t0_net1.start_host(port_t0, 3)
+	t0_net2.start_client("127.0.0.1", port_t0)
+	t0_net3.start_client("127.0.0.1", port_t0)
+
+	for attempt in range(100):
+		sim_time += 0.016
+		t0_net1.poll_network(sim_time)
+		t0_net2.poll_network(sim_time)
+		t0_net3.poll_network(sim_time)
+		OS.delay_msec(5)
+		if t0_net1.get_connected_player_count() >= 3:
+			break
+
+	var t0_started := [false, false]
+	t0_net2.match_started.connect(func(_b, _s, _sp, _np, _m, _sl): t0_started[0] = true)
+	t0_net3.match_started.connect(func(_b, _s, _sp, _np, _m, _sl): t0_started[1] = true)
+	t0_net1.send_match_init(bord_bytes, 54321, 2, 0)
+
+	for attempt in range(100):
+		sim_time += 0.016
+		t0_net1.poll_network(sim_time)
+		t0_net2.poll_network(sim_time)
+		t0_net3.poll_network(sim_time)
+		OS.delay_msec(5)
+		if t0_started[0] and t0_started[1]:
+			break
+
+	for c in [t0_core1, t0_core2]:
+		c.init(54321)
+		c.load_level(bord_bytes)
+		c.set_play_mode(2)
+		c.spawn_player3()
+		c.limit_players(3)
+
+	# P3 disconnects immediately before sending any input
+	t0_net3.close()
+
+	for attempt in range(50):
+		sim_time += 0.016
+		t0_net1.poll_network(sim_time)
+		t0_net2.poll_network(sim_time)
+		OS.delay_msec(2)
+		if t0_net1.dropped_peers.has(2) and t0_net2.dropped_peers.has(2):
+			break
+
+	var host_p3_drop_tick: int = t0_net1.peer_drop_tick.get(2, -1)
+	var client_p3_drop_tick: int = t0_net2.peer_drop_tick.get(2, -1)
+	if host_p3_drop_tick != 0:
+		print("FAIL: Host peer_drop_tick[2] is %d, expected 0!" % host_p3_drop_tick)
+		failures += 1
+	else:
+		print("PASS: Host peer_drop_tick[2] == 0")
+
+	if client_p3_drop_tick != 0:
+		print("FAIL: Client peer_drop_tick[2] is %d, expected 0!" % client_p3_drop_tick)
+		failures += 1
+	else:
+		print("PASS: Client peer_drop_tick[2] == 0")
+
+	# Tick both cores 120 ticks with the same inputs and assert equal net_hash()
+	for t in range(120):
+		for pair in [[t0_net1, t0_core1], [t0_net2, t0_core2]]:
+			var n: RollbackNet = pair[0]
+			var c: SoiCore = pair[1]
+			for d_slot in n.peer_drop_tick.keys():
+				if n.current_tick == int(n.peer_drop_tick[d_slot]):
+					c.drop_player(int(d_slot) + 1)
+
+		var in_p1 := 1 if (t & 1) else 2
+		var in_p2 := 4 if (t & 2) else 0
+		var in_p3 := 0
+
+		t0_core1.tick3(in_p1, in_p2, in_p3)
+		t0_core2.tick3(in_p1, in_p2, in_p3)
+
+		t0_net1.current_tick += 1
+		t0_net2.current_tick += 1
+
+	if t0_core1.net_hash() != t0_core2.net_hash():
+		print("FAIL: Desync after tick-0 drop! Core1 hash %X != Core2 hash %X" % [t0_core1.net_hash(), t0_core2.net_hash()])
+		failures += 1
+	else:
+		print("PASS: Core1 hash == Core2 hash after 120 ticks post tick-0 drop")
+
+	t0_net1.close()
+	t0_net2.close()
+
 	print("==================================================================")
 	if failures == 0:
 		print("EDGE CASES TEST: PASS (All join code, disconnect, and drop tests passed!)")

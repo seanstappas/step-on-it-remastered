@@ -38,7 +38,7 @@ const PKT_META_CONFIRM := 0x03
 const PKT_INPUT_TICK   := 0x10
 const PKT_DROP_PEER    := 0x20
 const IN_META_CONFIRM  := 1 << 7
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
 
 # Signals for state changes
 signal match_started(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_players: int, mode: int, local_slot: int)
@@ -463,9 +463,9 @@ func poll_network(time_now_sec: float) -> void:
 					drop_pkt.resize(2 + 4 + RING_BUFFER_SIZE)
 					drop_pkt[0] = PKT_DROP_PEER
 					drop_pkt[1] = slot
-					encode_be32(drop_pkt, 2, maxi(0, last_t))
+					encode_be32(drop_pkt, 2, drop_t)
 					for k in range(RING_BUFFER_SIZE):
-						var tk: int = last_t - k
+						var tk: int = drop_t - 1 - k
 						drop_pkt[6 + k] = (int(input_history[slot].get(tk, 0)) & 0x7F) if tk >= 0 else 0
 					_broadcast_packet(drop_pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
 				peer_disconnected.emit(slot)
@@ -508,8 +508,8 @@ func _handle_drop_peer(pkt: PackedByteArray) -> void:
 	var slot := pkt[1]
 	if slot >= 0 and slot < 3 and slot != local_slot:
 		if pkt.size() >= 6:
-			var last_t := decode_be32(pkt, 2)
-			var drop_t := maxi(0, last_t + 1)
+			var drop_t := maxi(0, decode_be32(pkt, 2))
+			var last_t := drop_t - 1
 			peer_drop_tick[slot] = drop_t
 			var win_len := mini(RING_BUFFER_SIZE, pkt.size() - 6)
 			for k in range(win_len):
