@@ -14,6 +14,7 @@ import re
 import struct
 import sys
 from pathlib import Path
+from typing import Optional
 
 # CRC-16-CCITT for EXT1 trailer (polynomial 0x1021, init 0xFFFF)
 def crc16_ccitt(data: bytes) -> int:
@@ -83,24 +84,24 @@ CHAR_TO_TILE = {
 
 ENEMY_NAMES = {
     1: "CANNON",
-    2: "HIPPO",
-    3: "OSTRICH",
-    4: "PIGGY",
-    5: "SPINNER",
+    2: "WHEELIE",
+    3: "WHEELIE_SLOW",
+    4: "WALKER",
+    5: "HIPPO",
     6: "HAMMER",
-    7: "CREEPER_H",
-    8: "WHEELIE",
-    9: "TEETH",
-    10: "CREEPER_V",
+    7: "BEANIE_H",
+    8: "BEANIE_V",
+    9: "SPINNER",
+    10: "TEETH",
     11: "SMILEY",
     12: "ANT",
-    13: "GARGOYLE",
-    14: "ROBO",
-    15: "WALKER",
-    16: "BLOB",
-    17: "FIRE",
-    18: "DINO",
-    19: "GUARD",
+    13: "KNIGHT",
+    14: "GARGOYLE",
+    15: "ROBO",
+    16: "CREEPER_H",
+    17: "CREEPER_V",
+    18: "OSTRICH",
+    19: "PIGGY",
 }
 
 
@@ -122,10 +123,10 @@ def pack_ext1(
     friendly_fire: bool = False,
     big_map: bool = False,
     default_mode: int = 0,
-    has_p3: bool = False,
+    has_p3: Optional[bool] = None,
 ) -> bytes:
     flags = 0
-    if has_p3 or p3_col > 0 or p3_row > 0:
+    if has_p3 is True or (has_p3 is None and (p3_col > 0 or p3_row > 0)):
         flags |= 1  # bit 0: has_p3
     if friendly_fire:
         flags |= 2  # bit 1: friendly_fire
@@ -306,7 +307,7 @@ def compile_bord_from_records(header: dict, records: list, ext1: dict = None) ->
             friendly_fire=ext1.get("friendly_fire", False),
             big_map=ext1.get("big_map", False),
             default_mode=ext1.get("default_mode", 0),
-            has_p3=bool(ext1.get("has_p3", False)),
+            has_p3=ext1.get("has_p3"),
         )
 
     return bytes(out)
@@ -568,7 +569,9 @@ def main():
             txt = decompile_bord(orig)
             recompiled = compile_bord_from_ascii(txt)
             orig_clean = orig
-            if len(orig) == len(recompiled) + 2 and orig[-6:-2] == b"\x00\x00\x00\x00":
+            if len(orig) == len(recompiled) + 2 and orig[-24:-20] == b"EXT1" and orig[-26:-24] == b"\x00\x00":
+                orig_clean = orig[:-26] + orig[-24:]
+            elif len(orig) == len(recompiled) + 2 and orig[-6:-2] == b"\x00\x00\x00\x00":
                 orig_clean = orig[:-2]
             # Compare tile payload equivalence strictly (byte-for-byte)
             if orig_clean == recompiled:

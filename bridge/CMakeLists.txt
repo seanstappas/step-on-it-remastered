@@ -18,18 +18,35 @@ add_library(soi_bridge SHARED
 target_include_directories(soi_bridge PRIVATE ../core/include)
 target_link_libraries(soi_bridge PRIVATE godot-cpp soi_core)
 
-set_target_properties(soi_bridge PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
-    PREFIX ""
-    # The .gdextension expects this exact name in godot_project/bin/.
-    OUTPUT_NAME "soi_bridge.windows.template_debug.x86_64"
-)
-
-# Drop the built extension where the Godot project loads it from.
-add_custom_command(TARGET soi_bridge POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/../godot_project/bin
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/soi_bridge.windows.template_release.x86_64.dll
-)
+if(WIN32)
+    set_target_properties(soi_bridge PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        PREFIX ""
+        # The .gdextension expects this exact name in godot_project/bin/.
+        OUTPUT_NAME "soi_bridge.windows.template_$<IF:$<CONFIG:Release>,release,debug>.x86_64"
+    )
+    add_custom_command(TARGET soi_bridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/../godot_project/bin
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/soi_bridge.windows.template_$<IF:$<CONFIG:Release>,debug,release>.x86_64.dll
+    )
+elseif(UNIX AND NOT APPLE)
+    set_target_properties(soi_bridge PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        PREFIX "lib"
+        OUTPUT_NAME "soi_bridge.linux.template_$<IF:$<CONFIG:Release>,release,debug>.x86_64"
+    )
+    add_custom_command(TARGET soi_bridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/../godot_project/bin
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:soi_bridge> ${CMAKE_SOURCE_DIR}/../godot_project/bin/libsoi_bridge.linux.template_$<IF:$<CONFIG:Release>,debug,release>.x86_64.so
+    )
+else()
+    set_target_properties(soi_bridge PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+endif()
 
