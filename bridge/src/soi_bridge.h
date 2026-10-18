@@ -32,6 +32,8 @@ public:
     SoiCore();
     ~SoiCore() override = default;
 
+    static int64_t build_id();
+
     /* lifecycle */
     void init(int64_t seed);
     void set_seed(int64_t seed);

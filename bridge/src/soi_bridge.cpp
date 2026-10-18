@@ -9,6 +9,14 @@ extern "C" {
 
 using namespace godot;
 
+#ifndef SOI_BUILD_ID
+#define SOI_BUILD_ID 0
+#endif
+
+int64_t SoiCore::build_id() {
+    return static_cast<int64_t>(SOI_BUILD_ID);
+}
+
 SoiCore::SoiCore()
 {
     world_.assign(soi_world_size(), 0);
@@ -193,6 +201,8 @@ int64_t SoiCore::switch_block_frame(int64_t col, int64_t row) const
 
 void SoiCore::_bind_methods()
 {
+    ClassDB::bind_static_method("SoiCore", D_METHOD("build_id"), &SoiCore::build_id);
+
     ClassDB::bind_method(D_METHOD("init", "seed"), &SoiCore::init);
     ClassDB::bind_method(D_METHOD("set_seed", "seed"), &SoiCore::set_seed);
     ClassDB::bind_method(D_METHOD("load_level", "bord"), &SoiCore::load_level);

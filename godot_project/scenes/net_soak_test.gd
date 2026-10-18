@@ -371,13 +371,17 @@ func _ready() -> void:
 		desync_count += 1
 		print("DESYNC at final state: P1=%X P2=%X P3=%X" % [final_h1, final_h2, final_h3])
 
+	var final_t1 := net1.current_tick
+	var final_t2 := net2.current_tick
+	var final_t3 := net3.current_tick
+
 	net1.close()
 	net2.close()
 	net3.close()
 
 	print("==================================================================")
 	print("10,000-Tick Soak Test Summary:")
-	print("   Ticks Simulated : P1=%d, P2=%d, P3=%d" % [net1.current_tick, net2.current_tick, net3.current_tick])
+	print("   Ticks Simulated : P1=%d, P2=%d, P3=%d" % [final_t1, final_t2, final_t3])
 	print("   P1 Rollbacks    : %d" % rollbacks_p1)
 	print("   P2 Rollbacks    : %d" % rollbacks_p2)
 	print("   P3 Rollbacks    : %d" % rollbacks_p3)

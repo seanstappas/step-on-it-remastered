@@ -35,6 +35,7 @@ static func decode_be32(arr: PackedByteArray, offset: int) -> int:
 const PKT_MATCH_INIT   := 0x01
 const PKT_BOARD_LOAD   := 0x02
 const PKT_META_CONFIRM := 0x03
+const PKT_MATCH_END    := 0x06
 const PKT_INPUT_TICK   := 0x10
 const PKT_DROP_PEER    := 0x20
 const IN_META_CONFIRM  := 1 << 7
@@ -43,6 +44,7 @@ const PROTOCOL_VERSION := 3
 # Signals for state changes
 signal match_started(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_players: int, mode: int, local_slot: int)
 signal board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool)
+signal match_ended(reason: int)
 signal peer_connected(slot: int)
 signal peer_disconnected(slot: int)
 signal desync_detected(tick: int, local_hash: int, remote_hash: int)
@@ -54,6 +56,7 @@ var num_players: int = 2
 var board_epoch: int = 0
 var match_active: bool = false
 var last_board_was_challenge_fail: bool = false
+var next_base_delay: int = 2
 var current_tick: int = 0
 var last_confirmed_tick: int = 0
 var last_confirmed_per_peer: Array = [-1, -1, -1]
@@ -190,6 +193,7 @@ func reset() -> void:
 	stalled_frames = 0
 	board_epoch = 0
 	match_active = false
+	last_board_was_challenge_fail = false
 	dropped_peers.clear()
 	peer_drop_tick.clear()
 	meta_confirmed_peers.clear()
@@ -296,7 +300,7 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 		var peer_slot: int = peer_instances.get(pid, idx + 1)
 		var pkt := PackedByteArray()
 		var blen := bord_bytes.size()
-		pkt.resize(0x10 + blen)
+		pkt.resize(0x10 + blen + 4)
 		pkt[0] = PKT_MATCH_INIT
 		pkt[1] = ((PROTOCOL_VERSION & 0x0F) << 4) | (num_players & 0x0F)
 		pkt[2] = peer_slot
@@ -311,6 +315,8 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 		encode_be32(pkt, 0x0C, rng_seed)
 		for b in range(blen):
 			pkt[0x10 + b] = bord_bytes[b]
+		var my_build_id: int = SoiCore.build_id() if ClassDB.class_has_method("SoiCore", "build_id") else 0
+		encode_be32(pkt, 0x10 + blen, my_build_id)
 		peer.send(0, pkt, ENetPacketPeer.FLAG_RELIABLE)
 	enet.flush()
 	match_started.emit(bord_bytes, rng_seed, speed, num_players, mode, 0)
@@ -319,17 +325,31 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 func send_board_load(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool = false, was_challenge_fail: bool = false) -> void:
 	if not enet or not is_host:
 		return
+	BASE_DELAY = next_base_delay
 	var blen := bord_bytes.size()
 	var pkt := PackedByteArray()
 	pkt.resize(8 + blen)
 	pkt[0] = PKT_BOARD_LOAD
-	pkt[1] = (1 if is_retry else 0) | (2 if was_challenge_fail else 0)
+	pkt[1] = (1 if is_retry else 0) | (2 if was_challenge_fail else 0) | ((BASE_DELAY & 0x07) << 2)
 	encode_be16(pkt, 2, blen)
 	encode_be32(pkt, 4, rng_seed)
 	for b in range(blen):
 		pkt[8 + b] = bord_bytes[b]
-	print("send_board_load: blen=%d seed=%d retry=%s cfail=%s pkt_len=%d" % [blen, rng_seed, str(is_retry), str(was_challenge_fail), pkt.size()])
+	print("send_board_load: blen=%d seed=%d retry=%s cfail=%s delay=%d pkt_len=%d" % [blen, rng_seed, str(is_retry), str(was_challenge_fail), BASE_DELAY, pkt.size()])
 	_broadcast_packet(pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
+
+
+func send_match_end(reason: int) -> void:
+	if not enet:
+		return
+	var pkt := PackedByteArray()
+	pkt.resize(2)
+	pkt[0] = PKT_MATCH_END
+	pkt[1] = reason & 0xFF
+	_broadcast_packet(pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
+	if enet:
+		enet.flush()
+	match_ended.emit(reason)
 
 
 func send_meta_confirm(terminal_tick: int, state_hash: int) -> void:
@@ -357,6 +377,8 @@ func send_meta_confirm(terminal_tick: int, state_hash: int) -> void:
 
 
 func all_meta_confirmed() -> bool:
+	var first_tick: int = -1
+	var first_hash: int = 0
 	for s in range(num_players):
 		if dropped_peers.has(s):
 			continue
@@ -365,6 +387,16 @@ func all_meta_confirmed() -> bool:
 		var entry: Dictionary = meta_confirmed_peers[s]
 		if int(entry.get("epoch", -1)) != board_epoch:
 			return false
+		var t: int = int(entry.get("tick", -1))
+		var h: int = int(entry.get("hash", 0))
+		if first_tick == -1:
+			first_tick = t
+			first_hash = h
+		else:
+			if t != first_tick:
+				return false
+			if first_hash != 0 and h != 0 and first_hash != h:
+				return false
 	return true
 
 
@@ -511,6 +543,23 @@ func _process_packet(pkt: PackedByteArray, peer_id: int) -> void:
 		_handle_meta_confirm(pkt, peer_id)
 	elif pkt_type == PKT_DROP_PEER:
 		_handle_drop_peer(pkt)
+	elif pkt_type == PKT_MATCH_END:
+		_handle_match_end(pkt, peer_id)
+
+
+func _handle_match_end(pkt: PackedByteArray, from_peer_id: int) -> void:
+	if pkt.size() < 2:
+		return
+	var reason: int = pkt[1]
+	if is_host:
+		for pid in peer_to_obj.keys():
+			if pid != from_peer_id:
+				var p_obj: ENetPacketPeer = peer_to_obj[pid]
+				if p_obj and p_obj.get_state() == ENetPacketPeer.STATE_CONNECTED:
+					p_obj.send(0, pkt, ENetPacketPeer.FLAG_RELIABLE)
+		if enet:
+			enet.flush()
+	match_ended.emit(reason)
 
 
 func _handle_drop_peer(pkt: PackedByteArray) -> void:
@@ -579,12 +628,29 @@ func _send_input_packet(anchor_tick: int) -> void:
 	_broadcast_packet(pkt, 1, ENetPacketPeer.FLAG_UNSEQUENCED)
 
 
+func send_ack_windows(anchor: int) -> void:
+	if anchor < 0:
+		return
+	_send_input_packet(anchor)
+	var min_peer_ack := anchor
+	var has_peer_ack := false
+	for s in range(num_players):
+		if s != local_slot and not dropped_peers.has(s):
+			min_peer_ack = mini(min_peer_ack, int(peer_ack_tick[s]))
+			has_peer_ack = true
+	if has_peer_ack and (anchor - min_peer_ack) > 15:
+		_send_input_packet(min_peer_ack + 15)
+
+
 func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
 	var clean_input: int = local_input & 0x7F
 	var prev_scheduled: int = int(last_confirmed_per_peer[local_slot])
-	var target_tick: int = current_tick + BASE_DELAY
-	if prev_scheduled >= 0:
-		target_tick = maxi(target_tick, prev_scheduled + 1)
+	var desired: int = current_tick + BASE_DELAY
+	var target_tick: int = desired
+	if prev_scheduled >= desired:
+		target_tick = prev_scheduled
+	elif prev_scheduled >= 0:
+		target_tick = maxi(desired, prev_scheduled + 1)
 
 	var start_fill: int = 0 if prev_scheduled < 0 else maxi(current_tick, prev_scheduled + 1)
 	for tk in range(start_fill, target_tick + 1):
@@ -596,20 +662,7 @@ func send_local_input(local_input: int, current_state_hash: int = 0) -> void:
 	if current_state_hash != 0 and current_tick > 0:
 		record_state_hash(current_tick - 1, current_state_hash)
 
-	# Always send primary leading packet for target_tick
-	_send_input_packet(target_tick)
-
-	# Ack-Anchored sliding window catch-up:
-	# If any peer is lagging behind by more than 16 ticks from target_tick,
-	# also transmit a secondary catch-up packet anchored at min_peer_ack + 16
-	var min_peer_ack := target_tick
-	var has_peer_ack := false
-	for s in range(num_players):
-		if s != local_slot and not dropped_peers.has(s):
-			min_peer_ack = mini(min_peer_ack, int(peer_ack_tick[s]))
-			has_peer_ack = true
-	if has_peer_ack and (target_tick - min_peer_ack) > 16:
-		_send_input_packet(min_peer_ack + 16)
+	send_ack_windows(target_tick)
 
 
 func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
@@ -641,11 +694,11 @@ func _handle_input_tick(pkt: PackedByteArray, from_peer_id: int) -> void:
 		rolling_rtt_ms = rolling_rtt_ms * 0.9 + est_rtt_ms * 0.1
 		if is_host:
 			if rolling_rtt_ms > 120.0:
-				BASE_DELAY = 4
+				next_base_delay = 4
 			elif rolling_rtt_ms > 60.0:
-				BASE_DELAY = 3
+				next_base_delay = 3
 			else:
-				BASE_DELAY = 2
+				next_base_delay = 2
 
 	var win_len := pkt.size() - 20
 	for k in range(win_len):
@@ -739,15 +792,7 @@ func check_rift_stall() -> bool:
 		consecutive_rift_frames += 1
 		var target_tick: int = int(last_confirmed_per_peer[local_slot])
 		if target_tick >= 0:
-			_send_input_packet(target_tick)
-			var min_peer_ack := target_tick
-			var has_peer_ack := false
-			for s in range(num_players):
-				if s != local_slot and not dropped_peers.has(s):
-					min_peer_ack = mini(min_peer_ack, int(peer_ack_tick[s]))
-					has_peer_ack = true
-			if has_peer_ack and (target_tick - min_peer_ack) > 16:
-				_send_input_packet(min_peer_ack + 16)
+			send_ack_windows(target_tick)
 		return true
 	if is_stalled:
 		is_stalled = false
@@ -760,9 +805,21 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 	if pkt.size() < 0x10:
 		return
 	var proto: int = (pkt[1] >> 4) & 0x0F
-	if proto != 0 and proto != PROTOCOL_VERSION:
+	if proto != PROTOCOL_VERSION:
 		print("Protocol version mismatch: local=%d remote=%d" % [PROTOCOL_VERSION, proto])
-		desync_detected.emit(0, PROTOCOL_VERSION, proto)
+		match_ended.emit(2)
+		close()
+		return
+	var blen: int = decode_be16(pkt, 0x0A)
+	if pkt.size() < 0x10 + blen + 4:
+		print("Malformed MATCH_INIT packet: size=%d expected >= %d" % [pkt.size(), 0x10 + blen + 4])
+		close()
+		return
+	var remote_build_id: int = decode_be32(pkt, 0x10 + blen)
+	var local_build_id: int = SoiCore.build_id() if ClassDB.class_has_method("SoiCore", "build_id") else 0
+	if local_build_id != 0 and remote_build_id != 0 and local_build_id != remote_build_id:
+		print("Build ID mismatch: local=%X remote=%X" % [local_build_id, remote_build_id])
+		match_ended.emit(2)
 		close()
 		return
 	match_active = true
@@ -776,7 +833,6 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 	var speed: int = pkt[7]
 	var base_delay_val: int = pkt[8]
 	var p3_any_key_val: int = pkt[9]
-	var blen: int = decode_be16(pkt, 0x0A)
 	var rng_seed: int = decode_be32(pkt, 0x0C)
 	var bord_bytes: PackedByteArray = pkt.slice(0x10, 0x10 + blen)
 	var s := _get_session()
@@ -786,19 +842,27 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 		s.set("input_assist", (input_assist != 0))
 		s.set("p3_any_key", (p3_any_key_val != 0))
 	BASE_DELAY = clampi(base_delay_val, 2, 4)
+	next_base_delay = BASE_DELAY
 	match_started.emit(bord_bytes, rng_seed, speed, num_players, mode, local_slot)
 
 
 func _handle_board_load(pkt: PackedByteArray) -> void:
 	if pkt.size() < 8:
 		return
+	var blen: int = decode_be16(pkt, 2)
+	if pkt.size() < 8 + blen:
+		print("Malformed BOARD_LOAD packet: size=%d expected >= %d" % [pkt.size(), 8 + blen])
+		return
 	var is_retry: bool = (pkt[1] & 1) != 0
 	last_board_was_challenge_fail = (pkt[1] & 2) != 0
-	var blen: int = decode_be16(pkt, 2)
+	var new_delay: int = (pkt[1] >> 2) & 0x07
+	if new_delay >= 2 and new_delay <= 4:
+		BASE_DELAY = new_delay
+		next_base_delay = new_delay
 	var rng_seed: int = decode_be32(pkt, 4)
 	var bord_bytes: PackedByteArray = pkt.slice(8, 8 + blen)
-	print("_handle_board_load: pkt_len=%d blen=%d seed=%d retry=%s cfail=%s slice_len=%d" %
-		[pkt.size(), blen, rng_seed, str(is_retry), str(last_board_was_challenge_fail), bord_bytes.size()])
+	print("_handle_board_load: pkt_len=%d blen=%d seed=%d retry=%s cfail=%s delay=%d slice_len=%d" %
+		[pkt.size(), blen, rng_seed, str(is_retry), str(last_board_was_challenge_fail), BASE_DELAY, bord_bytes.size()])
 	board_loaded.emit(bord_bytes, rng_seed, is_retry)
 
 

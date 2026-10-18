@@ -25,9 +25,12 @@ foreach ($f in Get-ChildItem core/src/*.c) {
 }
 
 # 2. Compile godot-cpp + generated bindings + the wrapper (C++17), link the core.
+$gitSha = try { (git rev-parse --short=8 HEAD).Trim() } catch { "0" }
+$buildId = try { [Convert]::ToInt64($gitSha, 16) } catch { 0 }
+
 $args = @('-shared','-std=c++17','-O1','-fPIC',
           "-I$gcpp/include","-I$gcpp/gen/include","-I$gcpp/gdextension",
-          '-Icore/include','-Ibridge/src','-o','soi_bridge.dll')
+          '-Icore/include','-Ibridge/src',"-DSOI_BUILD_ID=0x$($buildId.ToString('X'))",'-o','soi_bridge.dll')
 $args += (Get-ChildItem "$gcpp/src" -Recurse -Filter *.cpp | ForEach-Object FullName)
 $args += (Get-ChildItem "$gcpp/gen/src" -Recurse -Filter *.cpp | ForEach-Object FullName)
 $args += (Get-ChildItem 'bridge/src' -Filter *.cpp | ForEach-Object FullName)

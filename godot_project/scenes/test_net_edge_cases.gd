@@ -703,6 +703,137 @@ func _ready() -> void:
 	m_c2.close()
 	m_host.close()
 
+	# -------------------------------------------------------------------------
+	# 7. Integration Test: Version 0 and Version 99 Rejection (NET-10)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 7: Protocol Version Gating (NET-10) ---")
+	var v_client := RollbackNet.new()
+	v_client.num_players = 2
+	var v_reasons := []
+	v_client.match_ended.connect(func(r: int): v_reasons.append(r))
+
+	# Test proto = 0 rejection
+	var pkt_v0 := PackedByteArray()
+	pkt_v0.resize(0x20)
+	pkt_v0[0] = RollbackNet.PKT_MATCH_INIT
+	pkt_v0[1] = ((0 & 0x0F) << 4) | 2
+	v_client._handle_match_init(pkt_v0)
+	if v_reasons.size() != 1 or v_reasons[0] != 2:
+		print("FAIL: Proto 0 was not rejected with reason 2! reasons=%s" % str(v_reasons))
+		failures += 1
+	else:
+		print("PASS: Proto 0 correctly rejected with reason 2")
+
+	# Test proto = 99 (0x0F masked = 15 != 3) rejection
+	v_reasons.clear()
+	var pkt_v99 := PackedByteArray()
+	pkt_v99.resize(0x20)
+	pkt_v99[0] = RollbackNet.PKT_MATCH_INIT
+	pkt_v99[1] = ((15 & 0x0F) << 4) | 2
+	v_client._handle_match_init(pkt_v99)
+	if v_reasons.size() != 1 or v_reasons[0] != 2:
+		print("FAIL: Proto 99 was not rejected with reason 2! reasons=%s" % str(v_reasons))
+		failures += 1
+	else:
+		print("PASS: Proto 99 correctly rejected with reason 2")
+
+	# -------------------------------------------------------------------------
+	# 8. Unit Test: Delay Ratchet (NET-13 / 1.6)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 8: Delay Ratchet (1.6) ---")
+	var r_net := RollbackNet.new()
+	r_net.BASE_DELAY = 2
+	r_net.current_tick = 0
+	# Artificially schedule 10 ticks ahead
+	r_net.last_confirmed_per_peer[r_net.local_slot] = 10
+	for f in range(12):
+		r_net.current_tick += 1
+		r_net.send_local_input(1)
+
+	var expected_target := r_net.current_tick + r_net.BASE_DELAY
+	var actual_target: int = int(r_net.last_confirmed_per_peer[r_net.local_slot])
+	if actual_target != expected_target:
+		print("FAIL: Delay ratchet lead did not return to BASE_DELAY! actual=%d expected=%d" % [actual_target, expected_target])
+		failures += 1
+	else:
+		print("PASS: Delay ratchet returned lead to current_tick + BASE_DELAY (%d == %d)" % [actual_target, expected_target])
+
+	# -------------------------------------------------------------------------
+	# 9. Unit Test: Epoch Wrap & Stale Epoch Filtering (NET-05)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 9: Epoch Filtering & 63->0 Wrap (NET-05) ---")
+	var e_net := RollbackNet.new()
+	e_net.board_epoch = 63
+	e_net.reset_for_new_board()
+	if e_net.board_epoch != 0:
+		print("FAIL: board_epoch 63 did not wrap to 0! got %d" % e_net.board_epoch)
+		failures += 1
+	else:
+		print("PASS: board_epoch 63 wrapped to 0")
+
+	# Stale epoch input packet ignored
+	var stale_input := PackedByteArray()
+	stale_input.resize(20 + 16)
+	stale_input[0] = RollbackNet.PKT_INPUT_TICK
+	stale_input[1] = (((e_net.board_epoch + 1) & 0x3F) << 2) | 1
+	RollbackNet.encode_be32(stale_input, 4, 10)
+	RollbackNet.encode_be32(stale_input, 8, 10)
+	e_net._handle_input_tick(stale_input, 1)
+	if e_net.input_history[1].has(10):
+		print("FAIL: Stale epoch input packet was accepted into input_history!")
+		failures += 1
+	else:
+		print("PASS: Stale epoch input packet was discarded")
+
+	# -------------------------------------------------------------------------
+	# 10. Integration Test: Hash-Mismatch Abort (NET-12 / 1.3)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 10: Hash-Mismatch Abort (NET-12) ---")
+	var h_net1 := RollbackNet.new()
+	var h_net2 := RollbackNet.new()
+	h_net1.num_players = 2
+	h_net2.num_players = 2
+	var desync_count1 := [0]
+	var desync_count2 := [0]
+	h_net1.desync_detected.connect(func(_t, _l, _r): desync_count1[0] += 1)
+	h_net2.desync_detected.connect(func(_t, _l, _r): desync_count2[0] += 1)
+
+	# Simulate meta confirm with tick 200, hashes 0x1111 vs 0x2222
+	h_net1.local_slot = 0
+	h_net2.local_slot = 1
+	h_net1.send_meta_confirm(200, 0x1111)
+	h_net2.send_meta_confirm(200, 0x2222)
+
+	# Pass packets to opposite peers
+	var pkt_from_1 := PackedByteArray()
+	pkt_from_1.resize(10)
+	pkt_from_1[0] = RollbackNet.PKT_META_CONFIRM
+	pkt_from_1[1] = (0 << 2) | 0
+	RollbackNet.encode_be32(pkt_from_1, 2, 200)
+	RollbackNet.encode_be32(pkt_from_1, 6, 0x1111)
+
+	var pkt_from_2 := PackedByteArray()
+	pkt_from_2.resize(10)
+	pkt_from_2[0] = RollbackNet.PKT_META_CONFIRM
+	pkt_from_2[1] = (0 << 2) | 1
+	RollbackNet.encode_be32(pkt_from_2, 2, 200)
+	RollbackNet.encode_be32(pkt_from_2, 6, 0x2222)
+
+	h_net1._handle_meta_confirm(pkt_from_2, 1)
+	h_net2._handle_meta_confirm(pkt_from_1, 0)
+
+	if h_net1.all_meta_confirmed() or h_net2.all_meta_confirmed():
+		print("FAIL: all_meta_confirmed() returned true on hash mismatch!")
+		failures += 1
+	else:
+		print("PASS: all_meta_confirmed() returned false on hash mismatch")
+
+	if desync_count1[0] != 1 or desync_count2[0] != 1:
+		print("FAIL: desync_detected did not fire once per peer! p1=%d p2=%d" % [desync_count1[0], desync_count2[0]])
+		failures += 1
+	else:
+		print("PASS: desync_detected fired once per peer on hash mismatch")
+
 	print("==================================================================")
 	if failures == 0:
 		print("EDGE CASES TEST: PASS (All join code, disconnect, and drop tests passed!)")
