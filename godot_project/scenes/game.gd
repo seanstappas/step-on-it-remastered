@@ -1195,7 +1195,7 @@ func _ready() -> void:
 		_alt_lives = [3, 3]; _alt_ammo = [[1, 1], [1, 1]]; _alt_score = [0, 0]; _alt_active = 0
 	if Session.is_online and Session.net != null:
 		_net = Session.net
-		_net.reset()
+		_net.reset_for_match_start()
 		_net.desync_detected.connect(func(tick: int, lhash: int, rhash: int) -> void:
 			print("DESYNC DETECTED at tick %d: local=%X remote=%X" % [tick, lhash, rhash]))
 		_net.peer_disconnected.connect(func(slot: int) -> void:

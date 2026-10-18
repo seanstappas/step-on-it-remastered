@@ -200,6 +200,16 @@ func reset() -> void:
 		snapshot_ring[i] = PackedByteArray()
 
 
+func reset_for_match_start() -> void:
+	var was_active := match_active
+	var drops := dropped_peers.duplicate()
+	reset()
+	match_active = was_active
+	dropped_peers = drops
+	for d in dropped_peers.keys():
+		peer_drop_tick[int(d)] = 0
+
+
 func reset_for_new_board() -> void:
 	var saved_drops: Dictionary = dropped_peers.duplicate()
 	var next_epoch: int = (board_epoch + 1) & 0x3F
@@ -271,10 +281,10 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 		return
 	local_slot = 0
 	board_epoch = 0
-	match_active = true
 	dropped_peers.clear()
 	peer_drop_tick.clear()
 	meta_confirmed_peers.clear()
+	match_active = true
 	var peers := enet.get_peers()
 	print("send_match_init: peers=%d blen=%d mode=%d rule=%d ff=%d" % [peers.size(), bord_bytes.size(), mode, victory_rule, friendly_fire])
 	var s := _get_session()
@@ -447,27 +457,28 @@ func poll_network(time_now_sec: float) -> void:
 			peer_instances.erase(pid)
 			peer_to_obj.erase(pid)
 			if slot >= 0:
-				dropped_peers[slot] = true
-				var last_t: int = int(last_confirmed_per_peer[slot])
-				var drop_t: int = maxi(0, last_t + 1)
-				peer_drop_tick[slot] = drop_t
-				if drop_t < current_tick:
-					if earliest_mispredicted_tick == -1 or drop_t < earliest_mispredicted_tick:
-						earliest_mispredicted_tick = drop_t
-				for tk in range(drop_t, current_tick + BASE_DELAY + 1):
-					input_history[slot][tk] = 0
-					input_confirmed[slot][tk] = true
-				_update_last_confirmed_tick()
-				if is_host:
-					var drop_pkt := PackedByteArray()
-					drop_pkt.resize(2 + 4 + RING_BUFFER_SIZE)
-					drop_pkt[0] = PKT_DROP_PEER
-					drop_pkt[1] = slot
-					encode_be32(drop_pkt, 2, drop_t)
-					for k in range(RING_BUFFER_SIZE):
-						var tk: int = drop_t - 1 - k
-						drop_pkt[6 + k] = (int(input_history[slot].get(tk, 0)) & 0x7F) if tk >= 0 else 0
-					_broadcast_packet(drop_pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
+				if match_active:
+					dropped_peers[slot] = true
+					var last_t: int = int(last_confirmed_per_peer[slot])
+					var drop_t: int = maxi(0, last_t + 1)
+					peer_drop_tick[slot] = drop_t
+					if drop_t < current_tick:
+						if earliest_mispredicted_tick == -1 or drop_t < earliest_mispredicted_tick:
+							earliest_mispredicted_tick = drop_t
+					for tk in range(drop_t, current_tick + BASE_DELAY + 1):
+						input_history[slot][tk] = 0
+						input_confirmed[slot][tk] = true
+					_update_last_confirmed_tick()
+					if is_host:
+						var drop_pkt := PackedByteArray()
+						drop_pkt.resize(2 + 4 + RING_BUFFER_SIZE)
+						drop_pkt[0] = PKT_DROP_PEER
+						drop_pkt[1] = slot
+						encode_be32(drop_pkt, 2, drop_t)
+						for k in range(RING_BUFFER_SIZE):
+							var tk: int = drop_t - 1 - k
+							drop_pkt[6 + k] = (int(input_history[slot].get(tk, 0)) & 0x7F) if tk >= 0 else 0
+						_broadcast_packet(drop_pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
 				peer_disconnected.emit(slot)
 		elif event_type == ENetConnection.EVENT_RECEIVE:
 			var pkt: PackedByteArray = peer.get_packet()

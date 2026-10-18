@@ -414,6 +414,7 @@ func _ready() -> void:
 	)
 
 	# Simulate P2 dropping
+	net_2p_host.match_active = true
 	net_2p_client.close()
 
 	for attempt in range(50):
@@ -471,6 +472,7 @@ func _ready() -> void:
 	)
 
 	# Host disconnects
+	client_c.match_active = true
 	host_h.close()
 
 	for attempt in range(50):
@@ -594,6 +596,112 @@ func _ready() -> void:
 
 	t0_net1.close()
 	t0_net2.close()
+
+	# -------------------------------------------------------------------------
+	# 6. Integration Test: Lobby Disconnect & Match-Active Gating (NET-11/NET-06)
+	# -------------------------------------------------------------------------
+	print("\n--- Test Suite 6: Lobby Disconnect & Match-Active Gating ---")
+	var l_host := RollbackNet.new()
+	var l_client := RollbackNet.new()
+	l_host.num_players = 2
+	l_client.num_players = 2
+	var port_l := 7785
+	l_host.start_host(port_l, 2)
+	l_client.start_client("127.0.0.1", port_l)
+	for attempt in range(100):
+		sim_time += 0.016
+		l_host.poll_network(sim_time)
+		l_client.poll_network(sim_time)
+		OS.delay_msec(5)
+		if l_host.get_connected_player_count() >= 2:
+			break
+	# (a) Disconnect while in lobby (match_active == false)
+	l_client.close()
+	for attempt in range(50):
+		sim_time += 0.016
+		l_host.poll_network(sim_time)
+		OS.delay_msec(2)
+		if l_host.get_connected_player_count() == 1:
+			break
+	if not l_host.dropped_peers.is_empty():
+		print("FAIL: Lobby disconnect added to dropped_peers: %s" % str(l_host.dropped_peers))
+		failures += 1
+	else:
+		print("PASS: Lobby disconnect left dropped_peers empty")
+
+	l_host.close()
+
+	# (b) After MATCH_INIT and mid-match drop in 3P, stray client is refused and slot stays dropped
+	var m_host := RollbackNet.new()
+	var m_c2 := RollbackNet.new()
+	var m_c3 := RollbackNet.new()
+	m_host.num_players = 3
+	m_c2.num_players = 3
+	m_c3.num_players = 3
+	var port_m := 7786
+	m_host.start_host(port_m, 3)
+	m_c2.start_client("127.0.0.1", port_m)
+	m_c3.start_client("127.0.0.1", port_m)
+	for attempt in range(100):
+		sim_time += 0.016
+		m_host.poll_network(sim_time)
+		m_c2.poll_network(sim_time)
+		m_c3.poll_network(sim_time)
+		OS.delay_msec(5)
+		if m_host.get_connected_player_count() >= 3:
+			break
+	var m_ready := [false, false]
+	m_c2.match_started.connect(func(_b, _s, _sp, _np, _m, _sl): m_ready[0] = true)
+	m_c3.match_started.connect(func(_b, _s, _sp, _np, _m, _sl): m_ready[1] = true)
+	m_host.send_match_init(bord_bytes, 777, 2, 0)
+	for attempt in range(100):
+		sim_time += 0.016
+		m_host.poll_network(sim_time)
+		m_c2.poll_network(sim_time)
+		m_c3.poll_network(sim_time)
+		OS.delay_msec(5)
+		if m_ready[0] and m_ready[1]:
+			break
+
+	# P3 drops mid-match
+	m_c3.close()
+	for attempt in range(50):
+		sim_time += 0.016
+		m_host.poll_network(sim_time)
+		OS.delay_msec(2)
+		if m_host.dropped_peers.has(2):
+			break
+
+	if not m_host.dropped_peers.has(2):
+		print("FAIL: Mid-match drop did not record dropped_peers[2]")
+		failures += 1
+	else:
+		print("PASS: Mid-match drop recorded dropped_peers[2]")
+
+	# New client tries to connect to host while match is active
+	var m_c4 := RollbackNet.new()
+	m_c4.start_client("127.0.0.1", port_m)
+	for attempt in range(50):
+		sim_time += 0.016
+		m_host.poll_network(sim_time)
+		m_c4.poll_network(sim_time)
+		OS.delay_msec(2)
+
+	if m_host.peer_instances.size() > 1:
+		print("FAIL: Stray client was accepted into active match! peer_instances=%s" % str(m_host.peer_instances))
+		failures += 1
+	else:
+		print("PASS: Stray client refused during active match")
+
+	if not m_host.dropped_peers.has(2):
+		print("FAIL: Slot 2 un-dropped by stray client connect!")
+		failures += 1
+	else:
+		print("PASS: Slot 2 stayed dropped")
+
+	m_c4.close()
+	m_c2.close()
+	m_host.close()
 
 	print("==================================================================")
 	if failures == 0:
