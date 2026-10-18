@@ -1,0 +1,19 @@
+name: Verify
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  verify:
+    runs-on: [ self-hosted, windows ]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run verify gate
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools/verify.ps1

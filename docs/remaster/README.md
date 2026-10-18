@@ -26,13 +26,15 @@ reproducibility check, and a fixture-replay selftest against `board_401`).
 ## Build, run & verify
 
 ```
-powershell -ExecutionPolicy Bypass -File tools/verify.ps1      # the gate: 6 stages must PASS
+powershell -ExecutionPolicy Bypass -File tools/verify.ps1      # the gate: 16 stages must PASS
 ```
 
-Stages: core mechanic tests → core harness + determinism → fixture-replay selftest → GDExtension
-build → clean Godot import → rendered `--shot` screenshot. Run it after any core / bridge / GDScript
-change. To play: `.\play.ps1` (REMASTERED + music, window sized to the monitor), or open
-`godot_project/` in Godot 4.3 and press F5 (or `"<Godot>" --path godot_project`).
+Stages: core mechanic tests → core harness + determinism → rollback synctest → fixture-replay
+selftest → creeper chain simulation → ascii2bord unit tests → ascii2bord roundtrip → 3D sprite frames →
+GDExtension build → clean Godot import → rendered `--shot` screenshot → rollback soak test → 3-player
+adversarial soak → net edge cases & peer drops → online progression & retry sync → map editor self-test.
+Run it after any core / bridge / GDScript change. To play: `.\play.ps1` (REMASTERED + music, window sized
+to the monitor), or open `godot_project/` in Godot 4.3 and press F5 (or `"<Godot>" --path godot_project`).
 
 **Controls** — P1: arrows + Z (block-high) / X (block-low) / C (arrow) / V (ball); P2: WASD + F/G/H/J.
 **F2** switches the whole presentation live (title menu + in game): **ORIGINAL** = SD sprites/PICTs,
@@ -128,8 +130,9 @@ turrets, Magic Arrow/Ball, goodies + scoring + the bonus tally, colored key/door
 game-over, and 1–3 player Cooperate / Compete / Alternate modes — all gated. Presentation work
 (HD/AI sprites & art, music, SFX, win animations, hidden capture) is ongoing.
 
-**Not yet built** (in scope per `plan/`, currently unrealized): online 2-player **netcode** (WebRTC
-lockstep) and the in-engine **map editor**. The port is local-only today, with deterministic replay
-(the `serialize` / `state_hash` ABI is the netcode/verification foundation). See
+**Built & Gated**: Online 2–3 player rollback **netcode** (`scenes/rollback_net.gd` with UDP/relay,
+monotonically scheduled inputs, tick-0 drop handling, progression sync, and retry support) and the
+in-engine **map editor** (`scenes/editor.gd` with paint direction, EXT1 chunk support, multi-controller
+claim, and playtesting). Both are fully gated in `tools/verify.ps1`. See
 [`../../plan/REMASTER_PROMPTS.md`](../../plan/REMASTER_PROMPTS.md) for the parallel remaster tasks and
 [`../../plan/MASTER_PLAN.md`](../../plan/MASTER_PLAN.md) for the architecture/determinism contract.

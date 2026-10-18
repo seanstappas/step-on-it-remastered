@@ -1,15 +1,15 @@
 # Remaining Work — Step On It! Remaster (RE accuracy)
 
-_Last updated: 2026-09-28 (round 13: the user's play-test feedback, §D)._
+_Last updated: 2026-10-18 (round 14: Rollback Netcode, Map Editor & Velopack Distribution)._
 
 ## Status
 The port is **comprehensively faithful** and all 152 boards are winnable. Player animation, core
 physics (run/jump/fall/build), audio SFX coverage, death/respawn, blocks, goodies, and the enemy
 behaviours have been audited against the decompiled asm and fixed. **All A/B gameplay items are now
-shipped** (enemy fall-death, cannon/spawner reload, wheelie wall-follow, hammer choreography, creeper);
-what remains (§C, §D2) is **cosmetic polish or an external emulator confirmation** — none affect
-gameplay or winnability. All three gates are green (mechanics / 152-winnable / determinism
-`0xc677624ae3878b5e`).
+shipped** (enemy fall-death, cannon/spawner reload, wheelie wall-follow, hammer choreography, creeper).
+Online rollback netcode (UDP/relay with monotonic inputs, peer drops, progression sync), in-engine map
+editor with EXT1 chunk support, and self-updating Windows distribution via Velopack are fully built and gated.
+All 16 stages of `tools/verify.ps1` are green.
 
 ## Working setup & how to verify
 - **Core (C)**: `core/src/*.c` -> compiled by zig into `soi_bridge.dll`.
@@ -434,6 +434,23 @@ style globals: `+0x69fc` = `DAT_1003ab6c` (Compete), `+0x69fe` = `DAT_1003ab6e` 
   runout costs 2 pool lives; Alternate hand-off; Compete two-row HUD on board 1001; challenge fail on
   board 470 ("Nothing!", stats restored, Board#071 next); challenge success on the crafted
   `tools/verify_scripts/board_9410.bord` (warp -> rewards, score 500 + 2932 x 3 = 9296, no reward).
+
+---
+
+## E. Online Netcode, Map Editor & Auto-Updating Distribution — ✅ SHIPPED (2026-10-18)
+
+- **E1. Monotonic Rollback Netcode (`scenes/rollback_net.gd`):**
+  - Monotonic tick scheduling (`target_tick = max(current_tick + BASE_DELAY, last_scheduled_tick + 1)`) prevents tick overwrite on dynamic RTT decreases.
+  - Deterministic peer drop handling binds drops to `peer_drop_tick = last_confirmed_tick + 1` across live and resimulation ticks.
+  - Match init and progression synchronizes campaign boards, board advancement, and retries.
+  - Gated across 4 automated network soak and edge case suites (`tools/test_net_*.ps1`).
+- **E2. In-Engine Map Editor (`scenes/editor.gd`):**
+  - Full brush palettes including 19 enemy types (`scenes/enemy_defs.gd`), facing-direction painting, EXT1 chunk preservation, and custom map playtesting with multi-controller claim.
+  - Headless CLI verification mode (`res://scenes/editor.tscn -- --test-editor`).
+- **E3. Velopack Self-Updating Windows Distribution:**
+  - Official Godot 4.3 Windows Release export template with split `.pck` packaging.
+  - Native C launcher (`tools/launcher/launcher.c`) running update checks with 5-second timeouts and mutex guards.
+  - Local packaging, delta generation (< 5 MB), installation, and post-update smoke test runner (`tools/test_velopack_local.ps1`).
 
 ---
 

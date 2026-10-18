@@ -7,27 +7,44 @@ code, so regressions are caught in one shot. Safe to run repeatedly.
 Stages:
   1. core: mechanic unit tests          (tests/test_mechanics.c)
   2. core: harness + determinism        (tests/harness.c)
-  3. core: fixture-replay selftest       (tools/fixture_replay.py vs board_401)
-  4. core: creeper chain simulation      (tools/verify_creepers.c over every Creeper board)
-  5. art: 3D sprite frames               (tools/soi3d/framematch.py --check: published sets vs the SD frames)
-  6. bridge: GDExtension build           (bridge/build_zig.ps1)
-  7. godot: import clean                 (headless editor import, no script errors)
-  8. godot: run + screenshot             (--shot render, off-screen -> media/screenshots/; no popup)
+  3. core: rollback synctest            (tests/test_synctest.c over 152 boards)
+  4. core: fixture-replay selftest       (tools/fixture_replay.py vs board_401)
+  5. core: creeper chain simulation      (tools/verify_creepers.c over every Creeper board)
+  6. tools: ascii2bord unit tests        (tools/test_ascii2bord.py)
+  7. tools: ascii2bord 152-board rt      (tools/ascii2bord.py 152-board byte-exact roundtrip)
+  8. art: 3D sprite frames               (tools/soi3d/framematch.py --check: published sets vs SD frames)
+  9. bridge: GDExtension build           (bridge/build_zig.ps1)
+  10. godot: import clean                (headless editor import, no script errors)
+  11. godot: run + screenshot            (--shot render, off-screen -> media/screenshots/)
+  12. net: rollback soak test            (120ms lag, 30ms jitter)
+  13. net: 3-player adversarial soak     (random fuzz inputs, rollback desync detection)
+  14. net: edge cases & peer disconnect  (tick-0 drops, version mismatch, gating)
+  15. net: online progression & retry    (board advances, retry sync)
+  16. editor: headless map editor        (--test-editor self-test)
+  (optional: -TestPackaging runs Velopack build, delta, install, and smoke test)
 
-Godot stages are skipped automatically if the editor isn't present (or -SkipGodot).
-
-Usage (from repo root):  powershell -File tools/verify.ps1
+Usage (from repo root):  powershell -File tools/verify.ps1 [-TestPackaging]
 #>
 param(
     [string]$Zig   = 'D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe',
     [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe',
-    [switch]$SkipGodot
+    [switch]$SkipGodot,
+    [switch]$TestPackaging
 )
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 $script:fail = 0
+
+$Py = 'py'
+if (-not (Get-Command 'py' -ErrorAction SilentlyContinue)) {
+    if (Test-Path '.venv\Scripts\python.exe') {
+        $Py = (Resolve-Path '.venv\Scripts\python.exe').Path
+    } elseif (Get-Command 'python' -ErrorAction SilentlyContinue) {
+        $Py = 'python'
+    }
+}
 
 if ($Godot -notmatch '_console\.exe$' -and (Test-Path ($Godot -replace '\.exe$', '_console.exe'))) {
     $Godot = $Godot -replace '\.exe$', '_console.exe'
@@ -74,7 +91,7 @@ Stage 'core: fixture-replay selftest' {
         Write-Host '   (no extracted board_401.bord -- run tools/extract_assets.py first)' -ForegroundColor Yellow
         return $false
     }
-    $out = & py tools/fixture_replay.py --lib soi_core.dll --bord extracted/levels/board_401.bord --selftest
+    $out = & $Py tools/fixture_replay.py --lib soi_core.dll --bord extracted/levels/board_401.bord --selftest
     [bool]($out -match 'SELFTEST: PASS')
 }
 
@@ -92,13 +109,18 @@ Stage 'core: creeper chain simulation' {
     [bool]($code -eq 0 -and ($out -match ' 0 FAILED'))
 }
 
+Stage 'tools: ascii2bord unit tests' {
+    $out = & $Py tools/test_ascii2bord.py
+    [bool]($LASTEXITCODE -eq 0 -and ($out -match 'ALL ASSERTS PASSED'))
+}
+
 Stage 'tools: ascii2bord 152-board byte-exact roundtrip' {
-    $out = & py tools/ascii2bord.py verify-roundtrip extracted/levels
+    $out = & $Py tools/ascii2bord.py verify-roundtrip extracted/levels
     [bool]($LASTEXITCODE -eq 0 -and ($out -match '152 passed, 0 failed'))
 }
 
 Stage 'art: 3D sprite frames' {
-    $out = & py tools/soi3d/framematch.py --check
+    $out = & $Py tools/soi3d/framematch.py --check
     $code = $LASTEXITCODE
     $out | Where-Object { $_ -match '^(verify|check: (STRAY|PASS|FAIL))' } | ForEach-Object { Write-Host "   $_" }
     [bool]($code -eq 0 -and ($out -match '^check: PASS'))
@@ -150,6 +172,18 @@ if (-not $SkipGodot -and (Test-Path $Godot)) {
     }
 } else {
     Write-Host '==> godot stages skipped (editor not found or -SkipGodot)' -ForegroundColor Yellow
+}
+
+if ($TestPackaging) {
+    Stage 'package: velopack local packaging and update test' {
+        $pkgOut = & powershell -ExecutionPolicy Bypass -File (Join-Path $root 'tools/test_velopack_local.ps1') 2>&1
+        $code = $LASTEXITCODE
+        $pass = [bool]($code -eq 0 -and ($pkgOut -match 'VELOPACK LOCAL PACKAGING & DELTA TEST: ALL PASS'))
+        if (-not $pass) {
+            $pkgOut | Select-Object -Last 10 | ForEach-Object { Write-Host "   $_" }
+        }
+        $pass
+    }
 }
 
 Pop-Location

@@ -7,7 +7,7 @@ a **Godot 4.3 / GDScript** front-end (`godot_project/`) with a retro ↔ remaste
 Personal preservation project.
 
 > **Status: playable.** The C core, the GDExtension bridge, and the Godot front-end all build and pass
-> the one-command gate ([tools/verify.ps1](tools/verify.ps1) — 6 stages). Gameplay is faithful to the
+> the one-command gate ([tools/verify.ps1](tools/verify.ps1) — 16 stages). Gameplay is faithful to the
 > decompiled original (movement, the full enemy roster, weapons, scoring, win/lose, and 1–3 player
 > co-op / compete / alternate); the presentation is being remastered (HD/AI sprites & full-screen art,
 > per-screen music, cleaned SFX, the extracted win animations). RE findings are in [docs/](docs/); the
@@ -47,8 +47,10 @@ builds the C core **and** the GDExtension — no MSVC needed), **Godot 4.3**, Py
 powershell -ExecutionPolicy Bypass -File tools/verify.ps1
 ```
 
-Six stages must PASS: core mechanic unit tests, core harness + determinism, fixture-replay selftest,
-the GDExtension build, a clean Godot import, and a rendered `--shot` screenshot.
+Sixteen stages must PASS: core mechanic unit tests, core harness + determinism, rollback synctest,
+fixture-replay selftest, creeper chain simulation, ascii2bord unit tests, ascii2bord roundtrip, 3D sprite frames,
+the GDExtension build, clean Godot import, rendered `--shot` screenshot, rollback soak test, 3-player
+adversarial soak, net edge cases & peer drops, online progression & retry sync, and headless map editor self-test.
 
 **Play:** `.\play.ps1` (starts REMASTERED with music on, window sized to your monitor), or open
 `godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
