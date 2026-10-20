@@ -144,11 +144,12 @@ if (-not $SkipGodot -and (Test-Path $Godot)) {
         -not [bool]($out -match 'SCRIPT ERROR|Compilation failed')
     }
     Stage 'godot: run + screenshot' {
+        $t0 = Get-Date
         & $Godot --path godot_project --resolution 640x480 --position 9000,9000 -- --shot 2>&1 | Out-Null
         # success = the --shot harness archived a fresh screenshot
-        $latest = Get-ChildItem 'media/screenshots/*.png' -ErrorAction SilentlyContinue |
+        $latest = Get-ChildItem 'media/screenshots/shot_*.png' -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        [bool]($latest) -and ($latest.LastWriteTime -gt (Get-Date).AddMinutes(-3))
+        [bool]($latest) -and ($latest.LastWriteTime -ge $t0.AddSeconds(-5))
     }
     Stage 'net: rollback soak test (120ms lag, 30ms jitter)' {
         $soakOut = & powershell -File (Join-Path $root 'tools/test_net_soak.ps1') -Godot $Godot

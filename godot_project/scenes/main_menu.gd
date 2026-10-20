@@ -1,4 +1,7 @@
 extends Control
+
+const MacMenuPopup = preload("res://scenes/mac_menu.gd")
+const MacMenuButton = preload("res://scenes/mac_menu_button.gd")
 ## main_menu.gd — the title screen / main menu, faithful to the original (PICT
 ## 401_Title) with a Mac-style menu bar (File / Sound / Options / Help) and the
 ## Start buttons. Picks the player count (incl. the remaster's 3rd co-op player)
@@ -18,14 +21,15 @@ var _overlay_idx := 0
 var _hd := false   # REMASTERED presentation: prefer extracted/pict_hd_v2|pict_hd (linear-filtered)
 var _bg: TextureRect = null           # the title art (re-textured on an F2 switch)
 var _view_label: Label = null         # "F2: ORIGINAL / REMASTERED" status in the bottom strip
-var _music_menu: PopupMenu = null
-var _speed_menu: PopupMenu = null
-var _sfx_menu: PopupMenu = null
-var _mvol_menu: PopupMenu = null
+var _music_menu: MacMenuPopup = null
+var _speed_menu: MacMenuPopup = null
+var _sfx_menu: MacMenuPopup = null
+var _mvol_menu: MacMenuPopup = null
 var _menushot := -1
 var _menushot_dialog := false
 var _menushot_file := false
-var _mb_file: MenuButton = null
+var _mb_file: MacMenuButton = null
+var _menu_overlay: Control = null
 var _starting_board_dialog: Control = null
 var _selected_starting_board := 401
 var _splash: Control = null
@@ -45,6 +49,8 @@ func _pict(pict_name: String) -> Texture2D:
 	return null
 
 func _ready() -> void:
+	get_tree().root.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+
 	_apply_window_mode()
 	Session.init_presentation()   # ORIGINAL, or REMASTERED when launched with --3d / --hd
 	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
@@ -195,6 +201,15 @@ func _build_menu_bar() -> void:
 	bar_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bar_line)
 
+	var menu_overlay := Control.new()
+	menu_overlay.name = "MenuOverlay"
+	menu_overlay.position = Vector2.ZERO
+	menu_overlay.size = Vector2(640, 480)
+	menu_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu_overlay.z_index = 100
+	add_child(menu_overlay)
+	_menu_overlay = menu_overlay
+
 	var bar := HBoxContainer.new()
 	bar.position = Vector2(8, 0)
 	bar.size = Vector2(624, 19)
@@ -253,7 +268,9 @@ func _build_menu_bar() -> void:
 	pop_options.set_item_disabled(pop_options.get_item_index(3), true)
 	pop_options.add_separator()
 
-	var pop_speed := PopupMenu.new()
+	var pop_speed := MacMenuPopup.new()
+	pop_speed.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop_speed)
 	pop_speed.name = "SpeedMenu"
 	_style_mac_popup(pop_speed)
 	var speed_names := ["Really Fast", "Fast", "Medium", "Slow"]
@@ -261,7 +278,6 @@ func _build_menu_bar() -> void:
 		pop_speed.add_radio_check_item(speed_names[i], 10 + i)
 	pop_speed.set_item_checked(pop_speed.get_item_index(10 + clampi(Session.speed, 0, 3)), true)
 	pop_speed.id_pressed.connect(_on_speed_menu)
-	pop_options.add_child(pop_speed)
 	pop_options.add_submenu_node_item("Speed", pop_speed)
 	_speed_menu = pop_speed
 
@@ -276,7 +292,9 @@ func _build_menu_bar() -> void:
 	var mb_sound := _create_mac_menu(bar, "Sound")
 	var pop_sound := mb_sound.get_popup()
 
-	var pop_music := PopupMenu.new()
+	var pop_music := MacMenuPopup.new()
+	pop_music.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop_music)
 	pop_music.name = "MusicMenu"
 	_style_mac_popup(pop_music)
 	var mus_names := ["Full Music", "Light Music", "No Music"]
@@ -287,11 +305,12 @@ func _build_menu_bar() -> void:
 		mus_mode = 1 if (Audio.has_method("is_music_light") and Audio.is_music_light()) else 0
 	pop_music.set_item_checked(pop_music.get_item_index(30 + mus_mode), true)
 	pop_music.id_pressed.connect(_on_sound_music_menu)
-	pop_sound.add_child(pop_music)
 	pop_sound.add_submenu_node_item("Music", pop_music)
 	_music_menu = pop_music
 
-	var pop_sfx := PopupMenu.new()
+	var pop_sfx := MacMenuPopup.new()
+	pop_sfx.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop_sfx)
 	pop_sfx.name = "SfxMenu"
 	_style_mac_popup(pop_sfx)
 	var vol_names := ["Full", "Medium", "Quiet", "Off"]
@@ -299,18 +318,18 @@ func _build_menu_bar() -> void:
 		pop_sfx.add_radio_check_item(vol_names[i], 20 + i)
 	pop_sfx.set_item_checked(pop_sfx.get_item_index(20), true)
 	pop_sfx.id_pressed.connect(_on_sound_sfx_menu)
-	pop_sound.add_child(pop_sfx)
 	pop_sound.add_submenu_node_item("Effects Volume", pop_sfx)
 	_sfx_menu = pop_sfx
 
-	var pop_mvol := PopupMenu.new()
+	var pop_mvol := MacMenuPopup.new()
+	pop_mvol.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop_mvol)
 	pop_mvol.name = "MusVolMenu"
 	_style_mac_popup(pop_mvol)
 	for i in vol_names.size():
 		pop_mvol.add_radio_check_item(vol_names[i], 40 + i)
 	pop_mvol.set_item_checked(pop_mvol.get_item_index(40), true)
 	pop_mvol.id_pressed.connect(_on_sound_mvol_menu)
-	pop_sound.add_child(pop_mvol)
 	pop_sound.add_submenu_node_item("Music Volume", pop_mvol)
 	_mvol_menu = pop_mvol
 
@@ -336,16 +355,22 @@ func _get_chicago_font() -> Font:
 				_chicago_font = ff
 	return _chicago_font if _chicago_font != null else ThemeDB.fallback_font
 
-func _create_mac_menu(parent: Control, title: String, icon: Texture2D = null) -> MenuButton:
-	var mb := MenuButton.new()
+func _create_mac_menu(parent: Control, title: String, icon: Texture2D = null) -> MacMenuButton:
+	var mb := MacMenuButton.new()
+	var font := _get_chicago_font()
 	if icon != null:
-		mb.icon = icon
-		mb.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		mb.custom_minimum_size = Vector2(24, 19)
+		var tr := TextureRect.new()
+		tr.texture = icon
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.size = Vector2(14, 16)
+		tr.position = Vector2(6, 1)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		mb.add_child(tr)
+		mb.custom_minimum_size = Vector2(26, 19)
 	else:
 		mb.text = title
-	mb.flat = false
-	mb.switch_on_hover = true
 
 	var sb_norm := StyleBoxFlat.new()
 	sb_norm.bg_color = Color.TRANSPARENT
@@ -361,79 +386,28 @@ func _create_mac_menu(parent: Control, title: String, icon: Texture2D = null) ->
 	sb_act.content_margin_top = 0
 	sb_act.content_margin_bottom = 0
 
-	mb.add_theme_stylebox_override("normal", sb_norm)
-	mb.add_theme_stylebox_override("hover", sb_act)
-	mb.add_theme_stylebox_override("pressed", sb_act)
-	mb.add_theme_stylebox_override("disabled", sb_norm)
-	mb.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	mb.setup_styles(sb_norm, sb_act)
 	mb.add_theme_color_override("font_color", Color.BLACK)
-	mb.add_theme_color_override("font_hover_color", Color.WHITE)
+	mb.add_theme_color_override("font_hover_color", Color.BLACK)
 	mb.add_theme_color_override("font_pressed_color", Color.WHITE)
 	mb.add_theme_color_override("font_focus_color", Color.BLACK)
 	mb.add_theme_color_override("font_disabled_color", Color(0.53, 0.53, 0.53))
-	mb.add_theme_font_override("font", _get_chicago_font())
+	mb.add_theme_font_override("font", font)
 	mb.add_theme_font_size_override("font_size", 12)
 
-	var pop := mb.get_popup()
-	_style_mac_popup(pop)
-
-	# Keep the menu title highlighted in blue with crisp white text while open,
-	# and perfectly align the popup's top-left below the title button
-	pop.about_to_popup.connect(func() -> void:
-		mb.add_theme_stylebox_override("normal", sb_act)
-		mb.add_theme_color_override("font_color", Color.WHITE)
-		pop.position = Vector2i(int(mb.global_position.x), 20)
-	)
-	pop.popup_hide.connect(func() -> void:
-		mb.add_theme_stylebox_override("normal", sb_norm)
-		mb.add_theme_color_override("font_color", Color.BLACK)
-	)
+	var pop := MacMenuPopup.new()
+	pop.set_font(font, 12)
+	mb.set_popup(pop)
+	if _menu_overlay != null:
+		_menu_overlay.add_child(pop)
+	else:
+		add_child(pop)
 
 	parent.add_child(mb)
 	return mb
 
-func _style_mac_popup(pop: PopupMenu) -> void:
-	var p_panel := StyleBoxFlat.new()
-	p_panel.bg_color = Color(0.906, 0.906, 0.906)   # System 7 window grey #e7e7e7
-	p_panel.border_width_left = 1
-	p_panel.border_width_top = 1
-	p_panel.border_width_right = 1
-	p_panel.border_width_bottom = 1
-	p_panel.border_color = Color.BLACK
-	p_panel.shadow_color = Color.BLACK
-	p_panel.shadow_size = 2
-	p_panel.shadow_offset = Vector2(2, 2)
-	p_panel.corner_radius_top_left = 0
-	p_panel.corner_radius_top_right = 0
-	p_panel.corner_radius_bottom_right = 0
-	p_panel.corner_radius_bottom_left = 0
-	p_panel.content_margin_left = 12
-	p_panel.content_margin_right = 14
-	p_panel.content_margin_top = 4
-	p_panel.content_margin_bottom = 4
-
-	var p_hover := StyleBoxFlat.new()
-	p_hover.bg_color = Color(0.33, 0.33, 0.70)   # System 7 blue hover (#5454b3)
-	p_hover.corner_radius_top_left = 0
-	p_hover.corner_radius_top_right = 0
-	p_hover.corner_radius_bottom_right = 0
-	p_hover.corner_radius_bottom_left = 0
-	p_hover.content_margin_left = 6
-	p_hover.content_margin_right = 6
-
-	var p_sep := StyleBoxLine.new()
-	p_sep.color = Color(0.70, 0.70, 0.70)
-	p_sep.thickness = 1
-
-	pop.add_theme_stylebox_override("panel", p_panel)
-	pop.add_theme_stylebox_override("hover", p_hover)
-	pop.add_theme_stylebox_override("separator", p_sep)
-	pop.add_theme_color_override("font_color", Color.BLACK)
-	pop.add_theme_color_override("font_hover_color", Color.WHITE)
-	pop.add_theme_color_override("font_disabled_color", Color(0.53, 0.53, 0.53))
-	pop.add_theme_color_override("font_separator_color", Color(0.50, 0.50, 0.50))
-	pop.add_theme_font_override("font", _get_chicago_font())
-	pop.add_theme_font_size_override("font_size", 12)
+func _style_mac_popup(_pop: Variant) -> void:
+	pass
 
 func _build_buttons() -> void:
 	# a translucent strip along the bottom keeps the controls legible over the art
@@ -574,8 +548,9 @@ func _update_lobby_device_labels() -> void:
 
 
 func _open_offline_custom_map_dialog() -> void:
-	var pop := PopupMenu.new()
-	_style_mac_popup(pop)
+	var pop := MacMenuPopup.new()
+	pop.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop)
 	var dir := "user://custom_maps"
 	var maps: Array[String] = []
 	if DirAccess.dir_exists_absolute(dir):
@@ -629,8 +604,9 @@ func _open_offline_custom_map_dialog() -> void:
 
 
 func _open_custom_map_selector(btn: Button) -> void:
-	var pop := PopupMenu.new()
-	_style_mac_popup(pop)
+	var pop := MacMenuPopup.new()
+	pop.set_font(_get_chicago_font(), 12)
+	_menu_overlay.add_child(pop)
 	pop.add_item("Default Campaign", 0)
 	var dir := "user://custom_maps"
 	if DirAccess.dir_exists_absolute(dir):
