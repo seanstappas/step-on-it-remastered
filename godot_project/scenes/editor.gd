@@ -115,8 +115,51 @@ var status_msg: String = ""
 var status_timer: float = 0.0
 var _tex_cache: Dictionary = {}
 
+var remastered: bool = true
+var _sidebar_visible: bool = true
+var _sidebar_scroll_y: float = 0.0
+var _cat_collapsed: Dictionary = {}
+
+func _get_sidebar_width() -> float:
+	return 140.0 if _sidebar_visible else 0.0
+
+func _get_categories() -> Array[String]:
+	return ["Terrain", "Mechanics", "Goodies", "Doors", "Enemies", "Spawns"]
+
+func _get_category_brush_indices(cat_name: String) -> Array[int]:
+	var res: Array[int] = []
+	for i in range(BRUSHES.size()):
+		if BRUSHES[i]["cat"] == cat_name:
+			res.append(i)
+	return res
+
+func _get_sidebar_total_height() -> float:
+	var total := 0.0
+	for cat in _get_categories():
+		total += 20.0
+		if not _cat_collapsed.get(cat, false):
+			total += float(_get_category_brush_indices(cat).size() * 22)
+	return total
+
+func _apply_remastered(on: bool) -> void:
+	remastered = on
+	if Session != null:
+		Session.set_meta("editor_remastered", on)
+		Session.set_remastered(on)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if on else CanvasItem.TEXTURE_FILTER_NEAREST
+	_tex_cache.clear()
+	_folder_indices.clear()
+	queue_redraw()
+
 
 func _ready() -> void:
+	if Session:
+		Session.init_presentation()
+		if Session.has_meta("editor_remastered"):
+			remastered = bool(Session.get_meta("editor_remastered"))
+		else:
+			remastered = true
+	_apply_remastered(remastered)
 	if Session and Session.has_meta("editor_state"):
 		var st: Dictionary = Session.get_meta("editor_state")
 		Session.remove_meta("editor_state")
@@ -124,6 +167,10 @@ func _ready() -> void:
 	else:
 		_init_grid(grid_cols, grid_rows)
 	_check_cli_args()
+
+func _exit_tree() -> void:
+	_tex_cache.clear()
+	_folder_indices.clear()
 
 
 func _get_brush_folder(b: Dictionary) -> String:
@@ -195,20 +242,27 @@ var _folder_indices: Dictionary = {}
 func _get_sprite(folder: String, frame: int) -> Texture2D:
 	if folder == "":
 		return null
-	var key := "%s_%d" % [folder, frame]
-	if _tex_cache.has(key):
-		return _tex_cache[key]
-	if not _folder_indices.has(folder):
+	var cache_key := "%s_%d_%s" % [folder, frame, "hd" if remastered else "sd"]
+	if _tex_cache.has(cache_key):
+		return _tex_cache[cache_key]
+	var folder_key := "%s_%s" % [folder, "hd" if remastered else "sd"]
+	if not _folder_indices.has(folder_key):
 		var idx: Dictionary = {}
-		var dir_path := Session.ext_path("sprites/%s" % folder)
+		var dir_path := ""
+		if remastered:
+			var hd_cand := Session.ext_path("sprites_hd/%s" % folder) if Session != null else ProjectSettings.globalize_path("res://../extracted/sprites_hd/" + folder)
+			if DirAccess.dir_exists_absolute(hd_cand):
+				dir_path = hd_cand
+		if dir_path == "":
+			dir_path = Session.ext_path("sprites/%s" % folder) if Session != null else ProjectSettings.globalize_path("res://../extracted/sprites/" + folder)
 		var da := DirAccess.open(dir_path)
 		if da != null:
 			for f in da.get_files():
 				var m := _FRAME_RE.search(f)
 				if m != null:
 					idx[int(m.get_string(1))] = dir_path.path_join(f)
-		_folder_indices[folder] = idx
-	var fidx: Dictionary = _folder_indices[folder]
+		_folder_indices[folder_key] = idx
+	var fidx: Dictionary = _folder_indices[folder_key]
 	var target_frame: int = frame
 	if not fidx.has(target_frame):
 		for f in range(target_frame - 1, 0, -1):
@@ -224,10 +278,15 @@ func _get_sprite(folder: String, frame: int) -> Texture2D:
 	if path != "" and FileAccess.file_exists(path):
 		var img := Image.load_from_file(path)
 		if img != null:
+			if remastered and path.contains("sprites_hd"):
+				if img.get_format() != Image.FORMAT_RGBA8:
+					img.convert(Image.FORMAT_RGBA8)
+				img.fix_alpha_edges()
+				img.generate_mipmaps()
 			var tex := ImageTexture.create_from_image(img)
-			_tex_cache[key] = tex
+			_tex_cache[cache_key] = tex
 			return tex
-	_tex_cache[key] = null
+	_tex_cache[cache_key] = null
 	return null
 
 
@@ -297,6 +356,8 @@ func _save_editor_state() -> Dictionary:
 		"map_name": map_name,
 		"brush_idx": brush_idx,
 		"cursor_cell": cursor_cell,
+		"remastered": remastered,
+		"_sidebar_visible": _sidebar_visible,
 	}
 
 
@@ -328,6 +389,8 @@ func _restore_editor_state(st: Dictionary) -> void:
 		size_idx = 1
 	else:
 		size_idx = 0
+	_sidebar_visible = st.get("_sidebar_visible", _sidebar_visible)
+	_apply_remastered(st.get("remastered", remastered))
 	queue_redraw()
 
 
@@ -338,6 +401,19 @@ func _check_cli_args() -> void:
 		if arg == "--test-editor":
 			_run_self_test()
 			get_tree().quit(0)
+		elif arg == "--editorshot":
+			_take_editorshot()
+
+func _take_editorshot() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	var dir := ProjectSettings.globalize_path("res://../media/screenshots") if OS.has_feature("editor") else ProjectSettings.globalize_path("user://screenshots")
+	DirAccess.make_dir_recursive_absolute(dir)
+	img.save_png("%s/editor_palette_verified.png" % dir)
+	print("Saved editor screenshot: %s/editor_palette_verified.png" % dir)
+	get_tree().quit(0)
 
 
 func _check(cond: bool, msg: String) -> void:
@@ -516,29 +592,47 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_TAB:
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 			playtest_in_memory()
-			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_ESCAPE:
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 			get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
-			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_F2:
+			_apply_remastered(not remastered)
+			_set_status("Presentation: %s [F2]" % ("Remastered" if remastered else "Original"))
+			if get_viewport():
+				get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_B and not event.ctrl_pressed:
+			_sidebar_visible = not _sidebar_visible
+			_set_status("Palette: %s [B]" % ("Visible" if _sidebar_visible else "Hidden"))
+			queue_redraw()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_S and event.ctrl_pressed:
 			save_to_default_file()
-			get_viewport().set_input_as_handled()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_O and event.ctrl_pressed:
 			load_from_default_file()
-			get_viewport().set_input_as_handled()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif (event.keycode == KEY_G or event.keycode == KEY_C) and not event.ctrl_pressed:
 			cycle_canvas_size()
-			get_viewport().set_input_as_handled()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F and not event.ctrl_pressed:
 			_cycle_hovered_enemy_facing()
-			get_viewport().set_input_as_handled()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_P and not event.ctrl_pressed:
 			var max_p := 3 if has_p3 else 2
 			playtest_players = 1 if playtest_players >= max_p else playtest_players + 1
 			_set_status("Playtest players: %dP" % playtest_players)
 			queue_redraw()
-			get_viewport().set_input_as_handled()
+			if get_viewport():
+				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_BRACKETLEFT:
 			_set_brush(brush_idx - 1)
 		elif event.keycode == KEY_BRACKETRIGHT:
@@ -548,66 +642,106 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var sb_w := _get_sidebar_width()
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			is_mouse_down = event.pressed
 			if is_mouse_down:
 				if event.position.y < 48.0:
 					_handle_hud_click(event.position)
+				elif event.position.x < sb_w:
+					_handle_sidebar_click(event.position)
 				else:
 					_paint_at(event.position)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			is_right_mouse_down = event.pressed
-			if is_right_mouse_down and event.position.y >= 48.0:
+			if is_right_mouse_down and event.position.y >= 48.0 and event.position.x >= sb_w:
 				_erase_at(event.position)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-			_set_brush(brush_idx - 1)
+			if event.position.x < sb_w and event.position.y >= 48.0:
+				_sidebar_scroll_y = maxf(0.0, _sidebar_scroll_y - 44.0)
+				queue_redraw()
+			else:
+				_set_brush(brush_idx - 1)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-			_set_brush(brush_idx + 1)
+			if event.position.x < sb_w and event.position.y >= 48.0:
+				var max_s: float = maxf(0.0, _get_sidebar_total_height() - (get_viewport_rect().size.y - 48.0))
+				_sidebar_scroll_y = minf(max_s, _sidebar_scroll_y + 44.0)
+				queue_redraw()
+			else:
+				_set_brush(brush_idx + 1)
 	elif event is InputEventMouseMotion:
 		cursor_cell = _pos_to_cell(event.position)
 		hover_cell = cursor_cell
-		if is_mouse_down and event.position.y >= 48.0:
+		if is_mouse_down and event.position.y >= 48.0 and event.position.x >= sb_w:
 			_paint_at(event.position)
-		elif is_right_mouse_down and event.position.y >= 48.0:
+		elif is_right_mouse_down and event.position.y >= 48.0 and event.position.x >= sb_w:
 			_erase_at(event.position)
+
+
+func _handle_sidebar_click(pos: Vector2) -> void:
+	var rel_y := pos.y - 48.0 + _sidebar_scroll_y
+	var cur_y := 0.0
+	for cat in _get_categories():
+		if rel_y >= cur_y and rel_y < cur_y + 20.0:
+			_cat_collapsed[cat] = not _cat_collapsed.get(cat, false)
+			queue_redraw()
+			return
+		cur_y += 20.0
+		if not _cat_collapsed.get(cat, false):
+			var items := _get_category_brush_indices(cat)
+			for b_idx in items:
+				if rel_y >= cur_y and rel_y < cur_y + 22.0:
+					_set_brush(b_idx)
+					queue_redraw()
+					return
+				cur_y += 22.0
 
 
 func _handle_hud_click(pos: Vector2) -> void:
 	if pos.x < 245.0:
 		_set_brush(brush_idx + 1)
 	elif pos.y < 24.0:
-		if pos.x >= 248.0 and pos.x <= 320.0:
+		if pos.x >= 248.0 and pos.x <= 308.0:
 			cycle_canvas_size()
-		elif pos.x >= 324.0 and pos.x <= 372.0:
+		elif pos.x >= 312.0 and pos.x <= 356.0:
 			save_to_default_file()
-		elif pos.x >= 376.0 and pos.x <= 424.0:
+		elif pos.x >= 360.0 and pos.x <= 404.0:
 			load_from_default_file()
-		elif pos.x >= 428.0 and pos.x <= 496.0:
+		elif pos.x >= 408.0 and pos.x <= 476.0:
 			playtest_in_memory()
-		elif pos.x >= 500.0 and pos.x <= 548.0:
+		elif pos.x >= 480.0 and pos.x <= 524.0:
 			get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		elif pos.x >= 528.0 and pos.x <= 584.0:
+			_apply_remastered(not remastered)
+			_set_status("Presentation: %s [F2]" % ("Remastered" if remastered else "Original"))
+		elif pos.x >= 588.0 and pos.x <= 636.0:
+			_sidebar_visible = not _sidebar_visible
+			_set_status("Palette: %s [B]" % ("Visible" if _sidebar_visible else "Hidden"))
+			queue_redraw()
 	else:
-		if pos.x >= 248.0 and pos.x <= 316.0:
+		if pos.x >= 248.0 and pos.x <= 312.0:
 			default_mode = (default_mode + 1) % 3
 			var mnames := ["Co-op", "Compete", "Versus"]
 			_set_status("Mode: %s" % mnames[default_mode])
 			queue_redraw()
-		elif pos.x >= 320.0 and pos.x <= 388.0:
+		elif pos.x >= 316.0 and pos.x <= 384.0:
 			victory_rule = (victory_rule + 1) % 3
 			var rnames := ["Lives", "Score", "Door"]
 			_set_status("Rule: %s" % rnames[victory_rule])
 			queue_redraw()
-		elif pos.x >= 392.0 and pos.x <= 446.0:
+		elif pos.x >= 388.0 and pos.x <= 442.0:
 			friendly_fire = not friendly_fire
 			_set_status("Friendly Fire: %s" % ("On" if friendly_fire else "Off"))
 			queue_redraw()
-		elif pos.x >= 450.0 and pos.x <= 496.0:
+		elif pos.x >= 446.0 and pos.x <= 488.0:
 			starting_lives = (starting_lives % 9) + 1
 			_set_status("Starting Lives: %d" % starting_lives)
 			queue_redraw()
-		elif pos.x >= 500.0 and pos.x <= 558.0:
+		elif pos.x >= 492.0 and pos.x <= 546.0:
 			_cycle_hovered_enemy_facing()
+		elif pos.x >= 550.0 and pos.x <= 636.0:
+			_set_status("F2: HD/SD | B: Palette | Tab: Play")
 
 
 func _cycle_hovered_enemy_facing() -> void:
@@ -684,13 +818,14 @@ func _erase_at(pos: Vector2) -> void:
 
 func _pos_to_cell(pos: Vector2) -> Vector2i:
 	var hud_h := 48.0
-	if pos.y < hud_h:
+	var sb_w := _get_sidebar_width()
+	if pos.y < hud_h or pos.x < sb_w:
 		return Vector2i(-1, -1)
-	var playfield_w := float(get_viewport_rect().size.x)
+	var playfield_w := float(get_viewport_rect().size.x) - sb_w
 	var playfield_h := float(get_viewport_rect().size.y) - hud_h
 	var cell_w := playfield_w / float(grid_cols)
 	var cell_h := playfield_h / float(grid_rows)
-	var c := int(pos.x / cell_w)
+	var c := int((pos.x - sb_w) / cell_w)
 	var r := int((pos.y - hud_h) / cell_h)
 	return Vector2i(clampi(c, 0, grid_cols - 1), clampi(r, 0, grid_rows - 1))
 
@@ -698,6 +833,7 @@ func _pos_to_cell(pos: Vector2) -> Vector2i:
 func _draw() -> void:
 	var hud_h := 48.0
 	var vp_size := get_viewport_rect().size
+	var sb_w := _get_sidebar_width()
 
 	# 1. Draw HUD bar (2-row layout fitting within 640px width)
 	draw_rect(Rect2(0, 0, vp_size.x, hud_h), Color(0.12, 0.12, 0.16))
@@ -706,64 +842,150 @@ func _draw() -> void:
 	# Brush Info & Sprite Preview (x=8..244)
 	var cur_item: Dictionary = BRUSHES[brush_idx]
 	draw_string(font, Vector2(8, 19), "[%s] %s" % [cur_item["cat"], cur_item["name"]], HORIZONTAL_ALIGNMENT_LEFT, 236, 12, Color.YELLOW)
-	draw_string(font, Vector2(8, 38), "[1..9/Wheel/[]: Brush]", HORIZONTAL_ALIGNMENT_LEFT, 236, 10, Color(0.7, 0.7, 0.7))
+	draw_string(font, Vector2(8, 38), "[1..9/Wheel/[]/Click: Brush]", HORIZONTAL_ALIGNMENT_LEFT, 236, 10, Color(0.7, 0.7, 0.7))
 
-	# Row 1 (y=3..22): Size, Save, Load, Play, Exit
-	draw_rect(Rect2(248, 3, 72, 19), Color(0.22, 0.22, 0.28))
-	draw_rect(Rect2(248, 3, 72, 19), Color(0.4, 0.4, 0.5), false, 1.0)
+	# Row 1 (y=3..22): Size, Save, Load, Play, Exit, Remaster, Palette
+	draw_rect(Rect2(248, 3, 60, 19), Color(0.22, 0.22, 0.28))
+	draw_rect(Rect2(248, 3, 60, 19), Color(0.4, 0.4, 0.5), false, 1.0)
 	draw_string(font, Vector2(252, 16), "%dx%d [G]" % [grid_cols, grid_rows], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
-	draw_rect(Rect2(324, 3, 48, 19), Color(0.18, 0.28, 0.22))
-	draw_rect(Rect2(324, 3, 48, 19), Color(0.3, 0.5, 0.35), false, 1.0)
-	draw_string(font, Vector2(332, 16), "Save", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
+	draw_rect(Rect2(312, 3, 44, 19), Color(0.18, 0.28, 0.22))
+	draw_rect(Rect2(312, 3, 44, 19), Color(0.3, 0.5, 0.35), false, 1.0)
+	draw_string(font, Vector2(318, 16), "Save", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
 
-	draw_rect(Rect2(376, 3, 48, 19), Color(0.22, 0.22, 0.32))
-	draw_rect(Rect2(376, 3, 48, 19), Color(0.4, 0.4, 0.6), false, 1.0)
-	draw_string(font, Vector2(384, 16), "Load", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 0.8, 1.0))
+	draw_rect(Rect2(360, 3, 44, 19), Color(0.22, 0.22, 0.32))
+	draw_rect(Rect2(360, 3, 44, 19), Color(0.4, 0.4, 0.6), false, 1.0)
+	draw_string(font, Vector2(366, 16), "Load", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 0.8, 1.0))
 
-	draw_rect(Rect2(428, 3, 68, 19), Color(0.28, 0.22, 0.18))
-	draw_rect(Rect2(428, 3, 68, 19), Color(0.6, 0.45, 0.3), false, 1.0)
-	draw_string(font, Vector2(432, 16), "Play:%dP [Tab]" % playtest_players, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.9, 0.7))
+	draw_rect(Rect2(408, 3, 68, 19), Color(0.28, 0.22, 0.18))
+	draw_rect(Rect2(408, 3, 68, 19), Color(0.6, 0.45, 0.3), false, 1.0)
+	draw_string(font, Vector2(412, 16), "Play:%dP [Tab]" % playtest_players, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.9, 0.7))
 
-	draw_rect(Rect2(500, 3, 48, 19), Color(0.28, 0.18, 0.18))
-	draw_rect(Rect2(500, 3, 48, 19), Color(0.6, 0.3, 0.3), false, 1.0)
-	draw_string(font, Vector2(510, 16), "Exit", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 0.8))
+	draw_rect(Rect2(480, 3, 44, 19), Color(0.28, 0.18, 0.18))
+	draw_rect(Rect2(480, 3, 44, 19), Color(0.6, 0.3, 0.3), false, 1.0)
+	draw_string(font, Vector2(488, 16), "Exit", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 0.8))
 
-	# Row 2 (y=25..44): Mode, Rule, FF, Lives, Face
-	draw_rect(Rect2(248, 25, 68, 19), Color(0.2, 0.2, 0.3))
-	draw_rect(Rect2(248, 25, 68, 19), Color(0.4, 0.4, 0.6), false, 1.0)
+	# Remaster toggle button [F2]
+	draw_rect(Rect2(528, 3, 56, 19), Color(0.2, 0.28, 0.38) if remastered else Color(0.2, 0.2, 0.24))
+	draw_rect(Rect2(528, 3, 56, 19), Color(0.4, 0.6, 0.9) if remastered else Color(0.4, 0.4, 0.45), false, 1.0)
+	draw_string(font, Vector2(532, 16), "HD:ON" if remastered else "HD:OFF", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.7, 0.95, 1.0) if remastered else Color(0.7, 0.7, 0.7))
+
+	# Palette toggle button [B]
+	draw_rect(Rect2(588, 3, 48, 19), Color(0.22, 0.22, 0.28))
+	draw_rect(Rect2(588, 3, 48, 19), Color(0.45, 0.45, 0.55), false, 1.0)
+	draw_string(font, Vector2(592, 16), "[◄]Pal" if _sidebar_visible else "[►]Pal", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
+
+	# Row 2 (y=25..44): Mode, Rule, FF, Lives, Face, Quick hint
+	draw_rect(Rect2(248, 25, 64, 19), Color(0.2, 0.2, 0.3))
+	draw_rect(Rect2(248, 25, 64, 19), Color(0.4, 0.4, 0.6), false, 1.0)
 	var mnames := ["Co-op", "Compete", "Versus"]
 	draw_string(font, Vector2(252, 38), mnames[default_mode], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.9, 0.9, 1.0))
 
-	draw_rect(Rect2(320, 25, 68, 19), Color(0.25, 0.2, 0.25))
-	draw_rect(Rect2(320, 25, 68, 19), Color(0.5, 0.4, 0.5), false, 1.0)
+	draw_rect(Rect2(316, 25, 68, 19), Color(0.25, 0.2, 0.25))
+	draw_rect(Rect2(316, 25, 68, 19), Color(0.5, 0.4, 0.5), false, 1.0)
 	var rnames := ["Lives", "Score", "Door"]
-	draw_string(font, Vector2(324, 38), "Win:" + rnames[victory_rule], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 1.0))
+	draw_string(font, Vector2(320, 38), "Win:" + rnames[victory_rule], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.8, 1.0))
 
-	draw_rect(Rect2(392, 25, 54, 19), Color(0.3, 0.2, 0.2) if friendly_fire else Color(0.18, 0.22, 0.2))
-	draw_rect(Rect2(392, 25, 54, 19), Color(0.6, 0.3, 0.3) if friendly_fire else Color(0.35, 0.45, 0.35), false, 1.0)
-	draw_string(font, Vector2(396, 38), "FF:" + ("On" if friendly_fire else "Off"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.7, 0.7) if friendly_fire else Color(0.8, 0.9, 0.8))
+	draw_rect(Rect2(388, 25, 54, 19), Color(0.3, 0.2, 0.2) if friendly_fire else Color(0.18, 0.22, 0.2))
+	draw_rect(Rect2(388, 25, 54, 19), Color(0.6, 0.3, 0.3) if friendly_fire else Color(0.35, 0.45, 0.35), false, 1.0)
+	draw_string(font, Vector2(392, 38), "FF:" + ("On" if friendly_fire else "Off"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.7, 0.7) if friendly_fire else Color(0.8, 0.9, 0.8))
 
-	draw_rect(Rect2(450, 25, 46, 19), Color(0.2, 0.25, 0.2))
-	draw_rect(Rect2(450, 25, 46, 19), Color(0.4, 0.5, 0.4), false, 1.0)
-	draw_string(font, Vector2(456, 38), "L:%d" % starting_lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
+	draw_rect(Rect2(446, 25, 42, 19), Color(0.2, 0.25, 0.2))
+	draw_rect(Rect2(446, 25, 42, 19), Color(0.4, 0.5, 0.4), false, 1.0)
+	draw_string(font, Vector2(450, 38), "L:%d" % starting_lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.8, 1.0, 0.8))
 
-	draw_rect(Rect2(500, 25, 58, 19), Color(0.22, 0.22, 0.26))
-	draw_rect(Rect2(500, 25, 58, 19), Color(0.45, 0.45, 0.5), false, 1.0)
-	draw_string(font, Vector2(504, 38), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
+	draw_rect(Rect2(492, 25, 54, 19), Color(0.22, 0.22, 0.26))
+	draw_rect(Rect2(492, 25, 54, 19), Color(0.45, 0.45, 0.5), false, 1.0)
+	draw_string(font, Vector2(496, 38), "Face:" + ("L" if enemy_facing_left else "R"), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
-	# 2. Draw Playfield Grid
-	var playfield_w := vp_size.x
+	draw_rect(Rect2(550, 25, 86, 19), Color(0.16, 0.16, 0.2))
+	draw_rect(Rect2(550, 25, 86, 19), Color(0.3, 0.3, 0.35), false, 1.0)
+	draw_string(font, Vector2(554, 38), "[F2]HD [B]Pal", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.6, 0.8, 0.7))
+
+	# 2. Draw Left Sidebar (Collapsible Category Palette)
 	var playfield_h := vp_size.y - hud_h
+	if _sidebar_visible and sb_w > 0:
+		draw_rect(Rect2(0, hud_h, sb_w, playfield_h), Color(0.13, 0.13, 0.17))
+		draw_line(Vector2(sb_w, hud_h), Vector2(sb_w, hud_h + playfield_h), Color(0.3, 0.3, 0.38), 1.0)
+
+		var cur_y := 0.0
+		for cat in _get_categories():
+			var is_collapsed: bool = _cat_collapsed.get(cat, false)
+			var header_y := hud_h + cur_y - _sidebar_scroll_y
+			if header_y + 20.0 >= hud_h and header_y <= hud_h + playfield_h:
+				draw_rect(Rect2(0, header_y, sb_w - 6, 20), Color(0.19, 0.19, 0.25))
+				draw_rect(Rect2(0, header_y, sb_w - 6, 20), Color(0.32, 0.32, 0.4), false, 1.0)
+				var arrow := "▶ " if is_collapsed else "▼ "
+				var cat_count := _get_category_brush_indices(cat).size()
+				draw_string(font, Vector2(4, header_y + 14), arrow + cat, HORIZONTAL_ALIGNMENT_LEFT, int(sb_w - 36), 10, Color(0.9, 0.9, 1.0))
+				draw_string(font, Vector2(sb_w - 28, header_y + 14), "%d" % cat_count, HORIZONTAL_ALIGNMENT_RIGHT, 20, 9, Color(0.55, 0.55, 0.65))
+			cur_y += 20.0
+
+			if not is_collapsed:
+				var items := _get_category_brush_indices(cat)
+				for b_idx in items:
+					var item_y := hud_h + cur_y - _sidebar_scroll_y
+					if item_y + 22.0 >= hud_h and item_y <= hud_h + playfield_h:
+						var item: Dictionary = BRUSHES[b_idx]
+						var is_selected := (b_idx == brush_idx)
+						if is_selected:
+							draw_rect(Rect2(2, item_y + 1, sb_w - 10, 20), Color(0.24, 0.28, 0.58))
+							draw_rect(Rect2(2, item_y + 1, sb_w - 10, 20), Color(0.5, 0.6, 0.95), false, 1.0)
+						else:
+							draw_rect(Rect2(2, item_y + 1, sb_w - 10, 20), Color(0.15, 0.15, 0.19))
+
+						# Draw Icon (18x18)
+						var icon_rect := Rect2(4, item_y + 2, 18, 18)
+						var tile: int = item["tile"]
+						if tile == 0:
+							draw_rect(icon_rect, Color(0.25, 0.1, 0.1))
+							draw_rect(icon_rect, Color.RED, false, 1.0)
+							draw_string(font, Vector2(9, item_y + 15), "X", HORIZONTAL_ALIGNMENT_CENTER, -1, 10, Color.RED)
+						elif tile == -1:
+							draw_circle(Vector2(13, item_y + 11), 7.0, Color.DODGER_BLUE)
+							draw_string(font, Vector2(10, item_y + 15), "1", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color.WHITE)
+						elif tile == -2:
+							draw_circle(Vector2(13, item_y + 11), 7.0, Color.LIME_GREEN)
+							draw_string(font, Vector2(10, item_y + 15), "2", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color.WHITE)
+						elif tile == -3:
+							draw_circle(Vector2(13, item_y + 11), 7.0, Color.CRIMSON)
+							draw_string(font, Vector2(10, item_y + 15), "3", HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color.WHITE)
+						elif tile >= -7 and tile <= -4:
+							draw_circle(Vector2(13, item_y + 11), 7.0, Color.ORANGE)
+							draw_string(font, Vector2(7, item_y + 15), "V%d" % (-(tile + 4) + 1), HORIZONTAL_ALIGNMENT_CENTER, -1, 8, Color.WHITE)
+						else:
+							var folder := _get_brush_folder(item)
+							var spr := _get_sprite(folder, item.get("frame", 0)) if folder != "" else null
+							if spr != null:
+								draw_texture_rect(spr, icon_rect, false)
+							else:
+								draw_rect(icon_rect, Color(0.3, 0.4, 0.5))
+
+						# Draw item name
+						var text_color := Color.WHITE if is_selected else Color(0.85, 0.85, 0.9)
+						draw_string(font, Vector2(25, item_y + 15), item["name"], HORIZONTAL_ALIGNMENT_LEFT, int(sb_w - 34), 9, text_color)
+					cur_y += 22.0
+
+		# Sidebar scrollbar
+		var total_h := _get_sidebar_total_height()
+		if total_h > playfield_h:
+			draw_rect(Rect2(sb_w - 5, hud_h, 5, playfield_h), Color(0.1, 0.1, 0.13))
+			var thumb_h: float = maxf(16.0, playfield_h * (playfield_h / total_h))
+			var thumb_y: float = hud_h + (_sidebar_scroll_y / (total_h - playfield_h)) * (playfield_h - thumb_h)
+			draw_rect(Rect2(sb_w - 4, thumb_y, 4, thumb_h), Color(0.4, 0.45, 0.55))
+
+	# 3. Draw Playfield Grid
+	var playfield_x := sb_w
+	var playfield_w := vp_size.x - sb_w
 	var cell_w := playfield_w / float(grid_cols)
 	var cell_h := playfield_h / float(grid_rows)
 
 	# Background black field
-	draw_rect(Rect2(0, hud_h, playfield_w, playfield_h), Color.BLACK)
+	draw_rect(Rect2(playfield_x, hud_h, playfield_w, playfield_h), Color.BLACK)
 
 	for r in range(grid_rows):
 		for c in range(grid_cols):
-			var rect := Rect2(c * cell_w, hud_h + r * cell_h, cell_w, cell_h)
+			var rect := Rect2(playfield_x + c * cell_w, hud_h + r * cell_h, cell_w, cell_h)
 			var cell_val: int = cells[r][c]
 			var tile_id: int = cell_val & 0xFFFF
 			if cell_val != 0:
@@ -797,16 +1019,16 @@ func _draw() -> void:
 						draw_rect(rect, Color(1.0, 0.85, 0.2)) # Pickup/Coin
 			draw_rect(rect, Color(0.2, 0.2, 0.25, 0.25), false, 1.0) # Grid line
 
-	# 3. Draw Player & VS Spawns
-	draw_circle(Vector2(p1_spawn.x * cell_w + cell_w * 0.5, hud_h + p1_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.DODGER_BLUE)
-	draw_circle(Vector2(p2_spawn.x * cell_w + cell_w * 0.5, hud_h + p2_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.LIME_GREEN)
+	# 4. Draw Player & VS Spawns
+	draw_circle(Vector2(playfield_x + p1_spawn.x * cell_w + cell_w * 0.5, hud_h + p1_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.DODGER_BLUE)
+	draw_circle(Vector2(playfield_x + p2_spawn.x * cell_w + cell_w * 0.5, hud_h + p2_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.LIME_GREEN)
 	if has_p3:
-		draw_circle(Vector2(p3_spawn.x * cell_w + cell_w * 0.5, hud_h + p3_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.CRIMSON)
+		draw_circle(Vector2(playfield_x + p3_spawn.x * cell_w + cell_w * 0.5, hud_h + p3_spawn.y * cell_h + cell_h * 0.5), cell_w * 0.35, Color.CRIMSON)
 
 	for i in range(4):
 		var vs: Vector2i = vs_spawns[i]
 		if vs.x > 0 or vs.y > 0:
-			draw_circle(Vector2(vs.x * cell_w + cell_w * 0.5, hud_h + vs.y * cell_h + cell_h * 0.5), cell_w * 0.25, Color.ORANGE)
+			draw_circle(Vector2(playfield_x + vs.x * cell_w + cell_w * 0.5, hud_h + vs.y * cell_h + cell_h * 0.5), cell_w * 0.25, Color.ORANGE)
 
 	# 4. Draw Validation Banner if warnings exist
 	var warnings := _validate_map()

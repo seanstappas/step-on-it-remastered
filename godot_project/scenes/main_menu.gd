@@ -599,7 +599,6 @@ func _open_offline_custom_map_dialog() -> void:
 	pop.popup_hide.connect(func() -> void:
 		pop.queue_free()
 	)
-	add_child(pop)
 	pop.popup_centered(Vector2i(240, 200))
 
 
@@ -634,7 +633,6 @@ func _open_custom_map_selector(btn: Button) -> void:
 	pop.popup_hide.connect(func() -> void:
 		pop.queue_free()
 	)
-	add_child(pop)
 	pop.popup_centered(Vector2i(240, 200))
 
 

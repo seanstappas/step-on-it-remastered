@@ -1289,6 +1289,8 @@ func _exit_tree() -> void:
 	# Stop stepping the core before we drop its refs, so no queued physics frame can
 	# touch a half-freed scene while the tree is being torn down (window close).
 	set_physics_process(false)
+	if Input.joy_connection_changed.is_connected(_on_joy_connection_changed):
+		Input.joy_connection_changed.disconnect(_on_joy_connection_changed)
 	# Release scene-owned refs to reduce the "ObjectDB instances leaked at exit" warning on window close.
 	if _win_video != null and is_instance_valid(_win_video):
 		if _win_video.finished.is_connected(_on_win_video_finished):
@@ -1966,12 +1968,12 @@ func _input(e: InputEvent) -> void:
 				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 				return
 			if _core.game_over() or (_alt and _alt_state == "results"):
-				get_tree().change_scene_to_file("res://scenes/menu.tscn")
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 			elif not _game_over_aborting:
 				_game_over_aborting = true
 				_core.abort_game()
 			else:
-				get_tree().change_scene_to_file("res://scenes/menu.tscn")
+				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 			return
 	if not (e is InputEventKey and e.pressed):
 		return
