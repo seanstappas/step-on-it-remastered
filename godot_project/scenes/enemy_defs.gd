@@ -12,5 +12,16 @@ const ENEMY_FOLDER := {
 	16: "bigger_mblock",   # creeper (bord 16/17): a pulsing block that walks the grid (sssf 1016)
 }
 
+const ENEMY_NAME := {
+	1: "Ant", 2: "Ostrich", 3: "Hippo", 4: "Piggy",
+	5: "Wheelie", 6: "Smiley", 7: "Hammer", 8: "Beanie",
+	9: "Robo", 10: "Walker", 11: "Teeth",
+	12: "Cannon", 13: "Spinner", 14: "Gargoyle", 15: "Knight",
+	16: "Creeper",
+}
+
 static func get_folder(etype: int) -> String:
 	return ENEMY_FOLDER.get(etype, "")
+
+static func get_enemy_name(etype: int) -> String:
+	return ENEMY_NAME.get(etype, "Enemy")

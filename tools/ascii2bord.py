@@ -35,7 +35,7 @@ TILE_MAP = {
     "WALL": 0x0307,        # Solid wall
     "BREAK": 0x0207,       # Breakable block
     "LADDER": 0x0197,      # Ladder/climbable
-    "ICE": 0x0387,         # Ice block
+    "ICE": 0x0387,         # Legacy alias (Note: 0x87 is an animation fragment; authentic families use 0x07 + 6*k)
     "KEY_UNIVERSAL": 0x0907,
     "LOCK_UNIVERSAL": 0x0904,
     "DOOR_UNIVERSAL": 0x0901,
