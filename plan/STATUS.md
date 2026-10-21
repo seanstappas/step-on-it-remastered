@@ -102,6 +102,22 @@
   - **Stage 3 (Live3D, Editor, Lobby & Session)**: Restored missing closing `}` in `live3d.gd:POST_SHADER`; cleared `custom_board_bytes` and `editor_return` meta in `Session.start_campaign()`; assigned first unassigned negative controller slot before cycling in `main_menu.gd:_claim_controller_slot()`; preserved `chosen_map = Session.custom_map_path` in `start_match_btn()`; called `Session.start_campaign()` on client upon `match_started`; corrected Blue/Green key brush frames (9 and 10) in `editor.gd`; assigned authentic BORD placement IDs for all enemy brushes; encoded facing toggle bits 8..15 (`0x0500`/`0x0600`/`0x0700`); guarded `KEY_C`, `KEY_G`, `KEY_F` with `not event.ctrl_pressed`; expanded `--test-editor` self-test assertions.
   - **Stage 4 (Tooling, Tests & Verification)**: Passed `has_p3` in `ascii2bord.py:pack_ext1` and added `sys.exit(1)` on verification failure (152/152 byte-exact PASS); added network polling in `test_net_edge_cases.gd` Board 2 loop; verified all headless suites: `editor.tscn -- --test-editor` (PASS), `test_net_edge_cases.tscn` (PASS), `test_net_adversarial.tscn` (1,500 ticks PASS), `net_soak_test.tscn` (10,000 ticks PASS, 0 desyncs), `test_net_progression.tscn` (PASS); verified end-to-end `tools/verify.ps1` (all 13 stages green).
 
+- **2026-10-18**: Release Packaging & CI Validation (`plan/10_18_ready.md`) completed & verified:
+  - Added Velopack distribution packaging pipeline (`tools/package_release.ps1`).
+  - Added packaged path resolution in `Session.ext_path` and `StepOnIt.exe` launcher routing.
+  - Verified 16-stage gate in `tools/verify.ps1`.
+
+- **2026-10-20 / 2026-10-21**: Map Editor Overhaul & Visual Remaster completed & verified:
+  - **Authentic Tile Catalog (`scenes/tile_catalog.gd`)**: Grounded in decompiled core and 152 campaign boards. Cataloged all 25 authentic block families ($0\text{x}07 + 6k$), 4 behavior variants (Wall, Breakable, Background, Hidden), 10 Transporters, 15 Stop/Go switches, 12 Doors & Keys (including discrete P3 Crimson Key/Door), 21 authentic Goodies, and 19 Enemies and Spawns.
+  - **Tile Art & 3D Remastered Rendering (`scenes/tile_art.gd`)**: Built unified cell resolver and sprite loader integrating 4× HD sprites and procedural 3D frame overlays (`extracted/sprites_3d_frames/`). Caches linear-filtered mipmapped textures and computes non-stretched 1:1 logical footprint.
+  - **Mathematical 1:1 Square Grid & Bezel (`scenes/editor.gd`)**: Eliminated rectangular stretching by implementing uniform zoom math $\min(W_{\text{avail}} / (C \cdot 32), H_{\text{avail}} / (R \cdot 32))$ across all 3 grid sizes ($19\times13$, $28\times19$, $38\times26$), framed within a classic 3D metallic bezel.
+  - **StarCraft/Warcraft-Style Collapsible Palette**: Built left-hand tree hierarchy with tile count badges (`▼ Blocks 25`, `▼ Transporters 10`, etc.), quick `[X] Eraser`, variant toggle chips (`[Wall | Brk | Bkg | Hid]`), and a 5×5 block family icon grid.
+  - **System 7 Classic Mac Menu Bar**: Rendered high-res Apple logo and crisp canvas-rendered dropdown menus (`File · Edit · Map · View` + `[▶ Play [Tab]]`).
+  - **Map Properties Modal**: Consolidated top-right clutter into a clean dialog with clear explanations for Game Mode, Victory Rules, Starting Lives, Friendly Fire, and Bonus Timer.
+  - **Bug Fix**: Identified `0x0387` as an animation break fragment (frame 136) causing the "ice floor" glitch; resolved by migrating to authentic block families and documenting legacy alias in `tools/ascii2bord.py`.
+  - **Verification**: MapEditor CLI self-test (`editor.tscn -- --test-editor`) PASS; all 16 stages of `tools/verify.ps1` PASS; off-screen screenshot visual verification (`--editorshot`) PASS.
+  - **Documentation**: Created `AGENTS.md` and updated `README.md` to ensure seamless handover to other agents.
+
 ---
 
 ## Remaining Roadmap Items

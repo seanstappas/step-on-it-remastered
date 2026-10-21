@@ -63,6 +63,9 @@ REMASTERED draws at the monitor's refresh rate: the engine keeps the original ti
 drawn between its engine states with rendered in-between 3D poses (shown 2 ticks, ~33 ms, behind the
 engine). ORIGINAL draws once per tick, as in 1996.
 
+**Map Editor** — Click **Map Maker** on the main menu (or run `res://scenes/editor.tscn` directly). Features a classic System 7 Mac interface, 25 authentic 3D block families, StarCraft/Warcraft-style collapsible palette with tile count badges, variant chips (`[Wall | Brk | Bkg | Hid]`), 1:1 mathematically square grid layout with metallic bezel, Map Properties modal dialog, EXT1 trailer roundtrip serialization, and instant in-memory playtesting.
+- **Controls in Editor**: Left Click = Paint brush; Right Click = Sample tile (Eyedropper); **[F]** = Toggle enemy facing left/right; **[R]** = Toggle remastered 3D graphics on board; **[Tab]** = Instant playtest board; **[Esc]** = Return to editor from playtest (or exit editor).
+
 ### Front-end flags
 
 Pass after `--`, e.g. `"<Godot>" --path godot_project -- --3d --music`:
@@ -77,6 +80,8 @@ Pass after `--`, e.g. `"<Godot>" --path godot_project -- --3d --music`:
 | `--board=board_NNN` | Load a specific board (capture runs). |
 | `--shot` \| `--shotat=N` | Screenshot after N frames → `media/screenshots/`, then quit. |
 | `--menushot=N` | Screenshot the main menu after N frames. |
+| `--test-editor` | Run headless Map Editor self-test (grid sizing, round-trip serialization, catalog asset audit). |
+| `--editorshot` | Render off-screen Map Editor screenshot with sample tiles → `media/screenshots/editor_palette_verified.png`. |
 | `--demo` \| `--play=N` | Scripted play for movie capture (see `tools/record_video.ps1`). |
 | `--hidden` \| `--visible` | Render **off-screen** (no window pops up — for agents/CI) / force on-screen. |
 | `--sfx-variant=light\|ai\|original` | The SFX set REMASTERED uses (default `ai` = AudioSR super-res `wav_ai`; `light` = cleaned 16-bit `wav_hd`). ORIGINAL always plays the faithful 8-bit `wav`. |
@@ -108,6 +113,7 @@ The reverse-engineering + extraction tools are pure Python 3.10+ (`py tools/<nam
 
 ## Documentation
 
+- **[AGENTS.md](AGENTS.md)** — **Agent Handover & Contributor Guide**: technical architecture, critical invariants, gate execution, and system rules for AI agents and developers.
 - **[docs/remaster/](docs/remaster/)** — the remaster: architecture, running, the front-end flags, and
   the asset pipeline (current state).
 - **[docs/](docs/)** — verified reverse-engineering findings about the original game (binary, resources,
