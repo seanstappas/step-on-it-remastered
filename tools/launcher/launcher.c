@@ -113,17 +113,33 @@ static void append_arg(char *buf, size_t cap, size_t *offset, const char *arg) {
 
 static bool is_godot_engine_arg(const char *arg) {
     if (strncmp(arg, "--headless", 10) == 0) return true;
-    if (strncmp(arg, "--quit", 6) == 0) return true;
+    if (strcmp(arg, "--quit") == 0) return true;
     if (strncmp(arg, "--quit-after", 12) == 0) return true;
     if (strncmp(arg, "--verbose", 9) == 0) return true;
+    if (strncmp(arg, "--quiet", 7) == 0) return true;
+    if (strncmp(arg, "--debug", 7) == 0) return true;
     if (strncmp(arg, "--resolution", 12) == 0) return true;
     if (strncmp(arg, "--position", 10) == 0) return true;
+    if (strncmp(arg, "--path", 6) == 0) return true;
     if (strncmp(arg, "--fullscreen", 12) == 0) return true;
     if (strncmp(arg, "--windowed", 10) == 0) return true;
     if (strncmp(arg, "--rendering-driver", 18) == 0) return true;
     if (strncmp(arg, "--display-driver", 16) == 0) return true;
     if (strncmp(arg, "--audio-driver", 14) == 0) return true;
+    if (strcmp(arg, "-s") == 0 || strncmp(arg, "--script", 8) == 0) return true;
     if (strncmp(arg, "res://", 6) == 0) return true;
+    return false;
+}
+
+static bool is_godot_value_arg(const char *arg) {
+    if (strcmp(arg, "--resolution") == 0) return true;
+    if (strcmp(arg, "--position") == 0) return true;
+    if (strcmp(arg, "--path") == 0) return true;
+    if (strcmp(arg, "--rendering-driver") == 0) return true;
+    if (strcmp(arg, "--display-driver") == 0) return true;
+    if (strcmp(arg, "--audio-driver") == 0) return true;
+    if (strcmp(arg, "--quit-after") == 0) return true;
+    if (strcmp(arg, "-s") == 0 || strcmp(arg, "--script") == 0) return true;
     return false;
 }
 
@@ -345,7 +361,7 @@ int main(int argc, char **argv) {
         if (is_godot_engine_arg(a)) {
             append_arg(cmd_line, sizeof(cmd_line), &offset, a);
             /* If this flag takes an argument value (e.g. --resolution 640x480, --position 0,0, --quit-after 600) */
-            if (i + 1 < argc && argv[i + 1][0] != '-') {
+            if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
                 i++;
                 append_arg(cmd_line, sizeof(cmd_line), &offset, argv[i]);
             }
@@ -368,7 +384,7 @@ int main(int argc, char **argv) {
         if (strcmp(a, "--") == 0) continue;
         if (!is_godot_engine_arg(a)) {
             append_arg(cmd_line, sizeof(cmd_line), &offset, a);
-        } else if (i + 1 < argc && argv[i + 1][0] != '-') {
+        } else if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
             /* Skip value consumed above by engine flag */
             i++;
         }

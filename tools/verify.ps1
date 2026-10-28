@@ -38,12 +38,12 @@ Push-Location $root
 $script:fail = 0
 
 $Py = 'py'
-if (-not (Get-Command 'py' -ErrorAction SilentlyContinue)) {
-    if (Test-Path '.venv\Scripts\python.exe') {
-        $Py = (Resolve-Path '.venv\Scripts\python.exe').Path
-    } elseif (Get-Command 'python' -ErrorAction SilentlyContinue) {
-        $Py = 'python'
-    }
+if (Test-Path '.venv\Scripts\python.exe') {
+    $Py = (Resolve-Path '.venv\Scripts\python.exe').Path
+} elseif (Get-Command 'py' -ErrorAction SilentlyContinue) {
+    $Py = 'py'
+} elseif (Get-Command 'python' -ErrorAction SilentlyContinue) {
+    $Py = 'python'
 }
 
 if ($Godot -notmatch '_console\.exe$' -and (Test-Path ($Godot -replace '\.exe$', '_console.exe'))) {

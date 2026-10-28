@@ -118,6 +118,15 @@
   - **Verification**: MapEditor CLI self-test (`editor.tscn -- --test-editor`) PASS; all 16 stages of `tools/verify.ps1` PASS; off-screen screenshot visual verification (`--editorshot`) PASS.
   - **Documentation**: Created `AGENTS.md` and updated `README.md` to ensure seamless handover to other agents.
 
+- **2026-10-28**: Teamwork Full-System Audit & Defect Remediation (`/teamwork`) completed & verified:
+  - **Single-Player Controller Claiming (`scenes/main_menu.gd`)**: Enabled solo players to claim Player 1 with gamepad Button A; eliminated an invalid `e.echo` property access on `InputEventJoypadButton` caught by adversarial testing.
+  - **Map Editor Versus Spawn Clamping (`scenes/editor.gd`)**: Added coordinate clamping for `vs_spawns` on grid downsizing (38x26 -> 28x19 -> 19x13).
+  - **EXT1 Trailer Parity Scan (`scenes/editor.gd`)**: Changed trailer search step from `-2` to `-1` to ensure robust `EXT1` header detection regardless of trailing byte alignment.
+  - **Hidden Goody Prefixes (`scenes/editor.gd`)**: Enforced `0x0900` tile ID prefix retention on hidden treasure block brushes for valid goody unpacking.
+  - **Virtualenv Precedence (`tools/verify.ps1`)**: Prioritized `.venv\Scripts\python.exe` before looking at global `py` or `python`.
+  - **Launcher Boolean Flag Forwarding (`tools/launcher/launcher.c`)**: Added non-value flag filtering so boolean engine flags (`--headless`, `--verbose`, etc.) do not consume subsequent scene arguments.
+  - **Adversarial & Gate Verification**: Independent Post-Victory Audit confirmed clean results across all suites: `tools/verify.ps1` (16/16 stages PASS), `test_adversarial_m1.tscn` (348/348 PASS), `test_launcher_cli.c` (18/18 PASS), and headless editor self-test (PASS).
+
 ---
 
 ## Remaining Roadmap Items

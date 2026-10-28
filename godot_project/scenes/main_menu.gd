@@ -533,7 +533,13 @@ func _on_file(id: int) -> void:
 var _device_status_lbl: Label = null
 
 func _claim_controller_slot(device: int) -> void:
-	Session.claim_controller_slot(device)
+	if Session.num_players == 1 and (_online_dialog == null or not _online_dialog.visible):
+		if Session.player_device.size() > 0:
+			Session.player_device[0] = device
+		else:
+			Session.player_device = [device]
+	else:
+		Session.claim_controller_slot(device)
 	_update_lobby_device_labels()
 
 func _update_lobby_device_labels() -> void:
@@ -1355,8 +1361,8 @@ func _show_hs_entries(show_it: bool) -> void:
 	_hs_entries.visible = show_it
 
 func _input(e: InputEvent) -> void:
-	if (_online_dialog != null and _online_dialog.visible) or Session.num_players >= 2:
-		if e is InputEventJoypadButton and e.pressed and not e.echo:
+	if (_online_dialog != null and _online_dialog.visible) or Session.num_players >= 1:
+		if e is InputEventJoypadButton and e.pressed:
 			if e.button_index == JOY_BUTTON_A:
 				_claim_controller_slot(e.device)
 				return

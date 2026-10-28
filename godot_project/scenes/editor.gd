@@ -49,7 +49,7 @@ var _cat_collapsed: Dictionary = {}
 # Variant flag: 0x0300 (Wall), 0x0200 (Breakable), 0x0100 (Background), 0x1200 (Hidden)
 var current_variant_flag: int = 0x0300
 var current_family_t: int = 0x07
-var current_hidden_goody: int = 0x17 # Gold Coin by default
+var current_hidden_goody: int = 0x0917 # Gold Coin by default (0x0900 pickup prefix)
 var current_brush: int = 0x0307
 var current_brush_name: String = "White Block (Wall)"
 var current_brush_desc: String = "Solid permanent wall"
@@ -466,6 +466,8 @@ func _init_grid(cols: int, rows: int) -> void:
 	p1_spawn = Vector2i(clampi(p1_spawn.x, 0, grid_cols - 1), clampi(p1_spawn.y, 0, grid_rows - 1))
 	p2_spawn = Vector2i(clampi(p2_spawn.x, 0, grid_cols - 1), clampi(p2_spawn.y, 0, grid_rows - 1))
 	p3_spawn = Vector2i(clampi(p3_spawn.x, 0, grid_cols - 1), clampi(p3_spawn.y, 0, grid_rows - 1))
+	for i in range(vs_spawns.size()):
+		vs_spawns[i] = Vector2i(clampi(vs_spawns[i].x, 0, grid_cols - 1), clampi(vs_spawns[i].y, 0, grid_rows - 1))
 
 	queue_redraw()
 
@@ -834,9 +836,10 @@ func _get_palette_total_height() -> float:
 func _select_block_family(t: int, bname: String) -> void:
 	current_family_t = t
 	if current_variant_flag == TileCatalog.FLAG_HIDDEN:
-		current_brush = current_variant_flag | (current_hidden_goody << 16) | current_family_t
+		var goody: int = current_hidden_goody if current_hidden_goody >= 0x0100 else (current_hidden_goody | 0x0900)
+		current_brush = current_variant_flag | (goody << 16) | current_family_t
 		current_brush_name = "%s (Hidden)" % bname
-		current_brush_desc = "Breakable block containing hidden %s" % TileArt._get_goody_name(current_hidden_goody)
+		current_brush_desc = "Breakable block containing hidden %s" % TileArt._get_goody_name(goody & 0xFF)
 	else:
 		current_brush = current_variant_flag | current_family_t
 		var vlabel := "Wall" if current_variant_flag == TileCatalog.FLAG_WALL else ("Background" if current_variant_flag == TileCatalog.FLAG_BACKGROUND else "Breakable")
@@ -938,6 +941,9 @@ func _handle_list_section_click(cat_name: String, items: Array, rel_y: float, cu
 				current_brush = item["tile"]
 				current_brush_name = item["name"]
 				current_brush_desc = item.get("desc", "")
+				if cat_name == "Goodies":
+					var gt: int = int(item.get("tile", 0x0917))
+					current_hidden_goody = gt if gt >= 0x0100 else (gt | 0x0900)
 				_set_status("Brush: %s" % current_brush_name)
 				queue_redraw()
 				return -1.0
@@ -1602,7 +1608,7 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 	var ext_found := false
 
 	if raw.size() >= 48:
-		for off in range(raw.size() - 24, 23, -2):
+		for off in range(raw.size() - 24, 23, -1):
 			if raw[off] == 0x45 and raw[off+1] == 0x58 and raw[off+2] == 0x54 and raw[off+3] == 0x31:
 				var calc := _crc16_ccitt(raw.slice(off, off + 22))
 				var stored := (raw[off + 22] << 8) | raw[off + 23]
@@ -1963,6 +1969,36 @@ func _run_self_test() -> void:
 	var sh := Shader.new()
 	sh.code = Live3D.POST_SHADER
 	_check(sh.code.count("{") == sh.code.count("}"), "Live3D.POST_SHADER unbalanced braces")
+
+	# 6. Versus spawns clamping on canvas downsizing
+	_init_grid(38, 26)
+	vs_spawns[0] = Vector2i(35, 22)
+	vs_spawns[1] = Vector2i(30, 20)
+	vs_spawns[2] = Vector2i(25, 18)
+	vs_spawns[3] = Vector2i(20, 15)
+	_init_grid(19, 13)
+	for i in range(4):
+		_check(vs_spawns[i].x < 19 and vs_spawns[i].y < 13, "vs_spawns[%d] not clamped on downsizing: %s" % [i, str(vs_spawns[i])])
+	_check(vs_spawns[0] == Vector2i(18, 12), "vs_spawns[0] expected (18, 12), got %s" % str(vs_spawns[0]))
+
+	# 7. Odd-parity EXT1 scanner detection
+	_init_grid(38, 26)
+	has_p3 = true
+	var ext_raw := serialize_to_bord()
+	# Append 1 trailing padding byte so EXT1 starts at an odd offset from the end
+	var odd_raw := ext_raw.duplicate()
+	odd_raw.append(0x00)
+	_init_grid(19, 13)
+	var odd_ok := load_from_bord(odd_raw)
+	_check(odd_ok, "load_from_bord failed on odd-parity trailing alignment")
+	_check(grid_cols == 38 and grid_rows == 26 and has_p3 == true, "EXT1 trailer not detected on odd-parity alignment")
+
+	# 8. Hidden goody brush 0x0900 prefix check
+	_select_block_family(TileCatalog.BLOCK_FAMILIES[0]["t"], TileCatalog.BLOCK_FAMILIES[0]["name"])
+	_set_block_variant(TileCatalog.FLAG_HIDDEN)
+	var hidden_payload := (current_brush >> 16) & 0xFFFF
+	_check((hidden_payload & 0xFF00) == 0x0900, "Hidden block brush payload missing 0x0900 prefix: 0x%04X" % hidden_payload)
+	_check(hidden_payload == 0x0917, "Default hidden goody is not 0x0917: 0x%04X" % hidden_payload)
 
 	# Restore state
 	_restore_editor_state(orig_state)
