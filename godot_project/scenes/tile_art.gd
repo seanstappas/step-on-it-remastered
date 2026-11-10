@@ -124,6 +124,18 @@ static func _get_goody_name(t: int) -> String:
 	return "Goody 0x%02X" % t
 
 
+## Resolve an extracted/ subdirectory in both packaged builds and editor/CLI dev runs
+static func _ext_dir(rel: String) -> String:
+	var ml := Engine.get_main_loop() as SceneTree
+	var s_node: Node = ml.root.get_node_or_null("Session") if (ml != null and ml.root != null) else null
+	if s_node != null and s_node.has_method("ext_path"):
+		return s_node.ext_path(rel)
+	var pkg_base := OS.get_executable_path().get_base_dir().path_join("extracted")
+	if DirAccess.dir_exists_absolute(pkg_base):
+		return pkg_base.path_join(rel)
+	return ProjectSettings.globalize_path("res://../extracted/" + rel)
+
+
 ## Build index of available sprite frames for a given presentation mode
 static func _folder_index(folder: String, remastered: bool) -> Dictionary:
 	var cache_key := "%s_%s" % [folder, "hd" if remastered else "sd"]
@@ -135,12 +147,12 @@ static func _folder_index(folder: String, remastered: bool) -> Dictionary:
 
 	if remastered:
 		# Remastered: 4x HD sheets + 3D frame overlay (3D frames win frame-by-frame)
-		var hd_dir := ProjectSettings.globalize_path("res://../extracted/sprites_hd/" + folder)
+		var hd_dir := _ext_dir("sprites_hd/" + folder)
 		dirs.append(hd_dir)
-		var td_dir := ProjectSettings.globalize_path("res://../extracted/sprites_3d_frames/" + folder)
+		var td_dir := _ext_dir("sprites_3d_frames/" + folder)
 		dirs.append(td_dir)
 	else:
-		var sd_dir := ProjectSettings.globalize_path("res://../extracted/sprites/" + folder)
+		var sd_dir := _ext_dir("sprites/" + folder)
 		dirs.append(sd_dir)
 
 	for dir in dirs:

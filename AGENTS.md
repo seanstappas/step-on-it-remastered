@@ -1,22 +1,26 @@
 # Step On It! Remastered — AI Agent & Developer Handbook
 
 > **Audience**: AI Agents (Antigravity, Aider, Claude Code, Cursor, Windsurf) & Human Contributors  
-> **Status**: Living document — update after architectural changes, new tools, or gate modifications.  
-> **Last Updated**: October 2026
+> **Status**: Living workspace rule & cold-start handoff guide — update after architectural, tool, or gate changes.  
+> **Last Updated**: November 2026
 
 ---
 
 ## 1. System Architecture & Tech Stack
 
-This project is a faithful, modern preservation and remaster of the 1996 Mac PowerPC game **Step On It!** (Casady & Greene / Webfoot Technologies).
+This project is a faithful preservation and remaster of the 1996 Mac PowerPC game **Step On It!** (Casady & Greene / Webfoot Technologies).
 
 ```mermaid
 flowchart TD
+    subgraph Dist["Native Launcher & Updater (tools/launcher/)"]
+        Launcher["StepOnIt.exe (launcher.c + Velopack C SDK)"]
+    end
+
     subgraph Frontend["Godot 4.3 Engine (godot_project/)"]
-        Game["game.gd (Tick loop, HUD, Render)"]
+        Game["game.gd (Tick loop, HUD, Live3D, Render)"]
         Editor["scenes/editor.gd (Map Maker)"]
-        Net["scenes/rollback_net.gd (ENet Rollback)"]
-        Art["scenes/tile_art.gd & tile_catalog.gd"]
+        Net["scenes/rollback_net.gd (ENet Star-Hub Rollback)"]
+        Art["scenes/tile_art.gd, tile_catalog.gd, session.gd"]
     end
 
     subgraph Bridge["GDExtension (bridge/)"]
@@ -24,145 +28,137 @@ flowchart TD
     end
 
     subgraph Core["Deterministic C Core (core/)"]
-        Sim["soi_state.c / soi_physics.c / soi_grid.c"]
+        Sim["soi_state.c / soi_physics.c / soi_enemies.c / soi_grid.c"]
         Rollback["soi_snapshot_save / soi_snapshot_load"]
         Hash["soi_net_hash (64-bit FNV-1a)"]
     end
 
     subgraph Tools["Tooling & Verification (tools/)"]
-        Verify["verify.ps1 (16-stage gate)"]
-        Ascii["ascii2bord.py (BORD compiler/verifier)"]
-        Framematch["soi3d/framematch.py (3D sprite gate)"]
+        Verify["verify.ps1 (16-stage gate + -TestPackaging)"]
+        Ascii["ascii2bord.py (BORD + EXT1 compiler/verifier)"]
+        Framematch["soi3d/framematch.py (Blender 3D sprite gate)"]
     end
 
+    Launcher -->|CLI flag split & launch| Frontend
     Frontend -->|GDExtension calls| Bridge
     Bridge -->|Integer C API| Core
     Tools -->|Compiles & Tests| Core
-    Tools -->|Builds & Audits| Frontend
+    Tools -->|Builds, Packs & Audits| Frontend
 ```
 
-### The 4 Architectural Layers
+### The 5 Architectural Layers
 
 1. **Deterministic C Core (`core/`)**:
-   - Freestanding, integer-only C99/C17 game simulation.
-   - Contains movement/physics, all 16 enemy behaviors, weapons, score/tally, and level loading.
-   - No Godot dependencies, no OS calls, no heap allocations during tick execution.
-   - State snapshotting (`soi_snapshot_save` / `soi_snapshot_load`) takes $\sim0.07\ \mu\text{s}$ via `memcpy`.
-   - Simulation state hashes to a 64-bit FNV-1a hash (`soi_net_hash`) across all active elements.
+   - Freestanding, integer-only C99/C17 game simulation (`sizeof(SoiWorld) == 17060` bytes).
+   - Contains movement/physics, all 16 enemy behaviors, weapons, PvP/Versus rules, score/tally, and `BORD`+`EXT1` level loading.
+   - Zero Godot dependencies, zero OS calls, zero heap allocations during tick execution.
+   - State snapshotting (`soi_snapshot_save` / `soi_snapshot_load`) takes $\sim0.07\ \mu\text{s}$ via `memcpy`; state hashes via 64-bit FNV-1a (`soi_net_hash`).
 
 2. **C++ GDExtension Bridge (`bridge/`)**:
-   - Thin `godot-cpp` wrapper exposing the C core as a `SoiCore` Godot node.
-   - Compiled using portable **Zig** (`bridge/build_zig.ps1`) without requiring MSVC.
-   - Strictly handles glue, memory mapping, and type conversions — zero game logic.
+   - Thin `godot-cpp` wrapper exposing the C core as a `SoiCore` Godot node (stamps `SOI_BUILD_ID` from git SHA).
+   - Compiled via portable **Zig** (`bridge/build_zig.ps1`) without requiring MSVC. Zero game logic lives here.
 
 3. **Front-End (`godot_project/`)**:
-   - **Godot 4.3** with GDScript.
-   - `scenes/game.gd`: Main game scene, tick dispatch, input routing, dual-presentation rendering (ORIGINAL ↔ REMASTERED).
-   - `scenes/editor.gd`: In-engine visual Map Maker supporting 19×13, 28×19, and 38×26 boards.
-   - `scenes/tile_catalog.gd`: Canonical catalog of all authentic blocks, goodies, enemies, and interactive objects.
-   - `scenes/tile_art.gd`: Centralized tile resolver and sprite loader with 4× HD and 3D frame overlay caches.
-   - `scenes/rollback_net.gd`: ENet star-hub rollback netcode with 64-snapshot ring buffer and monotonic scheduling.
-   - `scenes/audio.gd`: Multi-stream audio engine supporting original 8-bit sound and enhanced AudioSR 16-bit sound.
+   - **Godot 4.3** with GDScript (`Session` and `Audio` autoload singletons).
+   - `scenes/session.gd`: Mode/board/controller routing, high scores, and **`Session.ext_path(rel)`** packaged-safe external asset resolver.
+   - `scenes/game.gd` & `scenes/live3d.gd`: Main game scene, tick dispatch, interpolated 3D tween frames, and real-time GLTF Live3D rig rendering.
+   - `scenes/main_menu.gd`: Title screen, board picker, offline/online lobbies, Crockford Base32 join codes, and controller slot claiming.
+   - `scenes/editor.gd`, `scenes/tile_catalog.gd`, `scenes/tile_art.gd`: Classic Mac System 7 Map Maker ($19\times13$, $28\times19$, $38\times26$).
+   - `scenes/rollback_net.gd`: ENet Star-Hub rollback netcode with 64-snapshot ring buffer, monotonic input scheduling, and `headless_relay.tscn`.
+   - `scenes/audio.gd`: Multi-stream audio engine supporting original 8-bit SFX, cleaned 16-bit `wav_hd`, and AudioSR `wav_ai`.
 
-4. **Tools & Pipelines (`tools/`)**:
-   - Python 3.10+ and PowerShell automation.
-   - Asset decoding, AI upscaling (Real-ESRGAN / AudioSR), Blender 3D procedural models, and verification suites.
+4. **Packaging & Auto-Update Launcher (`tools/launcher/launcher.c`, `tools/publish_velopack.ps1`)**:
+   - `StepOnIt.exe` (compiled from `launcher.c` with Velopack `velopack_libc`) checks for delta updates, splits Godot engine flags from `--` game flags, and spawns `StepOnItGame.exe` + `StepOnIt.pck` alongside mirrored `extracted/` assets.
+
+5. **Tools, RE Reference & Asset Pipelines (`tools/`, `analysis/`, `docs/`, `plan/`)**:
+   - `extracted/` base SD sprites, audio, palettes, and 152 `.bord` levels **are tracked in git** (4,300+ files), as is `analysis/decomp/` (Ghidra PowerPC decompilation `FUN_<addr>.c`).
+   - `raw_game/`, `refs/`, `media/`, `bridge/godot-cpp/`, and heavy generated renders (`extracted/sprites_3d_frames/`, `extracted/pict_hd*`, `extracted/sprites_uhd/`) are **local/gitignored** on disk.
 
 ---
 
 ## 2. Environment & Execution Invariants (MANDATORY RULES)
 
-When working on this codebase in PowerShell on Windows, you **MUST** follow these invariants without exception:
+### A. Portable Toolchain Paths (`D:\SOI-tools\`) & Virtualenv
+- **Python**: **NEVER** invoke bare `python`, `py`, `pytest`, `ruff`, or `mypy`. Always use `.venv\Scripts\python.exe` (or `.venv\Scripts\pytest.exe`).
+- **Zig Compiler**: `D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe` (note the `\zig\` parent folder!).
+- **Godot 4.3 Console**: `D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe`
+- **Other Local Tools**: `D:\SOI-tools\blender\`, `D:\SOI-tools\velopack\`, `D:\SOI-tools\realesrgan\`, `D:\SOI-tools\ghidra\`.
 
-### A. Virtualenv Executables
-- **NEVER** run bare commands like `python`, `pytest`, `ruff`, or `mypy`.
-- Always use the explicit virtual environment path:
+### B. Windows PowerShell & Native Wildcard Splatting
+- Windows PowerShell does **not** have Unix `grep`, `sed`, `awk`, or `cat -flags` (use `git grep` or `Select-String`).
+- PowerShell does **not** expand wildcard globs (`core/src/*.c`) for native binaries like `zig.exe`. Always enumerate explicitly:
   ```powershell
-  .venv\Scripts\python.exe <script>.py
-  .venv\Scripts\pytest.exe
+  $srcs = (Get-ChildItem core/src/*.c).FullName
+  & $Zig cc -std=c17 -Icore/include @srcs ...
   ```
 
-### B. Shell Commands
-- Windows PowerShell **does not have** Unix utilities (`grep`, `sed`, `awk`, `cat -flags`).
-- Use PowerShell native cmdlets or Git commands:
-  - Search: `git grep "<pattern>"` or `Select-String -Path <path> -Pattern "<pattern>"`
-  - Inspect files: `Get-Content <path>` (or the agent `read_file` tool)
-
-### C. Godot CLI Invocations
-- Godot executable path: `D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe`
-- **Headless Node scripts**: **NEVER** pass a script extending `Node` or `Control` to `-s` / `--script`. Godot requires `SceneTree` or `MainLoop` for `-s` and will hang silently.
-- **Always invoke scenes via their `.tscn` URI**:
+### C. Godot CLI, Off-Screen Rendering & Concurrency
+- **Always invoke `.tscn` scenes, never `-s` on `Node` scripts**:
   ```powershell
   & "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe" --headless --path godot_project res://scenes/<scene>.tscn -- <args>
   ```
+- **Off-Screen Visual Capture**: `--headless` uses a dummy renderer (blank images). For screenshots/videos without desktop pop-ups, omit `--headless` and pass `--resolution 640x480 --position 9000,9000` (do **not** minimize the window, or Vulkan stops presenting).
+- **Single Heavy GPU Job at a Time**: Run **at most one** Blender render or non-headless Godot job concurrently — parallel heavy GPU workloads can destabilize the host PC.
 
-### D. Off-Screen Rendering for Visual Tests & Screenshots
-- Godot's `--headless` mode initializes a dummy rendering device that **produces completely blank viewports**.
-- To capture valid screenshots or visual verification images in CI or background tasks without a pop-up window:
-  ```powershell
-  & "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe" --resolution 640x480 --position 9000,9000 --path godot_project res://scenes/<scene>.tscn -- <args>
-  ```
-  Position `(9000, 9000)` moves the window off the visible desktop while Vulkan continues full hardware presentation.
-
-### E. AppData Path Integrity
-- Never drop the `antigravity` segment when referencing agent data directories:
-  - Correct: `C:\Users\<user>\.gemini\antigravity\brain\...`
-  - Incorrect: `C:\Users\<user>\.gemini\brain\...`
+### D. GDScript & Packaged Path Hygiene (`Session.ext_path()`)
+- **External Assets**: **NEVER** hardcode `ProjectSettings.globalize_path("res://../extracted/...")` in runtime or editor GDScript; `res://../` fails inside exported `.pck` packages. Always resolve through `Session.ext_path("<subpath>")` (e.g. `Session.ext_path("levels")`, `Session.ext_path("sprites_hd/" + folder)`). Gate `res://../media/screenshots` behind `OS.has_feature("editor")` with fallback to `user://screenshots`.
+- **GDScript Preloads & `InputEvent` Safety**:
+  - Prefer explicit `const X = preload("res://scenes/...")` over bare `class_name` across scripts so `--headless` CLI runs do not depend on a prior `--editor` cache pass.
+  - Never name static functions on preloaded scripts `get_name()`, `get_class()`, `get_path()`, or `duplicate()` (collides with `Resource`/`Object` methods on the `GDScript` instance).
+  - Never check `event.echo` on `InputEventJoypadButton` or `InputEventMouseButton` (`echo` exists only on `InputEventKey`).
 
 ---
 
-## 3. The 16-Stage Verification Gate (`tools/verify.ps1`)
+## 3. Verification Gate (`tools/verify.ps1`) & Test Suites
 
-Before committing any non-trivial code changes or completing a task, run the full verification gate:
+Before completing any non-trivial change, run the full 16-stage gate:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/verify.ps1
 ```
 
-All 16 stages must output `[PASS]` and conclude with `ALL STAGES PASSED`:
-
-| # | Stage Name | Target File / Command | Description |
+| # | Stage Name | Target | What It Verifies |
 |---|---|---|---|
-| 1 | `core: mechanic unit tests` | `tests/test_mechanics.c` | Compiles and executes all 69 sections of C core unit tests covering movements, weapons, enemies, scoring, and combat. |
-| 2 | `core: harness + determinism` | `tests/harness.c` | Verifies identical 64-bit state hashes across multiple runs from the same seed. |
-| 3 | `core: rollback synctest` | `tests/test_synctest.c` | Forces 8-tick divergent rollbacks across all 152 campaign boards; asserts 0 state mismatches. |
-| 4 | `core: fixture-replay selftest` | `tools/fixture_replay.py` | Replays an recorded inputs fixture against `board_401.bord` through `soi_core.dll`. |
-| 5 | `core: creeper chain simulation`| `tools/verify_creepers.c` | Simulates and asserts deterministic walking block mechanics across all 15 creeper boards. |
-| 6 | `tools: ascii2bord unit tests` | `tools/test_ascii2bord.py`| Tests text-to-binary compilation of level formats. |
-| 7 | `tools: ascii2bord roundtrip` | `tools/ascii2bord.py verify-roundtrip` | Asserts byte-exact roundtrip decompile $\to$ compile across all 152 original boards. |
-| 8 | `art: 3D sprite frames` | `tools/soi3d/framematch.py --check` | Compares 3D rendered sprite frames against 2D reference sprites for IoU and $\Delta E$ color fidelity. |
-| 9 | `bridge: GDExtension build` | `bridge/build_zig.ps1` | Recompiles `godot-cpp` and `soi_bridge.dll` using Zig C++. |
-| 10 | `godot: import clean` | Godot CLI `--editor --headless` | Validates resource loading and compiles all GDScript files without syntax/parse errors. |
-| 11 | `godot: run + screenshot` | `game.tscn -- --shot` | Runs game off-screen at `(9000, 9000)` and captures a rendered frame to `media/screenshots/`. |
-| 12 | `net: rollback soak test` | `tools/test_net_soak.ps1` | 1,200 ticks with simulated 120ms latency and 30ms jitter; verifies 0 desyncs across hundreds of rollbacks. |
-| 13 | `net: 3-player adversarial soak`| `tools/test_net_adversarial.ps1` | 3-player Star-Hub packet forwarding under asymmetric packet loss conditions. |
-| 14 | `net: edge cases & peer drops` | `tools/test_net_edge_cases.ps1` | Tests Join Code Crockford Base32 parsing, mid-match peer drops, and host disconnect recovery. |
-| 15 | `net: online progression & retry`| `tools/test_net_progression.ps1`| Verifies dual-instance headless campaign level transitions and retry synchronization. |
-| 16 | `editor: headless map editor self-test`| `editor.tscn -- --test-editor` | Exercises editor grid allocation across all 3 sizes, round-trip serialization, and tile catalog integrity. |
+| 1 | `core: mechanic unit tests` | `tests/test_mechanics.c` | All 69 sections of C core mechanics, weapons, AI, Co-op/Compete/Versus, and regressions. |
+| 2 | `core: harness + determinism` | `tests/harness.c` | Identical 64-bit state hashes across multi-run executions from the same seed. |
+| 3 | `core: rollback synctest` | `tests/test_synctest.c` | 1,000 ticks of continuous 8-tick divergent rollbacks across all 152 boards (0 hash mismatches). |
+| 4 | `core: fixture-replay selftest` | `tools/fixture_replay.py` | Recorded input replay against `board_401.bord` via `soi_core.dll`. |
+| 5 | `core: creeper chain simulation`| `tools/verify_creepers.c` | 20,000-tick walking-block chain simulation across all 15 Creeper boards. |
+| 6 | `tools: ascii2bord unit tests` | `tools/test_ascii2bord.py`| Text-to-binary `.bord` + `EXT1` compilation and edge cases. |
+| 7 | `tools: ascii2bord roundtrip` | `tools/ascii2bord.py` | Byte-exact decompile $\to$ compile roundtrip across all 152 original boards. |
+| 8 | `art: 3D sprite frames` | `tools/soi3d/framematch.py --check` | Gates all published 3D sprite sets against SD references ($\text{IoU} \ge 0.85$, $\Delta E \le 16$). |
+| 9 | `bridge: GDExtension build` | `bridge/build_zig.ps1` | Compiles C core + `godot-cpp` into `godot_project/bin/soi_bridge.*.dll` with `SOI_BUILD_ID`. |
+| 10 | `godot: import clean` | `--editor --headless --quit` | Validates resource imports and compiles all GDScripts with zero parse/compile errors. |
+| 11 | `godot: run + screenshot` | `game.tscn -- --shot` | Renders off-screen at `(9000, 9000)` and writes verification frame to `media/screenshots/`. |
+| 12 | `net: rollback soak test` | `tools/test_net_soak.ps1` | 10,000-tick 3-peer soak under 120ms lag, 30ms jitter, and rift-stall recovery (0 desyncs). |
+| 13 | `net: 3-player adversarial soak`| `tools/test_net_adversarial.ps1` | 3-player Star-Hub relay under asymmetric packet loss and random fuzz inputs. |
+| 14 | `net: edge cases & peer drops` | `tools/test_net_edge_cases.ps1` | Tick-0 peer drops, Crockford Base32 join codes, build-ID mismatch gating, host disconnect. |
+| 15 | `net: online progression & retry`| `tools/test_net_progression.ps1`| Dual-instance campaign board advances, challenge rounds, and retry sync. |
+| 16 | `editor: headless map editor` | `editor.tscn -- --test-editor` | Grid sizing ($19\times13$, $28\times19$, $38\times26$), EXT1 odd/even roundtrip, catalog & path audits. |
+
+**Additional Targeted Suites & CI**:
+- **Packaging & Delta Update Smoke Test**: `powershell -ExecutionPolicy Bypass -File tools/verify.ps1 -TestPackaging` (invokes `tools/test_velopack_local.ps1`: builds v1.0.0 + v1.0.1 `<5 MB` delta, installs to `%TEMP%`, verifies launch).
+- **152-Board Winnability Audit**: `tools/verify_winnable.c` (verifies static reachability across all 152 boards).
+- **UI/Controller/Editor Adversarial Suite**: `res://scenes/test_adversarial_m1.tscn` (348 assertions covering joypad claiming, resize clamping, EXT1 parity, hidden block prefixes).
+- **Native Launcher CLI Suite**: `tests/test_launcher_cli.c` (18 assertions verifying engine vs `--` user flag splitting).
+- **GitHub Actions CI**: `.github/workflows/verify.yml` runs `tools/verify.ps1` on `[self-hosted, windows]`.
 
 ---
 
-## 4. Tile System & BORD Format Specifications
+## 4. Tile System, 3D Sprites & BORD/EXT1 Format
 
 ### Cell 32-Bit Encoding
-Each grid cell in memory is a 32-bit unsigned integer formatted as:
-
 $$\text{Cell} = (\text{Payload} \ll 16) \mid (\text{Flags} \ll 8) \mid \text{LowByteType}$$
 
 - **Behavior Variant Flags (Bits 8–15)**:
   - `0x0100` (`FLAG_BACKGROUND`): Non-solid decorative mesh / background layer.
-  - `0x0200` (`FLAG_BREAKABLE`): Standable solid that can be shattered by head-bonking or weapons.
-  - `0x0300` (`FLAG_WALL`): Permanent, indestructible standable wall (`FLAG_BACKGROUND | FLAG_BREAKABLE`).
-  - `0x1200` (`FLAG_HIDDEN`): Special hidden block (`0x1000 | FLAG_BREAKABLE`). Payload contains the hidden pickup tile ID.
+  - `0x0200` (`FLAG_BREAKABLE`): Standable solid shattered by head-bonking or weapons.
+  - `0x0300` (`FLAG_WALL`): Permanent indestructible wall (`0x0100 | 0x0200`).
+  - `0x1200` (`FLAG_HIDDEN`): Hidden pickup block (`0x1000 | 0x0200`). **Invariant**: Bits 16–31 (`Payload`) **must** include the `0x0900` pickup prefix (e.g. `0x0917` for Gold Coin, not `0x0017`) so block-break unpacking preserves `CELL_DOOR (0x0800)` + goody art.
 
-### The 25 Authentic Block Families
-Original boards do not use arbitrary IDs for blocks. Block families exist at regular step-6 intervals:
+### The 25 Authentic Block Families ($\text{Tile ID} = 0\text{x}07 + 6k,\ k \in [0, 24]$, full $32\times32$ frame $= t + 1$)
 
-$$\text{Tile ID} = 0\text{x}07 + 6k \quad (k \in [0, 24])$$
-
-Full 32×32 pixel sprites correspond to frame index $t + 1$:
-
-| $k$ | Type ID | Frame | Name | $k$ | Type ID | Frame | Name |
+| $k$ | Type | Frame | Name | $k$ | Type | Frame | Name |
 |:---:|:---:|:---:|:---|:---:|:---:|:---:|:---|
 | 0 | `0x07` | 8 | White Block | 13 | `0x55` | 86 | Green Square |
 | 1 | `0x0D` | 14 | Red Block | 14 | `0x5B` | 92 | Blue Square |
@@ -179,95 +175,46 @@ Full 32×32 pixel sprites correspond to frame index $t + 1$:
 | 12 | `0x4F` | 80 | Red Ring | | | | |
 
 > [!WARNING]
-> **Legacy Alias Pitfall (`0x0387`)**:
-> `0x0387` is low-byte `0x87`, which corresponds to frame 136 — a 16×16 break/shrink animation fragment. It is **not** an authentic block family and renders as a glitched green corner when stretched. Never use `0x0387` for full blocks; use the canonical 25 block families above.
+> **Legacy Alias Pitfall (`0x0387`)**: Low-byte `0x87` is frame 136 (a $16\times16$ break animation fragment, not a block family). Never emit `0x0387` for blocks.
 
-### Discrete Player 3 (Crimson) Tiles
-To maintain byte-exact compatibility with the 152 original boards while supporting 3 players:
-- `0x0933`: Red Key (P3 Key)
-- `0x0934`: Closed Red Door (P3 Lock)
-- `0x0935`: Opened Red Door (P3 Exit)
-
-### EXT1 Trailer Format
-Custom maps and extended campaign boards append an `EXT1` trailer to the `.bord` file:
-- Magic: `EXT1` (4 bytes big-endian)
-- CRC-16-CCITT: Validates the trailer against corrupt reads.
-- Fields: Custom grid dimensions ($W \times H$), P3 spawn point, 4 Versus spawn points, starting lives, default game mode, victory rules, friendly fire, and custom map name.
-- Preserved identically by `tools/ascii2bord.py` and `godot_project/scenes/editor.gd`.
+- **Discrete Player 3 (Crimson) Tiles**: `0x0933` (Red Key), `0x0934` (Closed Red Door), `0x0935` (Opened Red Door — non-supportive).
+- **EXT1 Trailer (`24` bytes)**: Magic `EXT1` + custom $W\times H$ + P3 spawn + 4 Versus spawns + lives/mode/victory/FF flags + big-endian CRC-16-CCITT over bytes `0..21`. **Invariants**: Always scan backward with step `-1` (legacy/padded boards may have odd byte lengths), and clamp `p1_spawn`, `p2_spawn`, `p3_spawn`, and all 4 `vs_spawns` when downsizing grids.
+- **3D Sprite Remaster Pipeline**: Procedural Blender builders live in `tools/soi3d/builders/` and publish to `extracted/sprites_3d_frames/` (+ `tw/` tweens and `extracted/sprites_live/` GLTF rigs). Always read `plan/SPRITE_REMASTER_PROCESS.md` (§H & §F) and activate the `soi3d-sprite-review` skill when modifying 3D sprites.
 
 ---
 
-## 5. Map Editor Architecture
+## 5. Rollback Netcode & Core Determinism Invariants
 
-The Map Editor (`godot_project/scenes/editor.gd`) provides an authentic classic Mac System 7 authoring experience:
-
-- **Canonical Inventory (`scenes/tile_catalog.gd`)**:
-  Exposes structured dictionaries for Blocks (25 families $\times$ 4 variants), Transporters (10), Stop/Go switches (15), Doors & Keys (12), Goodies (21), Enemies (19), and Spawns.
-- **Remastered Tile Art (`scenes/tile_art.gd`)**:
-  Translates cell IDs into sprite frames. Merges 4× HD sprites (`extracted/sprites_hd/`) with procedural 3D renders (`extracted/sprites_3d_frames/`). Caches linear-filtered mipmapped textures and computes 1:1 logical scale.
-- **Mathematical 1:1 Square Grid**:
-  Grid cells are guaranteed square regardless of window aspect ratio using uniform zoom:
-  $$\text{zoom} = \min\left(\frac{W_{\text{avail}}}{C \times 32}, \frac{H_{\text{avail}}}{R \times 32}\right)$$
-  Framed inside a classic 3D beveled metallic bezel.
-- **Collapsible Left Palette**:
-  StarCraft / Warcraft II-style tree navigation with tile count badges (`▼ Blocks 25`, `▼ Transporters 10`, etc.), quick `[X] Eraser`, and variant selector chips (`[Wall | Brk | Bkg | Hid]`).
-- **Classic Mac Menu Bar**:
-  High-resolution Apple logo with canvas-rendered drop shadows and crisp Chicago typography.
-- **Map Properties Modal**:
-  Configures board dimensions ($19\times13$, $28\times19$, $38\times26$), game modes (Co-op, Compete, Versus), victory conditions (Lives, Score, Door), friendly fire, and bonus timers.
-- **CLI Commands**:
-  - Test: `godot --headless --path godot_project res://scenes/editor.tscn -- --test-editor`
-  - Screenshot: `godot --resolution 640x480 --position 9000,9000 --path godot_project res://scenes/editor.tscn -- --editorshot`
+1. **Monotonic Input Scheduling**: Never compute `target_tick = current_tick + BASE_DELAY` unconstrained; if RTT drops, `BASE_DELAY` shrinks and clobbers an already-confirmed tick. Always enforce `target_tick = max(current_tick + BASE_DELAY, last_scheduled_tick + 1)`.
+2. **Deterministic Peer Drops**: Never mutate `SoiWorld` inside async ENet callbacks. Bind disconnects to `peer_drop_tick = last_confirmed_tick + 1` (handling tick-0 drops before any input arrives without host/client off-by-one divergence), zero/confirm future inputs, and apply `_core.drop_player()` inside both live and resimulation loops.
+3. **Post-Parse State Restoration & Resimulation Gating**: Restore carried-over player stats (`keep[]`) *after* `BORD` and `EXT1` headers finish parsing. Suppress `Audio.play()`, screen shake, and duplicate particle spawns whenever `is_resimulating == true`.
 
 ---
 
-## 6. Rollback Netcode & Determinism Principles
+## 6. Quick Developer Runbook
 
-When modifying netcode or simulation physics, strictly adhere to these algorithmic principles:
-
-1. **Monotonic Input Scheduling**:
-   Under adaptive rollback delay, never assign `target_tick = current_tick + BASE_DELAY` unconstrained. If `BASE_DELAY` drops, the new tick can collide with a previously scheduled tick, causing input clobbering. Always enforce:
-   $$\text{target\_tick} = \max(\text{current\_tick} + \text{BASE\_DELAY}, \text{last\_scheduled\_tick} + 1)$$
-
-2. **Deterministic Peer Drops**:
-   Never drop a disconnected player directly inside an asynchronous ENet callback. Rollbacks will wipe or shift the drop. Instead:
-   - Bind disconnects to $\text{peer\_drop\_tick} = \text{last\_confirmed\_tick} + 1$.
-   - Confirm and zero subsequent inputs on both host and clients.
-   - Apply the drop inside both the live simulation loop and the resimulation loop.
-
-3. **Audio & Visual Resimulation Gating**:
-   During rollback resimulation (`is_resimulating == true`), all audio cues (`Audio.play()`), screen shakes, and particle spawns **must be suppressed** to avoid sound stuttering and duplicate visuals.
-
----
-
-## 7. Quick Developer Runbook
-
-### Clean Rebuild of C Core & GDExtension
 ```powershell
-# Rebuild the GDExtension bridge DLL
+# 1. Rebuild C Core + GDExtension DLL
 powershell -ExecutionPolicy Bypass -File bridge/build_zig.ps1
-```
 
-### Run C Core Unit Tests Standalone
-```powershell
-# Compile and execute the 69 test sections
-& "D:\SOI-tools\zig-windows-x86_64-0.13.0\zig.exe" cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src core/src/*.c tests/test_mechanics.c -o test_mechanics.exe
+# 2. Run C Core Mechanic Unit Tests Standalone (69 sections)
+$Zig = "D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe"
+$srcs = (Get-ChildItem core/src/*.c).FullName
+& $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tests/test_mechanics.c -o test_mechanics.exe
 .\test_mechanics.exe
 Remove-Item test_mechanics.exe, test_mechanics.pdb -ErrorAction SilentlyContinue
-```
 
-### Run 152-Board Byte-Exact Roundtrip Test
-```powershell
+# 3. Run 152-Board Byte-Exact Roundtrip & Winnability Checks
 .venv\Scripts\python.exe tools/ascii2bord.py verify-roundtrip extracted/levels
-```
 
-### Launch Headless Map Editor Self-Test
-```powershell
-& "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe" --headless --path godot_project res://scenes/editor.tscn -- --test-editor
-```
+# 4. Run Headless Map Editor & Adversarial UI Self-Tests
+$Godot = "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe"
+& $Godot --headless --path godot_project res://scenes/editor.tscn -- --test-editor
+& $Godot --headless --path godot_project res://scenes/test_adversarial_m1.tscn
 
-### Capture Off-Screen Editor Screenshot
-```powershell
-& "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe" --resolution 640x480 --position 9000,9000 --path godot_project res://scenes/editor.tscn -- --editorshot
+# 5. Capture Off-Screen Verification Screenshot
+& $Godot --resolution 640x480 --position 9000,9000 --path godot_project res://scenes/editor.tscn -- --editorshot
+
+# 6. Build & Smoke-Test Velopack Windows Installer + Delta Update
+powershell -ExecutionPolicy Bypass -File tools/verify.ps1 -TestPackaging
 ```
-The output image will be saved cleanly to `media/screenshots/editor_palette_verified.png`.

@@ -103,9 +103,9 @@
   - **Stage 4 (Tooling, Tests & Verification)**: Passed `has_p3` in `ascii2bord.py:pack_ext1` and added `sys.exit(1)` on verification failure (152/152 byte-exact PASS); added network polling in `test_net_edge_cases.gd` Board 2 loop; verified all headless suites: `editor.tscn -- --test-editor` (PASS), `test_net_edge_cases.tscn` (PASS), `test_net_adversarial.tscn` (1,500 ticks PASS), `net_soak_test.tscn` (10,000 ticks PASS, 0 desyncs), `test_net_progression.tscn` (PASS); verified end-to-end `tools/verify.ps1` (all 13 stages green).
 
 - **2026-10-18**: Release Packaging & CI Validation (`plan/10_18_ready.md`) completed & verified:
-  - Added Velopack distribution packaging pipeline (`tools/package_release.ps1`).
-  - Added packaged path resolution in `Session.ext_path` and `StepOnIt.exe` launcher routing.
-  - Verified 16-stage gate in `tools/verify.ps1`.
+  - Added Velopack distribution packaging pipeline (`tools/publish_velopack.ps1`, `tools/test_velopack_local.ps1`).
+  - Added packaged path resolution in `Session.ext_path` and `StepOnIt.exe` launcher routing (`tools/launcher/launcher.c`).
+  - Verified 16-stage gate in `tools/verify.ps1` and `.github/workflows/verify.yml`.
 
 - **2026-10-20 / 2026-10-21**: Map Editor Overhaul & Visual Remaster completed & verified:
   - **Authentic Tile Catalog (`scenes/tile_catalog.gd`)**: Grounded in decompiled core and 152 campaign boards. Cataloged all 25 authentic block families ($0\text{x}07 + 6k$), 4 behavior variants (Wall, Breakable, Background, Hidden), 10 Transporters, 15 Stop/Go switches, 12 Doors & Keys (including discrete P3 Crimson Key/Door), 21 authentic Goodies, and 19 Enemies and Spawns.
@@ -126,6 +126,10 @@
   - **Virtualenv Precedence (`tools/verify.ps1`)**: Prioritized `.venv\Scripts\python.exe` before looking at global `py` or `python`.
   - **Launcher Boolean Flag Forwarding (`tools/launcher/launcher.c`)**: Added non-value flag filtering so boolean engine flags (`--headless`, `--verbose`, etc.) do not consume subsequent scene arguments.
   - **Adversarial & Gate Verification**: Independent Post-Victory Audit confirmed clean results across all suites: `tools/verify.ps1` (16/16 stages PASS), `test_adversarial_m1.tscn` (348/348 PASS), `test_launcher_cli.c` (18/18 PASS), and headless editor self-test (PASS).
+
+- **2026-11-10**: Cold-Start Handoff Audit, Packaged Editor Path Fix & `/learn` Customizations:
+  - **Packaged Editor Asset Resolution (`scenes/tile_art.gd`, `scenes/editor.gd`)**: Routed Map Maker sprite folder indexing (`TileArt._ext_dir`) and campaign board import (`_open_original_board_dialog`) through `Session.ext_path(...)` instead of raw `res://../extracted/...` so packaged Velopack builds load all sprites and campaign levels cleanly; restored `OS.has_feature("editor")` screenshot fallback in `_take_editorshot()` and added self-test #9.
+  - **Handoff Documentation & Customizations**: Expanded `AGENTS.md` across all 5 architectural layers (fixing the standalone Zig runbook path/glob and documenting `Session.ext_path()`, Velopack packaging, `0x0900` hidden prefixes, and `EXT1` parity), synced `README.md` and `docs/remaster/README.md` with actual git tracking state, added `.agents/skills/soi3d-sprite-review/SKILL.md`, and persisted Godot/PowerShell guardrails in global `GEMINI.md`.
 
 ---
 

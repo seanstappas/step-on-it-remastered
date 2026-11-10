@@ -1702,7 +1702,7 @@ func _open_original_board_dialog() -> void:
 	var pop := MacMenuPopup.new()
 	pop.set_font(_get_chicago_font(), 12)
 	_menu_overlay.add_child(pop)
-	var dir := ProjectSettings.globalize_path("res://../extracted/levels")
+	var dir := Session.ext_path("levels")
 	var maps: Array[String] = []
 	if DirAccess.dir_exists_absolute(dir):
 		var d := DirAccess.open(dir)
@@ -1852,7 +1852,7 @@ func _take_editorshot() -> void:
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	var dir := ProjectSettings.globalize_path("res://../media/screenshots")
+	var dir := ProjectSettings.globalize_path("res://../media/screenshots") if OS.has_feature("editor") else ProjectSettings.globalize_path("user://screenshots")
 	DirAccess.make_dir_recursive_absolute(dir)
 	img.save_png("%s/editor_palette_verified.png" % dir)
 	print("Saved editor screenshot: %s/editor_palette_verified.png" % dir)
@@ -1999,6 +1999,9 @@ func _run_self_test() -> void:
 	var hidden_payload := (current_brush >> 16) & 0xFFFF
 	_check((hidden_payload & 0xFF00) == 0x0900, "Hidden block brush payload missing 0x0900 prefix: 0x%04X" % hidden_payload)
 	_check(hidden_payload == 0x0917, "Default hidden goody is not 0x0917: 0x%04X" % hidden_payload)
+
+	# 9. Packaged-path delegation check (TileArt._ext_dir matches Session.ext_path)
+	_check(TileArt._ext_dir("sprites/block_sprites") == Session.ext_path("sprites/block_sprites"), "TileArt._ext_dir does not match Session.ext_path")
 
 	# Restore state
 	_restore_editor_state(orig_state)

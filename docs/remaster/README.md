@@ -87,8 +87,7 @@ so `--shot` (which awaits `RenderingServer.frame_post_draw`) and `--write-movie`
 
 ## Assets & the remaster pipeline
 
-Decoded assets live under `extracted/` (gitignored, regenerable). Each upgradeable class has a parallel
-`_hd` folder; the front-end loads SD by default and the `_hd` set only in `--hd` mode.
+Decoded assets live under `extracted/` (base SD/audio/level assets are tracked in git; heavy HD/3D folders like `sprites_3d_frames/`, `sprites_uhd/`, and `pict_hd*` are local/gitignored and regenerable). Runtime and editor scenes resolve external paths via `Session.ext_path(rel)` so both dev runs and packaged Velopack builds (`tools/publish_velopack.ps1`) locate sibling `extracted/` directories cleanly. Each upgradeable class has a parallel `_hd` folder; the front-end loads SD in ORIGINAL mode and the `_hd` + 3D overlay set in REMASTERED mode.
 
 | Class | SD (faithful) | Remaster (HD) | Tools |
 |---|---|---|---|

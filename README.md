@@ -15,25 +15,23 @@ Personal preservation project.
 
 ## Repo layout
 
-Directories use `snake_case`. Inputs are committed; generated artifacts are `.gitignore`d and
-reproducible from the inputs via `tools/`.
+Directories use `snake_case`. Source code, RE decompilations, and base decoded assets are tracked in git; original copyrighted disks, build outputs, and heavy multi-GB HD/3D render caches are `.gitignore`d (regenerable via `tools/`).
 
 ```
-raw_game/            # INPUT — the untouched original Mac game (source of truth; never edited)
-refs/                # INPUT — human reference material (manuals, links, screenshots)
+raw_game/            # LOCAL INPUT (gitignored) — untouched original Mac game (source of truth)
+refs/                # LOCAL INPUT (gitignored) — manuals, reference cards, emulator captures
 core/                # C game core — deterministic, decompiled gameplay logic
 bridge/              # C++ godot-cpp GDExtension shim (the `SoiCore` node) wrapping the C core
 godot_project/       # Godot 4.3 front-end — scenes/*.gd, project.godot, soi.gdextension
-tests/               # C mechanic unit tests + determinism / fixture-replay harness
-tools/               # Python + PowerShell: asset decode, AI upscale, music/SFX render, the gate
+tests/               # C mechanic/synctest/launcher unit tests + fixture-replay harness
+tools/               # Python + PowerShell + C launcher: asset decode, 3D/AI upscale, Velopack, gate
 docs/                # RE findings (docs/original_game/) + remaster docs (docs/remaster/)
-plan/                # MASTER_PLAN.md, EXECUTION_PLAN.md, REMASTER_PROMPTS.md
-analysis/            # Ghidra scripts + decompiled listings used to reverse the core
-media/               # tracked screenshots / videos of the remaster's progress
-extracted/           # GENERATED (gitignored) — decoded assets, regenerate via tools/:
-  levels/  palette/  cicn/  sprites/ (+ sprites_hd/ sprites_uhd/)  pict/ (+ pict_hd/ pict_hd_v2/)
-  music/  audio/wav/ (+ wav_hd/ wav_ai/)  movies/ (+ movies_hd/)
-bin/                 # GENERATED (gitignored) — core_pef.bin + build outputs
+plan/                # MASTER_PLAN.md, SPRITE_REMASTER_PROCESS.md, STATUS.md, REMAINING_WORK.md
+analysis/            # Ghidra scripts + tracked PowerPC decompilation (analysis/decomp/)
+extracted/           # Decoded base assets (tracked: levels/, palette/, cicn/, sprites/, pict/, music/, audio/)
+                     # + local HD/3D overlays (gitignored: sprites_3d_frames/, sprites_uhd/, pict_hd*/)
+media/               # LOCAL OUTPUT (gitignored) — captured verification screenshots & videos
+build/ releases/     # LOCAL OUTPUT (gitignored) — exported StepOnIt.pck, StepOnIt.exe & Velopack packages
 ```
 
 ## Build, run & verify
@@ -51,6 +49,7 @@ Sixteen stages must PASS: core mechanic unit tests, core harness + determinism, 
 fixture-replay selftest, creeper chain simulation, ascii2bord unit tests, ascii2bord roundtrip, 3D sprite frames,
 the GDExtension build, clean Godot import, rendered `--shot` screenshot, rollback soak test, 3-player
 adversarial soak, net edge cases & peer drops, online progression & retry sync, and headless map editor self-test.
+Pass `-TestPackaging` (or run `tools/publish_velopack.ps1 -Version X.Y.Z`) to also build and smoke-test the standalone Windows `StepOnIt-win-Setup.exe` installer and `<5 MB` Velopack delta updater.
 
 **Play:** `.\play.ps1` (starts REMASTERED with music on, window sized to your monitor), or open
 `godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
