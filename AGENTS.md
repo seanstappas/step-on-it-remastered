@@ -13,7 +13,7 @@ This project is a faithful preservation and remaster of the 1996 Mac PowerPC gam
 ```mermaid
 flowchart TD
     subgraph Dist["Native Launcher & Updater (tools/launcher/)"]
-        Launcher["StepOnIt.exe (launcher.c + Velopack C SDK)"]
+        Launcher["StepOnItLauncher.exe (launcher.c + Velopack C SDK)"]
     end
 
     subgraph Frontend["Godot 4.3 Engine (godot_project/)"]
@@ -68,7 +68,9 @@ flowchart TD
    - `scenes/audio.gd`: Multi-stream audio engine supporting original 8-bit SFX, cleaned 16-bit `wav_hd`, and AudioSR `wav_ai`.
 
 4. **Packaging & Auto-Update Launcher (`tools/launcher/launcher.c`, `tools/publish_velopack.ps1`)**:
-   - `StepOnIt.exe` (compiled from `launcher.c` with Velopack `velopack_libc`) checks for delta updates, splits Godot engine flags from `--` game flags, and spawns `StepOnItGame.exe` + `StepOnIt.pck` alongside mirrored `extracted/` assets.
+   - `StepOnItLauncher.exe` (compiled from `launcher.c` with Velopack `velopack_libc`) checks for delta updates, splits Godot engine flags from `--` game flags, and spawns `StepOnIt.exe` + `StepOnIt.pck` alongside mirrored `extracted/` assets (installed via Velopack to `%LocalAppData%\StepOnIt\current\StepOnItLauncher.exe`).
+   - `update_config.json` & private-repo flow: `tools/publish_velopack.ps1` always writes `update_config.json` with `-RepoUrl` (default `https://github.com/seanstappas/step-on-it-remastered`; never ships a placeholder or token). With `-UploadToGitHub`, it resolves `$env:GITHUB_TOKEN` or falls back to `gh auth token`, skips `vpk download github` on a zero-release repo, and passes the token to `vpk`. `SOI_UPDATE_URL` overrides `update_config.json` for local smoke tests (`tools/test_velopack_local.ps1`).
+   - Token lookup: `StepOnItLauncher.exe` resolves GitHub tokens in order `SOI_UPDATE_TOKEN` env var -> `%LOCALAPPDATA%\StepOnIt\update_token.txt` (managed by `--set-update-token <token>` / `--clear-update-token`, which exit without launching) -> `"update_token"` in `update_config.json` -> anonymous; tokens are never logged. See [docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md).
 
 5. **Tools, RE Reference & Asset Pipelines (`tools/`, `analysis/`, `docs/`, `plan/`)**:
    - `extracted/` base SD sprites, audio, palettes, and 152 `.bord` levels **are tracked in git** (4,300+ files), as is `analysis/decomp/` (Ghidra PowerPC decompilation `FUN_<addr>.c`).

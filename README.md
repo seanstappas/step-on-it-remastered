@@ -51,6 +51,14 @@ the GDExtension build, clean Godot import, rendered `--shot` screenshot, rollbac
 adversarial soak, net edge cases & peer drops, online progression & retry sync, and headless map editor self-test.
 Pass `-TestPackaging` (or run `tools/publish_velopack.ps1 -Version X.Y.Z`) to also build and smoke-test the standalone Windows `StepOnIt-win-Setup.exe` installer and `<5 MB` Velopack delta updater.
 
+### Release & install (private friend testing)
+
+Windows builds are packaged with Velopack (`tools/publish_velopack.ps1`) and published to GitHub Releases on the private repo (`https://github.com/seanstappas/step-on-it-remastered`):
+
+- **Publish a release:** `powershell -ExecutionPolicy Bypass -File tools/publish_velopack.ps1 -Version X.Y.Z -UploadToGitHub` (writes `update_config.json`, uses `$env:GITHUB_TOKEN` or falls back to `gh auth token`, and skips prior-release download on the first release).
+- **Install & authenticate updates:** `StepOnIt-win-Setup.exe` installs to `%LocalAppData%\StepOnIt\current\StepOnItLauncher.exe` (which launches `StepOnIt.exe` + `StepOnIt.pck`). Testers configure their read-only token once via `StepOnItLauncher.exe --set-update-token <token>` (or `SOI_UPDATE_TOKEN`).
+- **Full guide:** See [docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md) for releasing, per-tester token setup/revocation, SmartScreen, and online play (UDP `7777`, Tailscale / port-forwarding, build-ID matching).
+
 **Play:** `.\play.ps1` (starts REMASTERED with music on, window sized to your monitor), or open
 `godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
 Controls — P1: arrows + Z/X/C/V, P2: WASD + F/G/H/J. **F2** switches the whole presentation live —
@@ -115,6 +123,7 @@ The reverse-engineering + extraction tools are pure Python 3.10+ (`py tools/<nam
 - **[AGENTS.md](AGENTS.md)** — **Agent Handover & Contributor Guide**: technical architecture, critical invariants, gate execution, and system rules for AI agents and developers.
 - **[docs/remaster/](docs/remaster/)** — the remaster: architecture, running, the front-end flags, and
   the asset pipeline (current state).
+- **[docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md)** — private GitHub Releases packaging, per-tester read-only tokens, installer/SmartScreen steps, and online play (UDP `7777` / Tailscale / port-forwarding).
 - **[docs/](docs/)** — verified reverse-engineering findings about the original game (binary, resources,
   level format, graphics/audio, gameplay). Each claim is tagged CONFIRMED / HYPOTHESIS / TODO.
 - **[plan/MASTER_PLAN.md](plan/MASTER_PLAN.md)** — architecture, determinism contract, oracle, schemas, scope.

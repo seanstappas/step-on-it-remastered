@@ -3,71 +3,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 
 #define main launcher_real_main
 #include "../tools/launcher/launcher.c"
 #undef main
 
-/* Helper to replicate the exact command line construction in launcher.c */
 static void build_test_cmd(int argc, char **argv, char *cmd_line, size_t cap) {
-    size_t offset = 0;
-    int written = snprintf(cmd_line, cap, "\"D:\\Code\\step-on-it-remastered\\build\\win\\StepOnIt.exe\"");
-    if (written > 0 && (size_t)written < cap) {
-        offset = (size_t)written;
-    }
+    build_godot_cmd_line(
+        "D:\\Code\\step-on-it-remastered\\build\\win\\StepOnIt.exe",
+        "D:\\Code\\step-on-it-remastered\\build\\win\\StepOnIt.pck",
+        true,
+        argc,
+        argv,
+        cmd_line,
+        cap,
+        NULL);
+}
 
-    append_arg(cmd_line, cap, &offset, "--main-pack");
-    append_arg(cmd_line, cap, &offset, "D:\\Code\\step-on-it-remastered\\build\\win\\StepOnIt.pck");
-
-    bool has_visual_flag = false;
-    bool has_music_flag = false;
-
-    for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        if (strcmp(a, "--3d") == 0 || strcmp(a, "--hd") == 0 || strcmp(a, "--original") == 0) {
-            has_visual_flag = true;
-        }
-        if (strcmp(a, "--music") == 0 || strcmp(a, "--no-music") == 0) {
-            has_music_flag = true;
-        }
-    }
-
-    /* Engine flags go before '--' */
-    for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        if (is_velo_or_squirrel_arg(a)) continue;
-        if (is_godot_engine_arg(a)) {
-            append_arg(cmd_line, cap, &offset, a);
-            /* If this flag takes an argument value (e.g. --resolution 640x480, --position 0,0, --quit-after 600) */
-            if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
-                i++;
-                append_arg(cmd_line, cap, &offset, argv[i]);
-            }
-        }
-    }
-
-    /* Game arguments go after '--' */
-    append_arg(cmd_line, cap, &offset, "--");
-
-    if (!has_visual_flag) {
-        append_arg(cmd_line, cap, &offset, "--3d");
-    }
-    if (!has_music_flag) {
-        append_arg(cmd_line, cap, &offset, "--music");
-    }
-
-    for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        if (is_velo_or_squirrel_arg(a)) continue;
-        if (strcmp(a, "--") == 0) continue;
-        if (!is_godot_engine_arg(a)) {
-            append_arg(cmd_line, cap, &offset, a);
-        } else if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
-            /* Skip value consumed above by engine flag */
-            i++;
-        }
-    }
+static void write_raw_file(const char *path, const void *data, size_t len) {
+    FILE *f = fopen(path, "wb");
+    assert(f != NULL);
+    size_t w = fwrite(data, 1, len, f);
+    fclose(f);
+    assert(w == len);
+    (void)w;
 }
 
 int main(void) {
@@ -98,6 +61,8 @@ int main(void) {
     assert(is_godot_engine_arg("--quit-game") == false);
     assert(is_godot_engine_arg("board_401.bord") == false);
     assert(is_godot_engine_arg("--some-game-option") == false);
+    assert(is_godot_engine_arg("--set-update-token") == false);
+    assert(is_godot_engine_arg("--clear-update-token") == false);
     printf("[PASS] is_godot_engine_arg unit assertions\n");
 
     /* 2. Test is_godot_value_arg categorization */
@@ -133,7 +98,6 @@ int main(void) {
         build_test_cmd(3, argv, cmd, sizeof(cmd));
         printf("Case 1 output: %s\n", cmd);
 
-        /* Ensure --headless is followed by res:// before -- */
         char *h = strstr(cmd, "\"--headless\"");
         char *scene = strstr(cmd, "\"res://scenes/smoke_test.tscn\"");
         char *dashdash = strstr(cmd, "\"--\"");
@@ -222,7 +186,6 @@ int main(void) {
         assert(dashdash != NULL);
         assert(qa < val);
         assert(val < dashdash);
-        /* Ensure 10 is NOT repeated after -- */
         char *after_dash = dashdash + 4;
         assert(strstr(after_dash, "\"10\"") == NULL);
         (void)qa; (void)val; (void)after_dash;
@@ -269,7 +232,6 @@ int main(void) {
         assert(scene < dashdash);
         assert(dashdash < game_arg);
 
-        /* Confirm pos_val and qa_val are not repeated after dashdash */
         assert(strstr(dashdash + 4, "\"100,200\"") == NULL);
         assert(strstr(dashdash + 4, "\"300\"") == NULL);
         (void)h; (void)pos; (void)pos_val; (void)quiet; (void)qa; (void)qa_val; (void)scene; (void)dashdash; (void)game_arg;
@@ -294,6 +256,138 @@ int main(void) {
         assert(strstr(cmd, "\"--headless\"") != NULL);
         assert(strstr(cmd, "\"--quit\"") != NULL);
         printf("[PASS] Case 6: Velopack/Squirrel installer hooks stripped\n");
+    }
+
+    /* 9. Challenge Case 7: --set-update-token and --clear-update-token never forwarded to Godot */
+    {
+        assert(is_launcher_only_arg("--set-update-token") == true);
+        assert(is_launcher_only_arg("--set-update-token=abc") == true);
+        assert(is_launcher_only_arg("--clear-update-token") == true);
+        assert(is_launcher_only_arg("--headless") == false);
+        assert(is_launcher_value_arg("--set-update-token") == true);
+        assert(is_launcher_value_arg("--clear-update-token") == false);
+
+        char *argv1[] = {
+            "launcher.exe",
+            "--headless",
+            "--set-update-token",
+            "secret_tok_123",
+            "--quit",
+            "--3d"
+        };
+        char cmd1[2048] = {0};
+        build_test_cmd(6, argv1, cmd1, sizeof(cmd1));
+        printf("Case 7a output: %s\n", cmd1);
+        assert(strstr(cmd1, "--set-update-token") == NULL);
+        assert(strstr(cmd1, "secret_tok_123") == NULL);
+        assert(strstr(cmd1, "\"--headless\"") != NULL);
+        assert(strstr(cmd1, "\"--quit\"") != NULL);
+        assert(strstr(cmd1, "\"--3d\"") != NULL);
+
+        char *argv2[] = {
+            "launcher.exe",
+            "--set-update-token=secret_tok_456",
+            "--clear-update-token",
+            "--headless"
+        };
+        char cmd2[2048] = {0};
+        build_test_cmd(4, argv2, cmd2, sizeof(cmd2));
+        printf("Case 7b output: %s\n", cmd2);
+        assert(strstr(cmd2, "--set-update-token") == NULL);
+        assert(strstr(cmd2, "secret_tok_456") == NULL);
+        assert(strstr(cmd2, "--clear-update-token") == NULL);
+        assert(strstr(cmd2, "\"--headless\"") != NULL);
+        printf("[PASS] Case 7: Update token CLI flags and values never forwarded to Godot\n");
+    }
+
+    /* 10. Challenge Case 8 & 9: JSON unescaping and token resolution precedence */
+    {
+        char temp_root[MAX_PATH] = {0};
+        DWORD tlen = GetTempPathA(sizeof(temp_root), temp_root);
+        assert(tlen > 0 && tlen < sizeof(temp_root));
+        (void)tlen;
+
+        char test_dir[MAX_PATH];
+        snprintf(test_dir, sizeof(test_dir), "%ssoi_launcher_unit_%lu", temp_root, (unsigned long)GetCurrentProcessId());
+        CreateDirectoryA(test_dir, NULL);
+
+        char json_path[MAX_PATH];
+        snprintf(json_path, sizeof(json_path), "%s\\update_config.json", test_dir);
+
+        /* Test JSON unescaping for UNC paths and escaped quotes */
+        const char *unc_json = "{\r\n  \"repo_url\": \"\\\\\\\\server\\\\share\\\\releases\\\"v1\\\"\",\r\n  \"update_token\": \"cfg_tok_val\"\r\n}\r\n";
+        write_raw_file(json_path, unc_json, strlen(unc_json));
+
+        char out_url[1024] = {0};
+        assert(read_repo_url_from_json(json_path, out_url, sizeof(out_url)) == true);
+        assert(strcmp(out_url, "\\\\server\\share\\releases\"v1\"") == 0);
+
+        /* Test local backslash path unescaping */
+        const char *win_json = "{ \"repo_url\": \"C:\\\\Games\\\\StepOnIt\\\\releases\" }\n";
+        write_raw_file(json_path, win_json, strlen(win_json));
+        assert(read_repo_url_from_json(json_path, out_url, sizeof(out_url)) == true);
+        assert(strcmp(out_url, "C:\\Games\\StepOnIt\\releases") == 0);
+
+        /* Test null repo_url does not spill into next key */
+        const char *null_json = "{ \"repo_url\": null, \"update_token\": \"cfg_tok_only\" }\n";
+        write_raw_file(json_path, null_json, strlen(null_json));
+        assert(read_repo_url_from_json(json_path, out_url, sizeof(out_url)) == false);
+        printf("[PASS] Case 8: read_repo_url_from_json unescapes \\\\ and \\\" and rejects null\n");
+
+        /* Save original env vars */
+        char orig_local[MAX_PATH] = {0};
+        DWORD has_orig_local = GetEnvironmentVariableA("LOCALAPPDATA", orig_local, sizeof(orig_local));
+        char orig_tok[1024] = {0};
+        DWORD has_orig_tok = GetEnvironmentVariableA("SOI_UPDATE_TOKEN", orig_tok, sizeof(orig_tok));
+
+        char fake_local[MAX_PATH];
+        snprintf(fake_local, sizeof(fake_local), "%s\\localappdata", test_dir);
+        CreateDirectoryA(fake_local, NULL);
+        SetEnvironmentVariableA("LOCALAPPDATA", fake_local);
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", NULL);
+
+        char resolved[512] = {0};
+        /* Only update_config.json has token */
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "cfg_tok_only") == 0);
+
+        /* Write file with UTF-8 BOM + whitespace -> overrides config */
+        char soi_dir[MAX_PATH];
+        snprintf(soi_dir, sizeof(soi_dir), "%s\\StepOnIt", fake_local);
+        CreateDirectoryA(soi_dir, NULL);
+        char tok_file[MAX_PATH];
+        snprintf(tok_file, sizeof(tok_file), "%s\\update_token.txt", soi_dir);
+        const unsigned char bom_tok[] = "\xEF\xBB\xBF  file_tok_123 \r\n ";
+        write_raw_file(tok_file, bom_tok, sizeof(bom_tok) - 1);
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "file_tok_123") == 0);
+
+        /* Env SOI_UPDATE_TOKEN overrides file + config */
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", "  env_tok_999\n ");
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "env_tok_999") == 0);
+
+        /* Test write_update_token_file / clear_update_token_file */
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", NULL);
+        assert(clear_update_token_file(true) == 0);
+        assert(file_exists(tok_file) == false);
+        assert(clear_update_token_file(true) == 0); /* Idempotent */
+        assert(write_update_token_file("  written_tok_abc \r\n", true) == 0);
+        assert(file_exists(tok_file) == true);
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "written_tok_abc") == 0);
+        assert(clear_update_token_file(true) == 0);
+        assert(file_exists(tok_file) == false);
+
+        /* Restore env vars and cleanup temp files */
+        SetEnvironmentVariableA("LOCALAPPDATA", has_orig_local ? orig_local : NULL);
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", has_orig_tok ? orig_tok : NULL);
+        DeleteFileA(json_path);
+        DeleteFileA(tok_file);
+        RemoveDirectoryA(soi_dir);
+        RemoveDirectoryA(fake_local);
+        RemoveDirectoryA(test_dir);
+        printf("[PASS] Case 9: Token precedence (env > file > config) and set/clear verified\n");
     }
 
     printf("\nALL LAUNCHER CLI ADVERSARIAL TESTS PASSED!\n");

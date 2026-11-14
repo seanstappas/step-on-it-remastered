@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$Version,
-    [string]$RepoUrl = "",
+    [string]$RepoUrl = "https://github.com/seanstappas/step-on-it-remastered",
     [string]$ReleaseDir = "",
     [switch]$UploadToGitHub,
     [switch]$SkipAssetMirror
@@ -18,12 +18,45 @@ if (-not $ReleaseDir) { $ReleaseDir = "$Root\releases" }
 
 $Py = if (Test-Path "$Root\.venv\Scripts\python.exe") { "$Root\.venv\Scripts\python.exe" } else { "py" }
 
-if ($UploadToGitHub) {
-    if (-not $env:GITHUB_TOKEN) {
-        throw "GITHUB_TOKEN environment variable is required when -UploadToGitHub is specified."
+if ([string]::IsNullOrWhiteSpace($RepoUrl) -or $RepoUrl -match "YOUR_GITHUB_USER") {
+    throw "-RepoUrl must be a valid repository URL (not empty or a placeholder)."
+}
+
+function Invoke-GhCapture {
+    param([string[]]$Arguments)
+    $prevEap = $ErrorActionPreference
+    $prevNoUpdate = $env:GH_NO_UPDATE_NOTIFIER
+    try {
+        $ErrorActionPreference = "Continue"
+        $env:GH_NO_UPDATE_NOTIFIER = "1"
+        $out = & gh @Arguments 2>$null
+        return [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            Output   = if ($null -ne $out) { ($out -join "`n").Trim() } else { "" }
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+        if ($null -eq $prevNoUpdate) {
+            Remove-Item Env:GH_NO_UPDATE_NOTIFIER -ErrorAction SilentlyContinue
+        } else {
+            $env:GH_NO_UPDATE_NOTIFIER = $prevNoUpdate
+        }
     }
-    if (-not $RepoUrl) {
-        throw "-RepoUrl is required when -UploadToGitHub is specified."
+}
+
+$GitHubToken = $env:GITHUB_TOKEN
+if ($UploadToGitHub) {
+    if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
+        $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+        if ($ghCmd) {
+            $ghRes = Invoke-GhCapture -Arguments @("auth", "token")
+            if ($ghRes.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($ghRes.Output)) {
+                $GitHubToken = $ghRes.Output
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
+        throw 'GITHUB_TOKEN environment variable is empty and "gh auth token" fallback failed. Set $env:GITHUB_TOKEN or run "gh auth login".'
     }
 }
 
@@ -92,25 +125,44 @@ Write-Host "=== 4. Building Native StepOnItLauncher.exe ===" -ForegroundColor Cy
 if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
 Copy-Item "$VpkLibcDir\lib\velopack_libc_win_x64_msvc.dll" "$BuildDir\velopack_libc_win_x64_msvc.dll" -Force
 
-if ($RepoUrl) {
-    @{ repo_url = $RepoUrl } | ConvertTo-Json | Set-Content "$BuildDir\update_config.json" -Encoding UTF8
-} elseif (-not (Test-Path "$BuildDir\update_config.json")) {
-    if ($UploadToGitHub) {
-        throw "-RepoUrl required for distributable builds"
-    }
-}
+$cfgJson = (@{ repo_url = $RepoUrl } | ConvertTo-Json) + "`n"
+[System.IO.File]::WriteAllText("$BuildDir\update_config.json", $cfgJson, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "=== 5. Packaging Velopack Release v$Version (Full + Delta) ===" -ForegroundColor Cyan
-if ($UploadToGitHub -and $RepoUrl) {
-    dotnet $VpkDll download github --repoUrl $RepoUrl --token $env:GITHUB_TOKEN -o $ReleaseDir
-    if ($LASTEXITCODE -ne 0) { throw "vpk download github failed" }
+if ($UploadToGitHub) {
+    $hasExistingReleases = $true
+    $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+    $cleanRepoUrl = ($RepoUrl.TrimEnd('/')) -replace '\.git$', ''
+    if ($ghCmd -and $cleanRepoUrl -match 'github\.com[:/]([^/]+/[^/]+)$') {
+        $slug = $Matches[1]
+        $prevGhToken = $env:GH_TOKEN
+        try {
+            $env:GH_TOKEN = $GitHubToken
+            $ghRes = Invoke-GhCapture -Arguments @("release", "list", "--repo", $slug, "--limit", "1")
+            if ($ghRes.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($ghRes.Output)) {
+                $hasExistingReleases = $false
+            }
+        } finally {
+            if ($null -eq $prevGhToken) {
+                Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
+            } else {
+                $env:GH_TOKEN = $prevGhToken
+            }
+        }
+    }
+    if ($hasExistingReleases) {
+        dotnet $VpkDll download github --repoUrl $RepoUrl --token $GitHubToken -o $ReleaseDir
+        if ($LASTEXITCODE -ne 0) { throw "vpk download github failed with exit code $LASTEXITCODE" }
+    } else {
+        Write-Host "No existing GitHub releases found for $slug; skipping prior package download (first publish)." -ForegroundColor Yellow
+    }
 }
 dotnet $VpkDll pack -u StepOnIt -v $Version -p $BuildDir -e StepOnItLauncher.exe -o $ReleaseDir
 if ($LASTEXITCODE -ne 0) { throw "vpk pack failed" }
 
 if ($UploadToGitHub -and $RepoUrl) {
     Write-Host "=== 6. Uploading Release v$Version to GitHub Releases ===" -ForegroundColor Cyan
-    dotnet $VpkDll upload github --repoUrl $RepoUrl --token $env:GITHUB_TOKEN --publish --releaseName "Step On It! v$Version" -o $ReleaseDir
+    dotnet $VpkDll upload github --repoUrl $RepoUrl --token $GitHubToken --publish --releaseName "Step On It! v$Version" -o $ReleaseDir
     if ($LASTEXITCODE -ne 0) { throw "vpk upload failed" }
 }
 
