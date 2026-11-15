@@ -55,9 +55,10 @@ Pass `-TestPackaging` (or run `tools/publish_velopack.ps1 -Version X.Y.Z`) to al
 
 Windows builds are packaged with Velopack (`tools/publish_velopack.ps1`) and published to GitHub Releases on the private repo (`https://github.com/seanstappas/step-on-it-remastered`):
 
-- **Publish a release:** `powershell -ExecutionPolicy Bypass -File tools/publish_velopack.ps1 -Version X.Y.Z -UploadToGitHub` (writes `update_config.json`, uses `$env:GITHUB_TOKEN` or falls back to `gh auth token`, and skips prior-release download on the first release).
-- **Install & authenticate updates:** `StepOnIt-win-Setup.exe` installs to `%LocalAppData%\StepOnIt\current\StepOnItLauncher.exe` (which launches `StepOnIt.exe` + `StepOnIt.pck`). Testers configure their read-only token once via `StepOnItLauncher.exe --set-update-token <token>` (or `SOI_UPDATE_TOKEN`).
-- **Full guide:** See [docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md) for releasing, per-tester token setup/revocation, SmartScreen, and online play (UDP `7777`, Tailscale / port-forwarding, build-ID matching).
+- **Save read-only embed token (once on dev PC):** Generate a fine-grained PAT (`Contents: Read-only` on `seanstappas/step-on-it-remastered`) and save it outside git via `powershell -ExecutionPolicy Bypass -File tools/set_release_token.ps1 -FromClipboard` (`%LocalAppData%\StepOnIt\release_embed_token.txt`).
+- **Publish a release:** `powershell -ExecutionPolicy Bypass -File tools/publish_velopack.ps1 -Version X.Y.Z -UploadToGitHub` (writes token-free `update_config.json`, XOR-embeds the saved read-only token into `StepOnItLauncher.exe`, uses `$env:GITHUB_TOKEN` or falls back to `gh auth token`, and skips prior-release download on the first release).
+- **Install & auto-update:** Friends just run `StepOnIt-win-Setup.exe`, which installs to `%LocalAppData%\StepOnIt\current\StepOnItLauncher.exe` (spawning `StepOnIt.exe` + `StepOnIt.pck`) with zero token setup needed. Existing installs can still override/rotate a token via `StepOnItLauncher.exe --set-update-token <token>` (or `SOI_UPDATE_TOKEN`).
+- **Full guide:** See [docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md) for creating/saving/rotating the read-only token, installer/SmartScreen steps, and online play (UDP `7777`, Tailscale / port-forwarding, build-ID matching).
 
 **Play:** `.\play.ps1` (starts REMASTERED with music on, window sized to your monitor), or open
 `godot_project/` in Godot 4.3 and press F5, or `"<Godot>" --path godot_project`.
@@ -123,7 +124,7 @@ The reverse-engineering + extraction tools are pure Python 3.10+ (`py tools/<nam
 - **[AGENTS.md](AGENTS.md)** — **Agent Handover & Contributor Guide**: technical architecture, critical invariants, gate execution, and system rules for AI agents and developers.
 - **[docs/remaster/](docs/remaster/)** — the remaster: architecture, running, the front-end flags, and
   the asset pipeline (current state).
-- **[docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md)** — private GitHub Releases packaging, per-tester read-only tokens, installer/SmartScreen steps, and online play (UDP `7777` / Tailscale / port-forwarding).
+- **[docs/remaster/TESTING_WITH_FRIENDS.md](docs/remaster/TESTING_WITH_FRIENDS.md)** — private GitHub Releases packaging, embedded read-only update token setup/rotation, installer/SmartScreen steps, and online play (UDP `7777` / Tailscale / port-forwarding).
 - **[docs/](docs/)** — verified reverse-engineering findings about the original game (binary, resources,
   level format, graphics/audio, gameplay). Each claim is tagged CONFIRMED / HYPOTHESIS / TODO.
 - **[plan/MASTER_PLAN.md](plan/MASTER_PLAN.md)** — architecture, determinism contract, oracle, schemas, scope.

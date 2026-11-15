@@ -390,6 +390,131 @@ int main(void) {
         printf("[PASS] Case 9: Token precedence (env > file > config) and set/clear verified\n");
     }
 
+    /* 11. Challenge Case 10: decode_xor_token and 4-tier embedded token precedence */
+    {
+        char temp_root[MAX_PATH] = {0};
+        DWORD tlen = GetTempPathA(sizeof(temp_root), temp_root);
+        assert(tlen > 0 && tlen < sizeof(temp_root));
+        (void)tlen;
+
+        char test_dir[MAX_PATH];
+        snprintf(test_dir, sizeof(test_dir), "%ssoi_launcher_embed_%lu", temp_root, (unsigned long)GetCurrentProcessId());
+        CreateDirectoryA(test_dir, NULL);
+
+        char fake_local[MAX_PATH];
+        snprintf(fake_local, sizeof(fake_local), "%s\\localappdata", test_dir);
+        CreateDirectoryA(fake_local, NULL);
+
+        char soi_dir[MAX_PATH];
+        snprintf(soi_dir, sizeof(soi_dir), "%s\\StepOnIt", fake_local);
+        CreateDirectoryA(soi_dir, NULL);
+
+        char json_path[MAX_PATH];
+        snprintf(json_path, sizeof(json_path), "%s\\update_config.json", test_dir);
+
+        char tok_file[MAX_PATH];
+        snprintf(tok_file, sizeof(tok_file), "%s\\update_token.txt", soi_dir);
+
+        /* Save original env vars and globals */
+        char orig_local[MAX_PATH] = {0};
+        DWORD has_orig_local = GetEnvironmentVariableA("LOCALAPPDATA", orig_local, sizeof(orig_local));
+        char orig_tok[1024] = {0};
+        DWORD has_orig_tok = GetEnvironmentVariableA("SOI_UPDATE_TOKEN", orig_tok, sizeof(orig_tok));
+        char orig_dis[64] = {0};
+        DWORD has_orig_dis = GetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", orig_dis, sizeof(orig_dis));
+
+        const unsigned char *orig_cipher = g_embedded_token_cipher;
+        size_t orig_cipher_len = g_embedded_token_len;
+        const unsigned char *orig_key = g_embedded_token_key;
+        size_t orig_key_len = g_embedded_token_key_len;
+
+        /* 10a. decode_xor_token round-trip, trimming, and validation rejections */
+        const unsigned char xor_key[8] = { 0x5A, 0xC3, 0x19, 0x87, 0x42, 0xE1, 0x3D, 0xA6 };
+        const char *padded_plain = "  github_pat_unit_test_payload_012345  \n";
+        size_t plain_len = strlen(padded_plain);
+        unsigned char cipher_buf[128] = {0};
+        for (size_t i = 0; i < plain_len; i++) {
+            cipher_buf[i] = (unsigned char)padded_plain[i] ^ xor_key[i % sizeof(xor_key)];
+        }
+
+        char out_tok[256] = {0};
+        assert(decode_xor_token(cipher_buf, plain_len, xor_key, sizeof(xor_key), out_tok, sizeof(out_tok)) == true);
+        assert(strcmp(out_tok, "github_pat_unit_test_payload_012345") == 0);
+
+        /* Reject NULL, zero-length, oversized cipher, and too-small output buffer */
+        assert(decode_xor_token(NULL, plain_len, xor_key, sizeof(xor_key), out_tok, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, 0, xor_key, sizeof(xor_key), out_tok, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, plain_len, NULL, sizeof(xor_key), out_tok, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, plain_len, xor_key, 0, out_tok, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, plain_len, xor_key, sizeof(xor_key), NULL, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, plain_len, xor_key, sizeof(xor_key), out_tok, 0) == false);
+        assert(decode_xor_token(cipher_buf, 1024, xor_key, sizeof(xor_key), out_tok, sizeof(out_tok)) == false);
+        assert(decode_xor_token(cipher_buf, plain_len, xor_key, sizeof(xor_key), out_tok, 10) == false);
+
+        /* 10b. 4-tier resolve_update_token precedence: env > file > config > embedded */
+        const char *embed_plain = "github_pat_embedded_fallback_token";
+        size_t embed_len = strlen(embed_plain);
+        unsigned char embed_cipher[128] = {0};
+        for (size_t i = 0; i < embed_len; i++) {
+            embed_cipher[i] = (unsigned char)embed_plain[i] ^ xor_key[i % sizeof(xor_key)];
+        }
+        g_embedded_token_cipher = embed_cipher;
+        g_embedded_token_len = embed_len;
+        g_embedded_token_key = xor_key;
+        g_embedded_token_key_len = sizeof(xor_key);
+
+        SetEnvironmentVariableA("LOCALAPPDATA", fake_local);
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", NULL);
+        SetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", NULL);
+
+        const char *no_tok_json = "{ \"repo_url\": \"https://github.com/seanstappas/step-on-it-remastered\" }\n";
+        write_raw_file(json_path, no_tok_json, strlen(no_tok_json));
+
+        char resolved[512] = {0};
+        /* Tier 4: only embedded token exists */
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "github_pat_embedded_fallback_token") == 0);
+
+        /* SOI_DISABLE_EMBEDDED_TOKEN disables fallback */
+        SetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", "1");
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == false);
+        SetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", "TRUE");
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == false);
+        SetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", NULL);
+
+        /* Tier 3: update_config.json overrides embedded */
+        const char *with_tok_json = "{ \"repo_url\": \"https://github.com/seanstappas/step-on-it-remastered\", \"update_token\": \"cfg_tok_tier3\" }\n";
+        write_raw_file(json_path, with_tok_json, strlen(with_tok_json));
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "cfg_tok_tier3") == 0);
+
+        /* Tier 2: update_token.txt overrides config and embedded */
+        const char *file_tok = "file_tok_tier2\r\n";
+        write_raw_file(tok_file, file_tok, strlen(file_tok));
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "file_tok_tier2") == 0);
+
+        /* Tier 1: SOI_UPDATE_TOKEN overrides file, config, and embedded */
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", "env_tok_tier1");
+        assert(resolve_update_token(test_dir, resolved, sizeof(resolved)) == true);
+        assert(strcmp(resolved, "env_tok_tier1") == 0);
+
+        /* Restore globals, env vars, and cleanup temp files */
+        g_embedded_token_cipher = orig_cipher;
+        g_embedded_token_len = orig_cipher_len;
+        g_embedded_token_key = orig_key;
+        g_embedded_token_key_len = orig_key_len;
+        SetEnvironmentVariableA("LOCALAPPDATA", has_orig_local ? orig_local : NULL);
+        SetEnvironmentVariableA("SOI_UPDATE_TOKEN", has_orig_tok ? orig_tok : NULL);
+        SetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", has_orig_dis ? orig_dis : NULL);
+        DeleteFileA(json_path);
+        DeleteFileA(tok_file);
+        RemoveDirectoryA(soi_dir);
+        RemoveDirectoryA(fake_local);
+        RemoveDirectoryA(test_dir);
+        printf("[PASS] Case 10: XOR decode and 4-tier token precedence (env > file > config > embedded) verified\n");
+    }
+
     printf("\nALL LAUNCHER CLI ADVERSARIAL TESTS PASSED!\n");
     return 0;
 }

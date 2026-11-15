@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include "Velopack.h"
+#ifdef SOI_HAS_EMBEDDED_TOKEN_HEADER
+#include "soi_embedded_token.h"
+#endif
 
 typedef void (*fn_vpkc_app_run)(void *);
 typedef vpkc_update_source_t *(*fn_vpkc_new_source_github)(const char *, const char *, bool);
@@ -336,6 +339,59 @@ static bool resolve_repo_url(const char *base_dir, char *out_url, size_t max_len
     return false;
 }
 
+static const unsigned char *g_embedded_token_cipher =
+#ifdef SOI_HAS_EMBEDDED_TOKEN_HEADER
+    SOI_EMBEDDED_TOKEN_CIPHER;
+#else
+    NULL;
+#endif
+static size_t g_embedded_token_len =
+#ifdef SOI_HAS_EMBEDDED_TOKEN_HEADER
+    SOI_EMBEDDED_TOKEN_LEN;
+#else
+    0;
+#endif
+static const unsigned char *g_embedded_token_key =
+#ifdef SOI_HAS_EMBEDDED_TOKEN_HEADER
+    SOI_EMBEDDED_TOKEN_XOR_KEY;
+#else
+    NULL;
+#endif
+static size_t g_embedded_token_key_len =
+#ifdef SOI_HAS_EMBEDDED_TOKEN_HEADER
+    sizeof(SOI_EMBEDDED_TOKEN_XOR_KEY);
+#else
+    0;
+#endif
+
+static bool decode_xor_token(
+    const unsigned char *cipher,
+    size_t cipher_len,
+    const unsigned char *key,
+    size_t key_len,
+    char *out_token,
+    size_t max_len) {
+    if (!cipher || cipher_len == 0 || !key || key_len == 0 || !out_token || max_len == 0) {
+        return false;
+    }
+    char buf[1024];
+    if (cipher_len >= sizeof(buf)) {
+        return false;
+    }
+    for (size_t i = 0; i < cipher_len; i++) {
+        buf[i] = (char)(cipher[i] ^ key[i % key_len]);
+    }
+    buf[cipher_len] = '\0';
+    trim_whitespace(buf);
+    if (buf[0] == '\0' || strlen(buf) >= max_len) {
+        secure_zero(buf, sizeof(buf));
+        return false;
+    }
+    strcpy(out_token, buf);
+    secure_zero(buf, sizeof(buf));
+    return true;
+}
+
 static bool resolve_update_token(const char *base_dir, char *out_token, size_t max_len) {
     if (!out_token || max_len == 0) return false;
     out_token[0] = '\0';
@@ -398,9 +454,31 @@ static bool resolve_update_token(const char *base_dir, char *out_token, size_t m
                 return true;
             }
         }
+        secure_zero(buf, sizeof(buf));
     }
 
+    /* 4. Optional build-time XOR-masked embedded token (unless disabled via SOI_DISABLE_EMBEDDED_TOKEN) */
+    bool disable_embedded = false;
+    env_len = GetEnvironmentVariableA("SOI_DISABLE_EMBEDDED_TOKEN", buf, sizeof(buf));
+    if (env_len > 0 && env_len < sizeof(buf)) {
+        trim_whitespace(buf);
+        if (strcmp(buf, "1") == 0 || _stricmp(buf, "true") == 0) {
+            disable_embedded = true;
+        }
+    }
     secure_zero(buf, sizeof(buf));
+
+    if (!disable_embedded &&
+        decode_xor_token(
+            g_embedded_token_cipher,
+            g_embedded_token_len,
+            g_embedded_token_key,
+            g_embedded_token_key_len,
+            out_token,
+            max_len)) {
+        return true;
+    }
+
     return false;
 }
 

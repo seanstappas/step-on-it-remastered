@@ -2,6 +2,9 @@ param(
     [Parameter(Mandatory=$true)][string]$Version,
     [string]$RepoUrl = "https://github.com/seanstappas/step-on-it-remastered",
     [string]$ReleaseDir = "",
+    [string]$EmbedUpdateToken = "",
+    [switch]$AllowNoEmbedToken,
+    [switch]$AllowBroadEmbedToken,
     [switch]$UploadToGitHub,
     [switch]$SkipAssetMirror
 )
@@ -58,6 +61,32 @@ if ($UploadToGitHub) {
     if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
         throw 'GITHUB_TOKEN environment variable is empty and "gh auth token" fallback failed. Set $env:GITHUB_TOKEN or run "gh auth login".'
     }
+}
+
+$ResolvedEmbedToken = ""
+if (-not [string]::IsNullOrWhiteSpace($EmbedUpdateToken)) {
+    $ResolvedEmbedToken = $EmbedUpdateToken.Trim()
+} elseif (-not [string]::IsNullOrWhiteSpace($env:SOI_EMBED_UPDATE_TOKEN)) {
+    $ResolvedEmbedToken = $env:SOI_EMBED_UPDATE_TOKEN.Trim()
+} elseif (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $embedTokenFile = Join-Path (Join-Path $env:LOCALAPPDATA "StepOnIt") "release_embed_token.txt"
+    if (Test-Path $embedTokenFile) {
+        $fileRaw = [System.IO.File]::ReadAllText($embedTokenFile, [System.Text.Encoding]::UTF8)
+        if ($null -ne $fileRaw) {
+            $ResolvedEmbedToken = $fileRaw.Trim([char]0xFEFF, ' ', "`t", "`r", "`n")
+        }
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ResolvedEmbedToken)) {
+    if ($ResolvedEmbedToken -match '\s') {
+        throw "Resolved embed update token contains internal whitespace or newline characters."
+    }
+    if (($ResolvedEmbedToken -match '^(gho_|ghu_)') -and (-not $AllowBroadEmbedToken)) {
+        throw "Refusing to embed a broad OAuth/gh CLI token (gho_/ghu_) into a distributable installer. Create a fine-grained read-only token (github_pat_..., Contents: Read-only) and save it with tools/set_release_token.ps1, or pass -AllowBroadEmbedToken."
+    }
+} elseif ($UploadToGitHub -and (-not $AllowNoEmbedToken)) {
+    throw "No read-only update token found to embed into StepOnItLauncher.exe. Save one first with: powershell -ExecutionPolicy Bypass -File tools/set_release_token.ps1 -FromClipboard (or pass -AllowNoEmbedToken)."
 }
 
 function Ensure-VelopackTools {
@@ -121,8 +150,50 @@ if (-not $SkipAssetMirror -or -not (Test-Path "$BuildDir\extracted\levels")) {
 }
 
 Write-Host "=== 4. Building Native StepOnItLauncher.exe ===" -ForegroundColor Cyan
-& $Zig cc -O2 '-Wl,--subsystem,windows' -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
-if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
+$embedHeaderPath = "$BuildDir\soi_embedded_token.h"
+Remove-Item $embedHeaderPath -Force -ErrorAction SilentlyContinue
+try {
+    if (-not [string]::IsNullOrWhiteSpace($ResolvedEmbedToken)) {
+        $tokBytes = [System.Text.Encoding]::UTF8.GetBytes($ResolvedEmbedToken)
+        if ($tokBytes.Length -eq 0 -or $tokBytes.Length -ge 1024) {
+            throw "Embedded update token byte length ($($tokBytes.Length)) is out of supported range (1..1023)."
+        }
+
+        $xorKey = New-Object byte[] 32
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $rng.GetBytes($xorKey)
+        } finally {
+            $rng.Dispose()
+        }
+
+        $cipherBytes = New-Object byte[] $tokBytes.Length
+        for ($i = 0; $i -lt $tokBytes.Length; $i++) {
+            $cipherBytes[$i] = [byte]($tokBytes[$i] -bxor $xorKey[$i % $xorKey.Length])
+        }
+
+        $keyHex = ($xorKey | ForEach-Object { "0x{0:X2}" -f $_ }) -join ", "
+        $cipherHex = ($cipherBytes | ForEach-Object { "0x{0:X2}" -f $_ }) -join ", "
+        $headerContent = @"
+#ifndef SOI_EMBEDDED_TOKEN_H
+#define SOI_EMBEDDED_TOKEN_H
+#define SOI_EMBEDDED_TOKEN_LEN $($tokBytes.Length)u
+static const unsigned char SOI_EMBEDDED_TOKEN_XOR_KEY[32] = { $keyHex };
+static const unsigned char SOI_EMBEDDED_TOKEN_CIPHER[$($tokBytes.Length)] = { $cipherHex };
+#endif
+"@ + "`n"
+        [System.IO.File]::WriteAllText($embedHeaderPath, $headerContent, [System.Text.UTF8Encoding]::new($false))
+
+        & $Zig cc -O2 -Wall -Wextra '-Wl,--subsystem,windows' -DSOI_HAS_EMBEDDED_TOKEN_HEADER=1 -I"$BuildDir" -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
+        if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
+        Write-Host ("Embedded XOR-masked update token into StepOnItLauncher.exe (token: present, {0} bytes)." -f $tokBytes.Length) -ForegroundColor Green
+    } else {
+        & $Zig cc -O2 -Wall -Wextra '-Wl,--subsystem,windows' -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
+        if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
+    }
+} finally {
+    Remove-Item $embedHeaderPath -Force -ErrorAction SilentlyContinue
+}
 Copy-Item "$VpkLibcDir\lib\velopack_libc_win_x64_msvc.dll" "$BuildDir\velopack_libc_win_x64_msvc.dll" -Force
 
 $cfgJson = (@{ repo_url = $RepoUrl } | ConvertTo-Json) + "`n"

@@ -4,7 +4,9 @@ Push-Location $RootDir
 
 $origUpdateUrl = $env:SOI_UPDATE_URL
 $origUpdateToken = $env:SOI_UPDATE_TOKEN
+$origEmbedToken = $env:SOI_EMBED_UPDATE_TOKEN
 Remove-Item Env:SOI_UPDATE_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:SOI_EMBED_UPDATE_TOKEN -ErrorAction SilentlyContinue
 $InstallDir = Join-Path $env:TEMP "soi_install_test"
 
 try {
@@ -134,6 +136,7 @@ try {
 } finally {
     $env:SOI_UPDATE_URL = $origUpdateUrl
     $env:SOI_UPDATE_TOKEN = $origUpdateToken
+    $env:SOI_EMBED_UPDATE_TOKEN = $origEmbedToken
     if (Test-Path $InstallDir) {
         Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
     }
