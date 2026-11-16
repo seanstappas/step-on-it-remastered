@@ -1,6 +1,7 @@
 /* soi_bridge.cpp — SoiCore method bodies + Godot binding. Glue only. */
 #include "soi_bridge.h"
 
+#include <climits>
 #include <godot_cpp/core/class_db.hpp>
 
 extern "C" {
@@ -13,6 +14,16 @@ using namespace godot;
 #define SOI_BUILD_ID 0
 #endif
 
+static inline bool valid_player(int64_t p) { return p >= 0 && p < SOI_MAX_PLAYERS; }
+static inline bool valid_active_player(int64_t p) { return p >= 1 && p < SOI_MAX_PLAYERS; }
+static inline bool valid_index(int64_t i, int64_t limit) { return i >= 0 && i < limit; }
+static inline int clamp_i32(int64_t v)
+{
+    if (v < INT32_MIN) return INT32_MIN;
+    if (v > INT32_MAX) return INT32_MAX;
+    return static_cast<int>(v);
+}
+
 int64_t SoiCore::build_id() {
     return static_cast<int64_t>(SOI_BUILD_ID);
 }
@@ -20,6 +31,10 @@ int64_t SoiCore::build_id() {
 Dictionary SoiCore::parse_ext1(const PackedByteArray &bytes) {
     Dictionary d;
     SoiExt1Info info;
+    if (bytes.is_empty() || bytes.ptr() == nullptr || bytes.size() <= 0) {
+        d["valid"] = false;
+        return d;
+    }
     const uint8_t *ptr = bytes.ptr();
     size_t len = static_cast<size_t>(bytes.size());
     if (soi_parse_ext1(ptr, len, &info)) {
@@ -65,30 +80,32 @@ void SoiCore::set_seed(int64_t seed)
 
 bool SoiCore::load_level(const PackedByteArray &bord)
 {
-    if (bord.is_empty()) return false;
-    return soi_load_level(w(), bord.ptr(), (size_t)bord.size()) != 0;
+    if (bord.is_empty() || bord.ptr() == nullptr || bord.size() < 0x1A) return false;
+    return soi_load_level(w(), bord.ptr(), static_cast<size_t>(bord.size())) != 0;
 }
 
 bool SoiCore::next_level(const PackedByteArray &bord)
 {
-    if (bord.is_empty()) return false;
-    return soi_next_level(w(), bord.ptr(), (size_t)bord.size()) != 0;
+    if (bord.is_empty() || bord.ptr() == nullptr || bord.size() < 0x1A) return false;
+    return soi_next_level(w(), bord.ptr(), static_cast<size_t>(bord.size())) != 0;
 }
 
 void SoiCore::set_player_stats(int64_t p, int64_t score, int64_t lives, int64_t arrows, int64_t balls, int64_t shield)
 {
-    soi_set_player_stats(w(), (int)p, (int)score, (int)lives, (int)arrows, (int)balls, (int)shield);
+    if (!valid_active_player(p)) return;
+    soi_set_player_stats(w(), static_cast<int>(p), clamp_i32(score), clamp_i32(lives),
+                         clamp_i32(arrows), clamp_i32(balls), clamp_i32(shield));
 }
 
-void    SoiCore::set_play_mode(int64_t mode) { soi_set_play_mode(w(), (int)mode); }
+void    SoiCore::set_play_mode(int64_t mode) { soi_set_play_mode(w(), clamp_i32(mode)); }
 int64_t SoiCore::play_mode() const          { return soi_play_mode(w()); }
 void    SoiCore::set_friendly_fire(bool on)  { soi_set_friendly_fire(w(), on ? 1 : 0); }
 bool    SoiCore::friendly_fire() const       { return soi_friendly_fire(w()) != 0; }
-void    SoiCore::set_victory_rule(int64_t r) { soi_set_victory_rule(w(), (int)r); }
-int64_t SoiCore::victory_rule() const        { return (int64_t)soi_victory_rule(w()); }
-int64_t SoiCore::player_kills(int64_t p) const { return (int64_t)soi_player_kills(w(), (int)p); }
-int64_t SoiCore::versus_winner() const       { return (int64_t)soi_versus_winner(w()); }
-void    SoiCore::new_game(int64_t mode)      { soi_new_game(w(), (int)mode); }
+void    SoiCore::set_victory_rule(int64_t r) { soi_set_victory_rule(w(), clamp_i32(r)); }
+int64_t SoiCore::victory_rule() const        { return static_cast<int64_t>(soi_victory_rule(w())); }
+int64_t SoiCore::player_kills(int64_t p) const { return valid_player(p) ? static_cast<int64_t>(soi_player_kills(w(), static_cast<int>(p))) : 0; }
+int64_t SoiCore::versus_winner() const       { return static_cast<int64_t>(soi_versus_winner(w())); }
+void    SoiCore::new_game(int64_t mode)      { soi_new_game(w(), clamp_i32(mode)); }
 bool    SoiCore::challenge_round() const    { return soi_challenge_round(w()) != 0; }
 bool    SoiCore::challenge_failed() const   { return soi_challenge_failed(w()) != 0; }
 void    SoiCore::set_input_assist(bool on)  { soi_set_input_assist(w(), on ? 1 : 0); }
@@ -105,78 +122,94 @@ void SoiCore::tick3(int64_t p1_input, int64_t p2_input, int64_t p3_input)
 }
 
 void SoiCore::spawn_player3() { soi_spawn_player3(w()); }
-void SoiCore::limit_players(int64_t n) { soi_limit_players(w(), (int)n); }
-void SoiCore::drop_player(int64_t slot) { soi_drop_player(w(), (int)slot); }
+void SoiCore::limit_players(int64_t n) { soi_limit_players(w(), clamp_i32(n)); }
+void SoiCore::drop_player(int64_t slot)
+{
+    if (valid_active_player(slot)) soi_drop_player(w(), static_cast<int>(slot));
+}
 void SoiCore::set_p3_any_key(bool on)   { soi_set_p3_any_key(w(), on ? 1 : 0); }
 bool SoiCore::p3_any_key() const        { return soi_p3_any_key(w()) != 0; }
 
-int64_t SoiCore::player_score(int64_t p) const { return soi_player_score(w(), (int)p); }
-int64_t SoiCore::player_lives(int64_t p) const { return soi_player_lives(w(), (int)p); }
-int64_t SoiCore::player_mult(int64_t p) const  { return soi_player_mult(w(), (int)p); }
-int64_t SoiCore::player_no_weapons_reward(int64_t p) const { return soi_player_no_weapons_reward(w(), (int)p); }
-bool    SoiCore::player_alive(int64_t p) const { return soi_player_alive(w(), (int)p) != 0; }
+int64_t SoiCore::player_score(int64_t p) const { return valid_player(p) ? soi_player_score(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_lives(int64_t p) const { return valid_player(p) ? soi_player_lives(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_mult(int64_t p) const  { return valid_player(p) ? soi_player_mult(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_no_weapons_reward(int64_t p) const { return valid_player(p) ? soi_player_no_weapons_reward(w(), static_cast<int>(p)) : 0; }
+bool    SoiCore::player_alive(int64_t p) const { return valid_player(p) && soi_player_alive(w(), static_cast<int>(p)) != 0; }
 bool    SoiCore::game_over() const             { return soi_game_over(w()) != 0; }
 bool    SoiCore::level_complete() const        { return soi_level_complete(w()) != 0; }
-int64_t SoiCore::player_x(int64_t p) const     { return soi_player_x(w(), (int)p); }
-int64_t SoiCore::player_y(int64_t p) const     { return soi_player_y(w(), (int)p); }
-int64_t SoiCore::player_arrows(int64_t p) const { return soi_player_arrows(w(), (int)p); }
-int64_t SoiCore::player_balls(int64_t p) const { return soi_player_balls(w(), (int)p); }
-int64_t SoiCore::player_shield(int64_t p) const { return soi_player_shield(w(), (int)p); }
-int64_t SoiCore::player_facing(int64_t p) const { return soi_player_facing(w(), (int)p); }
-int64_t SoiCore::player_invuln(int64_t p) const { return soi_player_invuln(w(), (int)p); }
-int64_t SoiCore::player_fast(int64_t p) const { return soi_player_fast(w(), (int)p); }
-int64_t SoiCore::player_has_key(int64_t p) const { return soi_player_has_key(w(), (int)p); }
-int64_t SoiCore::player_state(int64_t p) const { return soi_player_state(w(), (int)p); }
-int64_t SoiCore::player_movectr(int64_t p) const { return soi_player_movectr(w(), (int)p); }
-int64_t SoiCore::player_pose(int64_t p) const { return soi_player_pose(w(), (int)p); }
-int64_t SoiCore::player_pose_t(int64_t p) const { return soi_player_pose_t(w(), (int)p); }
-int64_t SoiCore::player_jump_t(int64_t p) const { return soi_player_jump_t(w(), (int)p); }
-int64_t SoiCore::player_frame(int64_t p) const { return soi_player_frame(w(), (int)p); }
+int64_t SoiCore::player_x(int64_t p) const     { return valid_player(p) ? soi_player_x(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_y(int64_t p) const     { return valid_player(p) ? soi_player_y(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_arrows(int64_t p) const { return valid_player(p) ? soi_player_arrows(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_balls(int64_t p) const { return valid_player(p) ? soi_player_balls(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_shield(int64_t p) const { return valid_player(p) ? soi_player_shield(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_facing(int64_t p) const { return valid_player(p) ? soi_player_facing(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_invuln(int64_t p) const { return valid_player(p) ? soi_player_invuln(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_fast(int64_t p) const { return valid_player(p) ? soi_player_fast(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_has_key(int64_t p) const { return valid_player(p) ? soi_player_has_key(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_state(int64_t p) const { return valid_player(p) ? soi_player_state(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_movectr(int64_t p) const { return valid_player(p) ? soi_player_movectr(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_pose(int64_t p) const { return valid_player(p) ? soi_player_pose(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_pose_t(int64_t p) const { return valid_player(p) ? soi_player_pose_t(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_jump_t(int64_t p) const { return valid_player(p) ? soi_player_jump_t(w(), static_cast<int>(p)) : 0; }
+int64_t SoiCore::player_frame(int64_t p) const { return valid_player(p) ? soi_player_frame(w(), static_cast<int>(p)) : 0; }
 int64_t SoiCore::goodies_total() const         { return soi_goodies_total(w()); }
 int64_t SoiCore::goodies_left() const          { return soi_goodies_left(w()); }
 int64_t SoiCore::reveal_timer() const          { return soi_reveal_timer(w()); }
 int64_t SoiCore::bonus_time() const            { return soi_bonus_time(w()); }
-int64_t SoiCore::player_bonus(int64_t p) const { return soi_player_bonus(w(), (int)p); }
+int64_t SoiCore::player_bonus(int64_t p) const { return valid_player(p) ? soi_player_bonus(w(), static_cast<int>(p)) : 0; }
 bool    SoiCore::music_hurry() const           { return soi_music_hurry(w()) != 0; }
-int64_t SoiCore::tick_count() const            { return (int64_t)soi_tick_count(w()); }
+int64_t SoiCore::tick_count() const            { return static_cast<int64_t>(soi_tick_count(w())); }
 int64_t SoiCore::enemy_count() const           { return soi_enemy_count(w()); }
 int64_t SoiCore::projectile_count() const      { return soi_projectile_count(w()); }
-int64_t SoiCore::grid_cell(int64_t c, int64_t r) const { return (int64_t)soi_grid_cell(w(), (int)c, (int)r); }
-int64_t SoiCore::grid_cols() const              { return (int64_t)soi_grid_cols(w()); }
-int64_t SoiCore::grid_rows() const              { return (int64_t)soi_grid_rows(w()); }
-int64_t SoiCore::pit_death_y() const            { return (int64_t)soi_pit_death_y(w()); }
+int64_t SoiCore::grid_cell(int64_t c, int64_t r) const
+{
+    if (!valid_index(c, soi_grid_cols(w())) || !valid_index(r, soi_grid_rows(w())))
+        return static_cast<int64_t>(soi_grid_cell(w(), -1, -1));
+    return static_cast<int64_t>(soi_grid_cell(w(), static_cast<int>(c), static_cast<int>(r)));
+}
+int64_t SoiCore::grid_cols() const              { return static_cast<int64_t>(soi_grid_cols(w())); }
+int64_t SoiCore::grid_rows() const              { return static_cast<int64_t>(soi_grid_rows(w())); }
+int64_t SoiCore::pit_death_y() const            { return static_cast<int64_t>(soi_pit_death_y(w())); }
 
 int64_t SoiCore::sfx_count() const             { return soi_sfx_count(w()); }
-int64_t SoiCore::sfx_get(int64_t i) const      { return soi_sfx_get(w(), (int)i); }
+int64_t SoiCore::sfx_get(int64_t i) const      { return valid_index(i, soi_sfx_count(w())) ? soi_sfx_get(w(), static_cast<int>(i)) : 0; }
 
 int64_t SoiCore::death_count() const           { return soi_death_count(w()); }
-int64_t SoiCore::death_x(int64_t i) const      { return soi_death_x(w(), (int)i); }
-int64_t SoiCore::death_y(int64_t i) const      { return soi_death_y(w(), (int)i); }
-int64_t SoiCore::death_type(int64_t i) const   { return soi_death_type(w(), (int)i); }
-int64_t SoiCore::death_dir(int64_t i) const    { return soi_death_dir(w(), (int)i); }
+int64_t SoiCore::death_x(int64_t i) const      { return valid_index(i, soi_death_count(w())) ? soi_death_x(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::death_y(int64_t i) const      { return valid_index(i, soi_death_count(w())) ? soi_death_y(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::death_type(int64_t i) const   { return valid_index(i, soi_death_count(w())) ? soi_death_type(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::death_dir(int64_t i) const    { return valid_index(i, soi_death_count(w())) ? soi_death_dir(w(), static_cast<int>(i)) : 0; }
 int64_t SoiCore::fx_count() const              { return soi_fx_count(w()); }
-int64_t SoiCore::fx_get(int64_t i, int64_t f) const { return soi_fx_get(w(), (int)i, (int)f); }
-int64_t SoiCore::blockanim(int64_t i) const    { return soi_blockanim(w(), (int)i); }
+int64_t SoiCore::fx_get(int64_t i, int64_t f) const
+{
+    if (!valid_index(i, soi_fx_count(w())) || f < 0 || f > SOI_FX_GRAV) return 0;
+    return soi_fx_get(w(), static_cast<int>(i), static_cast<int>(f));
+}
+int64_t SoiCore::blockanim(int64_t i) const
+{
+    if (i < 0 || i > INT32_MAX) return -1;
+    return soi_blockanim(w(), static_cast<int>(i));
+}
 
-bool    SoiCore::enemy_active(int64_t i) const { return soi_enemy_active(w(), (int)i) != 0; }
-int64_t SoiCore::enemy_type(int64_t i) const   { return soi_enemy_type(w(), (int)i); }
-int64_t SoiCore::enemy_x(int64_t i) const      { return soi_enemy_x(w(), (int)i); }
-int64_t SoiCore::enemy_y(int64_t i) const      { return soi_enemy_y(w(), (int)i); }
-int64_t SoiCore::enemy_dir(int64_t i) const    { return soi_enemy_dir(w(), (int)i); }
-int64_t SoiCore::enemy_fire_cd(int64_t i) const { return soi_enemy_fire_cd(w(), (int)i); }
-int64_t SoiCore::enemy_turn(int64_t i) const { return soi_enemy_turn(w(), (int)i); }
-int64_t SoiCore::enemy_bud(int64_t i) const { return soi_enemy_bud(w(), (int)i); }
-int64_t SoiCore::enemy_anim(int64_t i) const { return soi_enemy_anim(w(), (int)i); }
-bool SoiCore::enemy_vertical(int64_t i) const { return soi_enemy_vertical(w(), (int)i) != 0; }
-int64_t SoiCore::enemy_is_spawner(int64_t i) const { return soi_enemy_is_spawner(w(), (int)i); }
-bool    SoiCore::projectile_active(int64_t i) const { return soi_projectile_active(w(), (int)i) != 0; }
-int64_t SoiCore::projectile_x(int64_t i) const { return soi_projectile_x(w(), (int)i); }
-int64_t SoiCore::projectile_y(int64_t i) const { return soi_projectile_y(w(), (int)i); }
-bool    SoiCore::projectile_hostile(int64_t i) const { return soi_projectile_hostile(w(), (int)i) != 0; }
-int64_t SoiCore::projectile_kind(int64_t i) const { return soi_projectile_kind(w(), (int)i); }
-int64_t SoiCore::projectile_src_type(int64_t i) const { return soi_projectile_src_type(w(), (int)i); }
-int64_t SoiCore::projectile_pierce(int64_t i) const { return soi_projectile_pierce(w(), (int)i); }
-bool SoiCore::projectile_fired_left(int64_t i) const { return soi_projectile_fired_left(w(), (int)i) != 0; }
+bool    SoiCore::enemy_active(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) && soi_enemy_active(w(), static_cast<int>(i)) != 0; }
+int64_t SoiCore::enemy_type(int64_t i) const   { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_type(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_x(int64_t i) const      { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_x(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_y(int64_t i) const      { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_y(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_dir(int64_t i) const    { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_dir(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_fire_cd(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_fire_cd(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_turn(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_turn(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_bud(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_bud(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::enemy_anim(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_anim(w(), static_cast<int>(i)) : 0; }
+bool SoiCore::enemy_vertical(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) && soi_enemy_vertical(w(), static_cast<int>(i)) != 0; }
+int64_t SoiCore::enemy_is_spawner(int64_t i) const { return valid_index(i, SOI_MAX_ENEMIES) ? soi_enemy_is_spawner(w(), static_cast<int>(i)) : 0; }
+bool    SoiCore::projectile_active(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) && soi_projectile_active(w(), static_cast<int>(i)) != 0; }
+int64_t SoiCore::projectile_x(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) ? soi_projectile_x(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::projectile_y(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) ? soi_projectile_y(w(), static_cast<int>(i)) : 0; }
+bool    SoiCore::projectile_hostile(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) && soi_projectile_hostile(w(), static_cast<int>(i)) != 0; }
+int64_t SoiCore::projectile_kind(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) ? soi_projectile_kind(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::projectile_src_type(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) ? soi_projectile_src_type(w(), static_cast<int>(i)) : 0; }
+int64_t SoiCore::projectile_pierce(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) ? soi_projectile_pierce(w(), static_cast<int>(i)) : 0; }
+bool SoiCore::projectile_fired_left(int64_t i) const { return valid_index(i, SOI_MAX_PROJECTILES) && soi_projectile_fired_left(w(), static_cast<int>(i)) != 0; }
 
 int64_t SoiCore::state_hash() const
 {
@@ -201,31 +234,33 @@ int64_t SoiCore::snapshot_size() const
 PackedByteArray SoiCore::snapshot_save() const
 {
     PackedByteArray out;
-    out.resize((int64_t)soi_snapshot_size());
-    soi_snapshot_save(w(), out.ptrw());
+    out.resize(static_cast<int64_t>(soi_snapshot_size()));
+    if (out.ptrw()) soi_snapshot_save(w(), out.ptrw());
     return out;
 }
 
 void SoiCore::snapshot_load(const PackedByteArray &buf)
 {
-    if (buf.size() >= (int64_t)soi_snapshot_size()) {
+    if (buf.ptr() != nullptr && buf.size() == static_cast<int64_t>(soi_snapshot_size())) {
         soi_snapshot_load(w(), buf.ptr());
     }
 }
 
 int64_t SoiCore::net_hash() const
 {
-    return (int64_t)soi_net_hash(w());
+    return static_cast<int64_t>(soi_net_hash(w()));
 }
 
 int64_t SoiCore::tp_freeze() const
 {
-    return (int64_t)soi_tp_freeze(w());
+    return static_cast<int64_t>(soi_tp_freeze(w()));
 }
 
 int64_t SoiCore::switch_block_frame(int64_t col, int64_t row) const
 {
-    return (int64_t)soi_switch_block_frame(w(), (int)col, (int)row);
+    if (!valid_index(col, soi_grid_cols(w())) || !valid_index(row, soi_grid_rows(w())))
+        return -1;
+    return static_cast<int64_t>(soi_switch_block_frame(w(), static_cast<int>(col), static_cast<int>(row)));
 }
 
 

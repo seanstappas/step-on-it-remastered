@@ -131,8 +131,17 @@ static func ip_to_join_code(ip_str: String, port: int = 7777) -> String:
 	return "SOI-%s-%s" % [chars.substr(0, 5), chars.substr(5, 5)]
 
 
+static func _strip_join_code_prefix(code_str: String) -> String:
+	var clean := code_str.strip_edges().to_upper()
+	if clean.begins_with("SOI-"):
+		clean = clean.substr(4)
+	elif clean.begins_with("SOI"):
+		clean = clean.substr(3)
+	return clean.replace("-", "").replace(" ", "")
+
+
 static func join_code_to_ip(code_str: String) -> String:
-	var clean := code_str.strip_edges().to_upper().replace("SOI-", "").replace("SOI", "").replace("-", "").replace(" ", "")
+	var clean := _strip_join_code_prefix(code_str)
 	clean = clean.replace("O", "0").replace("I", "1").replace("L", "1")
 
 	# Legacy 8-char hex compatibility
@@ -162,7 +171,7 @@ static func join_code_to_ip(code_str: String) -> String:
 
 
 static func join_code_to_port(code_str: String) -> int:
-	var clean := code_str.strip_edges().to_upper().replace("SOI-", "").replace("SOI", "").replace("-", "").replace(" ", "")
+	var clean := _strip_join_code_prefix(code_str)
 	clean = clean.replace("O", "0").replace("I", "1").replace("L", "1")
 	if clean.length() == 8 and clean.is_valid_hex_number(false):
 		return 7777
@@ -811,8 +820,14 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 		close()
 		return
 	var blen: int = decode_be16(pkt, 0x0A)
-	if pkt.size() < 0x10 + blen + 4:
-		print("Malformed MATCH_INIT packet: size=%d expected >= %d" % [pkt.size(), 0x10 + blen + 4])
+	if blen < 0x1A or pkt.size() < 0x10 + blen + 4:
+		print("Malformed MATCH_INIT packet: size=%d blen=%d expected >= %d" % [pkt.size(), blen, 0x10 + blen + 4])
+		close()
+		return
+	var parsed_np: int = pkt[1] & 0x0F
+	var parsed_slot: int = pkt[2]
+	if parsed_np < 1 or parsed_np > 3 or parsed_slot < 0 or parsed_slot >= parsed_np:
+		print("Invalid MATCH_INIT player/slot metadata: num_players=%d local_slot=%d" % [parsed_np, parsed_slot])
 		close()
 		return
 	var remote_build_id: int = decode_be32(pkt, 0x10 + blen)
@@ -824,8 +839,8 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 		return
 	match_active = true
 	board_epoch = 0
-	num_players = pkt[1] & 0x0F
-	local_slot = pkt[2]
+	num_players = parsed_np
+	local_slot = parsed_slot
 	var mode: int = pkt[3]
 	var victory_rule: int = -1 if int(pkt[4]) == 255 else int(pkt[4])
 	var friendly_fire: int = -1 if int(pkt[5]) == 255 else int(pkt[5])

@@ -372,9 +372,9 @@ func is_music_light() -> bool:
 # ANY file missing or unreadable in the chosen set falls back to the original
 # sound, so playback can never break. Default "original" leaves the SD set intact.
 const SFX_VARIANTS := {
-	"original": "res://../extracted/audio/wav",     # faithful 8-bit source
-	"light": "res://../extracted/audio/wav_hd",     # denoised 16-bit 44.1k clean-up
-	"ai": "res://../extracted/audio/wav_ai",        # AudioSR super-res (32-bit float)
+	"original": "audio/wav",     # faithful 8-bit source
+	"light": "audio/wav_hd",     # denoised 16-bit 44.1k clean-up
+	"ai": "audio/wav_ai",        # AudioSR super-res (32-bit float)
 }
 var _sfx_variant := "original"
 var _sfx_variant_hits := 0   # how many sounds actually came from the chosen variant
@@ -403,7 +403,7 @@ func _sfx_variant_override() -> String:
 # Drop recordings in <repo>/custom_sfx/ named <name>.wav / .ogg / .mp3 (names below). While the
 # mode is ON, an event with a custom file plays it; every other event keeps the normal sound.
 # The folder is re-scanned each time the mode is switched on, so new files need no restart.
-const CUSTOM_SFX_DIR := "res://../custom_sfx"
+const CUSTOM_SFX_DIR := "custom_sfx"
 const CUSTOM_SFX_NAMES := {
 	1: "block_create", 2: "block_destroy", 3: "coin", 4: "enemy_kill", 5: "player_die",
 	7: "throw_ball", 8: "teleport", 9: "exit_door", 10: "pickup_magnifier",
@@ -419,10 +419,12 @@ var _custom_on := false
 var _custom_by_event := {}   # SoiSfx id -> AudioStream from custom_sfx/
 
 func _get_custom_sfx_dir() -> String:
-	var exe_p := OS.get_executable_path().get_base_dir().path_join("custom_sfx")
-	if DirAccess.dir_exists_absolute(exe_p) or not OS.has_feature("editor"):
+	var exe_p := OS.get_executable_path().get_base_dir().path_join(CUSTOM_SFX_DIR)
+	if DirAccess.dir_exists_absolute(exe_p):
 		return exe_p
-	return ProjectSettings.globalize_path(CUSTOM_SFX_DIR)
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://../").path_join(CUSTOM_SFX_DIR)
+	return exe_p
 
 ## Switch the custom-recording override mode. Returns how many custom sounds are loaded.
 func set_custom_sfx(on: bool) -> int:

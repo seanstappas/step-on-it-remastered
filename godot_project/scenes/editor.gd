@@ -141,7 +141,12 @@ func _apply_remastered(on: bool) -> void:
 func _get_chicago_font() -> Font:
 	if _chicago_font != null:
 		return _chicago_font
-	for p in ["res://scenes/Chicago.ttf", "res://scenes/chicago.ttf", "res://Chicago.ttf"]:
+	for p in ["res://fonts/Chicago.ttf", "res://scenes/Chicago.ttf", "res://scenes/chicago.ttf", "res://Chicago.ttf"]:
+		if ResourceLoader.exists(p):
+			var loaded := load(p) as Font
+			if loaded != null:
+				_chicago_font = loaded
+				break
 		if FileAccess.file_exists(p):
 			var ff := FontFile.new()
 			if ff.load_dynamic_font(p) == OK:
@@ -190,11 +195,15 @@ func _build_mac_menu_bar() -> void:
 
 	# Load Apple Logo Icon
 	var apple_path := "res://scenes/apple_logo.png"
-	if FileAccess.file_exists(apple_path):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(apple_path))
-		if img != null:
-			img.generate_mipmaps()
-			_apple_icon = ImageTexture.create_from_image(img)
+	if ResourceLoader.exists(apple_path):
+		_apple_icon = load(apple_path) as Texture2D
+	if _apple_icon == null and FileAccess.file_exists(apple_path):
+		var raw_png := FileAccess.get_file_as_bytes(apple_path)
+		if not raw_png.is_empty():
+			var img := Image.new()
+			if img.load_png_from_buffer(raw_png) == OK:
+				img.generate_mipmaps()
+				_apple_icon = ImageTexture.create_from_image(img)
 
 	# 1. Apple Menu
 	var mb_apple := _create_mac_menu(bar, "", _apple_icon)
@@ -345,7 +354,7 @@ func _on_apple_menu(id: int) -> void:
 func _on_file_menu(id: int) -> void:
 	match id:
 		200: # New Map
-			_init_grid(grid_cols, grid_rows)
+			_init_grid(grid_cols, grid_rows, true)
 			_set_status("New Map created")
 		201: # Open Map...
 			_open_map_dialog()
@@ -444,7 +453,7 @@ func _set_status(msg: String) -> void:
 
 # --- Grid Management ---
 
-func _init_grid(cols: int, rows: int) -> void:
+func _init_grid(cols: int, rows: int, clear_cells: bool = false) -> void:
 	var old_cells := cells.duplicate(true)
 	var old_rows := grid_rows
 	var old_cols := grid_cols
@@ -456,7 +465,7 @@ func _init_grid(cols: int, rows: int) -> void:
 	for r in range(grid_rows):
 		var row_arr: Array = []
 		for c in range(grid_cols):
-			if r < old_rows and c < old_cols and not old_cells.is_empty() and r < old_cells.size() and c < old_cells[r].size():
+			if not clear_cells and r < old_rows and c < old_cols and not old_cells.is_empty() and r < old_cells.size() and c < old_cells[r].size():
 				row_arr.append(old_cells[r][c])
 			else:
 				row_arr.append(0)
@@ -597,10 +606,14 @@ func _save_editor_state() -> Dictionary:
 		"current_brush": current_brush,
 		"current_variant_flag": current_variant_flag,
 		"current_family_t": current_family_t,
+		"current_hidden_goody": current_hidden_goody,
 		"current_brush_name": current_brush_name,
+		"current_brush_desc": current_brush_desc,
+		"enemy_facing_left": enemy_facing_left,
 		"cursor_cell": cursor_cell,
 		"remastered": remastered,
 		"_sidebar_visible": _sidebar_visible,
+		"_sidebar_scroll_y": _sidebar_scroll_y,
 		"_show_grid": _show_grid,
 	}
 
@@ -622,12 +635,16 @@ func _restore_editor_state(st: Dictionary) -> void:
 	starting_lives = st.get("starting_lives", 3)
 	playtest_players = st.get("playtest_players", 2)
 	bonus_time = st.get("bonus_time", 6000)
-	map_name = st.get("map_name", "custom_map")
+	map_name = sanitize_map_name(str(st.get("map_name", "custom_map")))
 
 	current_brush = st.get("current_brush", 0x0307)
 	current_variant_flag = st.get("current_variant_flag", 0x0300)
 	current_family_t = st.get("current_family_t", 0x07)
+	var hg: int = int(st.get("current_hidden_goody", 0x0917))
+	current_hidden_goody = hg if hg >= 0x0100 else (hg | 0x0900)
 	current_brush_name = st.get("current_brush_name", "White Block (Wall)")
+	current_brush_desc = st.get("current_brush_desc", "")
+	enemy_facing_left = st.get("enemy_facing_left", true)
 	cursor_cell = st.get("cursor_cell", Vector2i(-1, -1))
 
 	if grid_cols == 38 and grid_rows == 26:
@@ -638,6 +655,7 @@ func _restore_editor_state(st: Dictionary) -> void:
 		size_idx = 0
 
 	_sidebar_visible = st.get("_sidebar_visible", _sidebar_visible)
+	_sidebar_scroll_y = st.get("_sidebar_scroll_y", _sidebar_scroll_y)
 	_show_grid = st.get("_show_grid", _show_grid)
 	_apply_remastered(st.get("remastered", remastered))
 	queue_redraw()
@@ -645,16 +663,32 @@ func _restore_editor_state(st: Dictionary) -> void:
 
 # --- Input Handling ---
 
+func _has_modal_input_focus() -> bool:
+	if _properties_dialog != null and is_instance_valid(_properties_dialog):
+		return true
+	var vp := get_viewport()
+	if vp != null:
+		var fo := vp.gui_get_focus_owner()
+		if fo is LineEdit or fo is TextEdit:
+			return true
+	for ch in get_children():
+		if ch is AcceptDialog and (ch as AcceptDialog).visible:
+			return true
+	return false
+
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_TAB:
+		if event.keycode == KEY_TAB and not _has_modal_input_focus():
 			if get_viewport():
 				get_viewport().set_input_as_handled()
 			playtest_in_memory()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _has_modal_input_focus():
+			return
 		if event.keycode == KEY_TAB:
 			if get_viewport():
 				get_viewport().set_input_as_handled()
@@ -683,7 +717,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if get_viewport():
 				get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_N and event.ctrl_pressed:
-			_init_grid(grid_cols, grid_rows)
+			_init_grid(grid_cols, grid_rows, true)
 			_set_status("New Map created")
 			if get_viewport():
 				get_viewport().set_input_as_handled()
@@ -1155,8 +1189,7 @@ func _open_properties_dialog() -> void:
 	btn_ok.add_theme_font_override("font", font)
 	btn_ok.add_theme_font_size_override("font_size", 12)
 	btn_ok.pressed.connect(func() -> void:
-		map_name = edit_name.text.strip_edges()
-		if map_name == "": map_name = "custom_map"
+		map_name = sanitize_map_name(edit_name.text)
 		default_mode = opt_mode.selected
 		victory_rule = opt_rule.selected
 		friendly_fire = chk_ff.button_pressed
@@ -1636,7 +1669,7 @@ func load_from_bord(raw: PackedByteArray) -> bool:
 		for i in range(4):
 			vs_spawns[i] = Vector2i(0, 0)
 
-	_init_grid(cols, rows)
+	_init_grid(cols, rows, true)
 	if cols == 38 and rows == 26: size_idx = 2
 	elif cols == 28 and rows == 19: size_idx = 1
 	else: size_idx = 0
@@ -1734,7 +1767,48 @@ func _open_original_board_dialog() -> void:
 	pop.popup_centered(Vector2i(260, 240))
 
 
+static func sanitize_map_name(raw_name: String) -> String:
+	var s := raw_name.strip_edges()
+	if s.to_lower().ends_with(".bord"):
+		s = s.substr(0, s.length() - 5).strip_edges()
+	var cleaned := ""
+	for i in range(s.length()):
+		var ch := s[i]
+		var code := s.unicode_at(i)
+		if code < 32 or code == 127 or ch in ["/", "\\", ":", "*", "?", "\"", "<", ">", "|"]:
+			cleaned += "_"
+		else:
+			cleaned += ch
+	while cleaned.begins_with(".") or cleaned.begins_with(" "):
+		cleaned = cleaned.substr(1)
+	while cleaned.ends_with(".") or cleaned.ends_with(" "):
+		cleaned = cleaned.substr(0, cleaned.length() - 1)
+	while ".." in cleaned:
+		cleaned = cleaned.replace("..", "_")
+	while cleaned.begins_with(".") or cleaned.begins_with(" "):
+		cleaned = cleaned.substr(1)
+	while cleaned.ends_with(".") or cleaned.ends_with(" "):
+		cleaned = cleaned.substr(0, cleaned.length() - 1)
+	cleaned = cleaned.strip_edges()
+	if cleaned.length() > 64:
+		cleaned = cleaned.substr(0, 64).strip_edges()
+		while cleaned.ends_with("."):
+			cleaned = cleaned.substr(0, cleaned.length() - 1)
+	if cleaned.replace("_", "").replace(".", "").strip_edges().is_empty():
+		return "custom_map"
+	var stem := cleaned.split(".")[0].to_upper()
+	var reserved := [
+		"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+		"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	]
+	if stem in reserved:
+		cleaned = "map_" + cleaned
+	return cleaned
+
+
 func save_to_default_file() -> void:
+	map_name = sanitize_map_name(map_name)
 	var dir := "user://custom_maps"
 	DirAccess.make_dir_recursive_absolute(dir)
 	var path := "%s/%s.bord" % [dir, map_name]
@@ -1759,7 +1833,7 @@ func _save_map_as_dialog() -> void:
 	dlg.confirmed.connect(func() -> void:
 		var fn := edit.text.strip_edges()
 		if fn != "":
-			map_name = fn
+			map_name = sanitize_map_name(fn)
 			save_to_default_file()
 	)
 	dlg.popup_hide.connect(func() -> void: dlg.queue_free())

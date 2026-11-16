@@ -8,6 +8,7 @@
 #endif
 #include <assert.h>
 
+#define SOI_LAUNCHER_TEST 1
 #define main launcher_real_main
 #include "../tools/launcher/launcher.c"
 #undef main
@@ -513,6 +514,168 @@ int main(void) {
         RemoveDirectoryA(fake_local);
         RemoveDirectoryA(test_dir);
         printf("[PASS] Case 10: XOR decode and 4-tier token precedence (env > file > config > embedded) verified\n");
+    }
+
+    /* 12. Case 11: build_restart_args strips Velopack/Squirrel and token flags */
+    {
+        size_t out_argc = 999;
+        assert(build_restart_args(0, NULL, &out_argc) == NULL);
+        assert(out_argc == 0);
+
+        char *only_exe[] = { "launcher.exe" };
+        out_argc = 999;
+        assert(build_restart_args(1, only_exe, &out_argc) == NULL);
+        assert(out_argc == 0);
+
+        char *all_stripped[] = {
+            "launcher.exe",
+            "--veloapp-install",
+            "--squirrel-firstrun",
+            "--set-update-token",
+            "secret_abc",
+            "--set-update-token=secret_def",
+            "--clear-update-token"
+        };
+        out_argc = 999;
+        assert(build_restart_args(7, all_stripped, &out_argc) == NULL);
+        assert(out_argc == 0);
+
+        char *dangling_tok[] = {
+            "launcher.exe",
+            "--set-update-token"
+        };
+        out_argc = 999;
+        assert(build_restart_args(2, dangling_tok, &out_argc) == NULL);
+        assert(out_argc == 0);
+
+        char *mixed[] = {
+            "launcher.exe",
+            "--veloapp-updated",
+            "--set-update-token",
+            "secret_xyz",
+            "--headless",
+            "--3d",
+            "--squirrel-updated",
+            "res://scenes/game.tscn",
+            "--set-update-token=secret_inline",
+            "--clear-update-token",
+            "--no-music"
+        };
+        out_argc = 0;
+        char **res = build_restart_args(11, mixed, &out_argc);
+        assert(res != NULL);
+        assert(out_argc == 4);
+        assert(strcmp(res[0], "--headless") == 0);
+        assert(strcmp(res[1], "--3d") == 0);
+        assert(strcmp(res[2], "res://scenes/game.tscn") == 0);
+        assert(strcmp(res[3], "--no-music") == 0);
+        free(res);
+        printf("[PASS] Case 11: build_restart_args filters Velopack/Squirrel and token args, returns NULL when empty\n");
+    }
+
+    /* 13. Case 12: JSON backslash-parity edge cases and command-line truncation safety */
+    {
+        char temp_root[MAX_PATH] = {0};
+        DWORD tlen = GetTempPathA(sizeof(temp_root), temp_root);
+        assert(tlen > 0 && tlen < sizeof(temp_root));
+        (void)tlen;
+
+        char json_path[MAX_PATH];
+        snprintf(json_path, sizeof(json_path), "%ssoi_launcher_case12_%lu.json", temp_root, (unsigned long)GetCurrentProcessId());
+
+        const char *escaped_json = "{ \"note\": \"C:\\\\\", \"repo_url\": \"https://github.com/example/repo\" }\n";
+        write_raw_file(json_path, escaped_json, strlen(escaped_json));
+        char out_url[512] = {0};
+        assert(read_json_string_field(json_path, "repo_url", out_url, sizeof(out_url)) == true);
+        assert(strcmp(out_url, "https://github.com/example/repo") == 0);
+
+        const char *fake_key_json = "{ \"note\": \"\\\"repo_url\\\": \\\"fake\\\"\", \"repo_url\": \"https://github.com/example/real\" }\n";
+        write_raw_file(json_path, fake_key_json, strlen(fake_key_json));
+        assert(read_json_string_field(json_path, "repo_url", out_url, sizeof(out_url)) == true);
+        assert(strcmp(out_url, "https://github.com/example/real") == 0);
+        DeleteFileA(json_path);
+
+        char tiny_cmd[40];
+        memset(tiny_cmd, 'X', sizeof(tiny_cmd));
+        char *argv[] = { "launcher.exe", "--headless", "--3d", "very_long_argument_that_truncates" };
+        build_godot_cmd_line("C:\\StepOnIt.exe", "C:\\StepOnIt.pck", true, 4, argv, tiny_cmd, sizeof(tiny_cmd), NULL);
+        assert(tiny_cmd[sizeof(tiny_cmd) - 1] == '\0' || strlen(tiny_cmd) < sizeof(tiny_cmd));
+        printf("[PASS] Case 12: JSON backslash parity and small cmd buffer truncation safety verified\n");
+    }
+
+    /* 14. Case 13: Win32 CommandLineToArgvW quoting (trailing backslashes, embedded quotes, exact cap rollback) */
+    {
+        char *argv[] = {
+            "launcher.exe",
+            "--path",
+            "C:\\Games\\StepOnIt\\",
+            "--label",
+            "say \"hello \\\"world\\\"\"\\\\"
+        };
+        char cmd[2048] = {0};
+        build_test_cmd(5, argv, cmd, sizeof(cmd));
+        printf("Case 13 output: %s\n", cmd);
+
+        /* Trailing backslash must double to \\ before closing quote; embedded quotes must escape */
+        assert(strstr(cmd, "\"C:\\Games\\StepOnIt\\\\\"") != NULL);
+        assert(strstr(cmd, "\"say \\\"hello \\\\\\\"world\\\\\\\"\\\"\\\\\\\\\"") != NULL);
+
+        /* Verify exact round-trip via Windows CommandLineToArgvW */
+        typedef LPWSTR *(WINAPI *fn_CommandLineToArgvW)(LPCWSTR, int *);
+        HMODULE h_shell = LoadLibraryA("shell32.dll");
+        assert(h_shell != NULL);
+        fn_CommandLineToArgvW p_cmd_to_argv = (fn_CommandLineToArgvW)(void *)GetProcAddress(h_shell, "CommandLineToArgvW");
+        assert(p_cmd_to_argv != NULL);
+
+        wchar_t wcmd[2048] = {0};
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, (int)(sizeof(wcmd) / sizeof(wcmd[0])));
+        assert(wlen > 0);
+        (void)wlen;
+
+        int parsed_argc = 0;
+        LPWSTR *parsed_argv = p_cmd_to_argv(wcmd, &parsed_argc);
+        assert(parsed_argv != NULL);
+        /* Expected: exe, --main-pack, pck, --path, C:\Games\StepOnIt\, --, --3d, --music, --label, say "hello \"world\""\\ */
+        assert(parsed_argc == 10);
+
+        char arg_utf8[512] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, parsed_argv[4], -1, arg_utf8, sizeof(arg_utf8), NULL, NULL);
+        assert(strcmp(arg_utf8, "C:\\Games\\StepOnIt\\") == 0);
+        WideCharToMultiByte(CP_UTF8, 0, parsed_argv[9], -1, arg_utf8, sizeof(arg_utf8), NULL, NULL);
+        assert(strcmp(arg_utf8, "say \"hello \\\"world\\\"\"\\\\") == 0);
+        LocalFree(parsed_argv);
+        FreeLibrary(h_shell);
+
+        /* Exact buffer-cap rollback in append_arg */
+        char cap_buf[24];
+        memset(cap_buf, 'Z', sizeof(cap_buf));
+        size_t off = 0;
+        assert(append_quoted_arg(cap_buf, sizeof(cap_buf), &off, "base.exe", false) == true);
+        assert(off == 10);
+        assert(strcmp(cap_buf, "\"base.exe\"") == 0);
+
+        /* Next arg fits exactly: " 1234567890" -> 1 + 1 + 10 + 1 = 13 bytes, off=23, NUL at 23 (<24) */
+        assert(append_arg(cap_buf, sizeof(cap_buf), &off, "1234567890") == true);
+        assert(off == 23);
+        assert(strcmp(cap_buf, "\"base.exe\" \"1234567890\"") == 0);
+
+        /* Any further append fails and rolls back cleanly to saved_offset */
+        size_t saved_off = off;
+        assert(append_arg(cap_buf, sizeof(cap_buf), &off, "x") == false);
+        assert(off == saved_off);
+        assert(cap_buf[saved_off] == '\0');
+        assert(strcmp(cap_buf, "\"base.exe\" \"1234567890\"") == 0);
+
+        /* Also test partial write rollback mid-arg (needs 12 bytes, only 10 left) */
+        char mid_buf[20];
+        size_t mid_off = 0;
+        assert(append_quoted_arg(mid_buf, sizeof(mid_buf), &mid_off, "base.exe", false) == true);
+        assert(mid_off == 10);
+        assert(append_arg(mid_buf, sizeof(mid_buf), &mid_off, "abcdefghij") == false);
+        assert(mid_off == 10);
+        assert(mid_buf[10] == '\0');
+        assert(strcmp(mid_buf, "\"base.exe\"") == 0);
+        printf("[PASS] Case 13: Win32 CommandLineToArgvW quoting and exact buffer-cap rollback verified\n");
     }
 
     printf("\nALL LAUNCHER CLI ADVERSARIAL TESTS PASSED!\n");

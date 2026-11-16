@@ -5,8 +5,10 @@ param(
     [string]$EmbedUpdateToken = "",
     [switch]$AllowNoEmbedToken,
     [switch]$AllowBroadEmbedToken,
+    [switch]$NoEmbedToken,
     [switch]$UploadToGitHub,
-    [switch]$SkipAssetMirror
+    [switch]$SkipAssetMirror,
+    [switch]$SkipBridgeBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +25,33 @@ $Py = if (Test-Path "$Root\.venv\Scripts\python.exe") { "$Root\.venv\Scripts\pyt
 
 if ([string]::IsNullOrWhiteSpace($RepoUrl) -or $RepoUrl -match "YOUR_GITHUB_USER") {
     throw "-RepoUrl must be a valid repository URL (not empty or a placeholder)."
+}
+
+if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$') {
+    throw "Invalid -Version '$Version'. Expected semantic version MAJOR.MINOR.PATCH (e.g. 1.1.3)."
+}
+$VerMajor = [int]$Matches[1]
+$VerMinor = [int]$Matches[2]
+$VerPatch = [int]$Matches[3]
+
+function Invoke-NativeChecked {
+    param(
+        [string]$Exe,
+        [string[]]$Arguments,
+        [string]$Label,
+        [int]$MaxOkExit = 0
+    )
+    $prevEap = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Exe @Arguments
+        $rc = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    if ($null -eq $rc -or $rc -lt 0 -or $rc -gt $MaxOkExit) {
+        throw "$Label failed with exit code $rc"
+    }
 }
 
 function Invoke-GhCapture {
@@ -64,29 +93,33 @@ if ($UploadToGitHub) {
 }
 
 $ResolvedEmbedToken = ""
-if (-not [string]::IsNullOrWhiteSpace($EmbedUpdateToken)) {
-    $ResolvedEmbedToken = $EmbedUpdateToken.Trim()
-} elseif (-not [string]::IsNullOrWhiteSpace($env:SOI_EMBED_UPDATE_TOKEN)) {
-    $ResolvedEmbedToken = $env:SOI_EMBED_UPDATE_TOKEN.Trim()
-} elseif (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-    $embedTokenFile = Join-Path (Join-Path $env:LOCALAPPDATA "StepOnIt") "release_embed_token.txt"
-    if (Test-Path $embedTokenFile) {
-        $fileRaw = [System.IO.File]::ReadAllText($embedTokenFile, [System.Text.Encoding]::UTF8)
-        if ($null -ne $fileRaw) {
-            $ResolvedEmbedToken = $fileRaw.Trim([char]0xFEFF, ' ', "`t", "`r", "`n")
+if (-not $NoEmbedToken) {
+    if (-not [string]::IsNullOrWhiteSpace($EmbedUpdateToken)) {
+        $ResolvedEmbedToken = $EmbedUpdateToken.Trim()
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:SOI_EMBED_UPDATE_TOKEN)) {
+        $ResolvedEmbedToken = $env:SOI_EMBED_UPDATE_TOKEN.Trim()
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $embedTokenFile = Join-Path (Join-Path $env:LOCALAPPDATA "StepOnIt") "release_embed_token.txt"
+        if (Test-Path $embedTokenFile) {
+            $fileRaw = [System.IO.File]::ReadAllText($embedTokenFile, [System.Text.Encoding]::UTF8)
+            if ($null -ne $fileRaw) {
+                $ResolvedEmbedToken = $fileRaw.Trim([char]0xFEFF, ' ', "`t", "`r", "`n")
+            }
         }
     }
-}
 
-if (-not [string]::IsNullOrWhiteSpace($ResolvedEmbedToken)) {
-    if ($ResolvedEmbedToken -match '\s') {
-        throw "Resolved embed update token contains internal whitespace or newline characters."
-    }
-    if (($ResolvedEmbedToken -match '^(gho_|ghu_)') -and (-not $AllowBroadEmbedToken)) {
-        throw "Refusing to embed a broad OAuth/gh CLI token (gho_/ghu_) into a distributable installer. Create a fine-grained read-only token (github_pat_..., Contents: Read-only) and save it with tools/set_release_token.ps1, or pass -AllowBroadEmbedToken."
+    if (-not [string]::IsNullOrWhiteSpace($ResolvedEmbedToken)) {
+        if ($ResolvedEmbedToken -match '\s') {
+            throw "Resolved embed update token contains internal whitespace or newline characters."
+        }
+        if (($ResolvedEmbedToken -match '^(gho_|ghu_)') -and (-not $AllowBroadEmbedToken)) {
+            throw "Refusing to embed a broad OAuth/gh CLI token (gho_/ghu_) into a distributable installer. Create a fine-grained read-only token (github_pat_..., Contents: Read-only) and save it with tools/set_release_token.ps1, or pass -AllowBroadEmbedToken."
+        }
+    } elseif ($UploadToGitHub -and (-not $AllowNoEmbedToken)) {
+        throw "No read-only update token found to embed into StepOnItLauncher.exe. Save one first with: powershell -ExecutionPolicy Bypass -File tools/set_release_token.ps1 -FromClipboard (or pass -AllowNoEmbedToken)."
     }
 } elseif ($UploadToGitHub -and (-not $AllowNoEmbedToken)) {
-    throw "No read-only update token found to embed into StepOnItLauncher.exe. Save one first with: powershell -ExecutionPolicy Bypass -File tools/set_release_token.ps1 -FromClipboard (or pass -AllowNoEmbedToken)."
+    throw "-NoEmbedToken cannot be combined with -UploadToGitHub unless -AllowNoEmbedToken is also passed."
 }
 
 function Ensure-VelopackTools {
@@ -119,9 +152,14 @@ function Ensure-VelopackTools {
 
 Ensure-VelopackTools
 
-Write-Host "=== 1. Building GDExtension (soi_bridge.dll) ===" -ForegroundColor Cyan
-powershell -ExecutionPolicy Bypass -File "$Root\bridge\build_zig.ps1"
-if ($LASTEXITCODE -ne 0) { throw "GDExtension build failed" }
+$hasBridgeDll = Test-Path "$Root\godot_project\bin\soi_bridge.windows.template_release.x86_64.dll"
+$hasBridgePdb = Test-Path "$Root\godot_project\bin\soi_bridge.pdb"
+if ($SkipBridgeBuild -and $hasBridgeDll -and $hasBridgePdb) {
+    Write-Host "=== 1. Skipping GDExtension Build (-SkipBridgeBuild) ===" -ForegroundColor Cyan
+} else {
+    Write-Host "=== 1. Building GDExtension (soi_bridge.dll) ===" -ForegroundColor Cyan
+    Invoke-NativeChecked -Exe "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "$Root\bridge\build_zig.ps1") -Label "GDExtension build"
+}
 
 Write-Host "=== 2. Preparing Windows Build Staging ($BuildDir) ===" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path "$BuildDir\bin" | Out-Null
@@ -131,8 +169,7 @@ New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 Remove-Item "$BuildDir\StepOnIt.pck", "$BuildDir\StepOnIt.exe" -Force -ErrorAction SilentlyContinue
 
 # Export release using official template
-& $GodotConsole --headless --path "$Root\godot_project" --export-release "Windows Desktop" "$BuildDir\StepOnIt.exe"
-if ($LASTEXITCODE -ne 0) { throw "Godot export-release failed with exit code $LASTEXITCODE" }
+Invoke-NativeChecked -Exe $GodotConsole -Arguments @("--headless", "--path", "$Root\godot_project", "--export-release", "Windows Desktop", "$BuildDir\StepOnIt.exe") -Label "Godot export-release"
 if (-not (Test-Path "$BuildDir\StepOnIt.pck")) { throw "Missing $BuildDir\StepOnIt.pck after export" }
 if (-not (Test-Path "$BuildDir\StepOnIt.exe")) { throw "Missing $BuildDir\StepOnIt.exe after export" }
 
@@ -140,19 +177,41 @@ Copy-Item "$Root\godot_project\bin\*.dll" "$BuildDir\bin\" -Force
 Copy-Item "$Root\godot_project\bin\*.dll" "$BuildDir\" -Force
 
 if (-not $SkipAssetMirror -or -not (Test-Path "$BuildDir\extracted\levels")) {
-    Write-Host "=== 3. Mirroring Runtime Extracted Assets (~205 MB) ===" -ForegroundColor Cyan
-    # Exclude offline render/intermediate folders (~620 MB) to keep installer compact
+    Write-Host "=== 3. Mirroring Runtime Extracted Assets (~168 MB) ===" -ForegroundColor Cyan
+    # Exclude offline render/intermediate folders and duplicate pict_hd (superseded by pict_hd_v2)
     $ExcludeDirs = @("renders", "first_pass", "pass2", "pass3_numpy", "sprites_uhd", "sprites_3d", "sprites_hd_test", "_qa")
-    $null = robocopy "$Root\extracted" "$BuildDir\extracted" /MIR /XD $ExcludeDirs /NFL /NDL /NJH /NJS /NP
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+    if (Test-Path "$Root\extracted\pict_hd_v2") {
+        $ExcludeDirs += "pict_hd"
+    }
+    $robocopyArgs = @("$Root\extracted", "$BuildDir\extracted", "/MIR", "/XD") + $ExcludeDirs + @("/NFL", "/NDL", "/NJH", "/NJS", "/NP")
+    $null = Invoke-NativeChecked -Exe "robocopy" -Arguments $robocopyArgs -Label "robocopy asset mirror" -MaxOkExit 7
 } else {
     Write-Host "=== 3. Skipping Asset Mirror (-SkipAssetMirror) ===" -ForegroundColor Cyan
 }
+if ((Test-Path "$Root\extracted\pict_hd_v2") -and (Test-Path "$BuildDir\extracted\pict_hd")) {
+    Remove-Item "$BuildDir\extracted\pict_hd" -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "=== 4. Building Native StepOnItLauncher.exe ===" -ForegroundColor Cyan
+$iconPath = "$Root\tools\launcher\app_icon.ico"
+if (-not (Test-Path $iconPath)) {
+    Write-Host "Generating missing app icon via tools/build_icon.py..." -ForegroundColor Yellow
+    Invoke-NativeChecked -Exe $Py -Arguments @("$Root\tools\build_icon.py") -Label "build_icon.py"
+    if (-not (Test-Path $iconPath)) {
+        throw "Failed to generate $iconPath"
+    }
+}
+
 $embedHeaderPath = "$BuildDir\soi_embedded_token.h"
-Remove-Item $embedHeaderPath -Force -ErrorAction SilentlyContinue
+$launcherResPath = "$BuildDir\launcher.res"
+Remove-Item $embedHeaderPath, $launcherResPath -Force -ErrorAction SilentlyContinue
 try {
+    $verStrMacro = '/DSOI_VER_STR=\"' + $Version + '\"'
+    Invoke-NativeChecked -Exe $Zig -Arguments @("rc", "/DSOI_VER_MAJOR=$VerMajor", "/DSOI_VER_MINOR=$VerMinor", "/DSOI_VER_PATCH=$VerPatch", $verStrMacro, "/fo", $launcherResPath, "$Root\tools\launcher\launcher.rc") -Label "launcher.rc compilation"
+    if (-not (Test-Path $launcherResPath)) {
+        throw "launcher.rc compilation did not produce $launcherResPath"
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($ResolvedEmbedToken)) {
         $tokBytes = [System.Text.Encoding]::UTF8.GetBytes($ResolvedEmbedToken)
         if ($tokBytes.Length -eq 0 -or $tokBytes.Length -ge 1024) {
@@ -184,15 +243,13 @@ static const unsigned char SOI_EMBEDDED_TOKEN_CIPHER[$($tokBytes.Length)] = { $c
 "@ + "`n"
         [System.IO.File]::WriteAllText($embedHeaderPath, $headerContent, [System.Text.UTF8Encoding]::new($false))
 
-        & $Zig cc -O2 -Wall -Wextra '-Wl,--subsystem,windows' -DSOI_HAS_EMBEDDED_TOKEN_HEADER=1 -I"$BuildDir" -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
-        if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
+        Invoke-NativeChecked -Exe $Zig -Arguments @("cc", "-O2", "-Wall", "-Wextra", "-Wl,--subsystem,windows", "-DSOI_HAS_EMBEDDED_TOKEN_HEADER=1", "-I$BuildDir", "-I$VpkLibcDir\include", "$Root\tools\launcher\launcher.c", $launcherResPath, "-o", "$BuildDir\StepOnItLauncher.exe") -Label "StepOnItLauncher.exe build"
         Write-Host ("Embedded XOR-masked update token into StepOnItLauncher.exe (token: present, {0} bytes)." -f $tokBytes.Length) -ForegroundColor Green
     } else {
-        & $Zig cc -O2 -Wall -Wextra '-Wl,--subsystem,windows' -I"$VpkLibcDir\include" "$Root\tools\launcher\launcher.c" -o "$BuildDir\StepOnItLauncher.exe"
-        if ($LASTEXITCODE -ne 0) { throw "StepOnItLauncher.exe build failed with exit code $LASTEXITCODE" }
+        Invoke-NativeChecked -Exe $Zig -Arguments @("cc", "-O2", "-Wall", "-Wextra", "-Wl,--subsystem,windows", "-I$VpkLibcDir\include", "$Root\tools\launcher\launcher.c", $launcherResPath, "-o", "$BuildDir\StepOnItLauncher.exe") -Label "StepOnItLauncher.exe build"
     }
 } finally {
-    Remove-Item $embedHeaderPath -Force -ErrorAction SilentlyContinue
+    Remove-Item $embedHeaderPath, $launcherResPath -Force -ErrorAction SilentlyContinue
 }
 Copy-Item "$VpkLibcDir\lib\velopack_libc_win_x64_msvc.dll" "$BuildDir\velopack_libc_win_x64_msvc.dll" -Force
 
@@ -222,19 +279,23 @@ if ($UploadToGitHub) {
         }
     }
     if ($hasExistingReleases) {
-        dotnet $VpkDll download github --repoUrl $RepoUrl --token $GitHubToken -o $ReleaseDir
-        if ($LASTEXITCODE -ne 0) { throw "vpk download github failed with exit code $LASTEXITCODE" }
+        Invoke-NativeChecked -Exe "dotnet" -Arguments @($VpkDll, "download", "github", "--repoUrl", $RepoUrl, "--token", $GitHubToken, "-o", $ReleaseDir) -Label "vpk download github"
     } else {
         Write-Host "No existing GitHub releases found for $slug; skipping prior package download (first publish)." -ForegroundColor Yellow
     }
 }
-dotnet $VpkDll pack -u StepOnIt -v $Version -p $BuildDir -e StepOnItLauncher.exe -o $ReleaseDir
-if ($LASTEXITCODE -ne 0) { throw "vpk pack failed" }
+$packArgs = @($VpkDll, "pack", "-u", "StepOnIt", "-v", $Version, "-p", $BuildDir, "-e", "StepOnItLauncher.exe", "-o", $ReleaseDir, "--packTitle", "Step On It! Remastered", "--icon", $iconPath, "--verbose")
+try {
+    Invoke-NativeChecked -Exe "dotnet" -Arguments $packArgs -Label "vpk pack"
+} catch {
+    Write-Host "vpk pack failed on first attempt ($($_.Exception.Message)); retrying once after 1s..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 1
+    Invoke-NativeChecked -Exe "dotnet" -Arguments $packArgs -Label "vpk pack"
+}
 
 if ($UploadToGitHub -and $RepoUrl) {
     Write-Host "=== 6. Uploading Release v$Version to GitHub Releases ===" -ForegroundColor Cyan
-    dotnet $VpkDll upload github --repoUrl $RepoUrl --token $GitHubToken --publish --releaseName "Step On It! v$Version" -o $ReleaseDir
-    if ($LASTEXITCODE -ne 0) { throw "vpk upload failed" }
+    Invoke-NativeChecked -Exe "dotnet" -Arguments @($VpkDll, "upload", "github", "--repoUrl", $RepoUrl, "--token", $GitHubToken, "--publish", "--releaseName", "Step On It! v$Version", "-o", $ReleaseDir) -Label "vpk upload"
 }
 
 Write-Host "=== Release v$Version Ready in $ReleaseDir ===" -ForegroundColor Green

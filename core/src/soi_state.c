@@ -72,16 +72,24 @@ int soi_parse_ext1(const uint8_t *bord, size_t len, SoiExt1Info *out)
     if (term_off == 0) return 0;
 
     const uint8_t *ext = NULL;
-    if (term_off + 24 <= len && memcmp(bord + term_off, "EXT1", 4) == 0)
-        ext = bord + term_off;
-    else if (term_off + 2 + 24 <= len && memcmp(bord + term_off + 2, "EXT1", 4) == 0)
-        ext = bord + term_off + 2;
+    if (len >= term_off + 24) {
+        size_t pos = len - 24;
+        for (;;) {
+            if (memcmp(bord + pos, "EXT1", 4) == 0) {
+                const uint8_t *cand = bord + pos;
+                uint16_t calc_crc = ext1_crc16(cand, 22);
+                uint16_t stored_crc = be16(cand + 22);
+                if (calc_crc == stored_crc) {
+                    ext = cand;
+                    break;
+                }
+            }
+            if (pos == term_off) break;
+            pos--;
+        }
+    }
 
     if (!ext) return 0;
-
-    uint16_t calc_crc = ext1_crc16(ext, 22);
-    uint16_t stored_crc = be16(ext + 22);
-    if (calc_crc != stored_crc && stored_crc != 0) return 0;
 
     uint8_t ver   = ext[4];
     uint8_t flags = ext[5];
@@ -130,6 +138,7 @@ static void zero_world(SoiWorld *w)
 void soi_world_init(SoiWorld *w, uint32_t seed)
 {
     int i;
+    if (!w) return;
     zero_world(w);
     soi_rng_seed(w, seed ? seed : 1u);   /* Toolbox default seed = 1 */
     w->grid_cols = SOI_GRID_COLS;
@@ -181,9 +190,18 @@ static void place_player(SoiWorld *w, int idx, int col, int row)
 /* Remaster extension: activate the 3rd co-op player. The BORD header has only two
  * spawns (P1 @0x06, P2 @0x0A), so P3 starts at P1's spawn column -- one cell to the
  * right if that cell is clear. Call after soi_load_level when 3 players are in. */
+static inline int clamp_coord(int v, int limit)
+{
+    if (v < 0) return 0;
+    if (v >= limit) return limit - 1;
+    return v;
+}
+
 static int is_valid_p3_spawn(const SoiWorld *w, int c, int r)
 {
-    if (c < 0 || c >= w->grid_cols || r < 1 || r + 1 >= w->grid_rows)
+    int max_c = soi_clamped_cols(w);
+    int max_r = soi_clamped_rows(w);
+    if (c < 0 || c >= max_c || r < 1 || r + 1 >= max_r)
         return 0;
     uint32_t at = w->cell[r][c];
     uint32_t above = w->cell[r - 1][c];
@@ -203,7 +221,7 @@ static int has_valid_vs_spawn(const SoiWorld *w, int idx)
     int c = (int)w->vs_spawns[idx][0];
     int r = (int)w->vs_spawns[idx][1];
     if (c == 0 && r == 0) return 0;
-    if (c < 0 || c >= w->grid_cols || r < 0 || r >= w->grid_rows) return 0;
+    if (c < 0 || c >= soi_clamped_cols(w) || r < 0 || r >= soi_clamped_rows(w)) return 0;
     return 1;
 }
 
@@ -227,7 +245,7 @@ void soi_spawn_player3(SoiWorld *w)
     }
 
     if (explicit_c > 0 && explicit_r > 0 &&
-        explicit_c < w->grid_cols && explicit_r < w->grid_rows) {
+        explicit_c < soi_clamped_cols(w) && explicit_r < soi_clamped_rows(w)) {
         place_player(w, 3, explicit_c, explicit_r);
         w->players[3].block_type = (uint8_t)(w->p3_block & 0xFFu);
         w->players[3].bonus_time = w->players[1].bonus_time;
@@ -255,7 +273,7 @@ void soi_spawn_player3(SoiWorld *w)
         int p2_r = (w->players[2].spawn_y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         int mid_c = (p1_c + p2_c) / 2;
         int mid_r = (p1_r + p2_r) / 2;
-        int max_dist = (int)w->grid_cols + (int)w->grid_rows;
+        int max_dist = soi_clamped_cols(w) + soi_clamped_rows(w);
         int dist, dc;
 
         for (dist = 1; dist <= max_dist && spawn_c < 0; dist++) {
@@ -280,9 +298,11 @@ void soi_spawn_player3(SoiWorld *w)
     }
 
     if (spawn_c < 0) {
-        int col = (w->players[1].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX;
-        int row = (w->players[1].spawn_y - SOI_ORIGIN_Y) / SOI_CELL_PX;
-        if (col + 1 < w->grid_cols && SOI_CELL_TYPE(w->cell[row][col + 1]) == 0)
+        int max_c = soi_clamped_cols(w);
+        int max_r = soi_clamped_rows(w);
+        int col = clamp_coord((w->players[1].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX, max_c);
+        int row = clamp_coord((w->players[1].spawn_y - SOI_ORIGIN_Y) / SOI_CELL_PX, max_r);
+        if (col + 1 < max_c && SOI_CELL_TYPE(soi_get_cell(w, col + 1, row)) == 0)
             col += 1;
         spawn_c = col;
         spawn_r = row;
@@ -309,6 +329,7 @@ void soi_spawn_player3(SoiWorld *w)
 void soi_limit_players(SoiWorld *w, int n)
 {
     int i;
+    if (!w) return;
     for (i = 1; i < SOI_MAX_PLAYERS; i++)
         if (i > n) {
             w->players[i].active = 0;
@@ -342,8 +363,8 @@ int soi_p3_any_key(const SoiWorld *w)
 int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
 {
     struct {
-        int32_t  score, lives;
-        int16_t  arrows, balls, shield;
+        int32_t  score;
+        int16_t  lives, arrows, balls, shield;
         uint16_t kills;
         uint8_t  active, elim;
     } keep[SOI_MAX_PLAYERS];
@@ -434,7 +455,7 @@ int soi_next_level(SoiWorld *w, const uint8_t *bord, size_t len)
 void soi_set_player_stats(SoiWorld *w, int idx, int score, int lives, int arrows, int balls, int shield)
 {
     SoiPlayer *p;
-    if (idx < 1 || idx >= SOI_MAX_PLAYERS) return;
+    if (!w || idx < 1 || idx >= SOI_MAX_PLAYERS) return;
     p = &w->players[idx];
     p->score  = score;
     p->lives  = (int16_t)lives;
@@ -452,18 +473,20 @@ void soi_set_play_mode(SoiWorld *w, int mode)
         w->friendly_fire = 1;
         w->challenge = 0; /* Bug B6: disable challenge round death bypass in Versus */
         if (w->level_loaded && w->tick == 0) {
-            int p1_sc = has_valid_vs_spawn(w, 0)
+            int max_c = soi_clamped_cols(w);
+            int max_r = soi_clamped_rows(w);
+            int p1_sc = clamp_coord(has_valid_vs_spawn(w, 0)
                 ? (int)w->vs_spawns[0][0]
-                : (w->bord_len >= 0x0A ? (int)be16(w->bord_data + 0x06) : (w->players[1].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX);
-            int p1_sr = has_valid_vs_spawn(w, 0)
+                : (w->bord_len >= 0x0A ? (int)be16(w->bord_data + 0x06) : (w->players[1].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX), max_c);
+            int p1_sr = clamp_coord(has_valid_vs_spawn(w, 0)
                 ? (int)w->vs_spawns[0][1]
-                : (w->bord_len >= 0x0A ? (int)be16(w->bord_data + 0x08) : (w->players[1].spawn_y - 1 - SOI_ORIGIN_Y) / SOI_CELL_PX);
-            int p2_sc = has_valid_vs_spawn(w, 1)
+                : (w->bord_len >= 0x0A ? (int)be16(w->bord_data + 0x08) : (w->players[1].spawn_y - 1 - SOI_ORIGIN_Y) / SOI_CELL_PX), max_r);
+            int p2_sc = clamp_coord(has_valid_vs_spawn(w, 1)
                 ? (int)w->vs_spawns[1][0]
-                : (w->bord_len >= 0x0E ? (int)be16(w->bord_data + 0x0A) : (w->players[2].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX);
-            int p2_sr = has_valid_vs_spawn(w, 1)
+                : (w->bord_len >= 0x0E ? (int)be16(w->bord_data + 0x0A) : (w->players[2].spawn_x - SOI_ORIGIN_X) / SOI_CELL_PX), max_c);
+            int p2_sr = clamp_coord(has_valid_vs_spawn(w, 1)
                 ? (int)w->vs_spawns[1][1]
-                : (w->bord_len >= 0x0E ? (int)be16(w->bord_data + 0x0C) : (w->players[2].spawn_y - 1 - SOI_ORIGIN_Y) / SOI_CELL_PX);
+                : (w->bord_len >= 0x0E ? (int)be16(w->bord_data + 0x0C) : (w->players[2].spawn_y - 1 - SOI_ORIGIN_Y) / SOI_CELL_PX), max_r);
             place_player(w, 1, p1_sc, p1_sr);
             place_player(w, 2, p2_sc, p2_sr);
             if (w->players[2].lives < 0) {
@@ -480,38 +503,42 @@ void soi_set_play_mode(SoiWorld *w, int mode)
 
 int soi_play_mode(const SoiWorld *w)
 {
+    if (!w) return SOI_MODE_ONE;
     return w->play_mode ? w->play_mode : SOI_MODE_ONE;
 }
 
 void soi_set_friendly_fire(SoiWorld *w, int on)
 {
+    if (!w) return;
     w->friendly_fire = on ? 1 : 0;
 }
 
 int soi_friendly_fire(const SoiWorld *w)
 {
+    if (!w) return 0;
     return (w->play_mode == SOI_MODE_VERSUS) ? 1 : (w->friendly_fire ? 1 : 0);
 }
 
 void soi_set_victory_rule(SoiWorld *w, int rule)
 {
+    if (!w) return;
     if (rule < SOI_WIN_LIVES || rule > SOI_WIN_DOOR) rule = SOI_WIN_LIVES;
     w->victory_rule = (uint8_t)rule;
 }
 
 int soi_victory_rule(const SoiWorld *w)
 {
-    return w->victory_rule;
+    return w ? w->victory_rule : SOI_WIN_LIVES;
 }
 
 int soi_grid_cols(const SoiWorld *w)
 {
-    return (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    return soi_clamped_cols(w);
 }
 
 int soi_grid_rows(const SoiWorld *w)
 {
-    return (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    return soi_clamped_rows(w);
 }
 
 int soi_challenge_round(const SoiWorld *w) { return w->level_loaded && w->challenge && (w->play_mode != SOI_MODE_VERSUS); }
@@ -536,19 +563,20 @@ int soi_challenge_failed(const SoiWorld *w)
 void soi_new_game(SoiWorld *w, int mode)
 {
     int i;
+    if (!w) return;
     soi_set_play_mode(w, mode);
     int start_lives = (w->ext_starting_lives >= 1 && w->ext_starting_lives <= 9)
         ? (int)w->ext_starting_lives
         : 2;
     for (i = 1; i < SOI_MAX_PLAYERS; i++) {
         SoiPlayer *p = &w->players[i];
-        p->score = 0; p->lives = start_lives; p->balls = 1; p->arrows = 1;
+        p->score = 0; p->lives = (int16_t)start_lives; p->balls = 1; p->arrows = 1;
     }
     if (w->play_mode == SOI_MODE_COOPERATE) {
         int coop_pool = (w->ext_starting_lives >= 1 && w->ext_starting_lives <= 9)
             ? (int)w->ext_starting_lives
             : 4;
-        w->players[1].lives = coop_pool; w->players[1].balls = 2; w->players[1].arrows = 2;
+        w->players[1].lives = (int16_t)coop_pool; w->players[1].balls = 2; w->players[1].arrows = 2;
         for (i = 2; i < SOI_MAX_PLAYERS; i++) {
             w->players[i].lives = -1; w->players[i].balls = 0; w->players[i].arrows = 0;
         }
@@ -559,7 +587,7 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
 {
     size_t off;
     int bonus, i;
-    if (!bord || len < 0x1A) return 0;
+    if (!w || !bord || len < 0x1A) return 0;
 
     /* Bug B5 Fix: Pre-scan EXT1 trailer to configure grid dimensions, P3 spawn, and rules
      * BEFORE placing players or processing tile records. */
@@ -600,14 +628,16 @@ int soi_load_level(SoiWorld *w, const uint8_t *bord, size_t len)
 
     /* header (26 bytes, big-endian u16) — CONFIRMED field roles */
     {
-        int p1_sc = (w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 0))
-            ? (int)w->vs_spawns[0][0] : (int)be16(bord + 0x06);
-        int p1_sr = (w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 0))
-            ? (int)w->vs_spawns[0][1] : (int)be16(bord + 0x08);
-        int p2_sc = (w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 1))
-            ? (int)w->vs_spawns[1][0] : (int)be16(bord + 0x0A);
-        int p2_sr = (w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 1))
-            ? (int)w->vs_spawns[1][1] : (int)be16(bord + 0x0C);
+        int max_c = soi_clamped_cols(w);
+        int max_r = soi_clamped_rows(w);
+        int p1_sc = clamp_coord((w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 0))
+            ? (int)w->vs_spawns[0][0] : (int)be16(bord + 0x06), max_c);
+        int p1_sr = clamp_coord((w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 0))
+            ? (int)w->vs_spawns[0][1] : (int)be16(bord + 0x08), max_r);
+        int p2_sc = clamp_coord((w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 1))
+            ? (int)w->vs_spawns[1][0] : (int)be16(bord + 0x0A), max_c);
+        int p2_sr = clamp_coord((w->play_mode == SOI_MODE_VERSUS && has_valid_vs_spawn(w, 1))
+            ? (int)w->vs_spawns[1][1] : (int)be16(bord + 0x0C), max_r);
         place_player(w, 1, p1_sc, p1_sr);
         place_player(w, 2, p2_sc, p2_sr);
     }
@@ -993,14 +1023,16 @@ static void respawn_player_in_place(SoiWorld *w, SoiPlayer *rp)
     rp->prev_prow = (int16_t)row;
 
     if (w->play_mode == SOI_MODE_VERSUS) {
-        if (col >= 0 && col < w->grid_cols) {
-            if (row >= 0 && row < w->grid_rows) {
+        int max_c = soi_clamped_cols(w);
+        int max_r = soi_clamped_rows(w);
+        if (col >= 0 && col < max_c) {
+            if (row >= 0 && row < max_r) {
                 uint32_t c0 = w->cell[row][col];
                 if ((c0 & SOI_CELL_SUPPORTIVE) && !(c0 & (SOI_CELL_PERMANENT | SOI_CELL_DOOR)) && (c0 & 0xFFu) != 0) {
                     soi_block_shatter(w, col, row, SOI_SHATTER_BONK, 0, 0);
                 }
             }
-            if (row - 1 >= 0 && row - 1 < w->grid_rows) {
+            if (row - 1 >= 0 && row - 1 < max_r) {
                 uint32_t c1 = w->cell[row - 1][col];
                 if ((c1 & SOI_CELL_SUPPORTIVE) && !(c1 & (SOI_CELL_PERMANENT | SOI_CELL_DOOR)) && (c1 & 0xFFu) != 0) {
                     soi_block_shatter(w, col, row - 1, SOI_SHATTER_BONK, 0, 0);
@@ -1044,6 +1076,7 @@ static void check_pvp_body_collisions(SoiWorld *w)
                     int dir2 = -dir1;
                     int r1t = soi_px_row(p1->y + 4), r1b = soi_px_row(p1->y + 30);
                     int r2t = soi_px_row(p2->y + 4), r2b = soi_px_row(p2->y + 30);
+                    int max_c = soi_clamped_cols(w);
                     int it;
                     for (it = 0; it < 10; it++) {
                         int cur_dx = p1->x - p2->x; if (cur_dx < 0) cur_dx = -cur_dx;
@@ -1051,7 +1084,7 @@ static void check_pvp_body_collisions(SoiWorld *w)
                         int moved = 0;
                         int nx1 = p1->x + dir1 * 2;
                         int c1 = soi_px_col(dir1 < 0 ? nx1 : nx1 + 31);
-                        if (c1 > 0 && c1 < w->grid_cols - 1 &&
+                        if (c1 > 0 && c1 < max_c - 1 &&
                             !(soi_get_cell(w, c1, r1t) & SOI_CELL_SUPPORTIVE) &&
                             !(soi_get_cell(w, c1, r1b) & SOI_CELL_SUPPORTIVE)) {
                             p1->x = nx1;
@@ -1061,7 +1094,7 @@ static void check_pvp_body_collisions(SoiWorld *w)
                         if (cur_dx >= 20) break;
                         int nx2 = p2->x + dir2 * 2;
                         int c2 = soi_px_col(dir2 < 0 ? nx2 : nx2 + 31);
-                        if (c2 > 0 && c2 < w->grid_cols - 1 &&
+                        if (c2 > 0 && c2 < max_c - 1 &&
                             !(soi_get_cell(w, c2, r2t) & SOI_CELL_SUPPORTIVE) &&
                             !(soi_get_cell(w, c2, r2b) & SOI_CELL_SUPPORTIVE)) {
                             p2->x = nx2;
@@ -1457,8 +1490,8 @@ int      soi_reveal_timer(const SoiWorld *w)        { return w->reveal_timer; }
 int soi_count_treasure(const SoiWorld *w)
 {
     int rr, cc, n = 0;
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = soi_clamped_rows(w);
+    int max_c = soi_clamped_cols(w);
     for (rr = 0; rr < max_r; rr++)
         for (cc = 0; cc < max_c; cc++) {
             uint32_t cell = w->cell[rr][cc];
@@ -1505,21 +1538,37 @@ int      soi_projectile_count(const SoiWorld *w)
     return n;
 }
 
+static inline int clamped_sfx_count(const SoiWorld *w)
+{
+    if (!w) return 0;
+    return (w->sfx_count > SOI_SFX_QUEUE_MAX) ? SOI_SFX_QUEUE_MAX : (int)w->sfx_count;
+}
+static inline int clamped_death_count(const SoiWorld *w)
+{
+    if (!w) return 0;
+    return (w->death_count > SOI_DEATH_QUEUE_MAX) ? SOI_DEATH_QUEUE_MAX : (int)w->death_count;
+}
+static inline int clamped_fx_count(const SoiWorld *w)
+{
+    if (!w) return 0;
+    return (w->fx_count > SOI_FX_QUEUE_MAX) ? SOI_FX_QUEUE_MAX : (int)w->fx_count;
+}
+
 /* ---- sound-event queue ---- */
 void soi_sfx_emit(SoiWorld *w, int id)
 {
-    if (w->sfx_count < SOI_SFX_QUEUE_MAX) w->sfx_queue[w->sfx_count++] = (uint8_t)id;
+    if (w && w->sfx_count < SOI_SFX_QUEUE_MAX) w->sfx_queue[w->sfx_count++] = (uint8_t)id;
 }
-int soi_sfx_count(const SoiWorld *w) { return w->sfx_count; }
+int soi_sfx_count(const SoiWorld *w) { return clamped_sfx_count(w); }
 int soi_sfx_get(const SoiWorld *w, int i)
 {
-    return (i >= 0 && i < w->sfx_count) ? w->sfx_queue[i] : 0;
+    return (i >= 0 && i < clamped_sfx_count(w)) ? w->sfx_queue[i] : 0;
 }
 
 /* ---- enemy-death effect queue (transient; drives the cosmetic Godot death "pop") ---- */
 void soi_death_emit(SoiWorld *w, int x, int y, int type, int dir)
 {
-    if (w->death_count < SOI_DEATH_QUEUE_MAX) {
+    if (w && w->death_count < SOI_DEATH_QUEUE_MAX) {
         int k = w->death_count++;
         w->death_x[k]    = (int16_t)x;
         w->death_y[k]    = (int16_t)y;
@@ -1527,17 +1576,17 @@ void soi_death_emit(SoiWorld *w, int x, int y, int type, int dir)
         w->death_dir[k]  = (uint8_t)dir;
     }
 }
-int soi_death_count(const SoiWorld *w) { return w->death_count; }
-int soi_death_x(const SoiWorld *w, int i)    { return (i >= 0 && i < w->death_count) ? w->death_x[i]    : 0; }
-int soi_death_y(const SoiWorld *w, int i)    { return (i >= 0 && i < w->death_count) ? w->death_y[i]    : 0; }
-int soi_death_type(const SoiWorld *w, int i) { return (i >= 0 && i < w->death_count) ? w->death_type[i] : 0; }
-int soi_death_dir(const SoiWorld *w, int i)  { return (i >= 0 && i < w->death_count) ? w->death_dir[i]  : 0; }
+int soi_death_count(const SoiWorld *w) { return clamped_death_count(w); }
+int soi_death_x(const SoiWorld *w, int i)    { return (i >= 0 && i < clamped_death_count(w)) ? w->death_x[i]    : 0; }
+int soi_death_y(const SoiWorld *w, int i)    { return (i >= 0 && i < clamped_death_count(w)) ? w->death_y[i]    : 0; }
+int soi_death_type(const SoiWorld *w, int i) { return (i >= 0 && i < clamped_death_count(w)) ? w->death_type[i] : 0; }
+int soi_death_dir(const SoiWorld *w, int i)  { return (i >= 0 && i < clamped_death_count(w)) ? w->death_dir[i]  : 0; }
 
 /* ---- cosmetic debris-particle queue (transient; the Godot layer flies each one) ---- */
 void soi_fx_emit(SoiWorld *w, int sheet, int frame, int x, int y, int vx, int vy, int grav)
 {
     int k;
-    if (w->fx_count >= SOI_FX_QUEUE_MAX) return;
+    if (!w || w->fx_count >= SOI_FX_QUEUE_MAX) return;
     k = w->fx_count++;
     w->fx_sheet[k] = (uint8_t)sheet;
     w->fx_frame[k] = (int16_t)frame;
@@ -1545,10 +1594,10 @@ void soi_fx_emit(SoiWorld *w, int sheet, int frame, int x, int y, int vx, int vy
     w->fx_vx[k] = (int16_t)vx; w->fx_vy[k] = (int16_t)vy;
     w->fx_grav[k] = (uint8_t)(grav != 0);
 }
-int soi_fx_count(const SoiWorld *w) { return w->fx_count; }
+int soi_fx_count(const SoiWorld *w) { return clamped_fx_count(w); }
 int soi_fx_get(const SoiWorld *w, int i, int field)
 {
-    if (i < 0 || i >= w->fx_count) return 0;
+    if (i < 0 || i >= clamped_fx_count(w)) return 0;
     switch (field) {
         case SOI_FX_SHEET: return w->fx_sheet[i];
         case SOI_FX_FRAME: return w->fx_frame[i];
@@ -1606,6 +1655,7 @@ int      soi_projectile_fired_left(const SoiWorld *w, int i) { const SoiProjecti
 size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
 {
     SoiBuf b; int i, c, r;
+    if (!w) return 0;
     b.p = out; b.cap = cap; b.len = 0;
 
     bput_u32(&b, w->tick);
@@ -1692,8 +1742,8 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u8(&b, pr->gtype);
         bput_u16(&b, (uint16_t)pr->tcol); bput_u16(&b, (uint16_t)pr->trow);
     }
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = soi_clamped_rows(w);
+    int max_c = soi_clamped_cols(w);
     bput_u8(&b, (uint8_t)max_c);
     bput_u8(&b, (uint8_t)max_r);
     for (r = 0; r < max_r; r++)
@@ -1706,8 +1756,9 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
         bput_u16(&b, (uint16_t)a->col); bput_u16(&b, (uint16_t)a->row);
         bput_u32(&b, a->fin);
     }
-    bput_u8(&b, w->sw_count);
-    for (i = 0; i < w->sw_count; i++) {
+    int sw_count = soi_clamped_sw_count(w);
+    bput_u8(&b, (uint8_t)sw_count);
+    for (i = 0; i < sw_count; i++) {
         bput_u16(&b, (uint16_t)w->sw_col[i]);
         bput_u16(&b, (uint16_t)w->sw_row[i]);
         bput_u8(&b, w->sw_group[i]);
@@ -1723,6 +1774,7 @@ size_t soi_serialize(const SoiWorld *w, uint8_t *out, size_t cap)
 /* ---------- FNV-1a 64-bit over the serialized logical state ---------- */
 uint64_t soi_state_hash(const SoiWorld *w)
 {
+    if (!w) return 0;
     /* The serialize packs the SAME logical fields with no struct padding (and omits
      * the transient sfx queue), so its length is always < sizeof(SoiWorld). Sizing
      * the buffer to that makes truncation IMPOSSIBLE and auto-tracks the schema as
@@ -1878,8 +1930,8 @@ uint64_t soi_net_hash(const SoiWorld *w)
         fnv1a_u8(&h, pr->gtype);
         fnv1a_u16(&h, (uint16_t)pr->tcol); fnv1a_u16(&h, (uint16_t)pr->trow);
     }
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = soi_clamped_rows(w);
+    int max_c = soi_clamped_cols(w);
     fnv1a_u8(&h, (uint8_t)max_c);
     fnv1a_u8(&h, (uint8_t)max_r);
     for (r = 0; r < max_r; r++) {
@@ -1894,8 +1946,9 @@ uint64_t soi_net_hash(const SoiWorld *w)
         fnv1a_u16(&h, (uint16_t)a->col); fnv1a_u16(&h, (uint16_t)a->row);
         fnv1a_u32(&h, a->fin);
     }
-    fnv1a_u8(&h, w->sw_count);
-    for (i = 0; i < w->sw_count; i++) {
+    int sw_count = soi_clamped_sw_count(w);
+    fnv1a_u8(&h, (uint8_t)sw_count);
+    for (i = 0; i < sw_count; i++) {
         fnv1a_u16(&h, (uint16_t)w->sw_col[i]);
         fnv1a_u16(&h, (uint16_t)w->sw_row[i]);
         fnv1a_u8(&h, w->sw_group[i]);

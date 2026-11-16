@@ -81,9 +81,25 @@ const SNAP_TURN := 1.745329   # 100 deg: a turn this big between two frames is a
 
 
 ## Load a family's live rig, or null when it has none (the sprite frames are drawn instead).
-static func load_family(fam: String, holder: Node) -> Live3D:
+static func _ext_dir(rel: String, holder: Node = null) -> String:
 	var s_node := holder.get_node_or_null("/root/Session") if holder != null else null
-	var dir: String = s_node.ext_path("sprites_live/" + fam) if (s_node != null and s_node.has_method("ext_path")) else ProjectSettings.globalize_path("res://../extracted/sprites_live/" + fam)
+	if s_node == null:
+		var ml := Engine.get_main_loop() as SceneTree
+		if ml != null and ml.root != null:
+			s_node = ml.root.get_node_or_null("Session")
+	if s_node != null and s_node.has_method("ext_path"):
+		return s_node.ext_path(rel)
+	var pkg_base := OS.get_executable_path().get_base_dir().path_join("extracted")
+	if DirAccess.dir_exists_absolute(pkg_base):
+		return pkg_base.path_join(rel)
+	if OS.has_feature("editor"):
+		var dev_base := ProjectSettings.globalize_path("res://../extracted")
+		if DirAccess.dir_exists_absolute(dev_base):
+			return dev_base.path_join(rel)
+	return pkg_base.path_join(rel)
+
+static func load_family(fam: String, holder: Node) -> Live3D:
+	var dir := _ext_dir("sprites_live/" + fam, holder)
 	if not FileAccess.file_exists(dir + "/live.json") or not FileAccess.file_exists(dir + "/model.glb"):
 		return null
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(dir + "/live.json"))

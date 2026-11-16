@@ -63,6 +63,17 @@ static void act_done(SoiWorld *w)
     }
 }
 
+static uint16_t crc16_ccitt(const uint8_t *d, size_t n)
+{
+    uint16_t crc = 0xFFFFu;
+    for (size_t i = 0; i < n; i++) {
+        crc ^= (uint16_t)((uint16_t)d[i] << 8);
+        for (int b = 0; b < 8; b++)
+            crc = (uint16_t)((crc & 0x8000u) ? ((crc << 1) ^ 0x1021u) : (crc << 1));
+    }
+    return crc;
+}
+
 int main(void)
 {
     SoiWorld *w = (SoiWorld *)malloc(soi_world_size());
@@ -4899,6 +4910,241 @@ int main(void)
             soi_next_level(w, bord, 28);
             CHECK(w->players[2].active == 0 && w->players[2].alive == 0,
                   "69.9d: Dropped peer stays inactive on next level in Versus");
+        }
+    }
+
+    /* ---- 70. Snapshot completeness, soi_net_hash sensitivity, EXT1 edge cases & bounds ---- */
+    {
+        /* 70.1: World size & snapshot size invariant */
+        CHECK(sizeof(SoiWorld) == 17060 && soi_world_size() == 17060 && soi_snapshot_size() == 17060,
+              "70.1: SoiWorld / snapshot size remains exactly 17060 bytes");
+
+        /* 70.2: Snapshot save/load roundtrip completeness */
+        uint8_t *snap = (uint8_t *)malloc(soi_snapshot_size());
+        CHECK(snap != NULL, "70.2a: snapshot buffer allocated");
+        if (snap) {
+            soi_world_init(w, 0x12345678u);
+            w->tick = 999;
+            w->frame_parity = 1;
+            w->grid_cols = 28;
+            w->grid_rows = 19;
+            w->play_mode = SOI_MODE_VERSUS;
+            w->friendly_fire = 1;
+            w->victory_rule = SOI_WIN_DOOR;
+            w->ext_starting_lives = 7;
+            w->p3_col = 5; w->p3_row = 7; w->p3_block = 0x0219u; w->p3_any_key = 1;
+            w->vs_spawns[0][0] = 3; w->vs_spawns[0][1] = 4;
+            w->vs_spawns[3][0] = 20; w->vs_spawns[3][1] = 15;
+            reset_player(w, 1, 4, 9);
+            reset_player(w, 2, 10, 9);
+            reset_player(w, 3, 14, 9);
+            w->players[1].score = 4200; w->players[1].keys = 0x0405u; w->players[1].kills = 3;
+            w->enemies[0].active = 1; w->enemies[0].type = SOI_ENEMY_KNIGHT;
+            w->enemies[0].x = 200; w->enemies[0].y = 300;
+            w->projectiles[0].active = 1; w->projectiles[0].kind = 1;
+            w->projectiles[0].x = 123; w->projectiles[0].y = 234;
+            w->banim[0].active = 1; w->banim[0].col = 6; w->banim[0].row = 6;
+            w->banim[0].frame = 3; w->banim[0].step = 1; w->banim[0].fin = 0x020Du;
+            w->sw_count = 1; w->sw_col[0] = 7; w->sw_row[0] = 8;
+            w->sw_group[0] = 2; w->sw_state[0] = 3; w->sw_ctr[0] = 4;
+            w->sw_solid[0] = 0x50; w->sw_pass[0] = 0x51;
+            w->cell[5][5] = 0x09170907u;
+
+            uint64_t h0 = soi_net_hash(w);
+            uint64_t sh0 = soi_state_hash(w);
+            soi_snapshot_save(w, snap);
+            soi_world_init(w, 1);
+            CHECK(soi_net_hash(w) != h0, "70.2b: resetting world changes net_hash");
+            soi_snapshot_load(w, snap);
+            CHECK(memcmp(w, snap, soi_snapshot_size()) == 0,
+                  "70.2c: snapshot_load restores SoiWorld byte-for-byte");
+            CHECK(soi_net_hash(w) == h0 && soi_state_hash(w) == sh0,
+                  "70.2d: snapshot_load restores exact net_hash and state_hash");
+
+            /* 70.3: soi_net_hash sensitivity to simulation fields & invariance to transient FX */
+            w->sfx_count = 3; w->death_count = 2; w->fx_count = 4;
+            CHECK(soi_net_hash(w) == h0,
+                  "70.3a: transient audio/death/fx queues do not alter net_hash");
+
+            int sens_ok = 1;
+            w->tick++;                    if (soi_net_hash(w) == h0) sens_ok = 0; w->tick--;
+            w->rng_seed ^= 1u;            if (soi_net_hash(w) == h0) sens_ok = 0; w->rng_seed ^= 1u;
+            w->grid_cols = 38;            if (soi_net_hash(w) == h0) sens_ok = 0; w->grid_cols = 28;
+            w->grid_rows = 26;            if (soi_net_hash(w) == h0) sens_ok = 0; w->grid_rows = 19;
+            w->friendly_fire = 0;         if (soi_net_hash(w) == h0) sens_ok = 0; w->friendly_fire = 1;
+            w->victory_rule = 0;          if (soi_net_hash(w) == h0) sens_ok = 0; w->victory_rule = SOI_WIN_DOOR;
+            w->p3_col = 8;                if (soi_net_hash(w) == h0) sens_ok = 0; w->p3_col = 5;
+            w->vs_spawns[3][0] = 21;      if (soi_net_hash(w) == h0) sens_ok = 0; w->vs_spawns[3][0] = 20;
+            w->players[1].score++;        if (soi_net_hash(w) == h0) sens_ok = 0; w->players[1].score--;
+            w->players[2].lives--;        if (soi_net_hash(w) == h0) sens_ok = 0; w->players[2].lives++;
+            w->players[3].active = 0;     if (soi_net_hash(w) == h0) sens_ok = 0; w->players[3].active = 1;
+            w->enemies[0].x++;            if (soi_net_hash(w) == h0) sens_ok = 0; w->enemies[0].x--;
+            w->projectiles[0].y++;        if (soi_net_hash(w) == h0) sens_ok = 0; w->projectiles[0].y--;
+            w->banim[0].frame++;          if (soi_net_hash(w) == h0) sens_ok = 0; w->banim[0].frame--;
+            w->sw_state[0] = 2;           if (soi_net_hash(w) == h0) sens_ok = 0; w->sw_state[0] = 3;
+            w->cell[5][5] ^= 1u;          if (soi_net_hash(w) == h0) sens_ok = 0; w->cell[5][5] ^= 1u;
+            CHECK(sens_ok && soi_net_hash(w) == h0,
+                  "70.3b: soi_net_hash reacts to all logical world/entity/grid fields");
+            free(snap);
+        }
+
+        /* 70.4: Malformed, odd-length, trailing-padded & false-magic EXT1/BORD parsing */
+        {
+            SoiExt1Info info;
+            uint8_t base[96];
+            memset(base, 0, sizeof(base));
+            base[0x07] = 2; base[0x09] = 2;
+            base[0x0B] = 6; base[0x0D] = 2;
+            base[0x0E] = 0x13; base[0x0F] = 0x88;
+
+            CHECK(soi_parse_ext1(NULL, 64, &info) == 0 && soi_parse_ext1(base, 64, NULL) == 0,
+                  "70.4a: soi_parse_ext1 rejects NULL args");
+            CHECK(soi_parse_ext1(base, 0x17, &info) == 0 && soi_parse_ext1(base, 0x18, &info) == 0,
+                  "70.4b: soi_parse_ext1 rejects truncated headers");
+            CHECK(soi_load_level(w, NULL, 28) == 0 && soi_load_level(w, base, 0x17) == 0,
+                  "70.4c: soi_load_level rejects NULL or short BORD buffer");
+
+            /* Truncated enemy stream without 100 terminator */
+            uint8_t trunc_enemy[40];
+            memcpy(trunc_enemy, base, 0x18);
+            trunc_enemy[0x18] = 0; trunc_enemy[0x19] = 0; trunc_enemy[0x1A] = 0; trunc_enemy[0x1B] = 1;
+            trunc_enemy[0x1C] = 4; trunc_enemy[0x1D] = 4;
+            CHECK(soi_parse_ext1(trunc_enemy, 0x1E, &info) == 0 && soi_load_level(w, trunc_enemy, 0x1E) == 1,
+                  "70.4d: truncated enemy record without 100 sentinel stops safely at EOF");
+
+            /* Helper layout: valid BORD header (0..0x17) + zero term (0x18..0x1B) -> term_off = 28 */
+            uint8_t odd_bord[96];
+            memset(odd_bord, 0, sizeof(odd_bord));
+            memcpy(odd_bord, base, 28);
+            /* Place EXT1 at odd offset term_off + 1 = 29, plus 2 trailing pad bytes */
+            size_t ext_pos = 29;
+            memcpy(odd_bord + ext_pos, "EXT1", 4);
+            odd_bord[ext_pos + 4] = 1;
+            odd_bord[ext_pos + 5] = (uint8_t)(1u | (2u << 3)); /* has_p3 + VERSUS */
+            odd_bord[ext_pos + 6] = 28;
+            odd_bord[ext_pos + 7] = 19;
+            odd_bord[ext_pos + 8] = 4; odd_bord[ext_pos + 9] = 5;
+            odd_bord[ext_pos + 10] = 0x02; odd_bord[ext_pos + 11] = 0x13;
+            odd_bord[ext_pos + 20] = SOI_WIN_DOOR;
+            odd_bord[ext_pos + 21] = 5;
+            uint16_t crc = crc16_ccitt(odd_bord + ext_pos, 22);
+            odd_bord[ext_pos + 22] = (uint8_t)(crc >> 8);
+            odd_bord[ext_pos + 23] = (uint8_t)(crc & 0xFF);
+            CHECK(soi_parse_ext1(odd_bord, ext_pos + 24, &info) == 1 &&
+                  info.cols == 28 && info.rows == 19 && info.starting_lives == 5,
+                  "70.4e: soi_parse_ext1 parses odd-padded EXT1 trailer");
+
+            /* Trailing garbage containing false "EXT1" with bad CRC must not hide real EXT1 */
+            memcpy(odd_bord + ext_pos + 25, "EXT1", 4);
+            odd_bord[ext_pos + 25 + 22] = 0xDE; odd_bord[ext_pos + 25 + 23] = 0xAD;
+            CHECK(soi_parse_ext1(odd_bord, ext_pos + 25 + 24, &info) == 1 && info.cols == 28,
+                  "70.4f: trailing false EXT1 magic with bad CRC falls back to real EXT1");
+
+            /* Zeroed CRC must be rejected */
+            odd_bord[ext_pos + 22] = 0; odd_bord[ext_pos + 23] = 0;
+            CHECK(soi_parse_ext1(odd_bord, ext_pos + 24, &info) == 0,
+                  "70.4g: zeroed CRC on non-zero-CRC payload is rejected");
+
+            /* Truncated EXT1 (< 24 bytes after term_off) */
+            odd_bord[ext_pos + 22] = (uint8_t)(crc >> 8);
+            odd_bord[ext_pos + 23] = (uint8_t)(crc & 0xFF);
+            CHECK(soi_parse_ext1(odd_bord, ext_pos + 23, &info) == 0,
+                  "70.4h: truncated EXT1 (<24 bytes) rejected by soi_parse_ext1");
+            CHECK(soi_load_level(w, odd_bord, ext_pos + 23) == 1 &&
+                  soi_grid_cols(w) == 19 && soi_grid_rows(w) == 13,
+                  "70.4i: truncated EXT1 falls back to base 19x13 board load");
+        }
+
+        /* 70.5: Boundary coordinate clamping & NULL/overflow safety */
+        {
+            soi_world_init(w, 1);
+            w->grid_cols = 255;
+            w->grid_rows = 255;
+            w->sw_count = 255;
+            CHECK(soi_grid_cols(w) == SOI_MAX_GRID_COLS && soi_grid_rows(w) == SOI_MAX_GRID_ROWS,
+                  "70.5a: corrupted grid dimensions clamp to SOI_MAX_GRID_COLS/ROWS");
+            CHECK(soi_get_cell(w, -1, 0) == SOI_WALL &&
+                  soi_get_cell(w, SOI_MAX_GRID_COLS, 0) == SOI_WALL &&
+                  soi_get_cell(w, 0, SOI_MAX_GRID_ROWS) == SOI_WALL,
+                  "70.5b: out-of-bounds soi_get_cell returns SOI_WALL");
+            soi_set_cell(w, -1, 0, 0x1234u);
+            soi_set_cell(w, SOI_MAX_GRID_COLS, 0, 0x1234u);
+            CHECK(soi_switch_block_frame(w, 0, 0) == -1 &&
+                  soi_player_at(w, -1, 0) == -1 &&
+                  soi_enemy_at(w, SOI_MAX_GRID_COLS, 0) == -1,
+                  "70.5c: bounded accessors survive out-of-bounds + clamped sw_count");
+            CHECK(soi_net_hash(NULL) == 0 && soi_state_hash(NULL) == 0 &&
+                  soi_serialize(NULL, NULL, 0) == 0 && soi_net_hash(w) != 0,
+                  "70.5d: NULL and over-dimensioned hash/serialize remain safe");
+        }
+
+        /* 70.6: Malformed BORD spawns, corrupted transient queues & NULL world calls */
+        {
+            uint8_t bad_bord[40];
+            memset(bad_bord, 0, sizeof(bad_bord));
+            bad_bord[0x06] = 0xFF; bad_bord[0x07] = 0xFF; /* P1 col = 65535 */
+            bad_bord[0x08] = 0xFF; bad_bord[0x09] = 0xFF; /* P1 row = 65535 */
+            bad_bord[0x0A] = 0xFF; bad_bord[0x0B] = 0xFF; /* P2 col = 65535 */
+            bad_bord[0x0C] = 0xFF; bad_bord[0x0D] = 0xFF; /* P2 row = 65535 */
+            bad_bord[0x0E] = 0x13; bad_bord[0x0F] = 0x88;
+
+            soi_world_init(w, 1);
+            CHECK(soi_load_level(w, bad_bord, 28) == 1,
+                  "70.6a: malformed 0xFFFF spawns load cleanly with clamped coords");
+            CHECK(w->players[1].spawn_x == soi_cell_x(SOI_GRID_COLS - 1) &&
+                  w->players[1].spawn_y == soi_cell_y(SOI_GRID_ROWS - 1) + 1 &&
+                  w->players[2].spawn_x == soi_cell_x(SOI_GRID_COLS - 1) &&
+                  w->players[2].spawn_y == soi_cell_y(SOI_GRID_ROWS - 1) + 1,
+                  "70.6b: 0xFFFF BORD spawns clamp inside [0..cols-1, 0..rows-1]");
+            soi_spawn_player3(w);
+            CHECK(w->players[3].active == 1 &&
+                  w->players[3].x >= SOI_ORIGIN_X &&
+                  w->players[3].x <= soi_cell_x(SOI_GRID_COLS - 1),
+                  "70.6c: soi_spawn_player3 safe after malformed BORD spawns");
+
+            /* Corrupted grid_cols/rows + extreme spawn_x/y during fallback in soi_spawn_player3 */
+            soi_world_init(w, 1);
+            for (int r = 0; r < SOI_MAX_GRID_ROWS; r++)
+                for (int c = 0; c < SOI_MAX_GRID_COLS; c++)
+                    w->cell[r][c] = SOI_WALL;
+            w->grid_cols = 255;
+            w->grid_rows = 255;
+            w->players[1].spawn_x = 30000;
+            w->players[1].spawn_y = 30000;
+            soi_spawn_player3(w);
+            CHECK(w->players[3].active == 1 &&
+                  w->players[3].x == soi_cell_x(SOI_MAX_GRID_COLS - 1) &&
+                  w->players[3].y == soi_cell_y(SOI_MAX_GRID_ROWS - 1) + 1,
+                  "70.6d: soi_spawn_player3 fallback clamps corrupted grid_cols/rows and spawn_x/y");
+
+            /* Corrupted transient queue counts clamp to queue capacities */
+            w->sfx_count = 255;
+            w->death_count = 255;
+            w->fx_count = 255;
+            CHECK(soi_sfx_count(w) == SOI_SFX_QUEUE_MAX &&
+                  soi_death_count(w) == SOI_DEATH_QUEUE_MAX &&
+                  soi_fx_count(w) == SOI_FX_QUEUE_MAX &&
+                  soi_sfx_get(w, SOI_SFX_QUEUE_MAX) == 0 &&
+                  soi_death_x(w, SOI_DEATH_QUEUE_MAX) == 0 &&
+                  soi_fx_get(w, SOI_FX_QUEUE_MAX, SOI_FX_X) == 0,
+                  "70.6e: corrupted sfx/death/fx counts clamp cleanly to queue capacities");
+
+            /* NULL SoiWorld calls remain safe no-ops */
+            soi_world_init(NULL, 1);
+            CHECK(soi_load_level(NULL, bad_bord, 28) == 0,
+                  "70.6f: soi_load_level(NULL, ...) returns 0 cleanly");
+            soi_new_game(NULL, SOI_MODE_ONE);
+            soi_limit_players(NULL, 1);
+            soi_set_player_stats(NULL, 1, 100, 3, 1, 1, 0);
+            soi_set_friendly_fire(NULL, 1);
+            soi_set_victory_rule(NULL, SOI_WIN_SCORE);
+            CHECK(soi_play_mode(NULL) == SOI_MODE_ONE &&
+                  soi_friendly_fire(NULL) == 0 &&
+                  soi_victory_rule(NULL) == SOI_WIN_LIVES &&
+                  soi_sfx_count(NULL) == 0 &&
+                  soi_death_count(NULL) == 0 &&
+                  soi_fx_count(NULL) == 0,
+                  "70.6g: NULL SoiWorld setters/getters remain safe no-ops");
         }
     }
 

@@ -183,7 +183,7 @@ void soi_enemy_kill(SoiWorld *w, int idx, int by_player)
             case SOI_ENEMY_TEETH:   s = SOI_SFX_KILL_TEETH;   break;
             default: break;
         }
-        soi_sfx_emit(w, s);
+        soi_sfx_emit(w, (int)s);
     }
     /* Death "pop": the asm plays a flying death sprite on every kill (FUN_10028014 ->
      * FUN_100278bc: vy=-80 up-pop, vx=+40 drift, gravity 0.5/frame^2) that arcs up ~64px
@@ -854,7 +854,7 @@ static void gargoyle_egg(SoiWorld *w, const SoiEnemy *e)
 {
     int tries, tcol = -1, trow = -1, i;
     for (tries = 0; tries < 10 && tcol < 0; tries++) {
-        int c = soi_rand_range(w, (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS) - 1;
+        int c = soi_rand_range(w, soi_clamped_cols(w)) - 1;
         int r = soi_rand_range(w, 3) - 1;
         if (soi_gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
     }
@@ -1039,8 +1039,8 @@ static void enemy_knight_gift(SoiWorld *w, SoiEnemy *e)
     if (e->fire_cd > 0) { e->fire_cd--; return; }
     e->fire_cd = (e->fire_period > 0) ? e->fire_period : SOI_CANNON_RELOAD;
     for (tries = 0; tries < 10 && tcol < 0; tries++) {
-        int c = soi_rand_range(w, (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS) - 1;
-        int r = soi_rand_range(w, (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS) - 1;
+        int c = soi_rand_range(w, soi_clamped_cols(w)) - 1;
+        int r = soi_rand_range(w, soi_clamped_rows(w)) - 1;
         if (soi_gift_cell_ok(w, c, r)) { tcol = c; trow = r; }
     }
     if (tcol < 0) {                                  /* board walled in -> aim at a player */
@@ -1501,7 +1501,9 @@ void soi_projectiles_update(SoiWorld *w)
                 pr->y += (rdy < 0) ? -step : step;
                 pr->x = lx + (int)(((int64_t)(pr->y - ly) * tdx) / tdy);
             }
-            int max_flight = (w->grid_cols == 19 && w->grid_rows == 13) ? 300 : ((int)w->grid_cols + (int)w->grid_rows) * 10;
+            int max_c = soi_clamped_cols(w);
+            int max_r = soi_clamped_rows(w);
+            int max_flight = (max_c == 19 && max_r == 13) ? 300 : (max_c + max_r) * 10;
             if ((pr->x == tx && pr->y == ty) || ++pr->age > max_flight) {
                 if (pr->kind == 2) {
                     soi_gift_land(w, (int)pr->tcol, (int)pr->trow, pr->gtype);

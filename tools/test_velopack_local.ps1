@@ -8,26 +8,68 @@ $origEmbedToken = $env:SOI_EMBED_UPDATE_TOKEN
 Remove-Item Env:SOI_UPDATE_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:SOI_EMBED_UPDATE_TOKEN -ErrorAction SilentlyContinue
 $InstallDir = Join-Path $env:TEMP "soi_install_test"
+$ReleaseDir = Join-Path $env:TEMP "soi_velopack_test_releases"
+$smokeOut = Join-Path $env:TEMP "soi_smoke_stdout.log"
+$smokeErr = Join-Path $env:TEMP "soi_smoke_stderr.log"
+
+function Invoke-PublishChecked {
+    param([string[]]$CliArgs)
+    $prevEap = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $rawOut = & powershell -ExecutionPolicy Bypass -File "$RootDir\tools\publish_velopack.ps1" @CliArgs 2>&1
+        $rc = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    $lines = $rawOut | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { [string]$_ }
+    }
+    foreach ($line in $lines) {
+        Write-Host $line
+    }
+    $joined = $lines -join "`n"
+    if ($rc -ne 0) {
+        throw "publish_velopack.ps1 failed with exit code $rc"
+    }
+    if ($joined -match 'ResourceEdit\.Commit|NullReferenceException') {
+        throw "vpk pack emitted ResourceEdit.Commit / NullReferenceException in output!"
+    }
+    if ($joined -match 'soi_bridge\.pdb.*does not exist|Failed to rename the PDB file') {
+        throw "Godot export emitted missing soi_bridge.pdb error or rename warning!"
+    }
+}
+
+$shortcutDirs = @(
+    [Environment]::GetFolderPath('Desktop'),
+    [Environment]::GetFolderPath('Programs'),
+    [Environment]::GetFolderPath('StartMenu')
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) } | Select-Object -Unique
+$preExistingShortcuts = @{}
+foreach ($sDir in $shortcutDirs) {
+    Get-ChildItem -Path $sDir -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        $preExistingShortcuts[$_.FullName] = $true
+    }
+}
 
 try {
     Write-Host "=================================================================="
     Write-Host "Step On It! Remastered - Velopack Local Packaging and Update Test"
     Write-Host "=================================================================="
 
-    $ReleaseDir = Join-Path $RootDir "releases"
     if (Test-Path $ReleaseDir) {
-        Remove-Item "$ReleaseDir\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $ReleaseDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 
     # 1. Build v1.0.0 full release (mirroring assets if build/win/extracted is missing)
     $hasExtracted = Test-Path "$RootDir\build\win\extracted\levels"
     Write-Host "--- 1. Building v1.0.0 ---"
+    $pub1Args = @("-Version", "1.0.0", "-ReleaseDir", $ReleaseDir, "-NoEmbedToken")
     if ($hasExtracted) {
-        & "$RootDir\tools\publish_velopack.ps1" -Version "1.0.0" -SkipAssetMirror
-    } else {
-        & "$RootDir\tools\publish_velopack.ps1" -Version "1.0.0"
+        $pub1Args += "-SkipAssetMirror"
     }
+    Invoke-PublishChecked -CliArgs $pub1Args
 
     $FullPkg1 = Join-Path $ReleaseDir "StepOnIt-1.0.0-full.nupkg"
     $SetupExe = Join-Path $ReleaseDir "StepOnIt-win-Setup.exe"
@@ -41,7 +83,7 @@ try {
     Set-Content -Path $versionFile -Value "1.0.1" -Encoding UTF8
 
     try {
-        & "$RootDir\tools\publish_velopack.ps1" -Version "1.0.1" -SkipAssetMirror
+        Invoke-PublishChecked -CliArgs @("-Version", "1.0.1", "-ReleaseDir", $ReleaseDir, "-SkipBridgeBuild", "-SkipAssetMirror", "-NoEmbedToken")
     } finally {
         Remove-Item $versionFile -Force -ErrorAction SilentlyContinue
     }
@@ -107,8 +149,6 @@ try {
 
     # 5. Run installed launcher on smoke_test.tscn and verify PASS
     Write-Host "--- 5. Running Smoke Test on Updated Installation ---"
-    $smokeOut = Join-Path $env:TEMP "soi_smoke_stdout.log"
-    $smokeErr = Join-Path $env:TEMP "soi_smoke_stderr.log"
     Remove-Item $smokeOut, $smokeErr -ErrorAction SilentlyContinue
 
     # Re-discover launcher in case path changed (e.g. app-1.0.1 folder)
@@ -137,8 +177,45 @@ try {
     $env:SOI_UPDATE_URL = $origUpdateUrl
     $env:SOI_UPDATE_TOKEN = $origUpdateToken
     $env:SOI_EMBED_UPDATE_TOKEN = $origEmbedToken
+    Remove-Item $smokeOut, $smokeErr -Force -ErrorAction SilentlyContinue
+    $updateExe = Join-Path $InstallDir "Update.exe"
+    if (Test-Path $updateExe) {
+        try {
+            Start-Process -FilePath $updateExe -ArgumentList @("--uninstall", "--silent") -Wait -PassThru | Out-Null
+            Start-Sleep -Milliseconds 500
+        } catch {
+            # Best-effort Velopack uninstall before directory cleanup
+        }
+    }
+    $wshShell = $null
+    try {
+        $wshShell = New-Object -ComObject WScript.Shell
+    } catch {
+        $wshShell = $null
+    }
+    foreach ($sDir in $shortcutDirs) {
+        Get-ChildItem -Path $sDir -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            if (-not $preExistingShortcuts.ContainsKey($_.FullName)) {
+                $pointsToTestInstall = $false
+                if ($wshShell) {
+                    try {
+                        $lnkTarget = $wshShell.CreateShortcut($_.FullName).TargetPath
+                        if ($lnkTarget -and $lnkTarget.StartsWith($InstallDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $pointsToTestInstall = $true
+                        }
+                    } catch {}
+                }
+                if ($pointsToTestInstall -or $_.Name -match '^(Step\s*On\s*It|StepOnIt).*\.lnk$') {
+                    Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
     if (Test-Path $InstallDir) {
         Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $ReleaseDir) {
+        Remove-Item $ReleaseDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     Pop-Location
 }

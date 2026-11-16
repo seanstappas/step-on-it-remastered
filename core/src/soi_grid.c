@@ -14,9 +14,7 @@ int soi_in_bounds(int col, int row)
 
 static inline int in_world_bounds(const SoiWorld *w, int col, int row)
 {
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-    return col >= 0 && col < max_c && row >= 0 && row < max_r;
+    return col >= 0 && col < soi_clamped_cols(w) && row >= 0 && row < soi_clamped_rows(w);
 }
 
 uint32_t soi_get_cell(const SoiWorld *w, int col, int row)
@@ -78,7 +76,8 @@ void soi_blockanims_update(SoiWorld *w)
         if (!a->active) continue;
         next = a->frame + a->step;
         if (next > 0 && next < 6) { a->frame = (int8_t)next; continue; }   /* show frame `next` */
-        w->cell[a->row][a->col] = a->fin;   /* finished: the built block, or the payload / empty */
+        if (in_world_bounds(w, a->col, a->row))
+            w->cell[a->row][a->col] = a->fin;   /* finished: the built block, or the payload / empty */
         a->active = 0;
     }
 }
@@ -172,8 +171,8 @@ static void soi_switch_register(SoiWorld *w, int low, int col, int row)
 void soi_switch_load_scan(SoiWorld *w)
 {
     int r, c;
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+    int max_r = soi_clamped_rows(w);
+    int max_c = soi_clamped_cols(w);
     w->sw_count = 0;
     for (r = 0; r < max_r; r++)
         for (c = 0; c < max_c; c++) {
@@ -192,7 +191,8 @@ void soi_switch_toggle(SoiWorld *w, int tile_low)
 {
     int g = (tile_low - 0x24) / 2;
     int i;
-    for (i = 0; i < w->sw_count; i++) {
+    int sw_count = soi_clamped_sw_count(w);
+    for (i = 0; i < sw_count; i++) {
         if (w->sw_group[i] != g) continue;
         switch (w->sw_state[i]) {
             case 1: w->sw_state[i] = 4; w->sw_ctr[i] = 8; break;  /* passable -> closing */
@@ -211,7 +211,8 @@ void soi_switch_toggle(SoiWorld *w, int tile_low)
 void soi_switch_animate(SoiWorld *w)
 {
     int i;
-    for (i = 0; i < w->sw_count; i++) {
+    int sw_count = soi_clamped_sw_count(w);
+    for (i = 0; i < sw_count; i++) {
         int col = w->sw_col[i], row = w->sw_row[i];
         if (w->sw_state[i] == 3) {                 /* opening */
             if (w->sw_ctr[i] == 0)
@@ -359,8 +360,8 @@ void soi_pickup_check(SoiWorld *w, int player)
                 p->keys |= (1u << 10);
             }
         }
-        int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-        int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+        int max_r = soi_clamped_rows(w);
+        int max_c = soi_clamped_cols(w);
         for (rr = 0; rr < max_r; rr++) {
             for (cc = 0; cc < max_c; cc++) {
                 uint32_t lc = w->cell[rr][cc];
@@ -413,8 +414,8 @@ void soi_pickup_check(SoiWorld *w, int player)
              * right -- a window the wall makes unreachable.) Stops a half-stride step onto
              * an edge-of-cell IN from zapping before the player is over it. */
             if ((p->x + 0x12 - SOI_ORIGIN_X) / SOI_CELL_PX != pcol) return;
-            int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
-            int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
+            int max_r = soi_clamped_rows(w);
+            int max_c = soi_clamped_cols(w);
             for (r = 0; r < max_r; r++)
                 for (col = 0; col < max_c; col++)
                     if (SOI_CELL_TYPE(w->cell[r][col]) == out_type &&
@@ -535,7 +536,7 @@ void soi_pickup_check(SoiWorld *w, int player)
                        s = SOI_SFX_MULT;          break;   /* score multiplier (evt 0x17 -> 15128) */
             default:   s = SOI_SFX_POWERUP;       break;
         }
-        soi_sfx_emit(w, s);
+        soi_sfx_emit(w, (int)s);
     }
     /* The collected goody POPS: asm FUN_1002bc64 erases it and launches its sprite as a
      * particle (FUN_100278bc(goody sheet, type, cell x/y, vx 0, vy -80, gravity)) that
@@ -547,8 +548,9 @@ void soi_pickup_check(SoiWorld *w, int player)
 int soi_switch_block_frame(const SoiWorld *w, int col, int row)
 {
     int i;
+    int sw_count = soi_clamped_sw_count(w);
     if (!w) return -1;
-    for (i = 0; i < w->sw_count; i++) {
+    for (i = 0; i < sw_count; i++) {
         if (w->sw_col[i] == col && w->sw_row[i] == row) {
             int g = w->sw_group[i];
             int stop_f = 2 + 8 * g;

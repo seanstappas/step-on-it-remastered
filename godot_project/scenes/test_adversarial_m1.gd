@@ -8,6 +8,11 @@ extends Node
 
 const EditorScene = preload("res://scenes/editor.tscn")
 const MainMenuScene = preload("res://scenes/main_menu.tscn")
+const MapEditorScript = preload("res://scenes/editor.gd")
+const MainMenuScript = preload("res://scenes/main_menu.gd")
+const GameScript = preload("res://scenes/game.gd")
+const Live3DScript = preload("res://scenes/live3d.gd")
+const RollbackNetScript = preload("res://scenes/rollback_net.gd")
 const TileCatalog = preload("res://scenes/tile_catalog.gd")
 const TileArt = preload("res://scenes/tile_art.gd")
 
@@ -35,6 +40,7 @@ func _ready() -> void:
 	test_ext1_trailer_discovery()
 	test_hidden_block_brush_and_rendering()
 	test_single_player_controller_claiming()
+	test_export_hygiene_and_hardening()
 
 	print("==================================================================")
 	print("Stress Test Summary: %d total, %d passed, %d failed" % [total_assertions, passed_assertions, failed_assertions])
@@ -459,3 +465,129 @@ func test_single_player_controller_claiming() -> void:
 
 	menu.queue_free()
 	print("Single-Player Controller Claiming Stress Tests: PASSED")
+
+
+func _has_local_editor_guard(lines: PackedStringArray, li: int) -> bool:
+	var lo: int = maxi(0, li - 5)
+	var hi: int = mini(lines.size() - 1, li + 2)
+	for j in range(lo, hi + 1):
+		if "OS.has_feature(\"editor\")" in lines[j]:
+			return true
+	return false
+
+
+# ==============================================================================
+# Challenge 5: .pck Export Path Hygiene, Sanitization & Lobby Target Validation
+# ==============================================================================
+func test_export_hygiene_and_hardening() -> void:
+	print("\n--- Challenge 5: .pck Export Path Hygiene & Hardening ---")
+
+	# 5.1 Static scan of all res://scenes/*.gd for unguarded res://../ or globalize_path("res://...")
+	if OS.has_feature("editor"):
+		var rel_prefix := "res://" + "../"
+		var ext_prefix := rel_prefix + "extracted"
+		var globalize_res_prefix := "globalize_path(\"res:" + "//"
+		var da := DirAccess.open("res://scenes")
+		_assert_true(da != null, "Can open res://scenes for static hygiene scan")
+		var scanned_gd_count := 0
+		if da != null:
+			da.list_dir_begin()
+			var fname := da.get_next()
+			while fname != "":
+				if fname.ends_with(".gd"):
+					scanned_gd_count += 1
+					var src := FileAccess.get_file_as_string("res://scenes/" + fname)
+					var lines := src.split("\n")
+					for li in range(lines.size()):
+						var line := lines[li].strip_edges()
+						if line.begins_with("#"):
+							continue
+						if ext_prefix in line:
+							var ok_file := fname in ["session.gd", "live3d.gd", "tile_art.gd"]
+							_assert_true(ok_file and _has_local_editor_guard(lines, li),
+								"%s:%d must not contain unguarded %s" % [fname, li + 1, ext_prefix])
+						elif rel_prefix in line:
+							_assert_true(_has_local_editor_guard(lines, li),
+								"%s:%d contains %s without local OS.has_feature(\"editor\") guard" % [fname, li + 1, rel_prefix])
+						if globalize_res_prefix in line:
+							_assert_true(_has_local_editor_guard(lines, li),
+								"%s:%d calls globalize_path(res://...) without local OS.has_feature(\"editor\") guard" % [fname, li + 1])
+				fname = da.get_next()
+			da.list_dir_end()
+		_assert_true(scanned_gd_count >= 15, "Static hygiene scan checked >= 15 .gd files (actual=%d)" % scanned_gd_count)
+
+	# 5.2 Session.ext_path & asset root constant checks
+	var lv_dir := Session.ext_path("levels").replace("\\", "/")
+	_assert_true(lv_dir.ends_with("/extracted/levels"), "Session.ext_path('levels') normalized: %s" % lv_dir)
+	_assert_true(not lv_dir.begins_with("res://"), "Session.ext_path returns globalized path, not res://")
+	_assert_true(Session.ext_path("/sprites") == Session.ext_path("sprites"), "Session.ext_path strips leading slash")
+	_assert_true(Session.ext_path("extracted/sprites") == Session.ext_path("sprites"), "Session.ext_path strips duplicate extracted/ prefix")
+	_assert_true(Audio.SFX_VARIANTS.get("original", "") == "audio/wav", "Audio.SFX_VARIANTS['original'] is relative")
+	_assert_true(Audio.SFX_VARIANTS.get("light", "") == "audio/wav_hd", "Audio.SFX_VARIANTS['light'] is relative")
+	_assert_true(Audio.SFX_VARIANTS.get("ai", "") == "audio/wav_ai", "Audio.SFX_VARIANTS['ai'] is relative")
+	_assert_true(GameScript.SPRITES_DIR == "sprites", "GameScript.SPRITES_DIR is relative")
+	_assert_true(GameScript.SPRITES_3D_DIR == "sprites_3d_frames", "GameScript.SPRITES_3D_DIR is relative")
+	_assert_true(GameScript.LIVE_DIR == "sprites_live", "GameScript.LIVE_DIR is relative")
+	_assert_true(GameScript.PICT_DIR == "pict", "GameScript.PICT_DIR is relative")
+	_assert_true(Live3DScript._ext_dir("sprites_live") == Session.ext_path("sprites_live"), "Live3D._ext_dir matches Session.ext_path")
+	_assert_true(TileArt._ext_dir("sprites/block_sprites") == Session.ext_path("sprites/block_sprites"), "TileArt._ext_dir matches Session.ext_path")
+
+	# 5.3 Map filename sanitization & playtest state preservation
+	_assert_true(MapEditorScript.sanitize_map_name("") == "custom_map", "Empty map name falls back to custom_map")
+	_assert_true(MapEditorScript.sanitize_map_name("   ...  ") == "custom_map", "Dots/whitespace map name falls back to custom_map")
+	var trav := MapEditorScript.sanitize_map_name("../../etc/passwd.bord")
+	_assert_true(not (".." in trav) and not ("/" in trav) and not ("\\" in trav) and not trav.ends_with(".bord"),
+		"Path traversal sanitized: %s" % trav)
+	var bad_win := MapEditorScript.sanitize_map_name("C:\\dir:bad*?\"<>|name.BORD")
+	for bad_ch in ["\\", "/", ":", "*", "?", "\"", "<", ">", "|"]:
+		_assert_true(not (bad_ch in bad_win), "Sanitized name excludes '%s': %s" % [bad_ch, bad_win])
+	_assert_true(MapEditorScript.sanitize_map_name("CON").to_upper() != "CON", "Windows reserved CON rejected")
+	_assert_true(MapEditorScript.sanitize_map_name("nul.bord").to_upper() != "NUL", "Windows reserved nul.bord rejected")
+	_assert_true(MapEditorScript.sanitize_map_name("COM1").to_upper() != "COM1", "Windows reserved COM1 rejected")
+	_assert_true(MapEditorScript.sanitize_map_name("My_Level_01.bord") == "My_Level_01", "Valid .bord suffix stripped cleanly")
+
+	var ed = EditorScene.instantiate()
+	add_child(ed)
+	ed.current_hidden_goody = 0x0919
+	ed.enemy_facing_left = false
+	ed.map_name = "Test_State_Roundtrip"
+	var saved_ed_state: Dictionary = ed._save_editor_state()
+	ed.current_hidden_goody = 0x090A
+	ed.enemy_facing_left = true
+	ed.map_name = "clobbered"
+	ed._restore_editor_state(saved_ed_state)
+	_assert_true(ed.current_hidden_goody == 0x0919, "Editor roundtrip preserved current_hidden_goody")
+	_assert_true(ed.enemy_facing_left == false, "Editor roundtrip preserved enemy_facing_left")
+	_assert_true(ed.map_name == "Test_State_Roundtrip", "Editor roundtrip preserved map_name")
+	ed.queue_free()
+
+	# 5.4 MainMenu join target, IPv4:Port & Crockford join-code validation
+	var j_ip := MainMenuScript.parse_join_target("127.0.0.1")
+	_assert_true(j_ip["ok"] == true and j_ip["ip"] == "127.0.0.1" and j_ip["port"] == 7777, "Plain IPv4 parses cleanly")
+	var j_ip_port := MainMenuScript.parse_join_target("100.64.1.2:7780")
+	_assert_true(j_ip_port["ok"] == true and j_ip_port["ip"] == "100.64.1.2" and j_ip_port["port"] == 7780, "IPv4:Port parses cleanly")
+	var code_rt := RollbackNetScript.ip_to_join_code("192.168.1.42", 7781)
+	var j_code := MainMenuScript.parse_join_target(code_rt)
+	_assert_true(j_code["ok"] == true and j_code["ip"] == "192.168.1.42" and j_code["port"] == 7781,
+		"Join code %s roundtrips IP+port cleanly" % code_rt)
+
+	# Regression: "S01" / "SOI" inside Crockford payload body must NOT be stripped by prefix removal
+	var soi_body_code := RollbackNetScript.ip_to_join_code("25.0.64.1", 7777)
+	_assert_true("S01" in soi_body_code.substr(4), "Fixture IP 25.0.64.1 encodes S01 in body: %s" % soi_body_code)
+	var soi_typed_code := soi_body_code.substr(0, 4) + soi_body_code.substr(4).replace("S01", "SOI")
+	_assert_true(RollbackNetScript.join_code_to_ip(soi_typed_code) == "25.0.64.1",
+		"SOI inside body preserved during IP decode: %s" % soi_typed_code)
+	_assert_true(RollbackNetScript.join_code_to_port(soi_typed_code) == 7777,
+		"SOI inside body preserved during port decode: %s" % soi_typed_code)
+	var j_soi_body := MainMenuScript.parse_join_target(soi_typed_code)
+	_assert_true(j_soi_body["ok"] == true and j_soi_body["ip"] == "25.0.64.1" and j_soi_body["port"] == 7777,
+		"parse_join_target roundtrips SOI-in-body code: %s" % soi_typed_code)
+	var bare_soi_body := soi_typed_code.substr(4)
+	_assert_true(RollbackNetScript.join_code_to_ip(bare_soi_body) == "25.0.64.1",
+		"Bare join code with SOI at offset >= 1 preserves body: %s" % bare_soi_body)
+
+	for bad_target in ["", "SOI-INVALID", "SOI-00000-00000", "0.0.0.0", "255.255.255.255", "0.0.0.0:7777", "+1.0.0.1", "127.0.0.1:+7777", "127.0.0.1:-1", "999.0.0.1", "127.0.0.1:0", "127.0.0.1:70000", "127.0.0.1:abc", "1.2.3:7777", "127.0.0.1:7777:8888"]:
+		var j_bad := MainMenuScript.parse_join_target(bad_target)
+		_assert_true(j_bad["ok"] == false, "Invalid join target rejected: '%s'" % bad_target)
+
+	print(".pck Export Path Hygiene & Hardening Tests: PASSED")

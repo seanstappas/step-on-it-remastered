@@ -69,10 +69,10 @@ func _ready() -> void:
 		call_deferred("_on_activated", idx)
 
 func _find_levels_dir() -> String:
-	for d in [
-		Session.ext_path("levels"),
-		ProjectSettings.globalize_path("res://levels"),
-	]:
+	var candidates: Array[String] = [Session.ext_path("levels")]
+	if OS.has_feature("editor"):
+		candidates.append(ProjectSettings.globalize_path("res://levels"))
+	for d in candidates:
 		if DirAccess.dir_exists_absolute(d):
 			return d
 	return ""

@@ -2,6 +2,7 @@ extends Control
 
 const MacMenuPopup = preload("res://scenes/mac_menu.gd")
 const MacMenuButton = preload("res://scenes/mac_menu_button.gd")
+const RollbackNetScript = preload("res://scenes/rollback_net.gd")
 ## main_menu.gd — the title screen / main menu, faithful to the original (PICT
 ## 401_Title) with a Mac-style menu bar (File / Sound / Options / Help) and the
 ## Start buttons. Picks the player count (incl. the remaster's 3rd co-op player)
@@ -36,7 +37,7 @@ var _splash: Control = null
 var _splash_frames := 0
 var _hs_entries: Label = null
 var _online_dialog: Control = null
-var _lobby_net: RollbackNet = null
+var _lobby_net: RollbackNetScript = null
 
 # --- load an extracted PICT (they live in the repo, outside res://) ---
 func _pict(pict_name: String) -> Texture2D:
@@ -178,11 +179,11 @@ var _apple_icon: Texture2D = null
 func _build_menu_bar() -> void:
 	if ResourceLoader.exists("res://scenes/apple_logo.png"):
 		_apple_icon = load("res://scenes/apple_logo.png") as Texture2D
-	if _apple_icon == null:
-		var icon_path := ProjectSettings.globalize_path("res://scenes/apple_logo.png")
-		if FileAccess.file_exists(icon_path):
-			var img := Image.load_from_file(icon_path)
-			if img != null and not img.is_empty():
+	if _apple_icon == null and FileAccess.file_exists("res://scenes/apple_logo.png"):
+		var raw_png := FileAccess.get_file_as_bytes("res://scenes/apple_logo.png")
+		if not raw_png.is_empty():
+			var img := Image.new()
+			if img.load_png_from_buffer(raw_png) == OK and not img.is_empty():
 				_apple_icon = ImageTexture.create_from_image(img)
 
 	# Full-width classic Mac white bar
@@ -346,7 +347,7 @@ func _get_chicago_font() -> Font:
 	if _chicago_font == null:
 		if ResourceLoader.exists("res://fonts/Chicago.ttf"):
 			_chicago_font = load("res://fonts/Chicago.ttf") as Font
-		if _chicago_font == null:
+		if _chicago_font == null and OS.has_feature("editor"):
 			var p := ProjectSettings.globalize_path("res://fonts/Chicago.ttf")
 			if FileAccess.file_exists(p):
 				var ff := FontFile.new()
@@ -643,11 +644,95 @@ func _open_custom_map_selector(btn: Button) -> void:
 
 
 var _upnp_thread: Thread = null
+var _upnp_gen: int = 0
+var _host_code_lbl: Label = null
+var _host_direct_lbl: Label = null
+
+func _cleanup_upnp_thread(wait_join: bool = true) -> void:
+	_upnp_gen += 1
+	_host_code_lbl = null
+	_host_direct_lbl = null
+	if _upnp_thread != null:
+		if _upnp_thread.is_started():
+			if wait_join or not _upnp_thread.is_alive():
+				_upnp_thread.wait_to_finish()
+				_upnp_thread = null
+		else:
+			_upnp_thread = null
 
 func _exit_tree() -> void:
+	_cleanup_upnp_thread(true)
+	if _lobby_net != null:
+		_lobby_net.close()
+		_lobby_net = null
+
+static func _is_ascii_digits(s: String) -> bool:
+	if s.is_empty():
+		return false
+	for i in range(s.length()):
+		var c := s.unicode_at(i)
+		if c < 48 or c > 57:
+			return false
+	return true
+
+static func is_valid_ipv4(ip: String) -> bool:
+	var octets := ip.split(".", true)
+	if octets.size() != 4:
+		return false
+	for o in octets:
+		if not _is_ascii_digits(o):
+			return false
+		var v := int(o)
+		if v < 0 or v > 255:
+			return false
+	return true
+
+static func _is_routable_ipv4(ip: String) -> bool:
+	return is_valid_ipv4(ip) and ip != "0.0.0.0" and ip != "255.255.255.255"
+
+static func parse_join_target(raw_txt: String) -> Dictionary:
+	var s := raw_txt.strip_edges()
+	if s.is_empty():
+		return {"ok": false, "ip": "", "port": 0, "error": "Enter a Join Code or IP[:Port]."}
+	var up := s.to_upper()
+	if up.begins_with("SOI-") or (not s.contains(".") and not s.contains(":")):
+		if up == "SOI-00000-00000":
+			return {"ok": false, "ip": "", "port": 0, "error": "Invalid Join Code."}
+		var ip := RollbackNetScript.join_code_to_ip(s)
+		var port := RollbackNetScript.join_code_to_port(s)
+		if ip.contains(":"):
+			ip = ip.split(":")[0]
+		if ip.is_empty() or not _is_routable_ipv4(ip) or port < 1 or port > 65535:
+			return {"ok": false, "ip": "", "port": 0, "error": "Invalid Join Code."}
+		return {"ok": true, "ip": ip, "port": port, "error": ""}
+	if s.contains(":"):
+		var parts := s.split(":", true)
+		var port_str := parts[1].strip_edges() if parts.size() == 2 else ""
+		if parts.size() != 2 or parts[0].strip_edges().is_empty() or not _is_ascii_digits(port_str):
+			return {"ok": false, "ip": "", "port": 0, "error": "Invalid IP:Port format."}
+		var port := int(port_str)
+		if port < 1 or port > 65535:
+			return {"ok": false, "ip": "", "port": 0, "error": "Port must be 1..65535."}
+		var ip := parts[0].strip_edges()
+		if ip.to_lower() == "localhost":
+			ip = "127.0.0.1"
+		elif not _is_routable_ipv4(ip):
+			return {"ok": false, "ip": "", "port": 0, "error": "Invalid IPv4 address."}
+		return {"ok": true, "ip": ip, "port": port, "error": ""}
+	if s.to_lower() == "localhost":
+		return {"ok": true, "ip": "127.0.0.1", "port": 7777, "error": ""}
+	if not _is_routable_ipv4(s):
+		return {"ok": false, "ip": "", "port": 0, "error": "Invalid IPv4 address."}
+	return {"ok": true, "ip": s, "port": 7777, "error": ""}
+
+func _on_upnp_discovered(gen: int, ext_ip: String, local_tag: String, code: String, local_ip: String) -> void:
 	if _upnp_thread != null and _upnp_thread.is_started():
 		_upnp_thread.wait_to_finish()
 		_upnp_thread = null
+	if gen != _upnp_gen or not is_instance_valid(_online_dialog):
+		return
+	if ext_ip != "":
+		_update_host_labels(_host_code_lbl, _host_direct_lbl, ext_ip, local_tag, code, local_ip)
 
 func _get_preferred_local_ip() -> String:
 	var addrs := IP.get_local_addresses()
@@ -684,7 +769,7 @@ func _get_preferred_local_ip() -> String:
 
 func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String, local_tag: String = "LAN", local_code: String = "", local_ip: String = "") -> void:
 	if is_instance_valid(code_lbl) and ext_ip != "":
-		var wan_code := RollbackNet.ip_to_join_code(ext_ip)
+		var wan_code := RollbackNetScript.ip_to_join_code(ext_ip)
 		if local_code != "":
 			code_lbl.text = "%s Code: %s\nWAN Code: %s" % [local_tag, local_code, wan_code]
 		else:
@@ -696,6 +781,7 @@ func _update_host_labels(code_lbl: Label, ip_lbl: Label, ext_ip: String, local_t
 			ip_lbl.text = "External IP: %s:7777" % ext_ip
 
 func _show_online_lobby_dialog() -> void:
+	_cleanup_upnp_thread(false)
 	if _online_dialog != null:
 		_online_dialog.queue_free()
 		_online_dialog = null
@@ -919,6 +1005,7 @@ func _show_online_lobby_dialog() -> void:
 	close_btn.add_theme_font_override("font", font)
 	close_btn.add_theme_font_size_override("font_size", 11)
 	close_btn.pressed.connect(func() -> void:
+		_cleanup_upnp_thread(false)
 		if _lobby_net != null:
 			_lobby_net.close()
 			_lobby_net = null
@@ -940,10 +1027,13 @@ func _show_online_lobby_dialog() -> void:
 		var n_players: int = host_players.get_selected_id()
 		if _lobby_net != null:
 			_lobby_net.close()
-		_lobby_net = RollbackNet.new()
+			_lobby_net = null
+		_lobby_net = RollbackNetScript.new()
 		_lobby_net.num_players = n_players
 		var err := _lobby_net.start_host(7777, n_players - 1)
 		if err != OK:
+			_lobby_net.close()
+			_lobby_net = null
 			host_status.text = "Failed to bind port 7777 (err %d)" % err
 			return
 		host_action_btn.disabled = true
@@ -952,33 +1042,39 @@ func _show_online_lobby_dialog() -> void:
 		var local_ip := _get_preferred_local_ip()
 		var is_ts := local_ip.begins_with("100.")
 		var local_tag := "Tailscale" if is_ts else "LAN"
-		var code := RollbackNet.ip_to_join_code(local_ip)
+		var code := RollbackNetScript.ip_to_join_code(local_ip)
 		host_code_lbl.text = "%s Code: %s" % [local_tag, code]
 		host_direct_lbl.text = "%s IP: %s:7777" % [local_tag, local_ip]
 
-		if _upnp_thread != null and _upnp_thread.is_started():
-			_upnp_thread.wait_to_finish()
+		_cleanup_upnp_thread(true)
+		_host_code_lbl = host_code_lbl
+		_host_direct_lbl = host_direct_lbl
+		var gen := _upnp_gen
 		_upnp_thread = Thread.new()
 		_upnp_thread.start(func() -> void:
+			var ext_ip := ""
 			var upnp := UPNP.new()
 			var d_err := upnp.discover(1500, 2, "InternetGatewayDevice")
 			if d_err == OK and upnp.get_gateway() and upnp.get_gateway().is_valid_gateway():
 				upnp.add_port_mapping(7777, 7777, "StepOnIt", "UDP")
-				var ext_ip := upnp.query_external_address()
-				if ext_ip != "":
-					call_deferred("_update_host_labels", host_code_lbl, host_direct_lbl, ext_ip, local_tag, code, local_ip)
+				ext_ip = upnp.query_external_address()
+			call_deferred("_on_upnp_discovered", gen, ext_ip, local_tag, code, local_ip)
 		)
 
 		_lobby_net.peer_connected.connect(func(slot: int) -> void:
+			if _lobby_net == null or not is_instance_valid(host_status):
+				return
 			var connected := _lobby_net.get_connected_player_count()
 			host_status.text = "Peer %d connected! Total: %d / %d" % [slot, connected, n_players]
-			if connected >= n_players:
+			if is_instance_valid(start_match_btn) and connected >= n_players:
 				start_match_btn.disabled = false
 		)
 		_lobby_net.peer_disconnected.connect(func(slot: int) -> void:
+			if _lobby_net == null or not is_instance_valid(host_status):
+				return
 			var connected := _lobby_net.get_connected_player_count()
 			host_status.text = "Peer %d disconnected. Total: %d / %d" % [slot, connected, n_players]
-			if connected < n_players:
+			if is_instance_valid(start_match_btn) and connected < n_players:
 				start_match_btn.disabled = true
 		)
 	)
@@ -986,6 +1082,7 @@ func _show_online_lobby_dialog() -> void:
 	start_match_btn.pressed.connect(func() -> void:
 		if _lobby_net == null:
 			return
+		_cleanup_upnp_thread(false)
 		var n_players: int = host_players.get_selected_id()
 		var g_mode: int = host_mode.get_selected_id()
 		Session.num_players = n_players
@@ -1003,46 +1100,45 @@ func _show_online_lobby_dialog() -> void:
 			bord_bytes = FileAccess.get_file_as_bytes(Session.board_path)
 		var seed_val := randi() % 1000000 + 1
 		Session.net = _lobby_net
+		_lobby_net = null
 		Session.is_online = true
 		Session.online_bord_bytes = bord_bytes
 		Session.online_seed = seed_val
-		_lobby_net.send_match_init(bord_bytes, seed_val, Session.speed, g_mode, Session.victory_rule, Session.friendly_fire)
+		Session.net.send_match_init(bord_bytes, seed_val, Session.speed, g_mode, Session.victory_rule, Session.friendly_fire)
 		dlg.queue_free()
 		_online_dialog = null
 		get_tree().change_scene_to_file("res://scenes/game.tscn")
 	)
 
 	connect_btn.pressed.connect(func() -> void:
-		var raw_txt := join_input.text.strip_edges()
-		if raw_txt.is_empty():
+		var parsed := parse_join_target(join_input.text)
+		if not parsed.get("ok", false):
+			join_status.text = str(parsed.get("error", "Invalid target."))
 			return
-		var target_ip: String = raw_txt
-		var target_port: int = 7777
-		if raw_txt.to_upper().begins_with("SOI-") or (not raw_txt.contains(".") and not raw_txt.contains(":")):
-			target_ip = RollbackNet.join_code_to_ip(raw_txt)
-			target_port = RollbackNet.join_code_to_port(raw_txt)
-			if target_ip.contains(":"):
-				target_ip = target_ip.split(":")[0]
-		elif raw_txt.contains(":"):
-			var parts: PackedStringArray = raw_txt.split(":")
-			target_ip = parts[0]
-			target_port = int(parts[1]) if parts[1].is_valid_int() else 7777
+		var target_ip: String = str(parsed["ip"])
+		var target_port: int = int(parsed["port"])
 		if _lobby_net != null:
 			_lobby_net.close()
-		_lobby_net = RollbackNet.new()
+			_lobby_net = null
+		_lobby_net = RollbackNetScript.new()
 		var err := _lobby_net.start_client(target_ip, target_port)
 		if err != OK:
+			_lobby_net.close()
+			_lobby_net = null
 			join_status.text = "Failed to connect to %s:%d (err %d)" % [target_ip, target_port, err]
 			return
 		join_status.text = "Connecting to %s:%d..." % [target_ip, target_port]
 		connect_btn.disabled = true
 
 		_lobby_net.peer_connected.connect(func(_slot: int) -> void:
-			join_status.text = "Connected! Waiting for host to start match..."
+			if is_instance_valid(join_status):
+				join_status.text = "Connected! Waiting for host to start match..."
 		)
 		_lobby_net.peer_disconnected.connect(func(_slot: int) -> void:
-			join_status.text = "Disconnected from host."
-			connect_btn.disabled = false
+			if is_instance_valid(join_status):
+				join_status.text = "Disconnected from host."
+			if is_instance_valid(connect_btn):
+				connect_btn.disabled = false
 		)
 		_lobby_net.match_started.connect(func(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_p: int, mode: int, slot: int) -> void:
 			Session.num_players = num_p
@@ -1050,6 +1146,7 @@ func _show_online_lobby_dialog() -> void:
 			Session.speed = speed
 			Session.start_campaign()
 			Session.net = _lobby_net
+			_lobby_net = null
 			Session.is_online = true
 			Session.online_bord_bytes = bord_bytes
 			Session.online_seed = rng_seed

@@ -309,6 +309,22 @@ void     soi_fx_emit(SoiWorld *w, int sheet, int frame, int x, int y, int vx, in
  * Cooperate keeps ONE team pool in player 1's slot: every score/lives/ammo/multiplier/Bonus
  * credit for any player is redirected there (asm: FUN_1002bc64, FUN_1000e9c8, FUN_1000ed6c,
  * FUN_1000ee90, FUN_10010d30, FUN_100110b4, FUN_10011428 all do `if (!DAT_100370e4) p = 1`). */
+static inline int soi_clamped_cols(const SoiWorld *w)
+{
+    int c = (w && w->grid_cols >= SOI_GRID_COLS) ? (int)w->grid_cols : SOI_GRID_COLS;
+    return (c > SOI_MAX_GRID_COLS) ? SOI_MAX_GRID_COLS : c;
+}
+static inline int soi_clamped_rows(const SoiWorld *w)
+{
+    int r = (w && w->grid_rows >= SOI_GRID_ROWS) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    return (r > SOI_MAX_GRID_ROWS) ? SOI_MAX_GRID_ROWS : r;
+}
+static inline int soi_clamped_sw_count(const SoiWorld *w)
+{
+    if (!w) return 0;
+    return (w->sw_count > SOI_SWITCH_MAX) ? SOI_SWITCH_MAX : (int)w->sw_count;
+}
+
 static inline int soi_pool_idx(const SoiWorld *w, int idx)
 {
     return (w->play_mode == SOI_MODE_COOPERATE && idx > 0) ? 1 : idx;

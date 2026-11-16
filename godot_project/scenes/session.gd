@@ -24,23 +24,27 @@ var speed: int = 2 # 0 = Really Fast, 1 = Fast, 2 = Medium (71 Hz default), 3 = 
 
 ## Claim a controller device into player slots, avoiding duplicate assignments and reusing free KB IDs
 func claim_controller_slot(device: int) -> int:
+	var n_p := clampi(num_players, 1, 3)
+	while player_device.size() < maxi(n_p, 3):
+		player_device.append(get_unused_keyboard_id(player_device.size()))
+
 	var current_slot: int = -1
 	for slot in range(player_device.size()):
 		if player_device[slot] == device:
-			if slot < num_players and current_slot == -1:
+			if slot < n_p and current_slot == -1:
 				current_slot = slot
 			else:
 				player_device[slot] = get_unused_keyboard_id(slot)
 
 	if current_slot >= 0:
-		var target_slot: int = (current_slot + 1) % num_players
+		var target_slot: int = (current_slot + 1) % n_p
 		var old_dev: int = player_device[target_slot]
 		player_device[target_slot] = device
 		player_device[current_slot] = old_dev if old_dev != device else get_unused_keyboard_id(current_slot)
 		return target_slot
 	else:
 		var unassigned_slot: int = -1
-		for s in range(num_players):
+		for s in range(n_p):
 			if player_device[s] < 0:
 				unassigned_slot = s
 				break
@@ -70,11 +74,9 @@ func get_unused_keyboard_id(preferred_slot: int = 0) -> int:
 
 
 func ext_path(rel: String = "") -> String:
-	var sub := rel
-	if sub.begins_with("res://../extracted/"):
-		sub = sub.substr("res://../extracted/".length())
-	elif sub == "res://../extracted":
-		sub = ""
+	var sub := rel.trim_prefix("/")
+	if sub.begins_with("extracted/"):
+		sub = sub.substr("extracted/".length())
 
 	var exe_dir := OS.get_executable_path().get_base_dir()
 	var pkg_base := exe_dir.path_join("extracted")

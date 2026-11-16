@@ -1,0 +1,45 @@
+#ifndef SOI_VER_MAJOR
+#define SOI_VER_MAJOR 1
+#endif
+#ifndef SOI_VER_MINOR
+#define SOI_VER_MINOR 0
+#endif
+#ifndef SOI_VER_PATCH
+#define SOI_VER_PATCH 0
+#endif
+#ifndef SOI_VER_STR
+#define SOI_VER_STR "1.0.0"
+#endif
+
+#define IDI_APP_ICON 101
+
+IDI_APP_ICON ICON "app_icon.ico"
+
+1 VERSIONINFO
+FILEVERSION     SOI_VER_MAJOR,SOI_VER_MINOR,SOI_VER_PATCH,0
+PRODUCTVERSION  SOI_VER_MAJOR,SOI_VER_MINOR,SOI_VER_PATCH,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Casady & Greene / Step On It! Remastered Contributors"
+            VALUE "FileDescription",  "Step On It! Remastered Launcher"
+            VALUE "FileVersion",      SOI_VER_STR
+            VALUE "InternalName",     "StepOnItLauncher"
+            VALUE "LegalCopyright",   "Copyright (C) 1996 Casady & Greene / Remaster Contributors"
+            VALUE "OriginalFilename", "StepOnItLauncher.exe"
+            VALUE "ProductName",      "Step On It! Remastered"
+            VALUE "ProductVersion",   SOI_VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

@@ -189,14 +189,14 @@ var _challenge_forfeited := false    # the failed-challenge cue has played this 
 var _harness_run := false            # a capture/demo run (--shot/--demo/--play/--bug3): no intro
 
 # --- real sprite pipeline (decoded from the original sssf, tools/sssf_decode.py) ---
-const SPRITES_DIR := "res://../extracted/sprites"
+const SPRITES_DIR := "sprites"
 var _sprites_dir := SPRITES_DIR    # REMASTERED repoints this at extracted/sprites_hd (4x AI-upscaled sheets)
 var _sprite_scale := 1             # loaded sprites are this many x the logical (SD 640x480) footprint
 # REMASTERED: the frame-matched 3D renders (tools/soi3d/framematch.py) OVERLAY the HD sheets frame by
 # frame (same fNN index, same 4x footprint), so the game's own frame logic drives them; a frame or sheet
 # without a 3D render falls back to its HD frame. F2 flips the whole ORIGINAL <-> REMASTERED
 # presentation live (_apply_presentation); F3 toggles HD <-> 3D sprites within REMASTERED.
-const SPRITES_3D_DIR := "res://../extracted/sprites_3d_frames"
+const SPRITES_3D_DIR := "sprites_3d_frames"
 var _use_3d := false
 var _remastered := false   # presentation: false = ORIGINAL (1996 SD art), true = REMASTERED (Session.remastered)
 var _pres_toast := 0       # frames left to show the presentation label (after F2/F3, and at the first board)
@@ -223,7 +223,7 @@ var _proj_left := {}          # projectile idx -> heading left (per tick)
 var _pop_seq := 0
 # Real-time 3D (REMASTERED 3D, F4): sheets with a live rig (framematch.py `live`) are posed between
 # frames and rendered live per entity instead of drawing pre-rendered frames (live3d.gd).
-const LIVE_DIR := "res://../extracted/sprites_live"
+const LIVE_DIR := "sprites_live"
 var _live_on := true
 var _live_index := {}         # sheet -> [[family, {frame: true}], ...] of the rigs that passed livegate
 var _live_scanned := false
@@ -655,7 +655,7 @@ func _draw_arrow(i: int, c: Vector2, pp: Vector2) -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # --- decoded PICT full-screen art (tools/pict_decode.py) ---
-const PICT_DIR := "res://../extracted/pict"
+const PICT_DIR := "pict"
 var _pict_dir := PICT_DIR       # REMASTERED repoints this at extracted/pict_hd_v2|pict_hd (4x AI-upscaled art)
 var _pict_scale := 1            # loaded PICTs are this many x the logical (SD 640x480) footprint
 var _pict_cache := {}
@@ -1317,7 +1317,7 @@ func _exit_tree() -> void:
 ## SFX set + soundtrack) changes, so a switch mid-board is seamless.
 func _apply_presentation(on: bool) -> void:
 	_remastered = on
-	_sprites_dir = "res://../extracted/sprites_hd" if on else SPRITES_DIR
+	_sprites_dir = "sprites_hd" if on else SPRITES_DIR
 	_sprite_scale = 4 if on else 1
 	_pict_dir = PICT_DIR
 	_pict_scale = 1
@@ -1326,7 +1326,7 @@ func _apply_presentation(on: bool) -> void:
 		# pict_hd_v2 folder reverts to the previous set (tools/upscale_picts.py --out).
 		for hd in ["pict_hd_v2", "pict_hd"]:
 			if DirAccess.dir_exists_absolute(Session.ext_path(hd)):
-				_pict_dir = "res://../extracted/" + hd
+				_pict_dir = hd
 				_pict_scale = 4
 				break
 	# 4x art resamples smoothly into its 1x footprint at any window size (mipmapped, _prep_hd);
@@ -1529,6 +1529,15 @@ func _prune_render_history(from_tick: int) -> void:
 		_tp_frames = 0
 
 
+func _play_level_complete_audio() -> void:
+	if _net != null and _net.is_resimulating:
+		return
+	if not _alt and not _mode_compete and not _mode_versus:
+		Audio.play_snd(16969)
+	if not _alt and not _mode_compete and not _mode_versus and not _has_next_board():
+		Audio.play_ending_music()
+
+
 func _capture_level_complete_tally(play_audio: bool = true) -> void:
 	for idx in range(1, mini(_num_players, 3) + 1):
 		var fin := int(_core.player_score(idx))
@@ -1547,10 +1556,7 @@ func _capture_level_complete_tally(play_audio: bool = true) -> void:
 	_warp_vp = Vector2(float(_core.player_x(ex)) + 16.0, float(_core.player_y(ex)) + 16.0)
 	_tally_captured = true
 	if play_audio:
-		if not _alt and not _mode_compete and not _mode_versus:
-			Audio.play_snd(16969)
-		if not _alt and not _mode_compete and not _mode_versus and not _has_next_board():
-			Audio.play_ending_music()
+		_play_level_complete_audio()
 
 
 func _physics_process(_delta: float) -> void:
@@ -1613,15 +1619,19 @@ func _physics_process(_delta: float) -> void:
 							_net.current_tick = sim_t + 1
 							break
 
+					var rb_restore_music := false
+					var rb_play_tally_audio := false
 					if _tally_captured and not _core.level_complete():
 						_tally_captured = false
 						_tally_anim = 0.0
 						_warp_anim = 0.0
 						_online_meta_confirmed = false
 						_net.meta_confirmed_peers.clear()
-						_update_board_music()
+						rb_restore_music = true
 					elif _core.level_complete():
-						_capture_level_complete_tally(not _tally_captured)
+						if not _tally_captured:
+							rb_play_tally_audio = true
+						_capture_level_complete_tally(false)
 					if _game_over_active and not _core.game_over():
 						_game_over_active = false
 						_game_over_ticks = 0
@@ -1630,7 +1640,7 @@ func _physics_process(_delta: float) -> void:
 						_net.meta_confirmed_peers.clear()
 						_hs_checked = false
 						_hs_state = ""
-						_update_board_music()
+						rb_restore_music = true
 					if _challenge_forfeited and not _core.challenge_failed():
 						_challenge_forfeited = false
 						_online_meta_confirmed = false
@@ -1638,6 +1648,11 @@ func _physics_process(_delta: float) -> void:
 
 					_prune_render_history(rb_tick)
 					_net.is_resimulating = false
+					if rb_restore_music:
+						_update_board_music()
+						_update_win_video()
+					if rb_play_tally_audio:
+						_play_level_complete_audio()
 
 	if _core.game_over() or _core.level_complete() or (not _alt and _core.challenge_failed()):
 		if _core.level_complete():
@@ -2158,6 +2173,7 @@ func _poll_online_meta_confirm() -> void:
 				_net.send_board_load(_level_bytes, next_seed, true)
 				_net.reset_for_new_board()
 				_start()
+				_capture_board_start()
 			elif Session.board_index + 1 < Session.board_list.size():
 				Session.advance()
 				var next_bytes: PackedByteArray = FileAccess.get_file_as_bytes(Session.current_board_path())
@@ -2182,6 +2198,7 @@ func _poll_online_meta_confirm() -> void:
 			_net.send_board_load(_level_bytes, next_seed, true)
 			_net.reset_for_new_board()
 			_start()
+			_capture_board_start()
 
 
 func _on_net_board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool) -> void:

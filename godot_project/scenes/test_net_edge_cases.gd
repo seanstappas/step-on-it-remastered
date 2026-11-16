@@ -94,7 +94,7 @@ func _ready() -> void:
 	# Load test board bytes
 	var bord_path := Session.ext_path("levels/board_401.bord")
 	if not FileAccess.file_exists(bord_path):
-		bord_path = ProjectSettings.globalize_path("res://levels/board_401.bord")
+		bord_path = "res://levels/board_401.bord"
 	var bord_bytes := FileAccess.get_file_as_bytes(bord_path)
 	if bord_bytes.is_empty():
 		print("FAIL: Could not load board_401.bord")

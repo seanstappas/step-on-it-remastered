@@ -133,7 +133,11 @@ static func _ext_dir(rel: String) -> String:
 	var pkg_base := OS.get_executable_path().get_base_dir().path_join("extracted")
 	if DirAccess.dir_exists_absolute(pkg_base):
 		return pkg_base.path_join(rel)
-	return ProjectSettings.globalize_path("res://../extracted/" + rel)
+	if OS.has_feature("editor"):
+		var dev_base := ProjectSettings.globalize_path("res://../extracted")
+		if DirAccess.dir_exists_absolute(dev_base):
+			return dev_base.path_join(rel)
+	return pkg_base.path_join(rel)
 
 
 ## Build index of available sprite frames for a given presentation mode

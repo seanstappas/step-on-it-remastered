@@ -55,8 +55,8 @@ flowchart TD
    - State snapshotting (`soi_snapshot_save` / `soi_snapshot_load`) takes $\sim0.07\ \mu\text{s}$ via `memcpy`; state hashes via 64-bit FNV-1a (`soi_net_hash`).
 
 2. **C++ GDExtension Bridge (`bridge/`)**:
-   - Thin `godot-cpp` wrapper exposing the C core as a `SoiCore` Godot node (stamps `SOI_BUILD_ID` from git SHA).
-   - Compiled via portable **Zig** (`bridge/build_zig.ps1`) without requiring MSVC. Zero game logic lives here.
+   - Thin `godot-cpp` wrapper exposing the C core as a `SoiCore` Godot node (stamps `SOI_BUILD_ID` from git SHA), validating `PackedByteArray` sizes, exact snapshot length, grid coordinates, player slots, and index ranges before narrowing `int64_t` arguments.
+   - Compiled via portable **Zig** (`bridge/build_zig.ps1`, `-O2`, strict warnings on `core/src/*.c` and `bridge/src/*.cpp`, staging temp files in `$env:TEMP`) without requiring MSVC, copying `soi_bridge.pdb` plus both `template_debug` and `template_release` `.dll` + `.pdb` files into `godot_project/bin/` so Godot `--export-release` finds both `soi_bridge.pdb` (from the PE `RSDS` entry) and `soi_bridge.windows.template_release.x86_64.pdb`. Zero game logic lives here.
 
 3. **Front-End (`godot_project/`)**:
    - **Godot 4.3** with GDScript (`Session` and `Audio` autoload singletons).
@@ -113,7 +113,7 @@ flowchart TD
 
 ## 3. Verification Gate (`tools/verify.ps1`) & Test Suites
 
-Before completing any non-trivial change, run the full 16-stage gate:
+Before completing any non-trivial change, run the full 19-stage gate:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/verify.ps1
@@ -121,28 +121,28 @@ powershell -ExecutionPolicy Bypass -File tools/verify.ps1
 
 | # | Stage Name | Target | What It Verifies |
 |---|---|---|---|
-| 1 | `core: mechanic unit tests` | `tests/test_mechanics.c` | All 69 sections of C core mechanics, weapons, AI, Co-op/Compete/Versus, and regressions. |
-| 2 | `core: harness + determinism` | `tests/harness.c` | Identical 64-bit state hashes across multi-run executions from the same seed. |
+| 1 | `core: mechanic unit tests` | `tests/test_mechanics.c` | All 70 sections of C core mechanics, weapons, AI, Co-op/Compete/Versus, snapshot/hash, EXT1 & bounds regressions. |
+| 2 | `core: harness + determinism` | `tests/harness.c` | Identical 64-bit state hashes across multi-run executions from the same seed (`-Wshadow -Wconversion -Werror`). |
 | 3 | `core: rollback synctest` | `tests/test_synctest.c` | 1,000 ticks of continuous 8-tick divergent rollbacks across all 152 boards (0 hash mismatches). |
-| 4 | `core: fixture-replay selftest` | `tools/fixture_replay.py` | Recorded input replay against `board_401.bord` via `soi_core.dll`. |
+| 4 | `core: fixture-replay selftest` | `tools/fixture_replay.py` | Recorded input replay against `board_401.bord` via `$env:TEMP\...\soi_core.dll`. |
 | 5 | `core: creeper chain simulation`| `tools/verify_creepers.c` | 20,000-tick walking-block chain simulation across all 15 Creeper boards. |
-| 6 | `tools: ascii2bord unit tests` | `tools/test_ascii2bord.py`| Text-to-binary `.bord` + `EXT1` compilation and edge cases. |
-| 7 | `tools: ascii2bord roundtrip` | `tools/ascii2bord.py` | Byte-exact decompile $\to$ compile roundtrip across all 152 original boards. |
-| 8 | `art: 3D sprite frames` | `tools/soi3d/framematch.py --check` | Gates all published 3D sprite sets against SD references ($\text{IoU} \ge 0.85$, $\Delta E \le 16$). |
-| 9 | `bridge: GDExtension build` | `bridge/build_zig.ps1` | Compiles C core + `godot-cpp` into `godot_project/bin/soi_bridge.*.dll` with `SOI_BUILD_ID`. |
-| 10 | `godot: import clean` | `--editor --headless --quit` | Validates resource imports and compiles all GDScripts with zero parse/compile errors. |
-| 11 | `godot: run + screenshot` | `game.tscn -- --shot` | Renders off-screen at `(9000, 9000)` and writes verification frame to `media/screenshots/`. |
-| 12 | `net: rollback soak test` | `tools/test_net_soak.ps1` | 10,000-tick 3-peer soak under 120ms lag, 30ms jitter, and rift-stall recovery (0 desyncs). |
-| 13 | `net: 3-player adversarial soak`| `tools/test_net_adversarial.ps1` | 3-player Star-Hub relay under asymmetric packet loss and random fuzz inputs. |
-| 14 | `net: edge cases & peer drops` | `tools/test_net_edge_cases.ps1` | Tick-0 peer drops, Crockford Base32 join codes, build-ID mismatch gating, host disconnect. |
-| 15 | `net: online progression & retry`| `tools/test_net_progression.ps1`| Dual-instance campaign board advances, challenge rounds, and retry sync. |
-| 16 | `editor: headless map editor` | `editor.tscn -- --test-editor` | Grid sizing ($19\times13$, $28\times19$, $38\times26$), EXT1 odd/even roundtrip, catalog & path audits. |
+| 6 | `core: 152-board winnability audit` | `tools/verify_winnable.c` | Static reachability & key/door solvability across all 152 boards (`-Wshadow -Wconversion -Werror`). |
+| 7 | `launcher: CLI & token unit tests` | `tests/test_launcher_cli.c` | Engine vs `--` user flag splitting, Velopack/token stripping, JSON unescaping, and 4-tier token fallback (`-Werror`). |
+| 8 | `tools: ascii2bord unit tests` | `tools/test_ascii2bord.py`| Text-to-binary `.bord` + `EXT1` compilation and edge cases. |
+| 9 | `tools: ascii2bord roundtrip` | `tools/ascii2bord.py` | Byte-exact decompile $\to$ compile roundtrip across all 152 original boards. |
+| 10 | `art: 3D sprite frames` | `tools/soi3d/framematch.py --check` | Gates all published 3D sprite sets against SD references ($\text{IoU} \ge 0.85$, $\Delta E \le 16$). |
+| 11 | `bridge: GDExtension build` | `bridge/build_zig.ps1` | Compiles C core + `godot-cpp` into `godot_project/bin/soi_bridge.*.dll`, `soi_bridge.pdb`, and `soi_bridge.*.pdb` with `SOI_BUILD_ID`. |
+| 12 | `godot: import clean` | `--editor --headless --quit` + `smoke_test.tscn` | Validates resource imports, GDScript compilation, and `SoiCore` GDScript smoke test. |
+| 13 | `godot: run + screenshot` | `game.tscn -- --shot` | Renders off-screen at `(9000, 9000)` and writes verification frame to `media/screenshots/`. |
+| 14 | `net: rollback soak test` | `tools/test_net_soak.ps1` | 10,000-tick 3-peer soak under 120ms lag, 30ms jitter, and rift-stall recovery (0 desyncs). |
+| 15 | `net: 3-player adversarial soak`| `tools/test_net_adversarial.ps1` | 3-player Star-Hub relay under asymmetric packet loss and random fuzz inputs. |
+| 16 | `net: edge cases & peer drops` | `tools/test_net_edge_cases.ps1` | Tick-0 peer drops, Crockford Base32 join codes, build-ID mismatch gating, host disconnect. |
+| 17 | `net: online progression & retry`| `tools/test_net_progression.ps1`| Dual-instance campaign board advances, challenge rounds, and retry sync. |
+| 18 | `editor: headless map editor` | `editor.tscn -- --test-editor` | Grid sizing ($19\times13$, $28\times19$, $38\times26$), EXT1 odd/even roundtrip, catalog & path audits. |
+| 19 | `ui: adversarial stress suite` | `res://scenes/test_adversarial_m1.tscn` | Controller claiming, resize clamping, EXT1 parity, hidden block prefixes & `.pck` export path hygiene. |
 
 **Additional Targeted Suites & CI**:
-- **Packaging & Delta Update Smoke Test**: `powershell -ExecutionPolicy Bypass -File tools/verify.ps1 -TestPackaging` (invokes `tools/test_velopack_local.ps1`: builds v1.0.0 + v1.0.1 `<5 MB` delta, installs to `%TEMP%`, verifies launch).
-- **152-Board Winnability Audit**: `tools/verify_winnable.c` (verifies static reachability across all 152 boards).
-- **UI/Controller/Editor Adversarial Suite**: `res://scenes/test_adversarial_m1.tscn` (348 assertions covering joypad claiming, resize clamping, EXT1 parity, hidden block prefixes).
-- **Native Launcher CLI Suite**: `tests/test_launcher_cli.c` (18 assertions verifying engine vs `--` user flag splitting).
+- **Packaging & Delta Update Smoke Test**: `powershell -ExecutionPolicy Bypass -File tools/verify.ps1 -TestPackaging` (invokes `tools/test_velopack_local.ps1`: builds v1.0.0 + v1.0.1 `<5 MB` delta in `$env:TEMP`, installs to `$env:TEMP`, verifies launch).
 - **GitHub Actions CI**: `.github/workflows/verify.yml` runs `tools/verify.ps1` on `[self-hosted, windows]`.
 
 ---
@@ -199,12 +199,13 @@ $$\text{Cell} = (\text{Payload} \ll 16) \mid (\text{Flags} \ll 8) \mid \text{Low
 # 1. Rebuild C Core + GDExtension DLL
 powershell -ExecutionPolicy Bypass -File bridge/build_zig.ps1
 
-# 2. Run C Core Mechanic Unit Tests Standalone (69 sections)
+# 2. Run C Core Mechanic Unit Tests Standalone (70 sections, staged in $env:TEMP)
 $Zig = "D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe"
 $srcs = (Get-ChildItem core/src/*.c).FullName
-& $Zig cc -std=c17 -O2 -Wall -Wextra -Icore/include -Icore/src @srcs tests/test_mechanics.c -o test_mechanics.exe
-.\test_mechanics.exe
-Remove-Item test_mechanics.exe, test_mechanics.pdb -ErrorAction SilentlyContinue
+$exe = Join-Path $env:TEMP "test_mechanics.exe"
+& $Zig cc -std=c17 -O2 -Wall -Wextra -Werror -Icore/include -Icore/src @srcs tests/test_mechanics.c -o $exe
+& $exe
+Remove-Item $exe, (Join-Path $env:TEMP "test_mechanics.pdb") -ErrorAction SilentlyContinue
 
 # 3. Run 152-Board Byte-Exact Roundtrip & Winnability Checks
 .venv\Scripts\python.exe tools/ascii2bord.py verify-roundtrip extracted/levels

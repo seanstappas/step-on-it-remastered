@@ -2,7 +2,7 @@
 
 > **Tracking Document**: Updated after every milestone, bug fix, and phase.  
 > **Reference Plan**: `plan/10_09_improvements.md`  
-> **Last Updated**: 2026-10-15
+> **Last Updated**: 2026-11-15
 
 ---
 
@@ -130,6 +130,11 @@
 - **2026-11-10**: Cold-Start Handoff Audit, Packaged Editor Path Fix & `/learn` Customizations:
   - **Packaged Editor Asset Resolution (`scenes/tile_art.gd`, `scenes/editor.gd`)**: Routed Map Maker sprite folder indexing (`TileArt._ext_dir`) and campaign board import (`_open_original_board_dialog`) through `Session.ext_path(...)` instead of raw `res://../extracted/...` so packaged Velopack builds load all sprites and campaign levels cleanly; restored `OS.has_feature("editor")` screenshot fallback in `_take_editorshot()` and added self-test #9.
   - **Handoff Documentation & Customizations**: Expanded `AGENTS.md` across all 5 architectural layers (fixing the standalone Zig runbook path/glob and documenting `Session.ext_path()`, Velopack packaging, `0x0900` hidden prefixes, and `EXT1` parity), synced `README.md` and `docs/remaster/README.md` with actual git tracking state, added `.agents/skills/soi3d-sprite-review/SKILL.md`, and persisted Godot/PowerShell guardrails in global `GEMINI.md`.
+
+- **2026-11-15**: C Core Warning/Bounds Hardening, Bridge PDB Fix & 19-Stage Gate Expansion:
+  - **C Core Hardening (`core/src/*`)**: Eliminated all `-std=c17 -Wall -Wextra -Wshadow -Wconversion -Werror` warnings across `core/src/*.c`, unified `grid_cols`/`grid_rows`/`sw_count` clamping helpers in `soi_internal.h` (including `soi_blockanims_update`, `soi_switch_*`, `soi_spawn_player3`, Speed-Shoes pushback, and Knight gift flight), clamped `BORD` spawns and transient `sfx`/`death`/`fx` queues, added `NULL` world guards across entrypoints, and upgraded `soi_parse_ext1` to scan backward step `-1` with strict CRC verification while preserving `sizeof(SoiWorld) == 17060` and replay determinism. Added **Section 70** unit tests in `tests/test_mechanics.c`.
+  - **GDExtension Bridge & PDB Export Fix (`bridge/build_zig.ps1`, `bridge/src/soi_bridge.cpp`)**: Switched `bridge/build_zig.ps1` to `-O2` with strict `-Werror` on `core/` and `bridge/src/`, staged intermediate build artifacts in `$env:TEMP`, and deployed `soi_bridge.pdb` plus both `template_debug` and `template_release` `.pdb` files alongside `.dll`s in `godot_project/bin/` to resolve all missing-PDB export errors. Hardened `SoiCore` bindings with exact `snapshot_load` byte-size equality, buffer null/min-length checks, and `int64_t` range validation before `int` narrowing.
+  - **Verification Gate (`tools/verify.ps1`, `AGENTS.md`)**: Expanded `tools/verify.ps1` from 16 to 19 stages (adding `verify_winnable.c`, `test_launcher_cli.c`, `smoke_test.tscn` in Stage 12, and `test_adversarial_m1.tscn` with `--quit-after` hang guards), enforced `-Werror` on Stages 3 & 5, staged all temporary test binaries/DLLs in `$env:TEMP` with `finally` cleanup, and updated `AGENTS.md` to match.
 
 ---
 

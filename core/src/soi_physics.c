@@ -15,7 +15,7 @@
 
 int soi_pit_death_y(const SoiWorld *w)
 {
-    int rows = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    int rows = soi_clamped_rows(w);
     return (rows - 1) * 32 + 62;   /* 446 px for 13 rows; 862 px for 26 rows */
 }
 
@@ -66,16 +66,16 @@ static int px_row1(int y) { return (y < 48) ? 0 : ((y - 48) >> 5) + 1; }
 
 static uint32_t cell1(const SoiWorld *w, int col1, int row1)
 {
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    int max_c = soi_clamped_cols(w);
+    int max_r = soi_clamped_rows(w);
     if (col1 >= 1 && col1 <= max_c && row1 >= 1 && row1 <= max_r)
         return w->cell[row1 - 1][col1 - 1];
     return SOI_WALL;                                    /* OOB = solid */
 }
 static void set_cell1(SoiWorld *w, int col1, int row1, uint32_t v)
 {
-    int max_c = (w && w->grid_cols >= 19) ? (int)w->grid_cols : SOI_GRID_COLS;
-    int max_r = (w && w->grid_rows >= 13) ? (int)w->grid_rows : SOI_GRID_ROWS;
+    int max_c = soi_clamped_cols(w);
+    int max_r = soi_clamped_rows(w);
     if (col1 >= 1 && col1 <= max_c && row1 >= 1 && row1 <= max_r)
         w->cell[row1 - 1][col1 - 1] = v;
 }

@@ -23,6 +23,12 @@ typedef void (*fn_vpkc_free_update_info)(struct vpkc_update_info_t *);
 typedef void (*fn_vpkc_free_update_manager)(vpkc_update_manager_t *);
 typedef size_t (*fn_vpkc_get_last_error)(char *, size_t);
 typedef HGDIOBJ (WINAPI *fn_GetStockObject)(int);
+typedef HFONT (WINAPI *fn_CreateFontA)(int, int, int, int, int, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCSTR);
+typedef BOOL (WINAPI *fn_DeleteObject)(HGDIOBJ);
+typedef BOOL (WINAPI *fn_SetProcessDpiAwarenessContext)(HANDLE);
+typedef UINT (WINAPI *fn_GetDpiForWindow)(HWND);
+typedef int (WINAPI *fn_GetSystemMetricsForDpi)(int, UINT);
+typedef BOOL (WINAPI *fn_AdjustWindowRectExForDpi)(LPRECT, DWORD, BOOL, DWORD, UINT);
 
 #define SOI_CHECK_TIMEOUT_MS    5000U
 #define SOI_DOWNLOAD_TIMEOUT_MS (15ULL * 60ULL * 1000ULL)
@@ -71,6 +77,8 @@ struct UpdateUiState {
     HWND label_hwnd;
     LONG progress_pct;
     RECT bar_rect;
+    HFONT label_font;
+    fn_DeleteObject p_delete_object;
 };
 
 static FILE *g_log_file = NULL;
@@ -239,7 +247,13 @@ static bool read_json_string_field(const char *json_path, const char *field_name
     const char *cursor = buf;
     const char *val_start = NULL;
     while ((cursor = strstr(cursor, key_pattern)) != NULL) {
-        if (cursor > buf && cursor[-1] == '\\') {
+        size_t bs_count = 0;
+        const char *bs = cursor;
+        while (bs > buf && bs[-1] == '\\') {
+            bs_count++;
+            bs--;
+        }
+        if ((bs_count & 1U) != 0U) {
             cursor += 1;
             continue;
         }
@@ -664,6 +678,12 @@ static LRESULT CALLBACK update_window_proc(HWND hwnd, UINT msg, WPARAM wParam, L
         case WM_CLOSE:
             /* Ignore manual close while update download/apply is active */
             return 0;
+        case WM_NCDESTROY:
+            if (state && state->label_font && state->p_delete_object) {
+                state->p_delete_object(state->label_font);
+                state->label_font = NULL;
+            }
+            return DefWindowProcA(hwnd, msg, wParam, lParam);
         default:
             return DefWindowProcA(hwnd, msg, wParam, lParam);
     }
@@ -672,75 +692,154 @@ static LRESULT CALLBACK update_window_proc(HWND hwnd, UINT msg, WPARAM wParam, L
 static HWND create_updating_window(struct UpdateUiState *state, LONG initial_pct) {
     memset(state, 0, sizeof(*state));
     state->progress_pct = initial_pct;
-    state->bar_rect.left = 20;
-    state->bar_rect.top = 46;
-    state->bar_rect.right = 360;
-    state->bar_rect.bottom = 68;
+
+    HMODULE h_user32 = GetModuleHandleW(L"user32.dll");
+    if (h_user32) {
+        fn_SetProcessDpiAwarenessContext p_set_dpi =
+            (fn_SetProcessDpiAwarenessContext)(void *)GetProcAddress(h_user32, "SetProcessDpiAwarenessContext");
+        if (p_set_dpi) {
+            /* DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4 */
+            p_set_dpi((HANDLE)(INT_PTR)-4);
+        }
+    }
 
     HINSTANCE h_inst = GetModuleHandleA(NULL);
+    HMODULE h_mod_w = GetModuleHandleW(NULL);
+    HICON h_icon = LoadIconW(h_mod_w, MAKEINTRESOURCEW(101));
+    if (!h_icon) {
+        h_icon = LoadIconW(NULL, MAKEINTRESOURCEW(32512)); /* IDI_APPLICATION */
+    }
+    HICON h_icon_sm = (HICON)LoadImageW(
+        h_mod_w,
+        MAKEINTRESOURCEW(101),
+        IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON),
+        GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR | LR_SHARED);
+    if (!h_icon_sm) {
+        h_icon_sm = h_icon;
+    }
+
     WNDCLASSEXA wc;
     memset(&wc, 0, sizeof(wc));
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = update_window_proc;
     wc.hInstance = h_inst;
+    wc.hIcon = h_icon;
+    wc.hIconSm = h_icon_sm;
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     wc.lpszClassName = "StepOnItUpdaterWindowClass";
-    RegisterClassExA(&wc);
+    if (!RegisterClassExA(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        return NULL;
+    }
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION;
-    RECT wr = {0, 0, 380, 90};
-    AdjustWindowRect(&wr, style, FALSE);
-    int win_w = wr.right - wr.left;
-    int win_h = wr.bottom - wr.top;
-    int sx = GetSystemMetrics(SM_CXSCREEN);
-    int sy = GetSystemMetrics(SM_CYSCREEN);
-    int x = (sx > win_w) ? ((sx - win_w) / 2) : 0;
-    int y = (sy > win_h) ? ((sy - win_h) / 2) : 0;
-
+    DWORD ex_style = WS_EX_TOPMOST;
     HWND hwnd = CreateWindowExA(
-        WS_EX_TOPMOST,
+        ex_style,
         "StepOnItUpdaterWindowClass",
         "Step On It! Updater",
         style,
-        x, y, win_w, win_h,
+        0, 0, 380, 90,
         NULL, NULL, h_inst, state);
     if (!hwnd) {
+        UnregisterClassA("StepOnItUpdaterWindowClass", h_inst);
         return NULL;
     }
+
+    UINT dpi = 96U;
+    if (h_user32) {
+        fn_GetDpiForWindow p_get_dpi = (fn_GetDpiForWindow)(void *)GetProcAddress(h_user32, "GetDpiForWindow");
+        if (p_get_dpi) {
+            UINT w_dpi = p_get_dpi(hwnd);
+            if (w_dpi > 0U) {
+                dpi = w_dpi;
+            }
+        }
+    }
+
+    state->bar_rect.left = MulDiv(20, (int)dpi, 96);
+    state->bar_rect.top = MulDiv(46, (int)dpi, 96);
+    state->bar_rect.right = MulDiv(360, (int)dpi, 96);
+    state->bar_rect.bottom = MulDiv(68, (int)dpi, 96);
+
+    RECT wr = {0, 0, MulDiv(380, (int)dpi, 96), MulDiv(90, (int)dpi, 96)};
+    fn_AdjustWindowRectExForDpi p_adj_dpi = h_user32
+        ? (fn_AdjustWindowRectExForDpi)(void *)GetProcAddress(h_user32, "AdjustWindowRectExForDpi")
+        : NULL;
+    if (!p_adj_dpi || !p_adj_dpi(&wr, style, FALSE, ex_style, dpi)) {
+        AdjustWindowRectEx(&wr, style, FALSE, ex_style);
+    }
+    int win_w = wr.right - wr.left;
+    int win_h = wr.bottom - wr.top;
+
+    fn_GetSystemMetricsForDpi p_sm_dpi = h_user32
+        ? (fn_GetSystemMetricsForDpi)(void *)GetProcAddress(h_user32, "GetSystemMetricsForDpi")
+        : NULL;
+    int sx = p_sm_dpi ? p_sm_dpi(SM_CXSCREEN, dpi) : GetSystemMetrics(SM_CXSCREEN);
+    int sy = p_sm_dpi ? p_sm_dpi(SM_CYSCREEN, dpi) : GetSystemMetrics(SM_CYSCREEN);
+    int x = (sx > win_w) ? ((sx - win_w) / 2) : 0;
+    int y = (sy > win_h) ? ((sy - win_h) / 2) : 0;
+    SetWindowPos(hwnd, HWND_TOPMOST, x, y, win_w, win_h, SWP_NOACTIVATE);
 
     char init_text[64];
     snprintf(init_text, sizeof(init_text), "Updating Step On It!... %ld%%", initial_pct);
     state->label_hwnd = CreateWindowExA(
         0, "STATIC", init_text,
         WS_CHILD | WS_VISIBLE | SS_CENTER,
-        20, 16, 340, 22,
+        MulDiv(20, (int)dpi, 96),
+        MulDiv(16, (int)dpi, 96),
+        MulDiv(340, (int)dpi, 96),
+        MulDiv(22, (int)dpi, 96),
         hwnd, NULL, h_inst, NULL);
 
     if (state->label_hwnd) {
         HMODULE h_gdi = GetModuleHandleA("gdi32.dll");
         if (!h_gdi) h_gdi = LoadLibraryA("gdi32.dll");
         if (h_gdi) {
-            fn_GetStockObject p_get_stock = (fn_GetStockObject)(void *)GetProcAddress(h_gdi, "GetStockObject");
-            if (p_get_stock) {
-                HGDIOBJ font = p_get_stock(DEFAULT_GUI_FONT);
-                if (font) {
-                    SendMessageA(state->label_hwnd, WM_SETFONT, (WPARAM)font, TRUE);
+            fn_CreateFontA p_create_font = (fn_CreateFontA)(void *)GetProcAddress(h_gdi, "CreateFontA");
+            fn_DeleteObject p_delete_obj = (fn_DeleteObject)(void *)GetProcAddress(h_gdi, "DeleteObject");
+            if (p_create_font && p_delete_obj) {
+                HFONT dpi_font = p_create_font(
+                    -MulDiv(9, (int)dpi, 72), 0, 0, 0, FW_NORMAL,
+                    FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                    DEFAULT_PITCH | FF_DONTCARE, "Segoe UI");
+                if (dpi_font) {
+                    state->label_font = dpi_font;
+                    state->p_delete_object = p_delete_obj;
+                    SendMessageA(state->label_hwnd, WM_SETFONT, (WPARAM)dpi_font, TRUE);
+                }
+            }
+            if (!state->label_font) {
+                fn_GetStockObject p_get_stock = (fn_GetStockObject)(void *)GetProcAddress(h_gdi, "GetStockObject");
+                if (p_get_stock) {
+                    HGDIOBJ font = p_get_stock(DEFAULT_GUI_FONT);
+                    if (font) {
+                        SendMessageA(state->label_hwnd, WM_SETFONT, (WPARAM)font, TRUE);
+                    }
                 }
             }
         }
     }
 
     ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
     UpdateWindow(hwnd);
     return hwnd;
 }
 
 static bool load_velopack_api(const char *base_dir, struct VelopackApi *api) {
     memset(api, 0, sizeof(*api));
-    char dll_path[MAX_PATH];
-    snprintf(dll_path, sizeof(dll_path), "%s\\velopack_libc_win_x64_msvc.dll", base_dir);
-    HMODULE h_vpk = LoadLibraryA(dll_path);
+    HMODULE h_vpk = NULL;
+    if (base_dir && base_dir[0] != '\0') {
+        char dll_path[MAX_PATH];
+        int n = snprintf(dll_path, sizeof(dll_path), "%s\\velopack_libc_win_x64_msvc.dll", base_dir);
+        if (n > 0 && (size_t)n < sizeof(dll_path)) {
+            h_vpk = LoadLibraryA(dll_path);
+        }
+    }
     if (!h_vpk) {
         h_vpk = LoadLibraryA("velopack_libc_win_x64_msvc.dll");
     }
@@ -764,6 +863,79 @@ static bool load_velopack_api(const char *base_dir, struct VelopackApi *api) {
     return true;
 }
 
+static bool is_velo_or_squirrel_arg(const char *arg) {
+    if (!arg) return false;
+    if (strncmp(arg, "--veloapp-", 10) == 0) return true;
+    if (strncmp(arg, "--squirrel", 10) == 0) return true;
+    return false;
+}
+
+static bool is_launcher_only_arg(const char *arg) {
+    if (!arg) return false;
+    if (strcmp(arg, "--set-update-token") == 0) return true;
+    if (strncmp(arg, "--set-update-token=", 19) == 0) return true;
+    if (strcmp(arg, "--clear-update-token") == 0) return true;
+    return false;
+}
+
+static bool is_launcher_value_arg(const char *arg) {
+    if (!arg) return false;
+    return strcmp(arg, "--set-update-token") == 0;
+}
+
+#ifdef SOI_LAUNCHER_TEST
+char **build_restart_args(int argc, char **argv, size_t *out_argc)
+#else
+static char **build_restart_args(int argc, char **argv, size_t *out_argc)
+#endif
+{
+    if (out_argc) {
+        *out_argc = 0;
+    }
+    if (!argv || argc <= 1) {
+        return NULL;
+    }
+
+    char **filtered = (char **)calloc((size_t)(argc - 1), sizeof(char *));
+    if (!filtered) {
+        return NULL;
+    }
+
+    size_t count = 0;
+    bool past_dashdash = false;
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (!a) continue;
+        if (!past_dashdash) {
+            if (strcmp(a, "--") == 0) {
+                past_dashdash = true;
+                filtered[count++] = argv[i];
+                continue;
+            }
+            if (is_launcher_only_arg(a)) {
+                if (is_launcher_value_arg(a) && i + 1 < argc) {
+                    i++;
+                }
+                continue;
+            }
+            if (is_velo_or_squirrel_arg(a)) {
+                continue;
+            }
+        }
+        filtered[count++] = argv[i];
+    }
+
+    if (count == 0) {
+        free(filtered);
+        return NULL;
+    }
+
+    if (out_argc) {
+        *out_argc = count;
+    }
+    return filtered;
+}
+
 static DWORD WINAPI update_worker_thread(LPVOID param) {
     struct UpdateWorkerContext *ctx = (struct UpdateWorkerContext *)param;
     struct VelopackApi *api = &ctx->api;
@@ -775,8 +947,8 @@ static DWORD WINAPI update_worker_thread(LPVOID param) {
 
     ULONGLONG t0 = GetTickCount64();
 
-    if ((strncmp(ctx->repo_url, "https://github.com/", 19) == 0 ||
-         strncmp(ctx->repo_url, "http://github.com/", 18) == 0) &&
+    if ((_strnicmp(ctx->repo_url, "https://github.com/", 19) == 0 ||
+         _strnicmp(ctx->repo_url, "http://github.com/", 18) == 0) &&
         api->p_new_source_github && api->p_new_update_manager_with_source) {
         const char *tok_arg = ctx->has_token ? ctx->token : NULL;
         src = api->p_new_source_github(ctx->repo_url, tok_arg, false);
@@ -854,15 +1026,17 @@ static DWORD WINAPI update_worker_thread(LPVOID param) {
         log_write("[Launcher] Update download finished after download timeout; skipping apply.\n");
     } else {
         log_write("[Launcher] Applying update and restarting...\n");
-        char **restart_args = (ctx->argc > 1) ? (ctx->argv + 1) : NULL;
-        size_t restart_argc = (ctx->argc > 1) ? (size_t)(ctx->argc - 1) : 0;
-        if (api->p_wait_exit_then_apply_updates(
-                mgr,
-                update_info->TargetFullRelease,
-                true,
-                true,
-                restart_args,
-                restart_argc)) {
+        size_t restart_argc = 0;
+        char **restart_args = build_restart_args(ctx->argc, ctx->argv, &restart_argc);
+        bool apply_ok = api->p_wait_exit_then_apply_updates(
+            mgr,
+            update_info->TargetFullRelease,
+            true,
+            true,
+            restart_args,
+            restart_argc);
+        free(restart_args);
+        if (apply_ok) {
             LONG apply_prev = InterlockedCompareExchange(&ctx->decision, DECISION_APPLY_EXIT, DECISION_UPDATING);
             if (apply_prev != DECISION_UPDATING) {
                 log_write("[Launcher] Main thread timed out before apply handoff.\n");
@@ -889,14 +1063,81 @@ static DWORD WINAPI update_worker_thread(LPVOID param) {
     return 0;
 }
 
-static void append_arg(char *buf, size_t cap, size_t *offset, const char *arg) {
-    if (*offset >= cap) return;
-    int written = snprintf(buf + *offset, cap - *offset, " \"%s\"", arg);
-    if (written > 0 && *offset + (size_t)written < cap) {
-        *offset += (size_t)written;
-    } else {
-        *offset = cap - 1;
+static bool append_char(char *buf, size_t cap, size_t *offset, char ch) {
+    if (*offset + 1 >= cap) {
+        return false;
     }
+    buf[*offset] = ch;
+    (*offset)++;
+    buf[*offset] = '\0';
+    return true;
+}
+
+static bool append_quoted_arg(char *buf, size_t cap, size_t *offset, const char *arg, bool leading_space) {
+    if (!buf || cap == 0 || !offset || *offset >= cap || !arg) {
+        return false;
+    }
+    size_t saved_offset = *offset;
+    if (leading_space && !append_char(buf, cap, offset, ' ')) {
+        goto truncate;
+    }
+    if (!append_char(buf, cap, offset, '"')) {
+        goto truncate;
+    }
+
+    const char *p = arg;
+    while (*p != '\0') {
+        size_t num_bs = 0;
+        while (*p == '\\') {
+            num_bs++;
+            p++;
+        }
+        if (*p == '\0') {
+            /* Escape trailing backslashes so they do not escape the closing quote */
+            for (size_t i = 0; i < num_bs * 2; i++) {
+                if (!append_char(buf, cap, offset, '\\')) {
+                    goto truncate;
+                }
+            }
+            break;
+        } else if (*p == '"') {
+            /* Escape preceding backslashes and the embedded quote */
+            for (size_t i = 0; i < num_bs * 2 + 1; i++) {
+                if (!append_char(buf, cap, offset, '\\')) {
+                    goto truncate;
+                }
+            }
+            if (!append_char(buf, cap, offset, '"')) {
+                goto truncate;
+            }
+            p++;
+        } else {
+            /* Backslashes not followed by '"' are literal in CommandLineToArgvW */
+            for (size_t i = 0; i < num_bs; i++) {
+                if (!append_char(buf, cap, offset, '\\')) {
+                    goto truncate;
+                }
+            }
+            if (!append_char(buf, cap, offset, *p)) {
+                goto truncate;
+            }
+            p++;
+        }
+    }
+
+    if (!append_char(buf, cap, offset, '"')) {
+        goto truncate;
+    }
+    return true;
+
+truncate:
+    buf[saved_offset] = '\0';
+    *offset = saved_offset;
+    return false;
+}
+
+static bool append_arg(char *buf, size_t cap, size_t *offset, const char *arg) {
+    return append_quoted_arg(buf, cap, offset, arg, true);
 }
 
 static bool is_godot_engine_arg(const char *arg) {
@@ -931,21 +1172,32 @@ static bool is_godot_value_arg(const char *arg) {
     return false;
 }
 
-static bool is_velo_or_squirrel_arg(const char *arg) {
-    if (strncmp(arg, "--veloapp-", 10) == 0) return true;
-    if (strncmp(arg, "--squirrel", 10) == 0) return true;
-    return false;
+static bool is_negative_coord_token(const char *s) {
+    if (!s || s[0] != '-' || s[1] < '0' || s[1] > '9') {
+        return false;
+    }
+    for (const char *p = s + 1; *p != '\0'; p++) {
+        if ((*p < '0' || *p > '9') && *p != ',' && *p != '-') {
+            return false;
+        }
+    }
+    return true;
 }
 
-static bool is_launcher_only_arg(const char *arg) {
-    if (strcmp(arg, "--set-update-token") == 0) return true;
-    if (strncmp(arg, "--set-update-token=", 19) == 0) return true;
-    if (strcmp(arg, "--clear-update-token") == 0) return true;
+static bool is_engine_value_token(const char *flag, const char *next_arg) {
+    if (!flag || !next_arg || !is_godot_value_arg(flag)) {
+        return false;
+    }
+    if (strcmp(next_arg, "--") == 0) {
+        return false;
+    }
+    if (next_arg[0] != '-') {
+        return true;
+    }
+    if (strcmp(flag, "--position") == 0 && is_negative_coord_token(next_arg)) {
+        return true;
+    }
     return false;
-}
-
-static bool is_launcher_value_arg(const char *arg) {
-    return strcmp(arg, "--set-update-token") == 0;
 }
 
 static void build_godot_cmd_line(
@@ -957,30 +1209,58 @@ static void build_godot_cmd_line(
         char *cmd_line,
         size_t cap,
         bool *out_wait_for_exit) {
-    size_t offset = 0;
-    int written = snprintf(cmd_line, cap, "\"%s\"", godot_exe);
-    if (written > 0 && (size_t)written < cap) {
-        offset = (size_t)written;
+    if (!cmd_line || cap == 0) {
+        if (out_wait_for_exit) *out_wait_for_exit = false;
+        return;
     }
+    cmd_line[0] = '\0';
+    size_t offset = 0;
+    bool ok = append_quoted_arg(cmd_line, cap, &offset, godot_exe, false);
 
-    if (has_pck && pck_path) {
-        append_arg(cmd_line, cap, &offset, "--main-pack");
-        append_arg(cmd_line, cap, &offset, pck_path);
+    if (ok && has_pck && pck_path) {
+        ok = append_arg(cmd_line, cap, &offset, "--main-pack");
+        if (ok) ok = append_arg(cmd_line, cap, &offset, pck_path);
     }
 
     bool wait_for_exit = false;
     bool has_visual_flag = false;
     bool has_music_flag = false;
 
+    bool past_dashdash = false;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
-        if (is_launcher_only_arg(a)) {
-            if (is_launcher_value_arg(a) && i + 1 < argc) {
-                i++;
+        if (!a) continue;
+        if (!past_dashdash) {
+            if (strcmp(a, "--") == 0) {
+                past_dashdash = true;
+                continue;
             }
-            continue;
+            if (is_launcher_only_arg(a)) {
+                if (is_launcher_value_arg(a) && i + 1 < argc) {
+                    i++;
+                }
+                continue;
+            }
+            if (is_velo_or_squirrel_arg(a)) {
+                continue;
+            }
+            if (strcmp(a, "--headless") == 0 ||
+                strcmp(a, "--quit") == 0 ||
+                strcmp(a, "--quit-after") == 0 ||
+                strncmp(a, "--quit-after=", 13) == 0) {
+                wait_for_exit = true;
+            }
+            if (is_godot_engine_arg(a)) {
+                const char *next_arg = (i + 1 < argc) ? argv[i + 1] : NULL;
+                if (is_engine_value_token(a, next_arg)) {
+                    i++;
+                }
+                continue;
+            }
         }
-        if (strcmp(a, "--headless") == 0 || strcmp(a, "--quit") == 0 || strcmp(a, "--quit-after") == 0) {
+        if (strcmp(a, "--test-editor") == 0 ||
+            strcmp(a, "--shot") == 0 ||
+            strncmp(a, "--menushot", 10) == 0) {
             wait_for_exit = true;
         }
         if (strcmp(a, "--3d") == 0 || strcmp(a, "--hd") == 0 || strcmp(a, "--original") == 0) {
@@ -991,9 +1271,13 @@ static void build_godot_cmd_line(
         }
     }
 
-    /* Engine flags go before '--' */
-    for (int i = 1; i < argc; i++) {
+    /* Pass 1: Engine flags go before '--' (stop at explicit '--' boundary) */
+    for (int i = 1; ok && i < argc; i++) {
         const char *a = argv[i];
+        if (!a) continue;
+        if (strcmp(a, "--") == 0) {
+            break;
+        }
         if (is_launcher_only_arg(a)) {
             if (is_launcher_value_arg(a) && i + 1 < argc) {
                 i++;
@@ -1002,40 +1286,54 @@ static void build_godot_cmd_line(
         }
         if (is_velo_or_squirrel_arg(a)) continue;
         if (is_godot_engine_arg(a)) {
-            append_arg(cmd_line, cap, &offset, a);
-            /* If this flag takes an argument value (e.g. --resolution 640x480, --position 0,0, --quit-after 600) */
-            if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
+            ok = append_arg(cmd_line, cap, &offset, a);
+            /* If this flag takes an argument value (e.g. --resolution 640x480, --position -640,100, --quit-after 600) */
+            const char *next_arg = (i + 1 < argc) ? argv[i + 1] : NULL;
+            if (ok && is_engine_value_token(a, next_arg)) {
                 i++;
-                append_arg(cmd_line, cap, &offset, argv[i]);
+                ok = append_arg(cmd_line, cap, &offset, argv[i]);
             }
         }
     }
 
     /* Game arguments go after '--' */
-    append_arg(cmd_line, cap, &offset, "--");
+    if (ok) ok = append_arg(cmd_line, cap, &offset, "--");
 
-    if (!has_visual_flag) {
-        append_arg(cmd_line, cap, &offset, "--3d");
+    if (ok && !has_visual_flag) {
+        ok = append_arg(cmd_line, cap, &offset, "--3d");
     }
-    if (!has_music_flag) {
-        append_arg(cmd_line, cap, &offset, "--music");
+    if (ok && !has_music_flag) {
+        ok = append_arg(cmd_line, cap, &offset, "--music");
     }
 
-    for (int i = 1; i < argc; i++) {
+    /* Pass 2: Game arguments (non-engine flags before '--', and everything verbatim after '--') */
+    past_dashdash = false;
+    for (int i = 1; ok && i < argc; i++) {
         const char *a = argv[i];
-        if (is_launcher_only_arg(a)) {
-            if (is_launcher_value_arg(a) && i + 1 < argc) {
-                i++;
+        if (!a) continue;
+        if (!past_dashdash) {
+            if (strcmp(a, "--") == 0) {
+                past_dashdash = true;
+                continue;
             }
-            continue;
-        }
-        if (is_velo_or_squirrel_arg(a)) continue;
-        if (strcmp(a, "--") == 0) continue;
-        if (!is_godot_engine_arg(a)) {
-            append_arg(cmd_line, cap, &offset, a);
-        } else if (is_godot_value_arg(a) && i + 1 < argc && argv[i + 1][0] != '-') {
-            /* Skip value consumed above by engine flag */
-            i++;
+            if (is_launcher_only_arg(a)) {
+                if (is_launcher_value_arg(a) && i + 1 < argc) {
+                    i++;
+                }
+                continue;
+            }
+            if (is_velo_or_squirrel_arg(a)) continue;
+            if (!is_godot_engine_arg(a)) {
+                ok = append_arg(cmd_line, cap, &offset, a);
+            } else {
+                const char *next_arg = (i + 1 < argc) ? argv[i + 1] : NULL;
+                if (is_engine_value_token(a, next_arg)) {
+                    /* Skip value consumed above by engine flag */
+                    i++;
+                }
+            }
+        } else {
+            ok = append_arg(cmd_line, cap, &offset, a);
         }
     }
 
@@ -1072,6 +1370,21 @@ static bool run_update_check_and_download(const char *base_dir, int argc, char *
         return false;
     }
 
+    HANDLE h_mutex = CreateMutexA(NULL, FALSE, "Local\\StepOnIt_Launcher_Update_Mutex");
+    if (!h_mutex) {
+        log_write("[Launcher] Failed to create update mutex (%lu); skipping update check.\n", GetLastError());
+        FreeLibrary(ctx.api.h_vpk);
+        return false;
+    }
+    DWORD wait_rc = WaitForSingleObject(h_mutex, 0);
+    if (wait_rc != WAIT_OBJECT_0 && wait_rc != WAIT_ABANDONED) {
+        log_write("[Launcher] Another launcher instance is already checking for updates (wait_rc=%lu); skipping update check.\n",
+                  (unsigned long)wait_rc);
+        CloseHandle(h_mutex);
+        FreeLibrary(ctx.api.h_vpk);
+        return false;
+    }
+
     ctx.has_token = resolve_update_token(base_dir, ctx.token, sizeof(ctx.token));
     ctx.argc = argc;
     ctx.argv = argv;
@@ -1084,17 +1397,19 @@ static bool run_update_check_and_download(const char *base_dir, int argc, char *
     ctx.h_download_done_event = CreateEventA(NULL, TRUE, FALSE, NULL);
     if (!ctx.h_check_done_event || !ctx.h_download_done_event) {
         secure_zero(ctx.token, sizeof(ctx.token));
+        ReleaseMutex(h_mutex);
+        CloseHandle(h_mutex);
         if (ctx.h_check_done_event) CloseHandle(ctx.h_check_done_event);
         if (ctx.h_download_done_event) CloseHandle(ctx.h_download_done_event);
         FreeLibrary(ctx.api.h_vpk);
         return false;
     }
 
-    HANDLE h_mutex = CreateMutexA(NULL, FALSE, "StepOnIt_Launcher_Update_Mutex");
     HANDLE h_thread = CreateThread(NULL, 0, update_worker_thread, &ctx, 0, NULL);
     if (!h_thread) {
         secure_zero(ctx.token, sizeof(ctx.token));
-        if (h_mutex) CloseHandle(h_mutex);
+        ReleaseMutex(h_mutex);
+        CloseHandle(h_mutex);
         CloseHandle(ctx.h_check_done_event);
         CloseHandle(ctx.h_download_done_event);
         FreeLibrary(ctx.api.h_vpk);
@@ -1172,10 +1487,6 @@ download_wait_done:
         }
     }
 
-    if (h_mutex) {
-        CloseHandle(h_mutex);
-    }
-
     /* Wait briefly for worker cleanup so handles/DLL are freed cleanly when not hung. */
     DWORD join_ms = should_exit_for_apply ? 5000U : 50U;
     if (WaitForSingleObject(h_thread, join_ms) == WAIT_OBJECT_0) {
@@ -1184,7 +1495,34 @@ download_wait_done:
         CloseHandle(ctx.h_download_done_event);
     }
     CloseHandle(h_thread);
+    ReleaseMutex(h_mutex);
+    CloseHandle(h_mutex);
     return should_exit_for_apply;
+}
+
+static int handle_token_cli_args(int argc, char **argv, bool quiet_ui, bool *out_handled) {
+    if (out_handled) *out_handled = false;
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (!a) continue;
+        if (strcmp(a, "--") == 0) {
+            break;
+        }
+        if (strcmp(a, "--set-update-token") == 0) {
+            const char *tok = (i + 1 < argc) ? argv[i + 1] : NULL;
+            if (out_handled) *out_handled = true;
+            return write_update_token_file(tok, quiet_ui);
+        }
+        if (strncmp(a, "--set-update-token=", 19) == 0) {
+            if (out_handled) *out_handled = true;
+            return write_update_token_file(a + 19, quiet_ui);
+        }
+        if (strcmp(a, "--clear-update-token") == 0) {
+            if (out_handled) *out_handled = true;
+            return clear_update_token_file(quiet_ui);
+        }
+    }
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -1194,33 +1532,33 @@ int main(int argc, char **argv) {
     bool quiet_ui = false;
     bool is_headless = false;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--headless") == 0) {
+        const char *a = argv[i];
+        if (!a) continue;
+        if (strcmp(a, "--") == 0) {
+            break;
+        }
+        if (is_launcher_value_arg(a) && i + 1 < argc) {
+            i++;
+            continue;
+        }
+        const char *next_arg = (i + 1 < argc) ? argv[i + 1] : NULL;
+        if (is_engine_value_token(a, next_arg)) {
+            i++;
+        }
+        if (strcmp(a, "--headless") == 0) {
             is_headless = true;
             quiet_ui = true;
-        } else if (strcmp(argv[i], "--quiet") == 0 || strcmp(argv[i], "--silent") == 0) {
+        } else if (strcmp(a, "--quiet") == 0 || strcmp(a, "--silent") == 0) {
             quiet_ui = true;
         }
     }
 
     /* 0. Handle token management flags without launching the game */
-    for (int i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        if (strcmp(a, "--set-update-token") == 0) {
-            const char *tok = (i + 1 < argc) ? argv[i + 1] : NULL;
-            int rc = write_update_token_file(tok, quiet_ui);
-            log_close();
-            return rc;
-        }
-        if (strncmp(a, "--set-update-token=", 19) == 0) {
-            int rc = write_update_token_file(a + 19, quiet_ui);
-            log_close();
-            return rc;
-        }
-        if (strcmp(a, "--clear-update-token") == 0) {
-            int rc = clear_update_token_file(quiet_ui);
-            log_close();
-            return rc;
-        }
+    bool token_handled = false;
+    int token_rc = handle_token_cli_args(argc, argv, quiet_ui, &token_handled);
+    if (token_handled) {
+        log_close();
+        return token_rc;
     }
 
     char base_dir[MAX_PATH];
@@ -1235,16 +1573,16 @@ int main(int argc, char **argv) {
 
     /* 2. Route command line flags to StepOnIt.exe */
     char godot_exe[MAX_PATH];
-    snprintf(godot_exe, sizeof(godot_exe), "%s\\StepOnIt.exe", base_dir);
-    if (!file_exists(godot_exe)) {
-        log_write("[Launcher] ERROR: Could not find %s\n", godot_exe);
+    int exe_n = snprintf(godot_exe, sizeof(godot_exe), "%s\\StepOnIt.exe", base_dir);
+    if (exe_n <= 0 || (size_t)exe_n >= sizeof(godot_exe) || !file_exists(godot_exe)) {
+        log_write("[Launcher] ERROR: Could not find %s\n", (exe_n > 0 && (size_t)exe_n < sizeof(godot_exe)) ? godot_exe : "StepOnIt.exe");
         log_close();
         return 1;
     }
 
     char pck_path[MAX_PATH];
-    snprintf(pck_path, sizeof(pck_path), "%s\\StepOnIt.pck", base_dir);
-    bool has_pck = file_exists(pck_path);
+    int pck_n = snprintf(pck_path, sizeof(pck_path), "%s\\StepOnIt.pck", base_dir);
+    bool has_pck = (pck_n > 0 && (size_t)pck_n < sizeof(pck_path) && file_exists(pck_path));
 
     char cmd_line[8192];
     bool wait_for_exit = false;

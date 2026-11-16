@@ -14,8 +14,8 @@ func _ready() -> void:
 
 	var p401 := Session.ext_path("levels/board_401.bord")
 	var p402 := Session.ext_path("levels/board_402.bord")
-	if not FileAccess.file_exists(p401): p401 = ProjectSettings.globalize_path("res://levels/board_401.bord")
-	if not FileAccess.file_exists(p402): p402 = ProjectSettings.globalize_path("res://levels/board_402.bord")
+	if not FileAccess.file_exists(p401): p401 = "res://levels/board_401.bord"
+	if not FileAccess.file_exists(p402): p402 = "res://levels/board_402.bord"
 
 	var b401 := FileAccess.get_file_as_bytes(p401)
 	var b402 := FileAccess.get_file_as_bytes(p402)
