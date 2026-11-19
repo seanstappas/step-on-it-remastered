@@ -80,6 +80,7 @@ var _effects_db := 0.0   # Sound -> Effects Volume (About doc 8); applied to eac
 # is presentational (TODO oracle); we default to one looping track. ---
 var _music_player: AudioStreamPlayer = null
 var _music_enabled := false
+var _music_db: float = -6.0
 var _music_dir := ""
 var _music_cache := {}          # "variant/track" -> AudioStream (or null if missing)
 var _music_variant := "remaster"   # "remaster" (extracted/music) | "original" (extracted/music/original)
@@ -147,11 +148,19 @@ func set_effects_volume(db: float) -> void:
 func get_effects_volume() -> float:
 	return _effects_db
 
+func set_music_volume(db: float) -> void:
+	_music_db = db
+	if _music_player != null:
+		_music_player.volume_db = _music_db
+
+func get_music_volume() -> float:
+	return _music_db
+
 # --- Music playback -----------------------------------------------------------
 func _init_music() -> void:
 	_music_dir = Session.ext_path("music")
 	_music_player = AudioStreamPlayer.new()
-	_music_player.volume_db = -6.0            # sit under the SFX
+	_music_player.volume_db = _music_db       # sit under the SFX
 	add_child(_music_player)
 
 ## Is the rendered music available on disk?

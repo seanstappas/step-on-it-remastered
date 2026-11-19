@@ -29,13 +29,16 @@ Stages:
 Usage (from repo root):  powershell -File tools/verify.ps1 [-TestPackaging]
 #>
 param(
-    [string]$Zig   = 'D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe',
-    [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe',
+    [string]$Zig   = '',
+    [string]$Godot = '',
     [switch]$SkipGodot,
     [switch]$TestPackaging
 )
 
 $ErrorActionPreference = 'Continue'
+$SoiTools = if ($env:SOI_TOOLS -and (Test-Path $env:SOI_TOOLS)) { $env:SOI_TOOLS } elseif (Test-Path 'D:\SOI-tools') { 'D:\SOI-tools' } elseif (Test-Path 'C:\SOI-tools') { 'C:\SOI-tools' } else { 'D:\SOI-tools' }
+if (-not $Zig)   { $Zig   = Join-Path $SoiTools 'zig\zig-windows-x86_64-0.13.0\zig.exe' }
+if (-not $Godot) { $Godot = Join-Path $SoiTools 'godot\Godot_v4.3-stable_win64_console.exe' }
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 $script:fail = 0
@@ -133,13 +136,14 @@ Stage 'core: 152-board winnability audit' {
 }
 
 Stage 'launcher: CLI & token unit tests' {
-    $vpkInc = 'D:\SOI-tools\velopack\libc\include'
+    $vpkRoot = Join-Path $SoiTools 'velopack'
+    $vpkInc = Join-Path $vpkRoot 'libc\include'
     if (-not (Test-Path (Join-Path $vpkInc 'Velopack.h'))) {
-        $found = Get-ChildItem 'D:\SOI-tools\velopack' -Recurse -Filter 'Velopack.h' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found = Get-ChildItem $vpkRoot -Recurse -Filter 'Velopack.h' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { $vpkInc = $found.DirectoryName }
     }
     if (-not (Test-Path (Join-Path $vpkInc 'Velopack.h'))) {
-        Write-Host "   (Velopack.h not found under D:\SOI-tools\velopack)" -ForegroundColor Yellow
+        Write-Host "   (Velopack.h not found under $vpkRoot)" -ForegroundColor Yellow
         return $false
     }
     $exe = Join-Path $tmpDir 'test_launcher_cli.exe'

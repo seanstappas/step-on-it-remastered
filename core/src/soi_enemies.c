@@ -534,7 +534,7 @@ static int nearest_player(const SoiWorld *w, int x, int y)
     for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
         const SoiPlayer *p = &w->players[pj];
         int dx, dy, d;
-        if (!p->active || p->eliminated) continue;
+        if (!p->active || p->eliminated || p->has_key == 2) continue;
         dx = p->x - x; dy = p->y - y;
         d = dx * dx + dy * dy;
         if (d < bestd) { bestd = d; best = pj; }
@@ -549,7 +549,7 @@ static int nearest_player_side(const SoiWorld *w, int x)
     for (pj = 1; pj < SOI_MAX_PLAYERS; pj++) {
         const SoiPlayer *p = &w->players[pj];
         int d;
-        if (!p->active || p->eliminated) continue;
+        if (!p->active || p->eliminated || p->has_key == 2) continue;
         d = p->x - x; if (d < 0) d = -d;
         if (d < bestd) { bestd = d; side = (x < p->x) ? 2 : 1; }
     }

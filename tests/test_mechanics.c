@@ -3325,8 +3325,12 @@ int main(void)
               "coop: the collected key is shared by both players");
         w->players[2].x = soi_cell_x(12);
         soi_pickup_check(w, 2);
-        CHECK(soi_level_complete(w) == 1 && w->players[2].has_key == 2,
-              "coop: P2 exits through the door P1's key opened");
+        CHECK(w->players[2].has_key == 2 && !w->players[2].alive && soi_level_complete(w) == 0 && w->players[1].score == 0,
+              "coop: P2 exits through the door P1's key opened, waits for P1 before level completes");
+        w->players[1].x = soi_cell_x(12);
+        soi_pickup_check(w, 1);
+        CHECK(soi_level_complete(w) == 1 && w->players[1].has_key == 2 && !w->players[1].alive,
+              "coop: level completes once both living players exit");
         CHECK(w->players[1].score == 2000 && w->players[2].score == 0,
               "coop: the team pool bonus (1000 x 2) is tallied once, into player 1");
 
@@ -3955,12 +3959,17 @@ int main(void)
             CHECK(w->cell[5][6] == SOI_CELL_EMPTY, "B4: Red Key consumed");
             CHECK(w->cell[5][8] == 0x0935u, "B4: Red Lock swept to Opened Red Door 0x0935");
 
-            /* P1 can exit through 0x0935 in Co-op */
+            /* P1 can exit through 0x0935 in Co-op; board completes once P3 exits too */
             w->players[1].x = soi_cell_x(8);
             w->players[1].y = soi_cell_y(5);
             soi_pickup_check(w, 1);
-            CHECK(w->players[1].has_key == 2, "B4: P1 completes level through opened 0x0935 in Co-op");
-            CHECK(soi_level_complete(w) == 1, "B4: level complete confirmed");
+            CHECK(w->players[1].has_key == 2 && !w->players[1].alive && soi_level_complete(w) == 0,
+                  "B4: P1 exits through opened 0x0935 in Co-op and waits for P3");
+            w->players[3].x = soi_cell_x(8);
+            w->players[3].y = soi_cell_y(5);
+            soi_pickup_check(w, 3);
+            CHECK(w->players[3].has_key == 2 && soi_level_complete(w) == 1,
+                  "B4: level complete confirmed once P3 also exits 0x0935 in Co-op");
 
             /* (b) Compete mode: P1 CANNOT pick up 0x0933, P1 CANNOT exit through 0x0935 */
             soi_world_init(w, 1);
@@ -4875,8 +4884,13 @@ int main(void)
             /* Place unlocked Blue Door (0x0902, low byte 2) under P1 */
             soi_set_cell(w, 2, 9, 0x0902u);
             soi_pickup_check(w, 1);
-            CHECK(w->players[1].has_key == 2 && soi_level_complete(w) == 1,
-                  "2.8b: In Co-op, P1 exits through Universal/Blue Door");
+            CHECK(w->players[1].has_key == 2 && soi_level_complete(w) == 0,
+                  "2.8b: In Co-op, P1 exits through Universal/Blue Door and waits for P2");
+            /* Place unlocked Green Door (0x0903, low byte 3) under P2 */
+            soi_set_cell(w, 6, 9, 0x0903u);
+            soi_pickup_check(w, 2);
+            CHECK(w->players[2].has_key == 2 && soi_level_complete(w) == 1,
+                  "2.8c: In Co-op, P2 exits through Green Door to complete board");
         }
 
         /* 69.9: Versus multi-board rounds */
@@ -5145,6 +5159,202 @@ int main(void)
                   soi_death_count(NULL) == 0 &&
                   soi_fx_count(NULL) == 0,
                   "70.6g: NULL SoiWorld setters/getters remain safe no-ops");
+        }
+    }
+
+    /* =========================================================================
+     * 71. Cooperate All-Living-Players-Exit Rule & Edge Cases
+     * ========================================================================= */
+    {
+        CHECK(soi_world_size() == 17060u, "71.0: sizeof(SoiWorld) unchanged at 17060 bytes");
+
+        /* 71.1: 3P Cooperate requires all 3 living players to exit; exited stay off-board */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9); ground_player(w, 2, 9);
+            reset_player(w, 2, 4, 9); ground_player(w, 4, 9);
+            reset_player(w, 3, 6, 9); ground_player(w, 6, 9);
+            for (int c = 2; c <= 14; c++) soi_set_cell(w, c, 10, SOI_CELL_SUPPORTIVE);
+            w->players[1].bonus_time = 1000;
+            w->players[1].mult = 2;
+            w->players[1].no_weapons_reward = 5000;
+            w->players[1].score = 0;
+            soi_set_cell(w, 12, 9, 0x0901u); /* opened universal door */
+
+            /* P1 exits first */
+            w->players[1].x = soi_cell_x(12);
+            w->players[1].y = soi_cell_y(9) + 1;
+            soi_tick3(w, 0, 0, 0);
+            CHECK(w->players[1].has_key == 2 && !w->players[1].alive && soi_level_complete(w) == 0,
+                  "71.1a: 3P Co-op P1 exited off-board; level waits for P2 and P3");
+
+            /* Advance 150 ticks -> P1 must NEVER respawn */
+            for (int t = 0; t < 150; t++) soi_tick3(w, 0, 0, 0);
+            CHECK(w->players[1].has_key == 2 && !w->players[1].alive && soi_level_complete(w) == 0,
+                  "71.1b: Exited P1 stays off-board after 150 ticks");
+
+            /* P2 exits second (2 ticks guarantees hitting an odd 30Hz player tick) */
+            w->players[2].x = soi_cell_x(12);
+            w->players[2].y = soi_cell_y(9) + 1;
+            soi_tick3(w, 0, 0, 0);
+            soi_tick3(w, 0, 0, 0);
+            CHECK(w->players[2].has_key == 2 && !w->players[2].alive && soi_level_complete(w) == 0,
+                  "71.1c: 3P Co-op P2 exited; level still waits for P3");
+
+            /* P3 exits last -> completes and tallies team pool once */
+            int32_t expected_bonus = w->players[1].bonus_time * 2 + 5000;
+            w->players[3].x = soi_cell_x(12);
+            w->players[3].y = soi_cell_y(9) + 1;
+            soi_tick3(w, 0, 0, 0);
+            soi_tick3(w, 0, 0, 0);
+            CHECK(w->players[3].has_key == 2 && soi_level_complete(w) == 1,
+                  "71.1d: 3P Co-op completes once P3 also exits");
+            CHECK(w->players[1].score >= 5000 && w->players[1].score <= expected_bonus && w->players[1].bonus_time == 0,
+                  "71.1e: 3P Co-op team pool bonus tallied once when final player exits");
+        }
+
+        /* 71.2: 2P Co-op P1 exited, P2 dies with spare lives -> in-place respawn & 0-bonus recovery */
+        {
+            uint8_t bord[128];
+            memset(bord, 0, sizeof(bord));
+            bord[0x07] = 2; bord[0x09] = 9;
+            bord[0x0B] = 6; bord[0x0D] = 9;
+            bord[0x0E] = 0x13; bord[0x0F] = 0x88; /* 5000 */
+            bord[0x18] = 0x00; bord[0x19] = 0x00; bord[0x1A] = 0x03; bord[0x1B] = 0x00;
+            for (int c = 0; c < 19; c++) { bord[0x1C + c * 2] = (uint8_t)c; bord[0x1C + c * 2 + 1] = 10; }
+            bord[0x1C + 38] = 100; bord[0x1C + 39] = 100;
+
+            soi_world_init(w, 1);
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            soi_load_level(w, bord, 0x1C + 44);
+            w->pct_badguy = 0;
+            w->players[1].lives = 2;
+            w->players[1].bonus_time = 2;
+            soi_set_cell(w, 12, 9, 0x0901u);
+            w->players[1].x = soi_cell_x(12);
+            w->players[1].y = soi_cell_y(9) + 1;
+            soi_pickup_check(w, 1);
+            CHECK(w->players[1].has_key == 2 && !w->players[1].alive,
+                  "71.2a: P1 exited before bonus timeout");
+
+            /* Force bonus timeout on P2 */
+            w->players[1].bonus_time = 0;
+            w->bonus_div = 1;
+            for (int t = 0; t < 260 && (w->players[2].alive == 1); t++) soi_tick(w, 0, 0);
+            /* Run through respawn_timer (90 ticks) */
+            for (int t = 0; t < 110 && !w->players[2].alive; t++) soi_tick(w, 0, 0);
+            CHECK(w->players[1].has_key == 2 && !w->players[1].alive,
+                  "71.2b: P2 respawn does not reload board or revive exited P1");
+            CHECK(w->players[2].alive == 1 && w->players[1].lives == 1,
+                  "71.2c: P2 respawned in-place and spent 1 pool life");
+            CHECK(w->players[1].bonus_time > 1000,
+                  "71.2d: Team pool bonus_time restored after timeout death while P1 exited");
+        }
+
+        /* 71.3: 2P Co-op P1 exited, P2 dies with 0 spare lives -> P2 eliminated, level completes */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].lives = 0;
+            w->players[1].bonus_time = 1200;
+            w->players[1].mult = 1;
+            w->players[1].no_weapons_reward = 5000;
+            w->players[1].score = 0;
+            soi_set_cell(w, 12, 9, 0x0901u);
+            w->players[1].x = soi_cell_x(12);
+            w->players[1].y = soi_cell_y(9) + 1;
+            soi_pickup_check(w, 1);
+
+            w->players[2].invuln = 0;
+            soi_player_hit(w, 2);
+            for (int t = 0; t < 250 && w->players[2].alive; t++) soi_tick(w, 0, 0);
+            CHECK(w->players[2].eliminated == 1 && soi_game_over(w) == 0 && soi_level_complete(w) == 1,
+                  "71.3a: P2 dies at 0 pool lives after P1 exited -> complete (not game over)");
+            CHECK(w->players[1].score > 5000 && w->players[1].bonus_time == 0,
+                  "71.3b: Team pool completion bonus awarded when P2 eliminated");
+        }
+
+        /* 71.4: 2P Co-op P1 exited, P2 disconnects -> level completes + bonus awarded */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].bonus_time = 800;
+            w->players[1].mult = 2;
+            w->players[1].no_weapons_reward = 5000;
+            w->players[1].score = 0;
+            soi_set_cell(w, 12, 9, 0x0901u);
+            w->players[1].x = soi_cell_x(12);
+            w->players[1].y = soi_cell_y(9) + 1;
+            soi_pickup_check(w, 1);
+            CHECK(soi_level_complete(w) == 0, "71.4a: Waiting for P2 before disconnect");
+            soi_drop_player(w, 2);
+            CHECK(soi_level_complete(w) == 1 && w->players[1].score == 6600 && w->players[1].bonus_time == 0,
+                  "71.4b: Dropping remaining P2 completes Co-op level and awards team bonus");
+        }
+
+        /* 71.5: 2P Co-op Challenge Round P1 exited, P2 dies -> level completes (not challenge_failed) */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0; w->challenge = 1;
+            soi_new_game(w, SOI_MODE_COOPERATE);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].bonus_time = 900;
+            w->players[1].mult = 3;
+            w->players[1].no_weapons_reward = 5000;
+            w->players[1].score = 0;
+            soi_set_cell(w, 12, 9, 0x0901u);
+            w->players[1].x = soi_cell_x(12);
+            w->players[1].y = soi_cell_y(9) + 1;
+            soi_pickup_check(w, 1);
+            CHECK(soi_level_complete(w) == 0 && soi_challenge_failed(w) == 0,
+                  "71.5a: Co-op Challenge Round stays open while P2 still playing");
+
+            w->players[2].invuln = 0;
+            soi_player_hit(w, 2);
+            int32_t pre_bonus = w->players[1].bonus_time;
+            for (int t = 0; t < 250 && w->players[2].alive; t++) {
+                pre_bonus = w->players[1].bonus_time;
+                soi_tick(w, 0, 0);
+            }
+            CHECK(soi_level_complete(w) == 1 && soi_challenge_failed(w) == 0,
+                  "71.5b: Co-op Challenge Round completes when P2 dies after P1 exited");
+            CHECK(w->players[1].score == pre_bonus * 3 && w->players[1].bonus_time == 0,
+                  "71.5c: Co-op Challenge Round pays bonus*mult (no No-Weapons Reward)");
+        }
+
+        /* 71.6: Compete and Versus Door Race still complete immediately on first player exit */
+        {
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0;
+            soi_new_game(w, SOI_MODE_COMPETE);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].has_key = 1;
+            soi_set_cell(w, 2, 9, 0x0901u);
+            soi_pickup_check(w, 1);
+            CHECK(soi_level_complete(w) == 1,
+                  "71.6a: Compete mode completes immediately on first player door exit");
+
+            soi_world_init(w, 1);
+            w->level_loaded = 1; w->pct_badguy = 0;
+            soi_new_game(w, SOI_MODE_VERSUS);
+            soi_set_victory_rule(w, SOI_WIN_DOOR);
+            reset_player(w, 1, 2, 9);
+            reset_player(w, 2, 6, 9);
+            w->players[1].has_key = 1;
+            soi_set_cell(w, 2, 9, 0x0901u);
+            soi_pickup_check(w, 1);
+            CHECK(soi_level_complete(w) == 1 && soi_versus_winner(w) == 1,
+                  "71.6b: Versus Door Race completes immediately on first player door exit");
         }
     }
 

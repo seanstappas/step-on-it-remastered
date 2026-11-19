@@ -12,9 +12,11 @@
 #
 # Run from the repo root:  pwsh bridge/build_zig.ps1
 param(
-    [string]$Zig = 'D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe'
+    [string]$Zig = ''
 )
 $ErrorActionPreference = 'Stop'
+$SoiTools = if ($env:SOI_TOOLS -and (Test-Path $env:SOI_TOOLS)) { $env:SOI_TOOLS } elseif (Test-Path 'D:\SOI-tools') { 'D:\SOI-tools' } elseif (Test-Path 'C:\SOI-tools') { 'C:\SOI-tools' } else { 'D:\SOI-tools' }
+if (-not $Zig) { $Zig = Join-Path $SoiTools 'zig\zig-windows-x86_64-0.13.0\zig.exe' }
 $gcpp = 'bridge/godot-cpp'
 
 $tmpDir = Join-Path $env:TEMP "soi_bridge_build_$PID"

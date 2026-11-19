@@ -338,12 +338,27 @@ void soi_limit_players(SoiWorld *w, int n)
         }
 }
 
+void soi_award_coop_completion_bonus(SoiWorld *w)
+{
+    if (!w || w->play_mode != SOI_MODE_COOPERATE) return;
+    SoiPlayer *pool = &w->players[1];
+    pool->score += (int32_t)pool->bonus_time * (int32_t)pool->mult;
+    pool->bonus_time = 0;
+    if (pool->no_weapons_reward >= 1 && !w->challenge)
+        pool->score += (int32_t)pool->no_weapons_reward;
+}
+
 void soi_drop_player(SoiWorld *w, int player_slot)
 {
+    int was_complete;
     if (!w || player_slot < 1 || player_slot >= SOI_MAX_PLAYERS) return;
+    was_complete = soi_level_complete(w);
     w->players[player_slot].active = 0;
     w->players[player_slot].alive = 0;
     w->players[player_slot].eliminated = 1;
+    if (w->play_mode == SOI_MODE_COOPERATE && !was_complete && soi_level_complete(w)) {
+        soi_award_coop_completion_bonus(w);
+    }
 }
 
 void soi_set_p3_any_key(SoiWorld *w, int enable)
@@ -1014,6 +1029,9 @@ static void respawn_player_in_place(SoiWorld *w, SoiPlayer *rp)
     rp->buf = 0;
     rp->buf_t = 0;
     rp->bonus_time = bonus;
+    if (w->play_mode == SOI_MODE_COOPERATE && w->players[1].bonus_time <= 0) {
+        w->players[1].bonus_time = bonus;
+    }
     rp->respawn_timer = 0;
     rp->last_attacker = 0;
     rp->attacker_ttl = 0;
@@ -1133,10 +1151,15 @@ static void check_pvp_body_collisions(SoiWorld *w)
 
 static void check_respawns(SoiWorld *w)
 {
-    int i, active_players = 0, living_players = 0, any_ready = 0;
+    int i, active_players = 0, living_players = 0, any_ready = 0, any_exited = 0;
+    if (w->challenge && w->play_mode != SOI_MODE_VERSUS) return;
     for (i = 1; i < SOI_MAX_PLAYERS; i++) {
         SoiPlayer *rp = &w->players[i];
         if (rp->active && !rp->eliminated) {
+            if (rp->has_key == 2) {
+                any_exited = 1;
+                continue;
+            }
             active_players++;
             if (rp->alive) {
                 living_players++;
@@ -1147,21 +1170,21 @@ static void check_respawns(SoiWorld *w)
             }
         }
     }
-    if (active_players > 0 && living_players == 0 && any_ready) {
+    if (active_players > 0 && living_players == 0 && any_ready && !any_exited) {
         if (w->bord_len > 0) {
             reload_board_on_death(w);
         } else {
             for (i = 1; i < SOI_MAX_PLAYERS; i++) {
                 SoiPlayer *rp = &w->players[i];
-                if (rp->active && !rp->alive && !rp->eliminated) {
+                if (rp->active && !rp->alive && !rp->eliminated && rp->has_key != 2) {
                     respawn_player_in_place(w, rp);
                 }
             }
         }
-    } else if (living_players > 0) {
+    } else if (living_players > 0 || any_exited) {
         for (i = 1; i < SOI_MAX_PLAYERS; i++) {
             SoiPlayer *rp = &w->players[i];
-            if (rp->active && !rp->alive && !rp->eliminated && rp->respawn_timer <= 0) {
+            if (rp->active && !rp->alive && !rp->eliminated && rp->has_key != 2 && rp->respawn_timer <= 0) {
                 respawn_player_in_place(w, rp);
             }
         }
@@ -1401,6 +1424,20 @@ int      soi_level_complete(const SoiWorld *w)
             }
             return (participants >= 2 && alive_count <= 1) ? 1 : 0;
         }
+    }
+    if (w->play_mode == SOI_MODE_COOPERATE) {
+        int any_exited = 0;
+        int still_playing = 0;
+        for (i = 1; i < SOI_MAX_PLAYERS; i++) {
+            const SoiPlayer *p = &w->players[i];
+            if (!p->active || p->eliminated) continue;
+            if (p->has_key == 2) {
+                any_exited = 1;
+            } else if (!(w->challenge && !p->alive)) {
+                still_playing = 1;
+            }
+        }
+        return (any_exited && !still_playing) ? 1 : 0;
     }
     for (i = 1; i < SOI_MAX_PLAYERS; i++) {
         if (w->players[i].active && w->players[i].has_key == 2) return 1;

@@ -13,6 +13,7 @@ const MainMenuScript = preload("res://scenes/main_menu.gd")
 const GameScript = preload("res://scenes/game.gd")
 const Live3DScript = preload("res://scenes/live3d.gd")
 const RollbackNetScript = preload("res://scenes/rollback_net.gd")
+const LanDiscoveryScript = preload("res://scenes/lan_discovery.gd")
 const TileCatalog = preload("res://scenes/tile_catalog.gd")
 const TileArt = preload("res://scenes/tile_art.gd")
 
@@ -41,6 +42,7 @@ func _ready() -> void:
 	test_hidden_block_brush_and_rendering()
 	test_single_player_controller_claiming()
 	test_export_hygiene_and_hardening()
+	test_lan_discovery_and_settings()
 
 	print("==================================================================")
 	print("Stress Test Summary: %d total, %d passed, %d failed" % [total_assertions, passed_assertions, failed_assertions])
@@ -591,3 +593,99 @@ func test_export_hygiene_and_hardening() -> void:
 		_assert_true(j_bad["ok"] == false, "Invalid join target rejected: '%s'" % bad_target)
 
 	print(".pck Export Path Hygiene & Hardening Tests: PASSED")
+
+
+func test_lan_discovery_and_settings() -> void:
+	print("--- Challenge 6: LAN Discovery, Settings Persistence & Audio Volume ---")
+	# 6.1 LanDiscovery packet encode/decode + malformed rejection
+	var pkt: PackedByteArray = LanDiscoveryScript.encode_beacon({
+		"lobby_id": "abc12345",
+		"name": "TestHost",
+		"port": 7777,
+		"players": 1,
+		"max_players": 3,
+		"mode": 1,
+		"board": 1001,
+		"map": "",
+		"build": 42,
+	})
+	var dec: Dictionary = LanDiscoveryScript.decode_beacon(pkt)
+	_assert_true(dec.get("lobby_id", "") == "abc12345" and int(dec.get("max_players", 0)) == 3 and int(dec.get("board", 0)) == 1001,
+		"LanDiscovery beacon roundtrips fields cleanly")
+	_assert_true(LanDiscoveryScript.mode_label(0) == "Cooperate" and LanDiscoveryScript.mode_label(1) == "Compete" and LanDiscoveryScript.mode_label(3) == "Versus",
+		"LanDiscovery mode_label maps 0/1/3")
+	_assert_true(LanDiscoveryScript.decode_beacon("BAD:{}".to_utf8_buffer()).is_empty(), "Malformed magic rejected")
+	_assert_true(LanDiscoveryScript.decode_beacon("SOI1:{}".to_utf8_buffer()).is_empty(), "Incomplete beacon JSON rejected")
+
+	# 6.2 Live UDP loopback discovery + TTL expiry on high test port
+	var rx = LanDiscoveryScript.new()
+	var tx = LanDiscoveryScript.new()
+	var rx_err: int = rx.start_listening(17778)
+	var tx_err: int = tx.start_broadcasting({
+		"lobby_id": "looptest1",
+		"name": "LoopHost",
+		"port": 7777,
+		"players": 1,
+		"max_players": 2,
+		"mode": 0,
+		"board": 421,
+	}, 17778)
+	_assert_true(rx_err == OK and tx_err == OK, "LAN test sockets bind cleanly (rx=%d tx=%d)" % [rx_err, tx_err])
+	if rx_err == OK and tx_err == OK:
+		tx._tx_targets_override = ["127.0.0.1"] as Array[String]
+		var now_s := 100.0
+		tx.poll(now_s)
+		OS.delay_msec(25)
+		var changed: bool = rx.poll(now_s + 0.05)
+		var found: Array = rx.get_lobbies()
+		_assert_true(changed and found.size() == 1 and str(found[0].get("lobby_id", "")) == "looptest1" and int(found[0].get("board", 0)) == 421,
+			"Loopback LAN discovery detected beacon (changed=%s count=%d)" % [str(changed), found.size()])
+		var expired_changed: bool = rx.poll(now_s + LanDiscoveryScript.LOBBY_TTL_SEC + 1.0)
+		_assert_true(expired_changed and rx.get_lobbies().is_empty(), "LAN lobby expires cleanly after TTL")
+	rx.stop()
+	tx.stop()
+
+	# 6.3 Session settings persistence roundtrip & Audio music volume
+	var prev_speed: int = Session.speed
+	var prev_mmode: int = Session.music_mode
+	var prev_svol: int = Session.sfx_vol_idx
+	var prev_mvol_idx: int = Session.music_vol_idx
+	var prev_fs: bool = Session.fullscreen
+	var prev_kb := Session.keybinds.duplicate(true)
+	var prev_audio_mdb: float = Audio.get_music_volume()
+
+	Session.speed = 1
+	Session.music_mode = 1
+	Session.sfx_vol_idx = 2
+	Session.music_vol_idx = 1
+	Session.fullscreen = false
+	Session.set_keybind(0, "jump", KEY_SPACE)
+	var test_path := "user://test_settings_m1.json"
+	_assert_true(Session.save_settings(test_path), "Session.save_settings wrote test file")
+	Session.speed = 3
+	Session.music_mode = 2
+	Session.sfx_vol_idx = 0
+	Session.music_vol_idx = 3
+	Session.reset_keybinds()
+	_assert_true(Session.load_settings(test_path), "Session.load_settings parsed test file")
+	_assert_true(Session.speed == 1 and Session.music_mode == 1 and Session.sfx_vol_idx == 2 and Session.music_vol_idx == 1,
+		"Session settings values roundtripped cleanly")
+	_assert_true(Session.get_keybind(0, "jump") == KEY_SPACE, "Custom keybind roundtripped cleanly")
+	Session.reset_keybinds()
+	_assert_true(Session.get_keybind(0, "jump") == KEY_UP, "reset_keybinds restored default P1 jump")
+
+	Audio.set_music_volume(-14.0)
+	_assert_true(is_equal_approx(Audio.get_music_volume(), -14.0), "Audio.set_music_volume / get_music_volume roundtrips -14 dB")
+
+	# Cleanup & restore Session/Audio state
+	var udir := DirAccess.open("user://")
+	if udir != null and udir.file_exists("test_settings_m1.json"):
+		udir.remove("test_settings_m1.json")
+	Session.speed = prev_speed
+	Session.music_mode = prev_mmode
+	Session.sfx_vol_idx = prev_svol
+	Session.music_vol_idx = prev_mvol_idx
+	Session.fullscreen = prev_fs
+	Session.keybinds = prev_kb
+	Audio.set_music_volume(prev_audio_mdb)
+	print("LAN Discovery, Settings & Audio Tests: PASSED")

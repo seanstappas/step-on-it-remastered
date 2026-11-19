@@ -225,6 +225,58 @@ func _ready() -> void:
 		return
 	print("PASS: Game over retry packet correctly delivered and decoded (seed=%d is_retry=true)" % p2_loaded_seed[0])
 
+	# Test 5: Any-player PKT_ADVANCE_REQ (client triggers skip for all + stale-epoch filtering)
+	net1.advance_requested_epoch = -1
+	var adv_slots: Array = []
+	net1.advance_requested.connect(func(slot: int):
+		adv_slots.append(slot)
+	)
+	net2.send_advance_request()
+	for i in range(100):
+		sim_t += 0.016
+		net1.poll_network(sim_t)
+		net2.poll_network(sim_t)
+		OS.delay_msec(5)
+		if net1.advance_requested_epoch == net1.board_epoch:
+			break
+	if net1.advance_requested_epoch != net1.board_epoch or not adv_slots.has(1):
+		print("FAIL: Client PKT_ADVANCE_REQ did not trigger host advance_requested_epoch (epoch=%d host_req=%d slots=%s)" % [net1.board_epoch, net1.advance_requested_epoch, str(adv_slots)])
+		get_tree().quit(1)
+		return
+	net1.advance_requested_epoch = -1
+	var stale_adv := PackedByteArray()
+	stale_adv.resize(2)
+	stale_adv[0] = RollbackNet.PKT_ADVANCE_REQ
+	stale_adv[1] = (((net1.board_epoch + 1) & 0x3F) << 2) | 1
+	net1._handle_advance_req(stale_adv, 1)
+	if net1.advance_requested_epoch != -1:
+		print("FAIL: Stale epoch PKT_ADVANCE_REQ was not ignored!")
+		get_tree().quit(1)
+		return
+	print("PASS: PKT_ADVANCE_REQ any-player advance & stale-epoch filter passed")
+
+	# Test 6: start_board_num propagation in PKT_MATCH_INIT (Host -> Client packet decode)
+	var prev_online_start := int(Session.online_start_board)
+	var p2_matched := [false]
+	net2.match_started.connect(func(_bb: PackedByteArray, _s: int, _spd: int, _np: int, _md: int, _sl: int):
+		p2_matched[0] = true
+	)
+	net1.send_match_init(b401, 424242, 2, 0, -1, -1, 441)
+	Session.online_start_board = 0
+	for i in range(100):
+		sim_t += 0.016
+		net1.poll_network(sim_t)
+		net2.poll_network(sim_t)
+		OS.delay_msec(5)
+		if p2_matched[0]:
+			break
+	if not p2_matched[0] or Session.online_start_board != 441:
+		print("FAIL: start_board_num=441 not decoded by client PKT_MATCH_INIT (matched=%s online_start_board=%d)" % [str(p2_matched[0]), Session.online_start_board])
+		get_tree().quit(1)
+		return
+	Session.online_start_board = prev_online_start
+	print("PASS: PKT_MATCH_INIT propagated start_board_num=441 cleanly")
+
 	net1.close()
 	net2.close()
 	print("==================================================================")

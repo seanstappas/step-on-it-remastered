@@ -71,11 +71,20 @@ const CELL_DOOR := 0x800
 const CELL_SPECIAL := 0x1000
 const CELL_CRACKED := 0x4000     # head-bonked once; a second bonk breaks it
 
+const HS_CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 var _core: SoiCore
 var _net: RollbackNet = null
 var _net_status_banner: String = ""
 var _online_leave_confirm: bool = false
 var _online_meta_confirmed: bool = false
+var _result_hold_ticks: int = 0
+var _online_advance_by: int = -1
+var _disconnect_toast_ticks: int = 0
+var _pause_idx: int = 0
+var _pause_stick_cd: float = 0.0
+var _hs_char_idx: int = 0
+var _hs_stick_cd: float = 0.0
 var _font: Font
 var _font_hud: Font   # bold serif (original HUD font = Mac "New York" bold)
 var _shot_countdown := -1
@@ -875,6 +884,27 @@ func _draw_transport() -> void:
 
 ## Challenge Round completion ("Your Rewards", asm FUN_10016f80(0)): PICT 301 with the blue tally
 ## panel PICT 303 centred at y=0x8c; the remaining Bonus is drawn at (0x1ad,0x9c) and the Score at
+func _is_result_screen() -> bool:
+	if _core == null:
+		return false
+	if _alt and (_alt_state == "results" or _alt_state == "transition"):
+		return true
+	return _core.game_over() or _core.level_complete() or (not _alt and _core.challenge_failed())
+
+func _result_skip_hint(action_word: String) -> String:
+	if Session.is_online and _net != null:
+		if _net.advance_requested_epoch == _net.board_epoch:
+			if _online_advance_by >= 0:
+				return "Advancing... (requested by P%d)" % (_online_advance_by + 1)
+			return "Advancing..."
+		return "Enter / Space / A / Click: %s (any player)   |   Esc: Menu" % action_word
+	return "Enter / Space / A / Click: %s   |   Esc: Menu" % action_word
+
+func _draw_skip_prompt(hint_text: String) -> void:
+	draw_rect(Rect2(70, 452, 500, 22), Color(0, 0, 0, 0.76))
+	draw_rect(Rect2(70, 452, 500, 22), Color(0.85, 0.78, 0.35, 0.6), false, 1.0)
+	draw_string(_font, Vector2(70, 467), hint_text, HORIZONTAL_ALIGNMENT_CENTER, 500, 11, Color(1.0, 0.94, 0.65))
+
 ## (0x1ad,0xbf) climbs as Bonus x mult is added (a Challenge Round pays no No-Weapons Reward). Solo
 ## and co-op both show player 1 (co-op's team pool).
 func _draw_challenge_rewards() -> void:
@@ -886,6 +916,8 @@ func _draw_challenge_rewards() -> void:
 	var final_score := int(_tally_final.get(1, _core.player_score(1)))
 	_tally_digits(_tally_prebonus, 429.0, 156.0)
 	_tally_digits(final_score - int(round(delta * (1.0 - _tally_anim))), 429.0, 191.0)
+	if _result_hold_ticks >= 12 and _hs_state != "entry":
+		_draw_skip_prompt(_result_skip_hint("Next Board"))
 
 ## Compete / Versus mode: the winner is the versus victor or first player to exit through their door (has_key == 2).
 func _winner() -> int:
@@ -909,12 +941,16 @@ func _draw_win_screen() -> void:
 		elif w == 2: title = "GREEN WINS!"
 		elif w == 3: title = "RED WINS!"
 		draw_string(_font, Vector2(0, 72), title, HORIZONTAL_ALIGNMENT_CENTER, 640, 30, Color.WHITE)
+		if _result_hold_ticks >= 12 and _hs_state != "entry":
+			_draw_skip_prompt(_result_skip_hint("Next Board"))
 		return
 	match _winner():
 		1: _draw_pict_screen("blue_wins", "BLUE WINS!", "Enter: next board     Esc: menu")
 		2: _draw_pict_screen("green_wins", "GREEN WINS!", "Enter: next board     Esc: menu")
 		3: _draw_banner("RED WINS!", "Enter: next board     Esc: menu")
 		_: _draw_pict_screen("no_winner", "NO WINNER", "Enter: next board     Esc: menu")
+	if _result_hold_ticks >= 12 and _hs_state != "entry":
+		_draw_skip_prompt(_result_skip_hint("Next Board"))
 
 ## Path to the extracted victory animation (.ogv) for a Compete winner, or "" if none
 ## (P3/red has no original movie; also "" when the file is missing). tools/extract_win_movies.py.
@@ -1073,14 +1109,59 @@ func _hs_input(e: InputEventKey) -> void:
 				if ch.length() == 1 and ((ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9")):
 					_hs_name += ch
 
+func _hs_joy_input(e: InputEventJoypadButton) -> void:
+	match e.button_index:
+		JOY_BUTTON_DPAD_UP:
+			_hs_char_idx = (_hs_char_idx + 1) % HS_CHARS.length()
+		JOY_BUTTON_DPAD_DOWN:
+			_hs_char_idx = (_hs_char_idx - 1 + HS_CHARS.length()) % HS_CHARS.length()
+		JOY_BUTTON_A, JOY_BUTTON_DPAD_RIGHT:
+			if _hs_name.length() < 3:
+				_hs_name += HS_CHARS[_hs_char_idx]
+			elif e.button_index == JOY_BUTTON_A:
+				Session.add_score(_hs_name, _hs_score)
+				_hs_state = ""
+		JOY_BUTTON_B, JOY_BUTTON_DPAD_LEFT:
+			if _hs_name.length() > 0:
+				_hs_name = _hs_name.substr(0, _hs_name.length() - 1)
+		JOY_BUTTON_START:
+			var commit_name := _hs_name
+			if commit_name == "":
+				commit_name = "AAA"
+			Session.add_score(commit_name, _hs_score)
+			_hs_state = ""
+
+func _poll_hs_joy_stick(dt: float) -> void:
+	_hs_stick_cd = maxf(0.0, _hs_stick_cd - dt)
+	if _hs_stick_cd > 0.0:
+		return
+	for dev in Input.get_connected_joypads():
+		var ay: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_Y)
+		if ay < -0.55:
+			_hs_char_idx = (_hs_char_idx + 1) % HS_CHARS.length()
+			_hs_stick_cd = 0.14
+			queue_redraw()
+			return
+		elif ay > 0.55:
+			_hs_char_idx = (_hs_char_idx - 1 + HS_CHARS.length()) % HS_CHARS.length()
+			_hs_stick_cd = 0.14
+			queue_redraw()
+			return
+
 ## "NEW HIGH SCORE" initials prompt, drawn over the game-over / results screen.
 func _draw_hs_entry() -> void:
-	draw_rect(Rect2(0, 300, 640, 118), Color(0, 0, 0, 0.86))
-	draw_string(_font, Vector2(0, 336), "NEW HIGH SCORE!   %d" % _hs_score, HORIZONTAL_ALIGNMENT_CENTER, 640, 24, Color(1.0, 0.85, 0.2))
-	var shown := _hs_name
-	while shown.length() < 3:
-		shown += "_"
-	draw_string(_font, Vector2(0, 378), "Type initials:  %s      Enter = confirm" % shown, HORIZONTAL_ALIGNMENT_CENTER, 640, 18, Color.WHITE)
+	draw_rect(Rect2(0, 294, 640, 128), Color(0, 0, 0, 0.88))
+	draw_string(_font, Vector2(0, 328), "NEW HIGH SCORE!   %d" % _hs_score, HORIZONTAL_ALIGNMENT_CENTER, 640, 24, Color(1.0, 0.85, 0.2))
+	var shown := ""
+	for i in range(3):
+		if i < _hs_name.length():
+			shown += _hs_name[i]
+		elif i == _hs_name.length():
+			shown += "[%s]" % HS_CHARS[_hs_char_idx]
+		else:
+			shown += "_"
+	draw_string(_font, Vector2(0, 368), "Initials:  %s" % shown, HORIZONTAL_ALIGNMENT_CENTER, 640, 20, Color.WHITE)
+	draw_string(_font, Vector2(0, 398), "Keyboard: Type + Enter   |   Xbox: Up/Down letter, A add, B back, Start confirm", HORIZONTAL_ALIGNMENT_CENTER, 640, 11, Color(0.8, 0.9, 1.0))
 
 ## Snapshot each player's PERSISTENT stats at the current board's start (for QuickSave, which
 ## records board-start state so Resume restarts the board with these -- About doc 8).
@@ -1128,6 +1209,8 @@ func _draw_challenge_failed() -> void:
 	var t := _pict("Nothing")
 	if t != null:
 		_draw_pict(t, (Vector2(318, 275) - _pict_size(t) * 0.5).floor())
+	if _result_hold_ticks >= 12 and _hs_state != "entry":
+		_draw_skip_prompt(_result_skip_hint("Next Board"))
 
 
 func _ready() -> void:
@@ -1225,6 +1308,7 @@ func _ready() -> void:
 			queue_redraw()
 		)
 		_net.board_loaded.connect(_on_net_board_loaded)
+		_net.advance_requested.connect(_on_net_advance_requested)
 	_start()
 	Input.joy_connection_changed.connect(_on_joy_connection_changed)
 	if not _harness_run and not Session.presentation_hint_shown:
@@ -1437,12 +1521,20 @@ func _next_board() -> void:
 	_reset_round_ui()
 	_update_board_music()
 
+func _on_net_advance_requested(slot: int) -> void:
+	_online_advance_by = slot
+	queue_redraw()
+
 ## Reset the per-round UI/animation state shared by _start and _next_board.
 func _reset_round_ui() -> void:
 	_paused = false
 	_net_halted = false
 	_tally_captured = false
 	_online_meta_confirmed = false
+	_result_hold_ticks = 0
+	_online_advance_by = -1
+	_pause_idx = 0
+	_hs_char_idx = 0
 	_tally_anim = 0.0
 	_warp_anim = 0.0
 	_tp_frames = 0
@@ -1469,11 +1561,20 @@ var _online_stick_engaged: Array[int] = []
 var _board_just_loaded: bool = false
 
 func _on_joy_connection_changed(device: int, connected: bool) -> void:
+	if Session.is_online:
+		if not connected:
+			_disconnect_banner = "Controller #%d disconnected — Keyboard (Arrows/WASD) active" % (device + 1)
+			_disconnect_toast_ticks = 280
+		else:
+			_disconnect_banner = ""
+			_disconnect_toast_ticks = 0
+		queue_redraw()
+		return
 	if not connected:
 		for p in Session.player_device.size():
 			if Session.player_device[p] == device:
 				_disconnect_banner = "Controller Disconnected (Player %d) — Reconnect or press SPACE for Keyboard" % (p + 1)
-				if not Session.is_online and not _paused:
+				if not _paused:
 					_paused = true
 					_paused_by_disconnect = true
 				queue_redraw()
@@ -1488,7 +1589,7 @@ func _on_joy_connection_changed(device: int, connected: bool) -> void:
 				break
 		if not still_missing:
 			_disconnect_banner = ""
-			if _paused_by_disconnect and not Session.is_online:
+			if _paused_by_disconnect:
 				_paused = false
 				_paused_by_disconnect = false
 			queue_redraw()
@@ -1578,6 +1679,14 @@ func _physics_process(_delta: float) -> void:
 		else:
 			Engine.physics_ticks_per_second = SPEED_HZ[clampi(Session.speed, 0, 3)]
 
+	var tick_dt: float = 1.0 / maxf(1.0, float(Engine.physics_ticks_per_second))
+	if _disconnect_toast_ticks > 0:
+		_disconnect_toast_ticks -= 1
+		if _disconnect_toast_ticks == 0 and Session.is_online:
+			_disconnect_banner = ""
+			queue_redraw()
+	if _paused and not Session.is_online and _hs_state != "entry" and _disconnect_banner == "":
+		_poll_pause_joy_stick(tick_dt)
 	if _net_halted or _script_hold or _paused or (_alt and _alt_state != "play"):
 		return
 	if _challenge_intro > 0:
@@ -1625,7 +1734,10 @@ func _physics_process(_delta: float) -> void:
 						_tally_captured = false
 						_tally_anim = 0.0
 						_warp_anim = 0.0
+						_result_hold_ticks = 0
+						_online_advance_by = -1
 						_online_meta_confirmed = false
+						_net.advance_requested_epoch = -1
 						_net.meta_confirmed_peers.clear()
 						rb_restore_music = true
 					elif _core.level_complete():
@@ -1635,15 +1747,21 @@ func _physics_process(_delta: float) -> void:
 					if _game_over_active and not _core.game_over():
 						_game_over_active = false
 						_game_over_ticks = 0
+						_result_hold_ticks = 0
+						_online_advance_by = -1
 						_game_over_letters.clear()
 						_online_meta_confirmed = false
+						_net.advance_requested_epoch = -1
 						_net.meta_confirmed_peers.clear()
 						_hs_checked = false
 						_hs_state = ""
 						rb_restore_music = true
 					if _challenge_forfeited and not _core.challenge_failed():
 						_challenge_forfeited = false
+						_result_hold_ticks = 0
+						_online_advance_by = -1
 						_online_meta_confirmed = false
+						_net.advance_requested_epoch = -1
 						_net.meta_confirmed_peers.clear()
 
 					_prune_render_history(rb_tick)
@@ -1655,6 +1773,7 @@ func _physics_process(_delta: float) -> void:
 						_play_level_complete_audio()
 
 	if _core.game_over() or _core.level_complete() or (not _alt and _core.challenge_failed()):
+		_result_hold_ticks += 1
 		if _core.level_complete():
 			if not _alt and not _mode_compete and not _mode_versus and _warp_anim < 1.0:
 				_warp_anim = minf(_warp_anim + 1.0 / WARP_FRAMES, 1.0)
@@ -1679,8 +1798,10 @@ func _physics_process(_delta: float) -> void:
 			_hs_checked = true
 			var sc := _hs_final_score()
 			if Session.qualifies(sc):
-				_hs_score = sc; _hs_name = ""; _hs_state = "entry"
+				_hs_score = sc; _hs_name = ""; _hs_char_idx = 0; _hs_state = "entry"
 				Audio.play_snd(1501)
+		if _hs_state == "entry":
+			_poll_hs_joy_stick(tick_dt)
 		if _net != null:
 			_poll_online_meta_confirm()
 		queue_redraw()
@@ -1944,12 +2065,224 @@ func _demo_input() -> int:
 			return int(seg[0])
 	return 0
 
+const PAUSE_ROW_COUNT := 8
+
+func _pause_row_rect(idx: int) -> Rect2:
+	return Rect2(186.0, 148.0 + float(idx) * 24.0, 268.0, 22.0)
+
+func _pause_row_at(pos: Vector2) -> int:
+	for i in PAUSE_ROW_COUNT:
+		if _pause_row_rect(i).has_point(pos):
+			return i
+	return -1
+
+func _pause_item_label(idx: int) -> String:
+	const MUS_NAMES := ["Full", "Light", "Off"]
+	const VOL_NAMES := ["Full", "Medium", "Quiet", "Off"]
+	const SPD_NAMES := ["Really Fast", "Fast", "Medium", "Slow"]
+	match idx:
+		0: return "Resume"
+		1: return "Music:   < %s >" % MUS_NAMES[clampi(Session.music_mode, 0, 2)]
+		2: return "Effects Vol:   < %s >" % VOL_NAMES[clampi(Session.sfx_vol_idx, 0, 3)]
+		3: return "Music Vol:   < %s >" % VOL_NAMES[clampi(Session.music_vol_idx, 0, 3)]
+		4: return "Speed:   < %s >" % SPD_NAMES[clampi(Session.speed, 0, 3)]
+		5: return "Fullscreen:   < %s >" % ("On" if Session.fullscreen else "Off")
+		6: return "Save Game" if (not _alt and not _core.game_over()) else "Save Game (N/A)"
+		7: return "Quit to Menu"
+		_: return ""
+
+func _pause_adjust(step: int, activate: bool = false) -> void:
+	match _pause_idx:
+		0:
+			if activate:
+				_paused = false
+		1:
+			Session.music_mode = (Session.music_mode + step + 3) % 3
+			Audio.set_music_light(Session.music_mode == 1)
+			Audio.set_music_enabled(Session.music_mode != 2)
+			if Session.music_mode != 2:
+				_update_board_music()
+			Session.save_settings()
+		2:
+			Session.sfx_vol_idx = (Session.sfx_vol_idx + step + 4) % 4
+			Audio.set_effects_volume(Session.SFX_VOL_DB[Session.sfx_vol_idx])
+			Session.save_settings()
+		3:
+			Session.music_vol_idx = (Session.music_vol_idx + step + 4) % 4
+			Audio.set_music_volume(Session.MUSIC_VOL_DB[Session.music_vol_idx])
+			Session.save_settings()
+		4:
+			Session.speed = (Session.speed + step + 4) % 4
+			Engine.physics_ticks_per_second = SPEED_HZ[Session.speed]
+			Session.save_settings()
+		5:
+			Session.toggle_fullscreen()
+		6:
+			if activate and not _alt and not _core.game_over():
+				_do_save()
+				_paused = false
+		7:
+			if activate:
+				if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
+					Session.remove_meta("editor_return")
+					if Session.has_meta("custom_board_bytes"):
+						Session.remove_meta("custom_board_bytes")
+					Session.custom_board_bytes = PackedByteArray()
+					get_tree().change_scene_to_file("res://scenes/editor.tscn")
+				else:
+					get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+				return
+	queue_redraw()
+
+func _poll_pause_joy_stick(dt: float) -> void:
+	_pause_stick_cd = maxf(0.0, _pause_stick_cd - dt)
+	if _pause_stick_cd > 0.0:
+		return
+	for dev in Input.get_connected_joypads():
+		var ax: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_X)
+		var ay: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_Y)
+		if absf(ay) >= absf(ax) and absf(ay) > 0.55:
+			var step := -1 if ay < 0.0 else 1
+			_pause_idx = (_pause_idx + step + PAUSE_ROW_COUNT) % PAUSE_ROW_COUNT
+			_pause_stick_cd = 0.16
+			queue_redraw()
+			return
+		elif absf(ax) > 0.55:
+			var step := -1 if ax < 0.0 else 1
+			if _pause_idx >= 1 and _pause_idx <= 5:
+				_pause_adjust(step)
+			_pause_stick_cd = 0.18
+			return
+
+func _draw_pause_menu() -> void:
+	draw_rect(Rect2(0, 0, 640, 480), Color(0, 0, 0, 0.58))
+	var box := Rect2(170, 92, 300, 294)
+	draw_rect(box, Color(0.09, 0.12, 0.22, 0.96))
+	draw_rect(box, Color(0.82, 0.85, 0.96), false, 2.0)
+	draw_string(_font, Vector2(box.position.x, 128), "PAUSED", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 22, Color(1.0, 0.9, 0.45))
+	draw_line(Vector2(186, 138), Vector2(454, 138), Color(0.45, 0.5, 0.68), 1.0)
+	for i in PAUSE_ROW_COUNT:
+		var r := _pause_row_rect(i)
+		var is_sel := (i == _pause_idx)
+		var disabled := (i == 6 and (_alt or _core.game_over()))
+		if is_sel:
+			draw_rect(r, Color(0.24, 0.38, 0.68, 0.95))
+			draw_rect(r, Color(0.95, 0.88, 0.45), false, 1.0)
+		var col := Color(0.5, 0.54, 0.6) if disabled else (Color.WHITE if is_sel else Color(0.84, 0.88, 0.95))
+		draw_string(_font, Vector2(r.position.x + 8.0, r.position.y + 15.0), _pause_item_label(i), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 16.0, 12, col)
+	draw_string(_font, Vector2(170, 366), "Up/Down: Select   Left/Right/A: Change", HORIZONTAL_ALIGNMENT_CENTER, 300, 10, Color(0.75, 0.8, 0.92))
+	draw_string(_font, Vector2(170, 379), "Tab / P / B: Resume", HORIZONTAL_ALIGNMENT_CENTER, 300, 10, Color(0.75, 0.8, 0.92))
+
 func _input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo:
+		if e.keycode == KEY_F11 or ((e.keycode == KEY_ENTER or e.keycode == KEY_KP_ENTER) and e.alt_pressed):
+			Session.toggle_fullscreen()
+			get_viewport().set_input_as_handled()
+			return
+
+	if _hs_state == "entry":
+		if e is InputEventKey and e.pressed:
+			_hs_input(e)
+			queue_redraw()
+			return
+		if e is InputEventJoypadButton and e.pressed:
+			_hs_joy_input(e)
+			queue_redraw()
+			return
+		return
+
+	if _paused and not Session.is_online and _disconnect_banner == "":
+		if e is InputEventMouseMotion:
+			var hi := _pause_row_at((e as InputEventMouseMotion).position)
+			if hi >= 0 and hi != _pause_idx:
+				_pause_idx = hi
+				queue_redraw()
+			return
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+			var hi := _pause_row_at((e as InputEventMouseButton).position)
+			if hi >= 0:
+				_pause_idx = hi
+				_pause_adjust(1, true)
+			return
+		if e is InputEventJoypadButton and e.pressed:
+			match e.button_index:
+				JOY_BUTTON_START, JOY_BUTTON_B:
+					_paused = false
+					queue_redraw()
+				JOY_BUTTON_DPAD_UP:
+					_pause_idx = (_pause_idx - 1 + PAUSE_ROW_COUNT) % PAUSE_ROW_COUNT
+					queue_redraw()
+				JOY_BUTTON_DPAD_DOWN:
+					_pause_idx = (_pause_idx + 1) % PAUSE_ROW_COUNT
+					queue_redraw()
+				JOY_BUTTON_DPAD_LEFT:
+					_pause_adjust(-1)
+				JOY_BUTTON_DPAD_RIGHT:
+					_pause_adjust(1)
+				JOY_BUTTON_A:
+					_pause_adjust(1, true)
+			return
+		if e is InputEventKey and e.pressed:
+			match e.keycode:
+				KEY_ESCAPE, KEY_TAB, KEY_P:
+					_paused = false
+					queue_redraw()
+				KEY_UP, KEY_W:
+					_pause_idx = (_pause_idx - 1 + PAUSE_ROW_COUNT) % PAUSE_ROW_COUNT
+					queue_redraw()
+				KEY_DOWN, KEY_S:
+					if (e as InputEventKey).ctrl_pressed:
+						if not _alt and not _core.game_over():
+							_do_save()
+							_paused = false
+					else:
+						_pause_idx = (_pause_idx + 1) % PAUSE_ROW_COUNT
+						queue_redraw()
+				KEY_LEFT, KEY_A:
+					_pause_adjust(-1)
+				KEY_RIGHT, KEY_D:
+					_pause_adjust(1)
+				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					_pause_adjust(1, true)
+				KEY_F2:
+					if not e.echo:
+						_press_f2()
+				KEY_F3:
+					if not e.echo:
+						_press_f3()
+				KEY_F4:
+					if not e.echo:
+						_press_f4()
+				KEY_F6:
+					if not e.echo:
+						_press_f6()
+			return
+		return
+
+	if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		if _challenge_intro > 0 and not Session.is_online:
+			_challenge_intro = 0
+			return
+		if _is_result_screen() and _result_hold_ticks >= 12:
+			_press_enter()
+		elif _alt and (_alt_state == "transition" or _alt_state == "results"):
+			_press_enter()
+		return
+
 	if e is InputEventJoypadButton and e.pressed:
+		if _challenge_intro > 0 and not Session.is_online:
+			_challenge_intro = 0
+			return
 		if e.button_index == JOY_BUTTON_START:
+			if _is_result_screen() and _result_hold_ticks >= 12:
+				_press_enter()
+				return
 			# Online: pause is local-only (would freeze one peer's ticks -> rift stall), so disabled.
 			if not _core.game_over() and not Session.is_online:
 				_paused = not _paused
+				if _paused:
+					_pause_idx = 0
+				queue_redraw()
 			return
 		elif e.button_index == JOY_BUTTON_A:
 			if Session.is_online and _online_leave_confirm:
@@ -1957,7 +2290,7 @@ func _input(e: InputEvent) -> void:
 				Session.is_online = false; Session.net = null
 				get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 				return
-			if (_challenge_intro > 0 or _core.level_complete() or _core.game_over() or _core.challenge_failed()) and _hs_state != "entry":
+			if _is_result_screen() and _result_hold_ticks >= 12:
 				_press_enter()
 				return
 		elif e.button_index == JOY_BUTTON_B:
@@ -1995,10 +2328,7 @@ func _input(e: InputEvent) -> void:
 	if _challenge_intro > 0 and not Session.is_online:
 		_challenge_intro = 0   # any key dismisses the Challenge Round intro
 		return
-	if _hs_state == "entry":
-		_hs_input(e)
-		return
-	if _disconnect_banner != "" and e.keycode == KEY_SPACE:
+	if not Session.is_online and _disconnect_banner != "" and e.keycode == KEY_SPACE:
 		var connected_pads: Array = Input.get_connected_joypads()
 		Session.fallback_disconnected_pads(connected_pads)
 		_disconnect_banner = ""
@@ -2056,9 +2386,15 @@ func _input(e: InputEvent) -> void:
 				return
 			if not _core.game_over() and not Session.is_online:
 				_paused = not _paused
+				if _paused:
+					_pause_idx = 0
+				queue_redraw()
 		KEY_P:
 			if not _core.game_over() and not Session.is_online:   # online: local pause would desync peers
 				_paused = not _paused   # pause (the original pauses on Tab; P also works)
+				if _paused:
+					_pause_idx = 0
+				queue_redraw()
 		KEY_M:
 			_mode = 1 - _mode   # toggle Retro <-> Remastered display
 		KEY_F2:
@@ -2078,12 +2414,16 @@ func _input(e: InputEvent) -> void:
 				_do_save()   # QuickSave (About doc 8: Command-S; Ctrl-S here)
 		KEY_ENTER, KEY_KP_ENTER:
 			_press_enter()
+		KEY_SPACE:
+			if not e.echo and _is_result_screen() and _result_hold_ticks >= 12:
+				_press_enter()
 
 ## F2: ORIGINAL <-> REMASTERED -- art + SFX + music, live.
 func _press_f2() -> void:
 	_apply_presentation(not _remastered)
 	_toast_text = ""
 	_pres_toast = 150
+	Session.save_settings()
 
 ## F6: custom-recording sound mode on/off (audio.gd CUSTOM_SFX_DIR).
 func _press_f6() -> void:
@@ -2112,6 +2452,8 @@ func _press_f4() -> void:
 
 ## Enter: advance the current result screen (retry / next board / next Alternate turn).
 func _press_enter() -> void:
+	if _hs_state == "entry":
+		return
 	if Session.has_meta("editor_return") and Session.get_meta("editor_return"):
 		if _core.game_over() or _core.level_complete() or _core.challenge_failed():
 			Session.remove_meta("editor_return")
@@ -2132,19 +2474,40 @@ func _press_enter() -> void:
 			_alt_end_turn(true)   # board cleared -> advance this player's board, pass the seat
 	elif _core.game_over():
 		if Session.is_online:
-			_online_meta_confirmed = true
+			if _net != null and _net.advance_requested_epoch != _net.board_epoch:
+				_online_meta_confirmed = true
+				_net.send_advance_request()
+				queue_redraw()
 			return
 		_start()   # retry the board
 		_capture_board_start()
 	elif _core.challenge_failed():
 		if Session.is_online:
-			_online_meta_confirmed = true
+			if _net != null and _net.advance_requested_epoch != _net.board_epoch:
+				_online_meta_confirmed = true
+				_net.send_advance_request()
+				queue_redraw()
 			return
 		_challenge_fail_advance()
 	elif _core.level_complete():
+		if not Session.is_online and not _has_next_board() and not _hs_checked:
+			_warp_anim = 1.0
+			_tally_anim = 1.0
+			_hs_checked = true
+			var sc := _hs_final_score()
+			if Session.qualifies(sc):
+				_hs_score = sc; _hs_name = ""; _hs_char_idx = 0; _hs_state = "entry"
+				Audio.play_snd(1501)
+				queue_redraw()
+				return
 		if Session.is_online:
-			_online_meta_confirmed = true
+			if _net != null and _net.advance_requested_epoch != _net.board_epoch:
+				_online_meta_confirmed = true
+				_net.send_advance_request()
+				queue_redraw()
 			return
+		_warp_anim = 1.0
+		_tally_anim = 1.0
 		if Session.advance():
 			_level_bytes = _load_level_bytes()   # next board (Session.board_path)
 			_next_board()   # keep score/lives/ammo across boards
@@ -2156,13 +2519,16 @@ func _poll_online_meta_confirm() -> void:
 		return
 	if not _net.are_all_peers_confirmed_through(_net.current_tick - 1) and int(_net.last_confirmed_per_peer[_net.local_slot]) >= 0:
 		_net.send_ack_windows(int(_net.last_confirmed_per_peer[_net.local_slot]))
-	if _online_meta_confirmed and not _net.meta_confirmed_peers.has(_net.local_slot) \
+	if not _net.meta_confirmed_peers.has(_net.local_slot) \
 			and _net.are_all_peers_confirmed_through(_net.current_tick - 1):
 		_net.send_meta_confirm(_net.current_tick, int(_core.net_hash() & 0xFFFFFFFF))
 	if not _net.all_meta_confirmed():
 		return
+	if _net.advance_requested_epoch != _net.board_epoch:
+		return
 
 	_online_meta_confirmed = false
+	_online_advance_by = -1
 	_net.meta_confirmed_peers.clear()
 	if _net.is_host:
 		var next_seed: int = (int(Time.get_ticks_usec()) & 0x7FFFFFFF) | 1
@@ -2255,13 +2621,14 @@ func _read_input(which: int) -> int:
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_B): om |= IN_BLOCK_LOW
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_RIGHT_SHOULDER) or Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_RIGHT) > 0.40: om |= IN_ARROW
 			if Input.is_joy_button_pressed(joy, JOY_BUTTON_LEFT_SHOULDER) or Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_LEFT) > 0.40: om |= IN_BALL
-		if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A): om |= IN_LEFT
-		if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D): om |= IN_RIGHT
-		if Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_W): om |= IN_JUMP
-		if Input.is_key_pressed(KEY_Z) or Input.is_key_pressed(KEY_F): om |= IN_BLOCK_HIGH
-		if Input.is_key_pressed(KEY_X) or Input.is_key_pressed(KEY_G): om |= IN_BLOCK_LOW
-		if Input.is_key_pressed(KEY_C) or Input.is_key_pressed(KEY_H): om |= IN_ARROW
-		if Input.is_key_pressed(KEY_V) or Input.is_key_pressed(KEY_J): om |= IN_BALL
+		for kb_s in [0, 1]:
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "left")): om |= IN_LEFT
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "right")): om |= IN_RIGHT
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "jump")): om |= IN_JUMP
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "block_high")): om |= IN_BLOCK_HIGH
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "block_low")): om |= IN_BLOCK_LOW
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "arrow")): om |= IN_ARROW
+			if Input.is_key_pressed(Session.get_keybind(kb_s, "ball")): om |= IN_BALL
 		return om
 
 	var m := 0
@@ -2299,34 +2666,49 @@ func _read_input(which: int) -> int:
 		return m
 
 	var kb_mode: int = dev if dev < 0 else -(which + 1)
-	if kb_mode == -1:
-		if Input.is_key_pressed(KEY_LEFT): m |= IN_LEFT
-		if Input.is_key_pressed(KEY_RIGHT): m |= IN_RIGHT
-		if Input.is_key_pressed(KEY_UP): m |= IN_JUMP
-		if Input.is_key_pressed(KEY_Z): m |= IN_BLOCK_HIGH
-		if Input.is_key_pressed(KEY_X): m |= IN_BLOCK_LOW
-		if Input.is_key_pressed(KEY_C): m |= IN_ARROW
-		if Input.is_key_pressed(KEY_V): m |= IN_BALL
-	elif kb_mode == -2:
-		if Input.is_key_pressed(KEY_A): m |= IN_LEFT
-		if Input.is_key_pressed(KEY_D): m |= IN_RIGHT
-		if Input.is_key_pressed(KEY_W): m |= IN_JUMP
-		if Input.is_key_pressed(KEY_F): m |= IN_BLOCK_HIGH
-		if Input.is_key_pressed(KEY_G): m |= IN_BLOCK_LOW
-		if Input.is_key_pressed(KEY_H): m |= IN_ARROW
-		if Input.is_key_pressed(KEY_J): m |= IN_BALL
-	else:
-		# P3 (remaster co-op): numpad 4/6/8 = left/right/jump, 7/9 = build high/low, 1/3 = arrow/ball
-		if Input.is_key_pressed(KEY_KP_4): m |= IN_LEFT
-		if Input.is_key_pressed(KEY_KP_6): m |= IN_RIGHT
-		if Input.is_key_pressed(KEY_KP_8): m |= IN_JUMP
-		if Input.is_key_pressed(KEY_KP_7): m |= IN_BLOCK_HIGH
-		if Input.is_key_pressed(KEY_KP_9): m |= IN_BLOCK_LOW
-		if Input.is_key_pressed(KEY_KP_1): m |= IN_ARROW
-		if Input.is_key_pressed(KEY_KP_3): m |= IN_BALL
+	var kb_slot: int = 0 if kb_mode == -1 else (1 if kb_mode == -2 else 2)
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "left")): m |= IN_LEFT
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "right")): m |= IN_RIGHT
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "jump")): m |= IN_JUMP
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "block_high")): m |= IN_BLOCK_HIGH
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "block_low")): m |= IN_BLOCK_LOW
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "arrow")): m |= IN_ARROW
+	if Input.is_key_pressed(Session.get_keybind(kb_slot, "ball")): m |= IN_BALL
 	return m
 
 # --- rendering ---------------------------------------------------------------
+
+func _draw_coop_exited_pill() -> void:
+	if _mode_compete or _mode_versus or _alt or _num_players < 2:
+		return
+	var exited: Array[String] = []
+	var waiting: Array[String] = []
+	for p in range(1, mini(_num_players, 3) + 1):
+		if Session.is_online and _net != null and _net.dropped_peers.has(p - 1):
+			continue
+		if _core.player_lives(p) < 0 and _core.player_has_key(p) != 2:
+			continue
+		if _core.player_has_key(p) == 2:
+			exited.append("P%d" % p)
+		else:
+			waiting.append("P%d" % p)
+	if exited.is_empty() or waiting.is_empty():
+		return
+	var msg := "%s exited! Waiting for %s..." % [", ".join(exited), ", ".join(waiting)]
+	draw_rect(Rect2(130, 52, 380, 22), Color(0.05, 0.12, 0.28, 0.85))
+	draw_rect(Rect2(130, 52, 380, 22), Color(0.95, 0.85, 0.35, 0.85), false, 1.0)
+	draw_string(_font, Vector2(130, 67), msg, HORIZONTAL_ALIGNMENT_CENTER, 380, 11, Color(1.0, 0.94, 0.65))
+
+func _draw_online_strip() -> void:
+	if not Session.is_online or _net == null:
+		return
+	const SLOT_NAMES := ["Blue", "Green", "Red"]
+	const SLOT_COLS := [Color(0.55, 0.78, 1.0), Color(0.55, 0.95, 0.65), Color(1.0, 0.55, 0.55)]
+	var sl := clampi(_net.local_slot, 0, 2)
+	var ping_ms := int(round(_net.rolling_rtt_ms))
+	draw_rect(Rect2(0, 464, 640, 16), Color(0, 0, 0, 0.82))
+	var txt := "You: P%d (%s)   •   Ping: %d ms   •   Esc: Menu" % [sl + 1, SLOT_NAMES[sl], ping_ms]
+	draw_string(_font, Vector2(0, 476), txt, HORIZONTAL_ALIGNMENT_CENTER, 640, 11, SLOT_COLS[sl])
 
 func _draw() -> void:
 	var tk := int(_core.tick_count())
@@ -2474,6 +2856,8 @@ func _draw() -> void:
 	_post_fx()
 
 	_draw_hud()
+	if not _alt and not _core.game_over() and not _core.challenge_failed() and not _core.level_complete():
+		_draw_coop_exited_pill()
 	if _alt and _alt_state == "results":
 		_draw_alt_results()
 	elif _alt and _alt_state == "transition":
@@ -2487,6 +2871,8 @@ func _draw() -> void:
 			_draw_win_screen()
 		elif _warp_anim < 1.0:
 			_draw_board_warp()          # R/G/B tunnel wipe from the cleared board into the tally
+			if _result_hold_ticks >= 12 and _hs_state != "entry":
+				_draw_skip_prompt(_result_skip_hint("Next Board"))
 		elif not _alt and _is_challenge_board():
 			_draw_challenge_rewards()
 		else:
@@ -2495,18 +2881,30 @@ func _draw() -> void:
 				hint = "Waiting for host to advance...     Esc: menu"
 			_draw_pict_screen("board_completed", "LEVEL CLEAR!", hint)
 			_draw_complete_tally()
+			if _result_hold_ticks >= 12 and _hs_state != "entry":
+				_draw_skip_prompt(_result_skip_hint("Next Board"))
 	elif _paused:
-		_draw_pict_screen("paused", "PAUSED", "Tab: resume     Esc: menu")
+		if not Session.is_online:
+			_draw_pause_menu()
+		else:
+			_draw_pict_screen("paused", "PAUSED", "Tab: resume     Esc: menu")
 	if _hs_state == "entry":
 		_draw_hs_entry()
 	if _save_flash > 0:
 		draw_string(_font, Vector2(0, 232), "GAME SAVED", HORIZONTAL_ALIGNMENT_CENTER, 640, 26, Color(0.5, 1.0, 0.6, clampf(float(_save_flash) / 45.0, 0.0, 1.0)))
 	if _challenge_intro > 0:
 		_draw_pict_screen("Challenge_Title", "CHALLENGE ROUND", "")
+	if not _is_result_screen():
+		_draw_online_strip()
 	if _pres_toast > 0:
 		_draw_presentation_toast()
 	if not _disconnect_banner.is_empty():
-		_draw_banner(_disconnect_banner, "Press SPACE for Keyboard")
+		if Session.is_online:
+			draw_rect(Rect2(70, 52, 500, 22), Color(0.28, 0.08, 0.08, 0.88))
+			draw_rect(Rect2(70, 52, 500, 22), Color(1.0, 0.7, 0.35, 0.85), false, 1.0)
+			draw_string(_font, Vector2(70, 67), _disconnect_banner, HORIZONTAL_ALIGNMENT_CENTER, 500, 11, Color(1.0, 0.92, 0.7))
+		else:
+			_draw_banner(_disconnect_banner, "Press SPACE for Keyboard")
 	elif not _net_status_banner.is_empty():
 		_draw_banner(_net_status_banner, "")
 	elif _online_leave_confirm:
@@ -2548,11 +2946,8 @@ func _draw_game_over() -> void:
 		if tex != null:
 			_dtex(tex, pos)
 
-	if _game_over_ticks >= 100:
-		var hint := "Enter: retry     Esc: menu"
-		if Session.is_online and _net != null and not _net.is_host:
-			hint = "Waiting for host to retry...     Esc: menu"
-		draw_string(_font, Vector2(0, 305), hint, HORIZONTAL_ALIGNMENT_CENTER, 640, 14, Color(0.8, 0.8, 0.8, 0.85))
+	if _result_hold_ticks >= 12 and _hs_state != "entry":
+		_draw_skip_prompt(_result_skip_hint("Retry"))
 
 func _draw_banner(title: String, hint: String) -> void:
 	draw_rect(Rect2(0, 200, 640, 90), Color(0, 0, 0, 0.6))
@@ -2743,6 +3138,8 @@ func _draw_hud_3p(_iy: float) -> void:
 		if _core.player_has_key(p) == 1:
 			var key_f: int = 10 if p == 2 else 9
 			_blit("goody_sprites", key_f, Vector2(x0 + 158.0, 10.0), p == 3)
+	draw_rect(Rect2(276, 35, 88, 12), Color(0, 0, 0, 0.7))
+	draw_string(_font, Vector2(276, 45), "Board %03d" % _board_number(), HORIZONTAL_ALIGNMENT_CENTER, 88, 11, Color(1.0, 0.9, 0.45))
 
 ## Compete HUD (asm FUN_1000fb18 / FUN_1000efb4 / FUN_1000f500 two-player branch): the same
 ## icons, but every counter is drawn TWICE -- player 1's values on the top line (asm y=0) and

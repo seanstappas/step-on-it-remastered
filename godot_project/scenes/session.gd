@@ -20,7 +20,125 @@ var net: RollbackNet = null
 var is_online: bool = false
 var online_bord_bytes: PackedByteArray = PackedByteArray()
 var online_seed: int = 1
+var online_start_board: int = 0
 var speed: int = 2 # 0 = Really Fast, 1 = Fast, 2 = Medium (71 Hz default), 3 = Slow
+
+const SETTINGS_PATH := "user://settings.json"
+const SFX_VOL_DB := [0.0, -10.0, -22.0, -80.0]
+const MUSIC_VOL_DB := [-6.0, -14.0, -24.0, -80.0]
+const DEFAULT_KEYBINDS := [
+	{"left": KEY_LEFT, "right": KEY_RIGHT, "jump": KEY_UP, "block_high": KEY_Z, "block_low": KEY_X, "arrow": KEY_C, "ball": KEY_V},
+	{"left": KEY_A, "right": KEY_D, "jump": KEY_W, "block_high": KEY_F, "block_low": KEY_G, "arrow": KEY_H, "ball": KEY_J},
+	{"left": KEY_KP_4, "right": KEY_KP_6, "jump": KEY_KP_8, "block_high": KEY_KP_7, "block_low": KEY_KP_9, "arrow": KEY_KP_1, "ball": KEY_KP_3},
+]
+var sfx_vol_idx: int = 0
+var music_vol_idx: int = 0
+var music_mode: int = 2 # 0 = Full, 1 = Light, 2 = Off
+var fullscreen: bool = false
+var keybinds: Array = []
+var _settings_loaded_remastered: int = -1
+var _has_saved_settings: bool = false
+
+func _is_automated_run() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return true
+	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		for pfx in ["--shot", "--menushot", "--demo", "--play=", "--bug3", "--script=", "--test-editor", "--hidden"]:
+			if str(a).begins_with(pfx):
+				return true
+	return false
+
+func reset_keybinds() -> void:
+	keybinds = []
+	for d in DEFAULT_KEYBINDS:
+		keybinds.append((d as Dictionary).duplicate())
+
+func get_keybind(slot: int, action: String) -> int:
+	var idx := clampi(slot, 0, 2)
+	if keybinds.size() <= idx:
+		reset_keybinds()
+	var d: Dictionary = keybinds[idx]
+	return int(d.get(action, (DEFAULT_KEYBINDS[idx] as Dictionary).get(action, KEY_NONE)))
+
+func set_keybind(slot: int, action: String, keycode: int) -> void:
+	var idx := clampi(slot, 0, 2)
+	if keybinds.size() <= idx:
+		reset_keybinds()
+	(keybinds[idx] as Dictionary)[action] = keycode
+
+func set_fullscreen(on: bool, persist: bool = true) -> void:
+	fullscreen = on
+	if not _is_automated_run():
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED)
+	if persist:
+		save_settings()
+
+func toggle_fullscreen() -> void:
+	set_fullscreen(not fullscreen, true)
+
+func save_settings(path: String = SETTINGS_PATH) -> bool:
+	if path == SETTINGS_PATH and _is_automated_run():
+		return true
+	if keybinds.size() < 3:
+		reset_keybinds()
+	var kb_out: Array = []
+	for i in range(3):
+		var d: Dictionary = keybinds[i]
+		var clean_d: Dictionary = {}
+		for k in d.keys():
+			clean_d[str(k)] = int(d[k])
+		kb_out.append(clean_d)
+	var data := {
+		"speed": clampi(speed, 0, 3),
+		"remastered": remastered,
+		"music_mode": clampi(music_mode, 0, 2),
+		"sfx_vol_idx": clampi(sfx_vol_idx, 0, 3),
+		"music_vol_idx": clampi(music_vol_idx, 0, 3),
+		"fullscreen": fullscreen,
+		"keybinds": kb_out,
+	}
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(JSON.stringify(data))
+	return true
+
+func load_settings(path: String = SETTINGS_PATH) -> bool:
+	if keybinds.size() < 3:
+		reset_keybinds()
+	if not FileAccess.file_exists(path):
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	var data: Variant = JSON.parse_string(f.get_as_text())
+	if not (data is Dictionary):
+		return false
+	var d := data as Dictionary
+	if d.has("speed"):
+		speed = clampi(int(d["speed"]), 0, 3)
+	if d.has("remastered"):
+		_settings_loaded_remastered = 1 if bool(d["remastered"]) else 0
+	if d.has("music_mode"):
+		music_mode = clampi(int(d["music_mode"]), 0, 2)
+	if d.has("sfx_vol_idx"):
+		sfx_vol_idx = clampi(int(d["sfx_vol_idx"]), 0, 3)
+	if d.has("music_vol_idx"):
+		music_vol_idx = clampi(int(d["music_vol_idx"]), 0, 3)
+	if d.has("fullscreen"):
+		fullscreen = bool(d["fullscreen"])
+	if d.has("keybinds") and d["keybinds"] is Array:
+		var kbarr := d["keybinds"] as Array
+		for slot in range(mini(3, kbarr.size())):
+			if kbarr[slot] is Dictionary:
+				var src_d := kbarr[slot] as Dictionary
+				for act in (DEFAULT_KEYBINDS[slot] as Dictionary).keys():
+					if src_d.has(act):
+						var kc := int(src_d[act])
+						if kc > 0:
+							(keybinds[slot] as Dictionary)[act] = kc
+	_has_saved_settings = true
+	return true
 
 ## Claim a controller device into player slots, avoiding duplicate assignments and reusing free KB IDs
 func claim_controller_slot(device: int) -> int:
@@ -119,14 +237,34 @@ func init_presentation() -> void:
 	_presentation_ready = true
 	var ua := OS.get_cmdline_user_args()
 	var is_standalone := OS.has_feature("template") and not ("--original" in ua)
-	remastered = ("--3d" in ua) or ("--hd" in ua) or is_standalone
+	var explicit_pres := ("--3d" in ua) or ("--hd" in ua) or ("--original" in ua)
+	if explicit_pres or _is_automated_run() or _settings_loaded_remastered == -1:
+		remastered = ("--3d" in ua) or ("--hd" in ua) or is_standalone
+	else:
+		remastered = (_settings_loaded_remastered == 1)
 	var ov: String = Audio._sfx_variant_override()
 	if ov != "":
 		remaster_sfx = ov
 	Audio.set_sfx_variant(remaster_sfx if remastered else "original")
 	Audio.set_music_variant("remaster" if remastered else "original")
-	if is_standalone and not ("--no-music" in ua):
+	Audio.set_effects_volume(SFX_VOL_DB[clampi(sfx_vol_idx, 0, 3)])
+	Audio.set_music_volume(MUSIC_VOL_DB[clampi(music_vol_idx, 0, 3)])
+	if "--no-music" in ua:
+		music_mode = 2
+		Audio.set_music_enabled(false)
+	elif "--music" in ua:
+		if music_mode == 2:
+			music_mode = 0
+		Audio.set_music_light(music_mode == 1)
 		Audio.set_music_enabled(true)
+	elif _has_saved_settings:
+		Audio.set_music_light(music_mode == 1)
+		Audio.set_music_enabled(music_mode != 2)
+	elif is_standalone:
+		music_mode = 0
+		Audio.set_music_enabled(true)
+	if fullscreen and not _is_automated_run():
+		set_fullscreen(true, false)
 
 ## Switch the whole audio side of the presentation (the scenes swap their own art).
 func set_remastered(on: bool) -> void:
@@ -152,6 +290,9 @@ const HS_PATH := "user://highscores.json"
 var high_scores: Array = []   # [{name:String, score:int}, ...] sorted high->low, max HS_MAX
 
 func _ready() -> void:
+	reset_keybinds()
+	if not _is_automated_run():
+		load_settings()
 	_load_scores()
 
 func _load_scores() -> void:

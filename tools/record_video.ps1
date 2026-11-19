@@ -1,4 +1,4 @@
-<#
+﻿<#
 record_video.ps1 - capture a scripted gameplay clip to media/video/ so we can
 watch the remaster's progress over time.
 
@@ -25,10 +25,12 @@ param(
     [int]$Fps = 60,               # movie frame rate; above the 60 Hz engine tick shows REMASTERED's smooth in-between frames
     [string]$Res = "",            # window size, e.g. 2560x1920 (4x; live 3D renders at the window's scale); default by -HD
     [switch]$Visible,             # record with the window ON-SCREEN (default: hidden/off-screen)
-    [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
+    [string]$Godot = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$SoiTools = if ($env:SOI_TOOLS -and (Test-Path $env:SOI_TOOLS)) { $env:SOI_TOOLS } elseif (Test-Path 'D:\SOI-tools') { 'D:\SOI-tools' } elseif (Test-Path 'C:\SOI-tools') { 'C:\SOI-tools' } else { 'D:\SOI-tools' }
+if (-not $Godot) { $Godot = Join-Path $SoiTools 'godot\Godot_v4.3-stable_win64.exe' }
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {

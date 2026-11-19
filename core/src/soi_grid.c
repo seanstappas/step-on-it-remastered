@@ -309,28 +309,42 @@ void soi_pickup_check(SoiWorld *w, int player)
         (!competitive || p->has_key == 1)) {
         int yrow = (p->y - SOI_ORIGIN_Y) / SOI_CELL_PX;
         if (p->y < SOI_ORIGIN_Y) yrow = -1;
-        if (yrow == prow && p->has_key != 2) {   /* first exit through the door: level won */
-            int j;
-            p->has_key = 2;
-            /* Board complete: award EACH player their OWN remaining bonus x mult and
-             * zero it -- FUN_100153d0 runs the per-player tally FUN_10015714 for every
-             * player, not just the door-exiter (per-player @0x1003a9f0 x @f4). In co-op
-             * the team pool (player 1's slot) is tallied once. */
-            for (j = 1; j < SOI_MAX_PLAYERS; j++) {
-                SoiPlayer *pj = &w->players[j];
-                if (soi_pool_idx(w, j) != j) continue;
-                if (pj->active) {
-                    pj->score += (int)pj->bonus_time * pj->mult;
-                    pj->bonus_time = 0;
-                    /* No-Weapons Reward: added ONCE (not x mult) if this player never fired a
-                     * weapon this board -- asm FUN_10015714 draws it at row 0x158 and adds it.
-                     * A Challenge Round skips that tally (FUN_10028a0c: `if (!DAT_1003ad0e)
-                     * FUN_100153d0`); its reward screen FUN_10016f80 pays only Bonus x mult. */
-                    if (pj->no_weapons_reward >= 1 && !w->challenge)
-                        pj->score += pj->no_weapons_reward;
+        if (yrow == prow && p->has_key != 2) {   /* exit through the door */
+            if (w->play_mode == SOI_MODE_COOPERATE) {
+                int was_complete = soi_level_complete(w);
+                p->has_key = 2;
+                p->alive = 0;
+                p->in_air = 0;
+                p->ground_state = SOI_ST_IDLE;
+                p->respawn_timer = 0;
+                p->fast = 0;
+                p->invuln = 0;
+                if (!was_complete && soi_level_complete(w)) {
+                    soi_award_coop_completion_bonus(w);
                 }
+                soi_sfx_emit(w, SOI_SFX_POWERUP);
+            } else {
+                int j;
+                p->has_key = 2;
+                /* Board complete: award EACH player their OWN remaining bonus x mult and
+                 * zero it -- FUN_100153d0 runs the per-player tally FUN_10015714 for every
+                 * player, not just the door-exiter (per-player @0x1003a9f0 x @f4). */
+                for (j = 1; j < SOI_MAX_PLAYERS; j++) {
+                    SoiPlayer *pj = &w->players[j];
+                    if (soi_pool_idx(w, j) != j) continue;
+                    if (pj->active) {
+                        pj->score += (int)pj->bonus_time * pj->mult;
+                        pj->bonus_time = 0;
+                        /* No-Weapons Reward: added ONCE (not x mult) if this player never fired a
+                         * weapon this board -- asm FUN_10015714 draws it at row 0x158 and adds it.
+                         * A Challenge Round skips that tally (FUN_10028a0c: `if (!DAT_1003ad0e)
+                         * FUN_100153d0`); its reward screen FUN_10016f80 pays only Bonus x mult. */
+                        if (pj->no_weapons_reward >= 1 && !w->challenge)
+                            pj->score += pj->no_weapons_reward;
+                    }
+                }
+                soi_sfx_emit(w, SOI_SFX_POWERUP);
             }
-            soi_sfx_emit(w, SOI_SFX_POWERUP);
         }
         return;
     }

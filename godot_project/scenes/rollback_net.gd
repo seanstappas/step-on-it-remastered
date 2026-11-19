@@ -35,6 +35,7 @@ static func decode_be32(arr: PackedByteArray, offset: int) -> int:
 const PKT_MATCH_INIT   := 0x01
 const PKT_BOARD_LOAD   := 0x02
 const PKT_META_CONFIRM := 0x03
+const PKT_ADVANCE_REQ  := 0x04
 const PKT_MATCH_END    := 0x06
 const PKT_INPUT_TICK   := 0x10
 const PKT_DROP_PEER    := 0x20
@@ -44,6 +45,7 @@ const PROTOCOL_VERSION := 3
 # Signals for state changes
 signal match_started(bord_bytes: PackedByteArray, rng_seed: int, speed: int, num_players: int, mode: int, local_slot: int)
 signal board_loaded(bord_bytes: PackedByteArray, rng_seed: int, is_retry: bool)
+signal advance_requested(slot: int)
 signal match_ended(reason: int)
 signal peer_connected(slot: int)
 signal peer_disconnected(slot: int)
@@ -65,6 +67,7 @@ var earliest_mispredicted_tick: int = -1
 var peer_ack_tick: Array = [0, 0, 0]
 var peer_drop_tick: Dictionary = {}
 var meta_confirmed_peers: Dictionary = {} # slot -> {"epoch": int, "tick": int, "hash": int}
+var advance_requested_epoch: int = -1
 var rolling_rtt_ms: float = 0.0
 var consecutive_rift_frames: int = 0
 
@@ -206,6 +209,7 @@ func reset() -> void:
 	dropped_peers.clear()
 	peer_drop_tick.clear()
 	meta_confirmed_peers.clear()
+	advance_requested_epoch = -1
 	input_history = [{}, {}, {}]
 	input_confirmed = [{}, {}, {}]
 	state_hash_history.clear()
@@ -289,7 +293,7 @@ static func _get_session() -> Node:
 	return null
 
 
-func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mode: int, victory_rule: int = 0, friendly_fire: int = 0) -> void:
+func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mode: int, victory_rule: int = 0, friendly_fire: int = 0, start_board_num: int = 0) -> void:
 	if not enet:
 		return
 	local_slot = 0
@@ -297,19 +301,22 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 	dropped_peers.clear()
 	peer_drop_tick.clear()
 	meta_confirmed_peers.clear()
+	advance_requested_epoch = -1
 	match_active = true
 	var peers := enet.get_peers()
-	print("send_match_init: peers=%d blen=%d mode=%d rule=%d ff=%d" % [peers.size(), bord_bytes.size(), mode, victory_rule, friendly_fire])
+	print("send_match_init: peers=%d blen=%d mode=%d rule=%d ff=%d start=%d" % [peers.size(), bord_bytes.size(), mode, victory_rule, friendly_fire, start_board_num])
 	var s := _get_session()
 	var assist_val: int = 1 if (s != null and bool(s.get("input_assist"))) else 0
 	var p3_any_val: int = 1 if (s != null and bool(s.get("p3_any_key"))) else 0
+	if s != null:
+		s.set("online_start_board", start_board_num)
 	for idx in range(peers.size()):
 		var peer: ENetPacketPeer = peers[idx]
 		var pid := peer.get_instance_id()
 		var peer_slot: int = peer_instances.get(pid, idx + 1)
 		var pkt := PackedByteArray()
 		var blen := bord_bytes.size()
-		pkt.resize(0x10 + blen + 4)
+		pkt.resize(0x10 + blen + 6)
 		pkt[0] = PKT_MATCH_INIT
 		pkt[1] = ((PROTOCOL_VERSION & 0x0F) << 4) | (num_players & 0x0F)
 		pkt[2] = peer_slot
@@ -326,6 +333,7 @@ func send_match_init(bord_bytes: PackedByteArray, rng_seed: int, speed: int, mod
 			pkt[0x10 + b] = bord_bytes[b]
 		var my_build_id: int = SoiCore.build_id() if ClassDB.class_has_method("SoiCore", "build_id") else 0
 		encode_be32(pkt, 0x10 + blen, my_build_id)
+		encode_be16(pkt, 0x10 + blen + 4, start_board_num & 0xFFFF)
 		peer.send(0, pkt, ENetPacketPeer.FLAG_RELIABLE)
 	enet.flush()
 	match_started.emit(bord_bytes, rng_seed, speed, num_players, mode, 0)
@@ -442,6 +450,37 @@ func _handle_meta_confirm(pkt: PackedByteArray, from_peer_id: int) -> void:
 			enet.flush()
 
 
+func send_advance_request() -> void:
+	advance_requested_epoch = board_epoch
+	var pkt := PackedByteArray()
+	pkt.resize(2)
+	pkt[0] = PKT_ADVANCE_REQ
+	pkt[1] = ((board_epoch & 0x3F) << 2) | (local_slot & 0x03)
+	_broadcast_packet(pkt, 0, ENetPacketPeer.FLAG_RELIABLE)
+	advance_requested.emit(local_slot)
+
+
+func _handle_advance_req(pkt: PackedByteArray, from_peer_id: int) -> void:
+	if pkt.size() < 2:
+		return
+	var pkt_epoch: int = (pkt[1] >> 2) & 0x3F
+	var slot: int = pkt[1] & 0x03
+	if slot < 0 or slot >= 3 or dropped_peers.has(slot):
+		return
+	if pkt_epoch != board_epoch:
+		return
+	advance_requested_epoch = board_epoch
+	if is_host:
+		for pid in peer_to_obj.keys():
+			if pid != from_peer_id:
+				var p_obj: ENetPacketPeer = peer_to_obj[pid]
+				if p_obj and p_obj.get_state() == ENetPacketPeer.STATE_CONNECTED:
+					p_obj.send(0, pkt, ENetPacketPeer.FLAG_RELIABLE)
+		if enet:
+			enet.flush()
+	advance_requested.emit(slot)
+
+
 func poll_network(time_now_sec: float) -> void:
 	# Process synthetic delayed queue first
 	if simulated_packet_queue.size() > 0:
@@ -550,6 +589,8 @@ func _process_packet(pkt: PackedByteArray, peer_id: int) -> void:
 		_handle_board_load(pkt)
 	elif pkt_type == PKT_META_CONFIRM:
 		_handle_meta_confirm(pkt, peer_id)
+	elif pkt_type == PKT_ADVANCE_REQ:
+		_handle_advance_req(pkt, peer_id)
 	elif pkt_type == PKT_DROP_PEER:
 		_handle_drop_peer(pkt)
 	elif pkt_type == PKT_MATCH_END:
@@ -839,6 +880,7 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 		return
 	match_active = true
 	board_epoch = 0
+	advance_requested_epoch = -1
 	num_players = parsed_np
 	local_slot = parsed_slot
 	var mode: int = pkt[3]
@@ -850,12 +892,14 @@ func _handle_match_init(pkt: PackedByteArray) -> void:
 	var p3_any_key_val: int = pkt[9]
 	var rng_seed: int = decode_be32(pkt, 0x0C)
 	var bord_bytes: PackedByteArray = pkt.slice(0x10, 0x10 + blen)
+	var start_board_num: int = decode_be16(pkt, 0x10 + blen + 4) if pkt.size() >= 0x10 + blen + 6 else 0
 	var s := _get_session()
 	if s != null:
 		s.set("victory_rule", victory_rule)
 		s.set("friendly_fire", friendly_fire)
 		s.set("input_assist", (input_assist != 0))
 		s.set("p3_any_key", (p3_any_key_val != 0))
+		s.set("online_start_board", start_board_num)
 	BASE_DELAY = clampi(base_delay_val, 2, 4)
 	next_base_delay = BASE_DELAY
 	match_started.emit(bord_bytes, rng_seed, speed, num_players, mode, local_slot)

@@ -13,9 +13,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$GodotConsole = "D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe"
-$Zig = "D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe"
-$VpkRoot = "D:\SOI-tools\velopack"
+$SoiTools = if ($env:SOI_TOOLS -and (Test-Path $env:SOI_TOOLS)) { $env:SOI_TOOLS } elseif (Test-Path "D:\SOI-tools") { "D:\SOI-tools" } elseif (Test-Path "C:\SOI-tools") { "C:\SOI-tools" } else { "D:\SOI-tools" }
+$GodotConsole = Join-Path $SoiTools "godot\Godot_v4.3-stable_win64_console.exe"
+$Zig = Join-Path $SoiTools "zig\zig-windows-x86_64-0.13.0\zig.exe"
+$VpkRoot = Join-Path $SoiTools "velopack"
 $VpkLibcDir = "$VpkRoot\libc"
 $VpkDll = "$VpkRoot\vpk\tools\net8.0\any\vpk.dll"
 $BuildDir = "$Root\build\win"
@@ -158,7 +159,7 @@ if ($SkipBridgeBuild -and $hasBridgeDll -and $hasBridgePdb) {
     Write-Host "=== 1. Skipping GDExtension Build (-SkipBridgeBuild) ===" -ForegroundColor Cyan
 } else {
     Write-Host "=== 1. Building GDExtension (soi_bridge.dll) ===" -ForegroundColor Cyan
-    Invoke-NativeChecked -Exe "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "$Root\bridge\build_zig.ps1") -Label "GDExtension build"
+    Invoke-NativeChecked -Exe "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "$Root\bridge\build_zig.ps1", "-Zig", $Zig) -Label "GDExtension build"
 }
 
 Write-Host "=== 2. Preparing Windows Build Staging ($BuildDir) ===" -ForegroundColor Cyan
@@ -168,8 +169,25 @@ New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 # Delete build/win/StepOnIt.pck and StepOnIt.exe before exporting
 Remove-Item "$BuildDir\StepOnIt.pck", "$BuildDir\StepOnIt.exe" -Force -ErrorAction SilentlyContinue
 
-# Export release using official template
-Invoke-NativeChecked -Exe $GodotConsole -Arguments @("--headless", "--path", "$Root\godot_project", "--export-release", "Windows Desktop", "$BuildDir\StepOnIt.exe") -Label "Godot export-release"
+# Export release using official template (adapt export_presets.cfg temporarily if SOI-tools is on a different drive)
+$exportPresetsPath = "$Root\godot_project\export_presets.cfg"
+$origExportPresets = $null
+$localTemplate = (Join-Path $SoiTools "godot\templates\windows_release_x86_64.exe") -replace '\\', '/'
+if ((Test-Path $exportPresetsPath) -and (Test-Path $localTemplate)) {
+    $presetRaw = [System.IO.File]::ReadAllText($exportPresetsPath)
+    if ($presetRaw -match 'custom_template/release="([^"]+)"' -and (-not (Test-Path $Matches[1]))) {
+        $origExportPresets = $presetRaw
+        $patched = [regex]::Replace($presetRaw, 'custom_template/release="[^"]+"', ('custom_template/release="' + $localTemplate + '"'))
+        [System.IO.File]::WriteAllText($exportPresetsPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    }
+}
+try {
+    Invoke-NativeChecked -Exe $GodotConsole -Arguments @("--headless", "--path", "$Root\godot_project", "--export-release", "Windows Desktop", "$BuildDir\StepOnIt.exe") -Label "Godot export-release"
+} finally {
+    if ($null -ne $origExportPresets) {
+        [System.IO.File]::WriteAllText($exportPresetsPath, $origExportPresets, [System.Text.UTF8Encoding]::new($false))
+    }
+}
 if (-not (Test-Path "$BuildDir\StepOnIt.pck")) { throw "Missing $BuildDir\StepOnIt.pck after export" }
 if (-not (Test-Path "$BuildDir\StepOnIt.exe")) { throw "Missing $BuildDir\StepOnIt.exe after export" }
 

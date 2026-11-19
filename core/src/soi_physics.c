@@ -350,6 +350,7 @@ static void bonk_step(SoiWorld *w, int player)
 static void commit_death(SoiWorld *w, int player)
 {
     SoiPlayer *p = &w->players[player];
+    int was_complete = soi_level_complete(w);
     p->in_air = 0;
     p->alive = 0;
     p->ground_state = SOI_ST_IDLE;
@@ -359,7 +360,12 @@ static void commit_death(SoiWorld *w, int player)
         att->score += 1000;
         p->attacker_ttl = 0;
     }
-    if (w->challenge && w->play_mode != SOI_MODE_VERSUS) return;
+    if (w->challenge && w->play_mode != SOI_MODE_VERSUS) {
+        if (w->play_mode == SOI_MODE_COOPERATE && !was_complete && soi_level_complete(w)) {
+            soi_award_coop_completion_bonus(w);
+        }
+        return;
+    }
     if (w->play_mode == SOI_MODE_COOPERATE) {
         SoiPlayer *pool = soi_pool(w, player);
         if (pool->lives <= 0) {
@@ -380,6 +386,9 @@ static void commit_death(SoiWorld *w, int player)
     } else {
         if (--soi_pool(w, player)->lives < 0) p->eliminated = 1;
         else p->respawn_timer = 90;
+    }
+    if (w->play_mode == SOI_MODE_COOPERATE && !was_complete && soi_level_complete(w)) {
+        soi_award_coop_completion_bonus(w);
     }
 }
 
@@ -796,6 +805,7 @@ void soi_player_update(SoiWorld *w, int player)
      * falling off a ledge (FALL, not DEAD) still picks up, as in the asm; only the
      * death-throw (short-circuited above) collects nothing. */
     soi_pickup_check(w, player);
+    if (!p->alive) return;
 
     /* The build/fire ACTION runs FIRST, whatever the ground state (see action_step): while
      * one is running -- its start frame included -- the movement handler below does not run

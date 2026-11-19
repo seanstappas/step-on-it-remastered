@@ -357,6 +357,7 @@ void     soi_projectiles_update(SoiWorld *w);
 
 /* ---- goodies (soi_grid.c) ---- */
 void     soi_pickup_check(SoiWorld *w, int player);
+void     soi_award_coop_completion_bonus(SoiWorld *w);
 
 /* ---- sound events (soi_state.c) ---- */
 void     soi_sfx_emit(SoiWorld *w, int id);   /* push one SoiSfx onto the tick queue */

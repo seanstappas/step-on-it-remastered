@@ -80,11 +80,12 @@ flowchart TD
 
 ## 2. Environment & Execution Invariants (MANDATORY RULES)
 
-### A. Portable Toolchain Paths (`D:\SOI-tools\`) & Virtualenv
+### A. Portable Toolchain Paths (`D:\SOI-tools\` or `C:\SOI-tools\`) & Virtualenv
+- **Toolchain Root**: Scripts resolve `$env:SOI_TOOLS` -> `D:\SOI-tools` -> `C:\SOI-tools` automatically (use whichever drive holds `SOI-tools` on the current PC).
 - **Python**: **NEVER** invoke bare `python`, `py`, `pytest`, `ruff`, or `mypy`. Always use `.venv\Scripts\python.exe` (or `.venv\Scripts\pytest.exe`).
-- **Zig Compiler**: `D:\SOI-tools\zig\zig-windows-x86_64-0.13.0\zig.exe` (note the `\zig\` parent folder!).
-- **Godot 4.3 Console**: `D:\SOI-tools\godot\Godot_v4.3-stable_win64_console.exe`
-- **Other Local Tools**: `D:\SOI-tools\blender\`, `D:\SOI-tools\velopack\`, `D:\SOI-tools\realesrgan\`, `D:\SOI-tools\ghidra\`.
+- **Zig Compiler**: `<SOI-tools>\zig\zig-windows-x86_64-0.13.0\zig.exe` (note the `\zig\` parent folder!).
+- **Godot 4.3 Console**: `<SOI-tools>\godot\Godot_v4.3-stable_win64_console.exe`
+- **Other Local Tools**: `<SOI-tools>\blender\`, `<SOI-tools>\velopack\`, `<SOI-tools>\realesrgan\`, `<SOI-tools>\ghidra\`.
 
 ### B. Windows PowerShell & Native Wildcard Splatting
 - Windows PowerShell does **not** have Unix `grep`, `sed`, `awk`, or `cat -flags` (use `git grep` or `Select-String`).

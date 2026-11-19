@@ -1,11 +1,13 @@
-<#
+﻿<#
 test_net_soak.ps1 — Automated 2-instance loopback soak test over UDP (127.0.0.1)
 Runs headless net_soak_test.tscn simulating 1,200 ticks with 120 ms latency and 30 ms jitter.
 Verifies 0 state hash desyncs.
 #>
 param(
-    [string]$Godot = 'D:\SOI-tools\godot\Godot_v4.3-stable_win64.exe'
+    [string]$Godot = ''
 )
+$SoiTools = if ($env:SOI_TOOLS -and (Test-Path $env:SOI_TOOLS)) { $env:SOI_TOOLS } elseif (Test-Path 'D:\SOI-tools') { 'D:\SOI-tools' } elseif (Test-Path 'C:\SOI-tools') { 'C:\SOI-tools' } else { 'D:\SOI-tools' }
+if (-not $Godot) { $Godot = Join-Path $SoiTools 'godot\Godot_v4.3-stable_win64.exe' }
 
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
